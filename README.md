@@ -21,7 +21,10 @@ Cztery blokady, z których żadna nie dotyczy składania obrazów:
 
 1. `vendor` i HAL-e źródła są skompilowane pod Xring O3 — nie mają czego obsługiwać na MT6789.
 2. VINTF: framework z A17 żąda nowszych wersji interfejsów, niż dostaje vendor Lenovo. `init` staje na `Waiting for HAL`.
-3. Kernel: A16/A17 wymaga GKI 6.x; BSP Lenovo dla G99 to downstream 4.14/5.10 ze zamkniętymi sterownikami MTK.
+3. Kernel: **zmierzone z `boot.img`** — target to GKI `android12` `5.10.233-ab13101360`
+   (skompilowany 2025-02-20), a nie downstream 4.14. Źródło A17 to GKI 2.0 / 6.x i inna generacja
+   KMI, więc każdy `.ko` z `vendor_dlkm` źródła dostanie `disagrees about version of symbol`.
+   Zamknięte sterowniki MTK zostają jako osobny problem. (Dowód: `docs/04`, sekcja 4.3.)
 4. Brak publicznych źródeł/BSP dla Xring O3 (debiut 2026‑09, rynek CN). Nie ma z czego zbudować warstwy sprzętowej.
 
 Odblokowany bootloader nic tu nie daje — blokady są w binariach i kernelu, nie w podpisie.
@@ -51,15 +54,21 @@ scripts/
   verify_module.sh           czy modul realnie dziala po restarcie
 
 diagnostics/collect_device_state.sh   jeden przebieg, caly wynik do wklejenia w czat
+diagnostics/identify_images.sh        sortowanie sterty obrazow po odciskach kluczy AVB (nie po nazwach)
 .github/workflows/build.yml           build-module (codziennie) + unpack-source (HF, recznie)
 docs/01-ustalenia-srodowiska.md       limity sandboxa, korekta o bootloaderze
 docs/02-sciezka-A-nakladka.md         procedura krok po kroku i rollback
+docs/03-analiza-vbmeta.md             pelna analiza vbmeta targetu + granica wykonania
+docs/04-proweniencja-i-kernel.md      limit transferu, skad ktory obraz, zmierzony kernel
 ```
 
 ## Kolejność pracy (nie skracać)
 
 ```bash
-# 0. Stan urzadzenia - bez tego kazda dalsza decyzja jest wrrozeniem
+# 0a. Posortowac sterte obrazow (ktory jest zrodlo, ktory target) - mala, tanio
+./diagnostics/identify_images.sh /sciezka/do/obrazow   # wynik: _avb_frags/*.vbmeta
+
+# 0b. Stan urzadzenia - bez tego kazda dalsza decyzja jest wrrozeniem
 diagnostics/collect_device_state.sh              # wynik -> do czatu
 
 # 1. Co w ogole mozna nadpisac na tym buildzie

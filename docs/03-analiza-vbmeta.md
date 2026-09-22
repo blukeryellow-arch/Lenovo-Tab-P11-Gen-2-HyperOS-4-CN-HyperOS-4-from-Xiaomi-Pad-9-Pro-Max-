@@ -196,3 +196,20 @@ w kontekcie - czyli kanal nie jest "na tekst", tylko na pliki. Sufit dla
 GB-owych obrazow nieznany; ustalimy go empirycznie na pierwszym realnym pliku,
 wg kolejnosci: `vbmeta_system.img` -> `dtbo.img` -> `vendor_boot.img` -> `super.img`.
 Jezeli connector sie podda, `unpack-source` w CI przejmuje te najwieksze.
+
+---
+
+## Dodatek B (korekta Dodatku A, 2026-09-22): realny sufit kanału Drive
+
+W Dodatku A zapisałem, że „Google Drive jest działającym kanałem transferu binarek". To wymaga
+precyzji, bo bez niej wprowadza w błąd: limit to **100 MiB na plik (104 857 600 B)**, wyłącznie
+cały plik, bez zakresów bajtowych (odsłona `bytes=0-2097151` została odrzucona z komunikatem
+„the download URL always serves the whole file"). Drugi warunek: pliki w workspace poza gitrem
+**nie przeżywają tury** — `google_drive/vbmeta.img` zniknął i trzeba go było pobrać ponownie.
+
+Konsekwencja dla tej analizy: `vbmeta.img`, `boot.img`, `vendor_boot.img` nadają się do pobrania i
+pobrania im wszystkiego; `system.img`, `product.img`, `system_ext.img`, `odm.img`,
+`vendor_mystical.img` (łącznie 11,9 GB) nie — dla nich jedyną sensowną drogą są fragmenty bloków
+vbmeta (`diagnostics/identify_images.sh`) albo runner Actions z Hugging Face.
+
+Pomiary z tych trzech plików, łącznie z dowodem proweniencji i wersją kernela: `docs/04`.
