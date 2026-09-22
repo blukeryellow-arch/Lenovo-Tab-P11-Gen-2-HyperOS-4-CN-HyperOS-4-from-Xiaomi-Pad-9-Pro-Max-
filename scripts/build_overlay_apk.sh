@@ -15,12 +15,21 @@ trap 'rm -rf "$WORK"' EXIT
 MIN_SDK=${MIN_SDK:-31}
 PKG=com.hyperos.look
 
+# Kandydaci: PATH, potem znane lokalizacje SDK (runner GitHub ma SDK preinstalowany
+# w /usr/local/lib/android/sdk - nie odwolujemy sie do zadnych akcj外部).
+sdk_roots() {
+  for c in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" /usr/local/lib/android/sdk "$HOME/Android/Sdk" /opt/android-sdk; do
+    [ -n "$c" ] && [ -d "$c" ] && printf '%s\n' "$c"
+  done
+}
+
 find_tool() {
-  local name=$1
+  local name=$1 hit
   if command -v "$name" >/dev/null 2>&1; then command -v "$name"; return 0; fi
-  local hit
-  hit=$(find "${ANDROID_HOME:-/opt/android-sdk}/build-tools" -maxdepth 2 -name "$name" -type f 2>/dev/null | sort -V | tail -1)
-  [ -n "$hit" ] && { echo "$hit"; return 0; }
+  while IFS= read -r root; do
+    hit=$(find "$root/build-tools" "$root/cmdline-tools" -name "$name" -type f 2>/dev/null | sort -V | tail -1)
+    [ -n "$hit" ] && { echo "$hit"; return 0; }
+  done < <(sdk_roots)
   return 1
 }
 
@@ -37,9 +46,14 @@ echo "   cel:   $OUT/$PKG.apk"
 # 2) link do APK-a. Framework musi byc podany, inaczej 'overlay' i 'targetPackage'
 #    nie zostana rozpoznane, a aapt2 wywali sie na nieznanych atrybutach.
 FW=()
-if [ -n "${ANDROID_HOME:-}" ]; then
-  ANDROID_JAR=$(find "$ANDROID_HOME/platforms" -name android.jar 2>/dev/null | sort -V | tail -1)
-  [ -n "$ANDROID_JAR" ] && FW=(--manifest "$APP/AndroidManifest.xml" -I "$ANDROID_JAR")
+ANDROID_JAR=""
+while IFS= read -r root; do
+  hit=$(find "$root/platforms" -name android.jar 2>/dev/null | sort -V | tail -1)
+  if [ -n "$hit" ]; then ANDROID_JAR="$hit"; break; fi
+done < <(sdk_roots)
+if [ -n "$ANDROID_JAR" ]; then
+  echo "   framework: $ANDROID_JAR"
+  FW=(--manifest "$APP/AndroidManifest.xml" -I "$ANDROID_JAR")
 fi
 [ ${#FW[@]} -gt 0 ] || { echo "BRAK android.jar (platforms/*). Nie da sie zlinkowac RRO bez frameworka." >&2; exit 1; }
 
@@ -47,7 +61,6 @@ mkdir -p "$OUT"
 "$AAPT2" link "${FW[@]}" \
   --min-sdk-version "$MIN_SDK" \
   --package-id 0x7f \
-  --rename-manifest-package "$PKG" \
   -o "$WORK/unsigned.apk" \
   "$WORK/compiled.zip"
 

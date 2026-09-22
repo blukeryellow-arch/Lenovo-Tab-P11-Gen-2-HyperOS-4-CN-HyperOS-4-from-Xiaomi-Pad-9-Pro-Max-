@@ -17,6 +17,11 @@
 -->
 <resources>
 
+    <!-- Marka buildu: dzieki temu APK nie jest 'pusty' (aapt2 link na zero
+         zasobach bywa marudny), a na urzadzeniu widac ktora wersje overlaya
+         faktycznie zamontowano. Nic nie nadpisuje. -->
+    <string name="hyperos_look_build" translatable="false">0.1-dev</string>
+
     <!--
     <dimen name="status_bar_height">24dp</dimen>
     <bool name="config_showNavigationBar">true</bool>

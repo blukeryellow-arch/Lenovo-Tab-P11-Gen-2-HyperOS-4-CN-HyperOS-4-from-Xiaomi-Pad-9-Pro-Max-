@@ -49,15 +49,33 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # aapt2 / zipalign / apksigner. Bez tego build_overlay_apk.sh nie ma sensu.
-      - name: Android SDK (build-tools + platform)
-        uses: android-actions/setup-android@v3
-
-      - name: Ustaw sciezki SDK
+      # ubuntu-latest ma Android SDK preinstalowany (/usr/local/lib/android/sdk).
+      # Nie uzywamy setup-android: ta akcja sciaga commandlinetools z dl.google.com
+      # i to ona wywrocila poprzedni przebieg. Tu tylko lokalizujemy to, co jest,
+      # ewentualnie dobieramy brakujacy build-tools przez sdkmanager.
+      - name: Znajdz Android SDK (build-tools + platform)
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          ls "$ANDROID_HOME/build-tools" | tail -1
-          ls "$ANDROID_HOME/platforms"  | tail -1
+          set -uo pipefail
+          for c in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" /usr/local/lib/android/sdk "$HOME/Android/Sdk"; do
+            [ -n "$c" ] && [ -d "$c" ] && { echo "ANDROID_HOME=$c" >> "$GITHUB_ENV"; HOME_SDK=$c; break; }
+          done
+          echo "SDK: ${HOME_SDK:-NIE ZNALEZIONY}"
+          if [ -z "${HOME_SDK:-}" ]; then
+            echo "::error::Brak Android SDK na runnerze - wypisz zawartosc /usr/local/lib/android, zeby zobaczyc co tu jest"
+            ls -la /usr/local/lib/android 2>&1 | sed 's/^/  /'
+            exit 1
+          fi
+          echo "--- build-tools ---"; ls "$HOME_SDK/build-tools" 2>&1 | sed 's/^/  /'
+          echo "--- platforms ---";  ls "$HOME_SDK/platforms"  2>&1 | sed 's/^/  /'
+          echo "--- cmdline-tools ---"; ls "$HOME_SDK/cmdline-tools" 2>&1 | sed 's/^/  /'
+          for t in aapt2 zipalign apksigner sdkmanager; do
+            found=$(find "$HOME_SDK/build-tools" "$HOME_SDK/cmdline-tools" -name "$t" -type f 2>/dev/null | sort -V | tail -1)
+            echo "  $t: ${found:-BRAK}"
+          done
+          if [ ! -e "$HOME_SDK/platforms/android-34/android.jar" ] && [ ! -e "$HOME_SDK/platforms/android-35/android.jar" ]; then
+            echo "dobieram platforme 34 przez sdkmanager"
+            yes | "$HOME_SDK/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" 2>&1 | tail -3
+          fi
 
       - name: Budowa APK overlayu
         run: |
