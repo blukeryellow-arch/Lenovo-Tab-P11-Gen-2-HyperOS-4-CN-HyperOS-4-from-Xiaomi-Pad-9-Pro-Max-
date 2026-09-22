@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nadpisania zasobow frameworka.
+
+  Ten plik swiadomie zawiera tylko przyklady, skomentowane. Overlay, ktory
+  nadpisze zla nazwe albo zly typ, nie wysypie bledu przy flashowaniu - on po
+  prostu nie aplikuje sie, albo aplikuje i wyglada brzydko (np. przesuniety
+  status bar). Dlatego kolejnosc jest taka:
+
+    1. scripts/list_overlayable.sh        -> co w ogole mozna nadpisac na TWOIM buildzie
+    2. scripts/extract_hyperos_assets.sh  -> jak wyglada to samo w zrodlowym HyperOS
+    3. dopisac pary nazwa + wartosc ponizej, jeden resource na commit
+    4. scripts/build_overlay_apk.sh       -> APK + instalacja
+
+  Nazwy ponizej sa przykladowe i NIE sa rekomendacja "tak ustawic, bedzie jak w
+  HyperOS". Bez listy z punktu 1 nie mamy prawa zgadywac.
+-->
+<resources>
+
+    <!--
+    <dimen name="status_bar_height">24dp</dimen>
+    <bool name="config_showNavigationBar">true</bool>
+    -->
+
+</resources>

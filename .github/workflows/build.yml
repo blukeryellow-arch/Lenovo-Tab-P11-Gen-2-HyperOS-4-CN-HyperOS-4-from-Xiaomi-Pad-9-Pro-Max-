@@ -1,0 +1,187 @@
+name: build-hyperos-look
+
+# Dwa niezalezne joby:
+#   build-module    - sklada modul RRO z wrzuconych do repo zrodel. Bez ROM-u,
+#                     bez HF, bez sekretow. To jest sciezka codzienna.
+#   unpack-source   - odpalany recznie (workflow_dispatch): pobiera obrazy z HF,
+#                     rozpakowuje je i wyciaga zasoby. To jest job, ktory NIE MOZE
+#                     przejsc w sandboxie agenta (brak trasy do huggingface.co,
+#                     brak lpunpack, brak roota do apt) i dlatego istnieje tutaj.
+
+on:
+  push:
+    paths:
+      - 'modules/**'
+      - 'scripts/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      hf_repo:
+        description: 'Repo Hugging Face z obrazami, np. BBB1239/Lenovo-Tab-P11-Gen-2-HyperOS-4'
+        required: false
+        default: ''
+      source_file:
+        description: 'Plik do rozpakowania (payload.bin | super.img | sciezka w repo HF)'
+        required: false
+        default: 'payload.bin'
+      partitions:
+        description: 'Partycje do wyciagniecia (spacja rozdzielone)'
+        required: false
+        default: 'system product system_ext'
+
+permissions:
+  contents: read
+
+env:
+  MODULE_ID: hyperos_look_p11g2
+
+jobs:
+  build-module:
+    name: Zbuduj modul (RRO + ZIP)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # aapt2 / zipalign / apksigner. Bez tego build_overlay_apk.sh nie ma sensu.
+      - name: Android SDK (build-tools + platform)
+        uses: android-actions/setup-android@v3
+
+      - name: Ustaw sciezki SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          ls "$ANDROID_HOME/build-tools" | tail -1
+          ls "$ANDROID_HOME/platforms"  | tail -1
+
+      - name: Budowa APK overlayu
+        run: |
+          bash scripts/build_overlay_apk.sh --debug-key
+          ls -l modules/hyperos-look/system/product/overlay/
+
+      - name: Walidacja struktury modulu
+        run: |
+          set -euo pipefail
+          test -f modules/hyperos-look/module.prop
+          for f in id name version versionCode author description; do
+            grep -q "^$f=" modules/hyperos-look/module.prop || { echo "BRAK $f= w module.prop"; exit 1; }
+          done
+          # Twardy zakaz: modul nie moze nic miec w vendorze.
+          if find modules/hyperos-look/system -path '*vendor*' | grep -q .; then
+            echo "MODUL ZAWIERA SCIEZKI vendor/ - to jest zabronione w tej sciezce"
+            exit 1
+          fi
+          # Skrypty musza byc wykonywalne i skladniowo poprawne.
+          for s in post-fs-data.sh service.sh customize.sh; do
+            p=modules/hyperos-look/$s
+            [ -f "$p" ] && bash -n "$p" && echo "OK skladnia: $s"
+          done
+
+      - name: Paczka do instalacji przez adb (katalog)
+        run: |
+          cd modules/hyperos-look
+          tar czf ../../hyperos-look-dir.tar.gz --exclude=overlay-app --exclude=staging .
+          cd ../..
+          ls -lh hyperos-look-dir.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hyperos-look-module
+          path: |
+            hyperos-look-dir.tar.gz
+            modules/hyperos-look/system/product/overlay/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  unpack-source:
+    name: Rozpakuj obrazy zrodlowe (HF -> runner)
+    if: github.event_name == 'workflow_dispatch' && inputs.hf_repo != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wymagane sekret
+        env:
+          T: ${{ secrets.HF_TOKEN }}
+        run: |
+          [ -n "$T" ] || { echo "Brak HF_TOKEN w Settings -> Secrets and variables -> Actions. Token NIE moze byc w kodzie ani w tym pliku."; exit 1; }
+
+      - name: Rozpoznanie dostepnych narzedzi (apt na runnerze ma pelny internet)
+        run: |
+          set -uo pipefail
+          sudo apt-get -qq update
+          for pkg in simg2img img2simg erofs-utils e2fsprogs cpio p7zip-full unzip device-tree-compiler lpunpack; do
+            printf '%-22s ' "$pkg"
+            if apt-cache policy "$pkg" 2>/dev/null | grep -q Candidate && \
+               ! apt-cache policy "$pkg" 2>/dev/null | grep -q 'Candidate: (none)'; then
+              echo "dostepny -> $(apt-cache policy "$pkg" | sed -n 's/.*Candidate: //p')"
+            else
+              echo "BRAK PAKIETU"
+            fi
+          done
+          echo "--- instalacja tego, co jest ---"
+          for pkg in simg2img img2simg erofs-utils e2fsprogs cpio p7zip-full unzip; do
+            sudo apt-get install -y -qq "$pkg" 2>/dev/null && echo "zainstalowano: $pkg" || echo "pominieto: $pkg"
+          done
+          echo "lpmake/lpunpack: jesli powyzsze pokazalo 'BRAK PAKIETU', trzeba je"
+          echo "wziasc z prebuilts AOSP albo zbudowac - nie udajemy, ze apt je ma."
+
+      - name: Pobierz z Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m pip install -q -U huggingface_hub payload_dumper
+          hf download "${{ inputs.hf_repo }}" "${{ inputs.source_file }}" \
+            --repo-type model --token "$HF_TOKEN" --local-dir ./input
+          ls -lh ./input
+
+      - name: Rozpakuj
+        run: |
+          set -euo pipefail
+          mkdir -p ./unpacked
+          case "${{ inputs.source_file }}" in
+            *payload.bin)
+              payload_dumper ./input/payload.bin --out ./unpacked
+              ;;
+            *super.img)
+              if command -v simg2img >/dev/null 2>&1; then
+                simg2img ./input/super.img ./unpacked/super.raw.img
+              else
+                cp ./input/super.img ./unpacked/super.raw.img
+              fi
+              if ! command -v lpunpack >/dev/null 2>&1; then
+                echo "BRAK lpunpack - zatrzymam sie tutaj, zamiast generowac smieci." >&2
+                exit 3
+              fi
+              lpunpack ./unpacked/super.raw.img ./unpacked/
+              ;;
+            *)
+              echo "Nieobslugiwany format: ${{ inputs.source_file }}" >&2; exit 2 ;;
+          esac
+          du -sh ./unpacked/* 2>/dev/null | sort -h | tail -20
+
+      - name: Wyciagnij zasoby HyperOS (biala lista + odmowy)
+        run: |
+          bash scripts/extract_hyperos_assets.sh ./unpacked ./assets
+          echo "--- raport ---"; tail -60 ./assets/REPORT.txt || true
+
+      - name: Rozmiary partycji - czy cokolwiek sie zmiesci
+        run: |
+          for img in ./unpacked/*.img; do
+            [ -e "$img" ] || continue
+            printf '%-28s %10s  ' "$(basename "$img")" "$(du -h "$img" | cut -f1)"
+            file -b "$img" 2>/dev/null | cut -c1-40
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hyperos-assets
+          path: ./assets
+          retention-days: 7

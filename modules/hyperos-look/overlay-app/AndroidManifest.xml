@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Runtime Resource Overlay (RRO) nakladajacy sie na framework (`android`).
+
+  Zasada, ktora tu rzadzi: nadpisujemy WYLACZNIE zasoby, ktore istnieja w tym
+  konkretnym buildzie Lenovo. Zaden ponizszy name nie zostal wziety z tutoriala -
+  liste dostepnych i *legalnie nadpisywalnych* nazw wyciaga sie skryptem
+  scripts/list_overlayable.sh na Twoim egzemplarzu. Jesli nazwy nie ma w
+  `overlayable.xml` / `aapt2 dump` celu, overlay nie zadziala albo (gorzej)
+  PMS go odrzuci po cichu.
+
+  android:isStatic="true"  -> overlay aplikuje sie sam, bez `cmd overlay enable`,
+                              NIE wymaga wpisania w <overlayable>, nie da sie wylaczyc
+                              z UI.  Wybrane, bo nie chcemy zalezec od uruchomionego
+                              cmd overlay w trakcie pierwszego startu.
+  android:isStatic="false" -> wymaga enable i podlega kontroli `overlayable`
+                              (Android 12+ "Enforce RRO changes").
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.hyperos.look"
+    android:versionCode="1"
+    android:versionName="0.1-dev">
+
+    <!-- Nie ma kodu: to czysty zasobnik. `hasCode=false` eliminuje polowe
+         problemow z uprawnieniami i nie wymaga podpisu platformowego. -->
+    <application
+        android:hasCode="false"
+        android:label="HyperOS Look" />
+
+    <overlay
+        android:priority="1"
+        android:isStatic="true"
+        android:hasCode="false"
+        android:targetPackage="android" />
+</manifest>

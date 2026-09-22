@@ -1,1 +1,107 @@
-# Lenovo-Tab-P11-Gen-2-HyperOS-4-CN-HyperOS-4-from-Xiaomi-Pad-9-Pro-Max-
+# Lenovo Tab P11 Gen 2 (Helio G99) ← HyperOS 4 (Xiaomi Pad 9 Pro Max)
+
+Repozytorium procesu, nie repozytorium ROM-u. Trzyma skrypty, moduł i CI.
+Duże obrazy mieszkają w Hugging Face i trafiają do nich wyłącznie runner Actions.
+
+## Status: co jest wykonalne, a co nie
+
+Zmierzone, nie ocenione na oko.
+
+**Pełny port (framework Androida 17 + HyperOS na tym tablecie) — nie.**
+Źródło i cel różnią się wszystkim w warstwie, która decyduje o starcie systemu:
+
+| | Xiaomi Pad 9 Pro Max (źródło) | Lenovo Tab P11 Gen 2 (cel) |
+|---|---|---|
+| SoC | Xring O3, 3 nm, 10 rdzeni C1, własność Xiaomi | MediaTek MT6789 Helio G99, 6 nm, 2×A76 + 6×A55 |
+| GPU | Mali-G2-Ultra (16) | Mali-G57 MC2 |
+| RAM / flash | 8–16 GB LPDDR5X/LPDDR6, UFS 4.1 | 6 GB LPDDR4X, UFS 2.2 |
+| OS | HyperOS 4 / Android 17 | 12L → 14 |
+
+Cztery blokady, z których żadna nie dotyczy składania obrazów:
+
+1. `vendor` i HAL-e źródła są skompilowane pod Xring O3 — nie mają czego obsługiwać na MT6789.
+2. VINTF: framework z A17 żąda nowszych wersji interfejsów, niż dostaje vendor Lenovo. `init` staje na `Waiting for HAL`.
+3. Kernel: A16/A17 wymaga GKI 6.x; BSP Lenovo dla G99 to downstream 4.14/5.10 ze zamkniętymi sterownikami MTK.
+4. Brak publicznych źródeł/BSP dla Xring O3 (debiut 2026‑09, rynek CN). Nie ma z czego zbudować warstwy sprzętowej.
+
+Odblokowany bootloader nic tu nie daje — blokady są w binariach i kernelu, nie w podpisie.
+
+**Nakładka „HyperOS Look" — tak, i to jest to, co ten kod robi.**
+Style, fonty, tapety, dźwięki, krzywe animacji, launcher i gotowe overlaye RRO ze źródła,
+na stockowym firmware Lenovo. Zero ruszenia `vendor`, kernela i tablicy partycji, więc
+ryzyko sprowadza się do „wyłącz moduł i zrestartuj".
+
+## Układ
+
+```
+modules/hyperos-look/          moduł Magisk/KSU
+  module.prop                  id, wersja, opis
+  system.prop                  resetprop (heap, niska pamięć) - nie trwałe
+  post-fs-data.sh            tuning pamieci + log diagnostyczny
+  service.sh                 wlaczanie overlayy + skale animacji
+  customize.sh               only for ZIP flashing; sprawdza SoC, czysci stara wersje
+  overlay-app/               zrodka RRO (manifest + res/values/overlay.xml)
+  system/product/overlay/    tu trafia zbudowany .apk (generowane, nie w gicie)
+
+scripts/
+  list_overlayable.sh        CO mozna nadpisac na Twoim buildzie (przed jakiejkolwiek edycja)
+  extract_hyperos_assets.sh  biala lista zasobow + odmowa dla HAL-i, z uzasadnieniem
+  build_overlay_apk.sh       aapt2 -> APK -> zipalign -> apksigner, bez Gradle
+  install_module.sh          instalacja katalogiem przez adb (+ --disable/--remove)
+  verify_module.sh           czy modul realnie dziala po restarcie
+
+diagnostics/collect_device_state.sh   jeden przebieg, caly wynik do wklejenia w czat
+.github/workflows/build.yml           build-module (codziennie) + unpack-source (HF, recznie)
+docs/01-ustalenia-srodowiska.md       limity sandboxa, korekta o bootloaderze
+docs/02-sciezka-A-nakladka.md         procedura krok po kroku i rollback
+```
+
+## Kolejność pracy (nie skracać)
+
+```bash
+# 0. Stan urzadzenia - bez tego kazda dalsza decyzja jest wrrozeniem
+diagnostics/collect_device_state.sh              # wynik -> do czatu
+
+# 1. Co w ogole mozna nadpisac na tym buildzie
+scripts/list_overlayable.sh
+
+# 2. Zasoby ze zrodla (rozpakowanym drzewem partycji, NIE .img)
+scripts/extract_hyperos_assets.sh ./unpacked ./modules/hyperos-look/staging
+
+# 3. Dopisac konkretne nadpisania w overlay-app/res/values/overlay.xml
+#    (tylko nazwy potwierdzone w kroku 1; jeden resource na commit)
+
+# 4. Budowa + instalacja
+scripts/build_overlay_apk.sh --debug-key
+scripts/install_module.sh                        # reboot w pakiecie
+
+# 5. Kontrola
+scripts/verify_module.sh
+```
+
+Kroki 1–3 wymagają `adb` i Twojego tabletu po swojej stronie. Kroki 4–5 działają też
+w CI (`build-module`) — tam jest Android SDK, którego sandbox agenta nie ma i nie dociągnie.
+
+## Czego ten kod świadomie nie robi
+
+- Nie pisze do `vendor`, `boot`, `init_boot`, `dtbo`, `vbmeta` ani do tablicy partycji.
+- Nie udaje, że `apt` w CI ma `lpunpack`: job sprawdzają dostępność pakietu i zatrzymują
+  się z komunikatem, zamiast produkowac pol-zepsuty obraz.
+- Nie podpisuje niczym „platformowym” — RRO w `/product/overlay` nie potrzebuje podpisu
+  platformowego, a klucza Lenovo i tak nie ma.
+- Nie przechowuje tokenów. `HF_TOKEN` istnieje wyłącznie jako sekret repozytorium.
+
+## Ryzyko, które zostaje
+
+Nawet przy module: wgranie czegokolwiek do `/product` przez nadmontowanie zmienia zachowanie
+PMS przy starcie. Złe nadpisanie resource'u = bootloop SystemUI, nie = cegła. Ratunek:
+
+```bash
+adb reboot recovery          # lub: Magisk app > Modules > wylacz
+# najpewniejszy: usunac katalog modulu
+adb shell su -c "rm -rf /data/adb/modules/hyperos_look_p11g2" && adb reboot
+```
+
+Modul nie rusza partycji, wiec usuniecie go przywraca stan wyjsciowy w 100%.
+Zapasowo: Lenovo Rescue & Smart Assistant + EDL działają na tej rodzinie (potwierdzone
+na forach dla TB336FU/TB330FU), więc awaryjny powrót do stock jest realny.

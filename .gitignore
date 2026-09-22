@@ -1,0 +1,12 @@
+# generowane - budowane w CI, nie w gicie
+modules/hyperos-look/system/product/overlay/*.apk
+modules/hyperos-look/staging/
+*.tar.gz
+unpacked/
+assets/
+input/
+*.img
+*.png
+!docs/**/*.png
+.DS_Store
+__pycache__/
