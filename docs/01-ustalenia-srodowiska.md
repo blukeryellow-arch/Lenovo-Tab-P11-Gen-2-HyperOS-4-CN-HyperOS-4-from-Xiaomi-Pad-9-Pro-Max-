@@ -73,6 +73,40 @@ binarek jest praktycznie nieklonalne. HF jest do tego stworzony i już go masz.
 Dlaczego nie workspace: snapshot patchsetu jest limitowany (~128 MB), a sandbox jest
 efemeryczny między sesjami — wielogigabajtowy ROM i tak by tu nie przeżył.
 
+## 4b. KOREKTA: punkt o bootloaderze był błędny dla tego egzemplarza
+
+Wcześniejsza teza „prawdopodobnie nie da się trwale odblokować bootloadera" była
+**over-generalizacją wyciągniętą z wątków o innych modelach Lenovo:**
+
+| Model | SoC | Stan odblokowania wg społeczności |
+|---|---|---|
+| Tab M11 `TB330FU` | MT8786 / Helio G88 | `flashing unlock` → *unknown command*, `oem unlock` → *Sn Image Auth fail*, `unlock_ability = 0` → mtkclient + DA.auth albo podpisany `sn.img` |
+| Tab K11 `TB330XUP` | MT8786 | prawdziwy unlock wymaga autoryzacji po stronie serwera Lenovo; orange state ze zepsutego vbmeta to nie unlock |
+| `TB336FU` | nowszy ZUI 17.x | bootloader weryfikuje sygnatury, certyfikaty, SN i SOC_ID; 18 segmentów tokenu; ostatecznie potrzebny `sn.img` z serwerów Lenovo |
+
+Te ograniczenia są **per-model i per-build**, nie dotyczą całej marki. Skoro na tym
+urządzeniu `fastboot flashing unlock` przeszedł od ręki, to jego bootloader implementuje
+standardową ścieżkę AVB (zapis stanu do trwałej metadanych + wipe userdata), a nie
+tokenową blokadę z tamtych SKU. Tamten argument odpada.
+
+Co to **nie** zmienia: odblokowanie jest warunkiem koniecznym, nie wystarczającym. Odblokowany
+bootloader nie wpływa na zgodność interfejsów HAL, wersję kernela, rozmiar `super` ani ilość RAM.
+Pięć pozostałych blokad jest architektonicznych i zostaje w mocy.
+
+Status true-unlock warto potwierdzić twardo, bo „fastboot odpowiedział OK" ≠ „stan zapisany":
+
+```
+fastboot getvar unlocked
+fastboot getvar unlock_ability
+adb shell getprop ro.boot.flash.locked            # oczekiwane: 0
+adb shell getprop ro.boot.verifiedbootstate       # orange = odblokowany, green = zablokowany
+adb shell getprop ro.boot.vbmeta.device_state     # unlocked
+```
+
+Reboot i ponowny odczyt — orange musi przetrwać restart. Jeśli po restarcie wraca green,
+oznacza to zapis tylko w `vbmeta`, a nie w trwałym state-partycji, i każda próba flashowania
+czegoś niepodpisanego wywali weryfikację przy starcie.
+
 ## 5. Bezpieczeństwo — do zrobienia przed pierwszą kompilacją
 
 W historii czatów (tej przeklejonej) pojawiły się **dwa tokeny Hugging Face w jawnej
