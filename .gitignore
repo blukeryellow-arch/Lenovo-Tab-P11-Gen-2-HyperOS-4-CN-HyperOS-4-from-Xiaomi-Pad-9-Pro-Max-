@@ -10,3 +10,5 @@ input/
 !docs/**/*.png
 .DS_Store
 __pycache__/
+# sciagniete z Google Drive - obrazy urzadzenia, nie trzymamy ich w gicie
+google_drive/
