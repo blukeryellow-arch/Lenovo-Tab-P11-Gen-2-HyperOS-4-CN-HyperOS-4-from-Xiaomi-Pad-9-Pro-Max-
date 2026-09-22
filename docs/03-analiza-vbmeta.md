@@ -103,3 +103,96 @@ interfejsów, których zabraknie frameworkowi A17 — zamiast mówić „VINTF s
 pokażę liczby: ile HAL-i, które których wersji, i czy którykolwiek da się zadowolić
 szkieletem (`libhwbinder` stub). To jest jedyny pomiar, który realnie rozstrzyga, czy
 jakakolwiek wersja „HyperOS na tym tablecie" ma sens, czy nie.
+
+---
+
+# Dodatek A: co zmienilo sie po uruchomieniu prawdziwego avbtool
+
+`avbtool.py` wyciagniety z `LineageOS/android_external_avb` (git clone przez
+github.com - jedyny dostepny stąd kanal na kod AOSP). Uruchomiony lokalnie:
+
+```
+python3 avbtool.py info_image --image vbmeta.img
+```
+
+potwierdza kazde pole z tabeli powyzej (Header 256, Auth 320, Aux 4992,
+SHA256_RSA2048, Rollback 0, Flags 0) i doklada trzy rzeczy kluczowe.
+
+## A.1. Lenovo podpisalo AVB kluczem testowym AOSP
+
+```
+Public key (sha1): cdbb77177f731920bbe0a0f94f84d9038ae0617d
+testkey_rsa2048.pem -> cdbb77177f731920bbe0a0f94f84d9038ae0617d   == TO SAMO
+```
+
+Klucz prywatny do tego publicznego lezy w kazdym checkoutie AOSP
+(`external/avb/test/data/testkey_rsa2048.pem`) - mam go tu lokalnie.
+Warstwa "zweryfikowany boot" nie jest wiec na tym urzadzeniu zadna granica
+dla kogoś, kto chce podmienic obrazy.
+
+Odwrotnie dla łańcucha - trzy klucze podpięte w `Chain Partition` NIE sa
+kluczami AOSP (porownane z cala rodzina testkey_rsa2048/4096/8192):
+
+```
+boot            9d808b0995768d0677fccb1efcddb7cf9e153d99   -> brak w sposrod AOSP
+vbmeta_system   fa41159a5d696abdef93176a07d0b0d001263f01   -> brak
+vbmeta_vendor   9577bc6c0772975ecce93c4d8a178662c728dadf   -> brak
+```
+
+Czyli: vbmeta glowny = testkey, podpiete pod niego sub-vbmeta = klucze Lenovo.
+Zielonego stanu (green verified boot) nie odtworzymy - potrzebujemy prywatnych
+kluczy OEM, ktorych nie ma i nie bedzie. Natomiast **zestaw samospojny,
+podpisany naszym kluczem i przechodzacy kontrole libavb przy orange state -
+tak, to sie da zbudowac tutaj** i to jest realna wartesc, jaka z tego wychodzi.
+
+## A.2. Zmierzona luka, o ktora prosilem: vendor jest z epoki Android 12
+
+Property descriptors z tego samego pliku:
+
+```
+com.android.build.product.os_version      = 14
+com.android.build.system_ext.os_version   = 14
+com.android.build.vendor_dlkm.os_version  = 12   <--
+com.android.build.odm_dlkm.os_version     = 12   <--
+com.android.build.vendor_boot.fingerprint = ''
+```
+
+`vendor_dlkm`/`odm_dlkm` to moduly sprzedawane razem z warstwa sprzetowa.
+Ich odcisniety poziom to **Android 12**, podczas gdy polowa systemowa jest na 14.
+Lenovo zaktualizowalo system, nie ruszajac HAL-i.
+
+To jest ta liczba, ktorej potrzebowalem zamiast mowic "VINTF sie nie zgadza":
+swap `system.img` z HyperOS 4 (Android 17) na ten sprzet oznacza framework, ktory
+zada interfejsow o piec duzych wersji nowszych, niz dostarcza vendor. Nie jest to
+zgadywanka - wynika z fingerprintow w pliku, ktory sam mi podates.
+
+## A.3. Granica mozliwosci tego sandboxa (zkody, nie opinia)
+
+Dziala tutaj:
+- `avbtool.py` pelna giba: `info_image`, `make_vbmeta_image`, `add_hashtree_footer`,
+  `add_hash_footer`, `--chain_partition`, `extract_public_key` - zweryfikowane
+  generowaniem `vbmeta` na kluczu wygenerowanym przez `openssl` (8192 B, poprawny odcisk);
+- `payload_dumper` w `/home/user/romtools/venv` (pip dziala) - rozbiorze `payload.bin`;
+- parsowanie wlasne (Python/struct): LP metadata `super.img`, format sparse,
+  naglowki `boot.img`/`vendor_boot`, superblocki ext4 i EROFS (odczyt);
+- cala arytmetyka dopasowania: czy image X zmieci sie w grupie Y, ile brakuje,
+  jak przelicic bloki.
+
+NIE dziala tutaj - i zaden skrypt tego nie obejdzie:
+- `mke2fs`, `mkfs.ext4`, `debugfs`, `resize2fs`, `dumpe2fs`, `losetup`,
+  `mksquashfs`, `mkfs.erofs` - **nie ma ich i nie doinstaluje** (apt zablokowany, brak roota);
+- ergo: **nie zmieniam zadnych bajtow wewnatrz obrazu plikowego.** Moglbym odczytac,
+  policzyc, podpisac i zlozyc AVB, ale nie wgran pliku do srodka `system.img`.
+- brak `dl.google.com`, `huggingface.co`, `raw.githubusercontent.com` - allowlista wyjsc.
+
+Stad podzial, ktory jest jedynym uczciwym:
+`analiza + AVB + podpisy + walidacja = sandbox`,
+`edycja systemow plikow + mkfs + budowa = runner GitHub Actions`.
+
+## A.4. Kanal Drive - co wiadomo po pierwszym przejsciu
+
+`download_file` zapisal 8192 B do workspace i zwrocil sciezke, nie strumien
+w kontekcie - czyli kanal nie jest "na tekst", tylko na pliki. Sufit dla
+GB-owych obrazow nieznany; ustalimy go empirycznie na pierwszym realnym pliku,
+wg kolejnosci: `vbmeta_system.img` -> `dtbo.img` -> `vendor_boot.img` -> `super.img`.
+Jezeli connector sie podda, `unpack-source` w CI przejmuje te najwieksze.
