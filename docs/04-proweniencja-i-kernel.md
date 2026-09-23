@@ -208,18 +208,18 @@ rozpakowac"), rozbilem na cztery sprawdzalne twierdzenia:
 
 | twierdzenie | stan | dowod |
 |---|---|---|
-| LFS daje wieksze pliki niz 100 MB | **PRAWDA, ale nie 5 GB na Free** | 100 MB to limit zwyklego bloba; LFS: 2 GB/plik na Free/Pro, 4 GB Team, 5 GB Enterprise; repo: ostrzezenie ~1 GB, miekkie odciecie ~5 GB; Release assets: 2 GB/plik |
+| LFS daje wieksze pliki niz 100 MB | **PRAWDA, ale nie 5 GB na Free** | 100 MB to limit zwyklego bloba; LFS: 2 GB/plik na Free/Pro, 4 GB Team, 5 GB Enterprise; repo: ostrzezenie ~1 GB, miękkie odcięcie ~5 GB; Release assets: 2 GB/plik |
 | LFS nadaje sie do transferu **do agenta** | **NIE** | `media.githubusercontent.com` = `000`, `github-cloud.s3.amazonaws.com` = `000`, a binarki `git-lfs` w sandboxie nie ma (`git: 'lfs' is not a git command`, `/usr/lib/git-core` pusty pod tym wzgledem). Endpoint negocjacji `github.com/.../info/lfs/objects/batch` dziala (HTTP 200, `Object does not exist` na probe) — ale zwraca URL do hosta nieosiagalnego |
 | LFS nie zje limitu pasma | **NIE** | Free tier to ~1 GB storage + ~1 GB bandwidth / miesiac. Piec obrazow = 11,9 GB => kilkanascie-kilkadziesiat przekroczen; GitHub tnie pasmo, nie rozmawia |
-| Da sie przeniesc duze pliki GitHubem do agenta | **TAK — blob API** | `GET /repos/{o}/{r}/git/blobs/{sha}` (base64 w JSON) idzie przez `api.github.com` = 200. Zmierzone ponizej |
+| Da sie przeniesc duze pliki GitHubem do agenta | **TAK — blob API** | `GET /repos/{o}/{r}/git/blobs/{sha}` (base64 w JSON) idzie przez `api.github.com` = 200. Zmierzone poniżej |
 
-### Zmierzony kanat (nie szacunek z dokumentacji)
+### Zmierzony kanał (nie szacunek z dokumentacji)
 
 | proba | wynik |
 |---|---|
 | 1 blob 5 MB (sonda) | 1.42 s → **3.70 MB/s**, sha256 identyczny |
-| 3 bloby po 2.1 MB przez manifest (sciezka z `contents` lookupem) | 4.2 s → **1.50 MB/s** (2 zbędne wywolania API na czestke) |
-| 3 bloby po 2.1 MB, manifest **z blob SHA** (1 wywolanie API na czestke) | 2.39 s → **2.63 MB/s**, `cmp` identyczny bajt do bajtu |
+| 3 bloby po 2.1 MB przez manifest (sciezka z `contents` lookupem) | 4.2 s → **1.50 MB/s** (2 zbędne wywolania API na częstkę) |
+| 3 bloby po 2.1 MB, manifest **z blob SHA** (1 wywolanie API na częstkę) | 2.39 s → **2.63 MB/s**, `cmp` identyczny bajt do bajtu |
 
 Ekstrapolacja przy 2.63 MB/s: `system.img` 938 MB → **~6 min**, `product.img` 6.4 GB → ~41 min,
 wszystkie piec (11,9 GB) → **~75 min** samego transferu, rozlozonych na tury.
@@ -241,11 +241,11 @@ transfer/<nazwa>.tar.gz.part.000<TAB><blob-sha>
 transfer/<nazwa>.tar.gz.part.001<TAB><blob-sha>
 ```
 
-### „Rozpakuj przed tym" — i dlaczego to jest właściwie najwazniejsza czesc
+### „Rozpakuj przed tym" — i dlaczego to jest właściwie najważniejsza część
 
 Rozpakowanie przed wysylka nie jest dodatkowym krokiem, tylko **jedynym sposobem, zeby limit
 100 MB przestal byc problemem**. Obrazy sa upakowane gesta, ktorej nie pokonamy (`.img` to juz
-skompresowany EROFS/ext4-sparse), ale **to, czego potrzebuje sciezka A, to ukr zawartosci**:
+skompresowany EROFS/ext4-sparse), ale **to, czego potrzebuje sciezka A, to mały wycinek zawartości**:
 
 ```
 product/media/**        tapety, dzwieki, animacje
