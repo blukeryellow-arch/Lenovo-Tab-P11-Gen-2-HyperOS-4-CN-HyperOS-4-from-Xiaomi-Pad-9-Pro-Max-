@@ -5,13 +5,13 @@ Napisane dla kogoś, kto ma osiem plików z Dyska i nie ma mnie. Każdy poziom m
 Kolejność jest celowa: od najtańszego. Poziomu G nie da się pominąć — wszystko poniżej
 niego sprawdza *pliki*, nie *uruchamianie*.
 
-Wartości oczekiwane (wydanie `9372bcb`/`3c32fb5`, obie warianty, uuid `67b7eb22-3ebb-4c21-8b01-8ff545f10d8d`):
+Wartości oczekiwane (wydanie po korekcie DAC z 23 IX 2026, uuid `67b7eb22-3ebb-4c21-8b01-8ff545f10d8d`, właściciel wpisów `0:0`):
 
 | artefakt | bajty | sha256 (prefiks) | wpisy 1:1 |
 |---|---|---|---|
-| `HyperOS4_P11Gen2/product` | 77 619 200 | `16afbc350e75fda3…` | 67/67 |
-| `HyperOS4_P11Gen2-full/product` | 153 391 104 | `b28e1c0eb0c769cd…` | 147/147 |
-| `system` (oba warianty) | 967 503 872 | `36238fac308fb674…` | 4 565/4 565 |
+| `HyperOS4_P11Gen2/product` | 77 619 200 | `298ada607150d3f7…` | 67/67 |
+| `HyperOS4_P11Gen2-full/product` | 153 391 104 | `b4bb8064d722dccb…` | 147/147 |
+| `system` (oba warianty) | 967 503 872 | `5cf58995174c7dc3…` | 4 565/4 565 |
 | `vbmeta` (oba warianty) | 4 096 | `9cf2e7e4…` | — |
 
 ---
@@ -40,13 +40,18 @@ Oczekiwane dla producta lekkiego: `zrodlo: 67 wpisów (pliki 65, symlinki 0, kat
 `ZGODNE: 67  rozbiezne: 0  brak z obrazu: 0  dodatkowe: 0`. Dla systemu: 4 565 (3 892 + 409 + 264)
 i `--exclude` **konieczne**, bo trzy pliki `.komentarz.txt` są wykluczone z obrazu świadomie.
 
-**Dowodzi:** każdy plik po sha256, każdy symlink po `readlink`, każdy katalog po istnieniu.
+**Dowodzi:** każdy plik po sha256 **i po try** (`0o644` vs `0o600` to rozbieżność od
+23 IX 2026), każdy symlink po `readlink`, każdy katalog po istnieniu; `--expect-owner` porównuje
+dodatkowo uid/gid korzenia partycji przez `dump.erofs --nid` (działa bez roota).
 To jest najmocniejsza kontrola w projekcie i jedyna, która łapie „builder zgubił podkatalog" —
 klasę błędu, przy której „wszystkie pliki OK" znaczy tyle, co „nikt nie zajrzał".
-**NIE dowodzi:** poprawności `mode`/`uid`/`gid` — tego mój `verify_image.sh` **nie porównuje**
-(znana dziura, wpisana w docs/06). Etykiety SELinux i `fs_config` biorą się ze ścieżki w
-polityce Lenovo, więc plik na dobrej ścieżce dostanie dobrą etykietę, ale *try* wykonawczy
-(-rws, -rwx) trzeba sprawdzić na urządzeniu:
+**NIE dowodzi:** `uid`/`gid` poszczególnych plików. Ekstrakcja jako zwykły użytkownik nie odda
+właściciela (`chown` mu nie wolno) — per plik da się to zmierzyć tylko z rootem,
+`sudo fsck.erofs --extract=…`. Korzeń partycji sprawdzam osobno (`dump.erofs`), i to wystarczyło,
+żeby 23 IX 2026 złapać realny błąd wydania: oba obrazy miały `Uid: 1001 Gid: 1001` (uid `radio`)
+zamiast `0:0`, bo `mkfs.erofs` dziedziczy właściciela z drzewa.
+Etykiety SELinux biorą się ze ścieżki w polityce Lenovo, więc plik na dobrej ścieżce dostanie
+dobrą etykietę, ale bity wykonania i setuid trzeba sprawdzić na urządzeniu:
 
 ```
 adb shell 'ls -lZ /system/bin/su /product/bin 2>/dev/null; restorecon -RFv /product 2>&1 | head'
@@ -58,7 +63,7 @@ adb shell 'ls -lZ /system/bin/su /product/bin 2>/dev/null; restorecon -RFv /prod
 bash tools/test_release.sh --erofs-dir <katalog z mkfs/fsck>
 ```
 
-Oczekiwane: `=== podsumowanie: 24 PASS, 0 FAIL ===` (bez `--real`: 16 PASS, 0 FAIL).
+Oczekiwane: `=== podsumowanie: 24 PASS, 0 FAIL (z --real: 32 PASS, 0 FAIL) ===` (bez `--real`: 16 PASS, 0 FAIL).
 
 Sekcje: A selftest buildera · B determinizm (dwa `mkfs.erofs` na tym samym drzewie = **identyczny
 plik**, `cmp` bez różnic) · C **test negatywny** weryfikatora (drzewo ma plik, którego nie ma w
@@ -124,21 +129,38 @@ którego nie umie rozpakować. Tak samo nie mówią nic testy zrobione na danych
 `-zlz4` na 300 KB szumu nie zbija bajta i wtedy nawet stary build „czyta" (patrz §6.17).
 Każdy, kto powtarza te pomiary, musi mieć w drzewie dane podatne na kompresję.
 
-## F. vbmeta: co jest podpisane, a co nie
+## F. vbmeta: co jest podpisane, a co NIE jest poświadczone
 
 ```
-python3 ~/romtools/avb/avbtool.py info_image --image vbmeta
+python3 ~/romtools/avb/avbtool.py info_image --image vbmeta_hyperos4_p11g2.img
 ```
 
-Oczekiwane: `Flags: 3` (verification + chain *wyłączone*), `Rollback Index: 0`, jeden descriptor
-`HASHTREE` dla `product`, klucz sha1 `cdbb7717…` (klucz **testowy**, nie Lenovo).
+Zmierzone na tym wydaniu (dokładna treść, nie przybliżona):
 
-**Dowodzi:** że `product` ma drzewo haszy zgodne z *moim* obrazem i że rozmiar partycji w
-deskryptorze (2 748 350 464 B) daje 17–35× zapasu, więc wariant `-full` mieści się z luzem.
-**NIE dowodzi żadnego zaufania:** to klucz testowy AOSP. `Flags: 3` znaczy, że weryfikacja jest
-**wyłączona** — obraz jest *samo-spójny*, nie *zaufany*. Nie da się tego obejść bez klucza
-Lenovo, którego nie ma i być nie powinno. Jeśli na urządzeniu weryfikacja jest włączona, ten
-vbmeta **nie** wystarczy i flashing musi iść z `--disable-verification` (patrz README wydania).
+```
+Minimum libavb version:   1.0
+Public key (sha1):        cdbb77177f731920bbe0a0f94f84d9038ae0617d
+Algorithm:                SHA256_RSA2048
+Rollback Index:           0
+Flags:                    3
+Descriptors:
+    Prop: com.android.build.system.fingerprint -> 'hyperos4.p11g2.experiment'
+```
+
+**Dowodzi:** że vbmeta jest poprawnie podpisana (własnym, testowym kluczem), że `Flags: 3`
+wyłącza weryfikację i łańcuch, oraz że licznik anty-rollback zostaje na 0 — a to decyzja
+jednokierunkowa, więc świadoma (`docs/03`).
+**NIE dowodzi integralności obrazów.** W tej vbmetcie **nie ma żadnego deskryptora HASHTREE**:
+`/product` i `/system` nie są przez nią hashowane ani poświadczone. Kto podmieni bajt w
+`product_hyperos4_p11g2.img`, ten nie zostanie wykryty — i nie da się tego naprawić bez klucza
+Lenovo. To jest cena wymiany partycji, trzeba ją znać, a nie opisywać.
+
+Sprostowanie, bo poprzednia wersja tego dokumentu była nieprawdziwa: pisałem tu o „jednym
+deskryptorze `HASHTREE` dla `product`" i o „17–35× zapasu w deskryptorze". To opis **fabrycznej**
+vbmet Lenovo (jeden deskryptor HASHTREE, `image size 2 748 350 464 B`), nie mojej — myliłem
+oba obiekty w jednym zdaniu. Skutek dla czytającego: rozmiar z fabrycznej vbmet jest użyteczny
+jako **pomiar slotu** i nic poza tym. Jeśli na urządzeniu weryfikacja jest włączona, moja vbmeta
+**nie wystarczy** i flash musi iść z `--disable-verification` (patrz README wydania).
 
 ## G. Urządzenie: jedyne, co dowodzi uruchomienia
 
@@ -177,7 +199,10 @@ w tym projekcie udowodniona ani jedną kontrolą — nikt z nas nie odpalił teg
 ## Czego w tym projekcie NIE sprawdzono (żeby nikt nie czytał ciszy jako zgody)
 
 1. Bootowania na sprzęcie — patrz G.
-2. `mode`/`uid`/`gid` w obrazach (B ich nie porównuje).
+2. `uid`/`gid` per plik w obrazach — B porównuje try zawsze, a właściciela tylko korzenia
+   (pełny pomiar wymaga `sudo fsck.erofs --extract`). Wczesne wydanie miało przez to `Uid: 1001
+   Gid: 1001` w obu partiach; naprawione `--force-uid/gid` w `make_release.sh` i pilnowane sekcją
+   M w `tools/test_release.sh` (M2 dowodzi, że *bez* flagi błąd wraca).
 3. Zawartości prawdziwego `/product` z paczki 6,4 GB (wydanie idzie na drzewie 65/132 plików).
 4. Tego, że `--exclude-regex '\.komentarz\.txt$'` nie wyciął niczego potrzebnego — w `system/etc/vintf`
    jest 0 takich plików (zmierzone `fsck --extract`), ale to wycinek, nie pełny audyt.

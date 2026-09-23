@@ -17,6 +17,7 @@
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd); ROOT=$(dirname "$HERE")
 EROFS_DIR=${EROFS_DIR:-}
+UUIDT=11111111-2222-3333-4444-555555555555
 KEEP=0; REAL=0
 # Opcje moga byc w dowolnej kolejnosci i dowolna ilosc - pierwsza wersja czytala je tylko
 # z $1, wiec './test_release.sh --erofs-dir X --real' cicho pomijala blok J (16 PASS, zero
@@ -31,7 +32,7 @@ while [ $# -gt 0 ]; do
 done
 WORK=$(mktemp -d /tmp/reltest.XXXXXX)
 trap '[ $KEEP -eq 1 ] || rm -rf "$WORK"' EXIT
-MK="$EROFS_DIR/mkfs.erofs"; FS="$EROFS_DIR/fsck.erofs"
+MK="$EROFS_DIR/mkfs.erofs"; FS="$EROFS_DIR/fsck.erofs"; DUMP="$EROFS_DIR/dump.erofs"
 pass=0; fail=0
 ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$*"; pass=$((pass+1)); }
 bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$*"; fail=$((fail+1)); }
@@ -84,7 +85,10 @@ rm "$say_tree/etc/nowy_plik.txt"
 echo "== D/6  symlinki w obszarze weryfikacji (docs/06 §6.9)"
 nlinks=$(find "$say_tree" -type l | wc -l)
 grep -qE "symlinki $nlinks" <<<"$LAST_OUT" || true
-bash "$HERE/verify_image.sh" --img "$WORK/b1.img" --tree "$say_tree" --fsck "$FS" 2>&1 | tail -3 > "$WORK/d.txt"
+# BEZ 'tail -3': test szukal 'ZGODNE' w trzech ostatnich liniach, a gdy weryfikator
+# dolozyl blok DAC (3 linie) tekst wypadl z okna i test failowal przy ZDROWYM obrazie.
+# Asercja o tresci nie moze zalezec od liczby linii w cudzym wypisie.
+bash "$HERE/verify_image.sh" --img "$WORK/b1.img" --tree "$say_tree" --fsck "$FS" > "$WORK/d.txt" 2>&1
 printf '  (linkow w drzewie: %s)\n' "$nlinks"
 if grep -q 'ZGODNE' "$WORK/d.txt"; then ok "drzewo z $nlinks symlinkami zweryfikowane"; else bad "weryfikacja drzewa z linkami padla"; cat "$WORK/d.txt" | sed 's/^/        |/'; fi
 # negatyw: podmieniam cel linku w drzewie - obraz ma stary, weryfikator MUSI to zobaczyc
@@ -169,6 +173,56 @@ if python3 "$HERE/lint_pismo.py" --quiet; then
 else
   bad "lint_pismo.py znalazl obce znaki - patrz komunikat powyzej"
 fi
+
+# ---------------------------------------------------------------- L: try plikow
+echo "== L/6  weryfikator pilnuje uprawniek (nie tylko tresci)"
+TL=$WORK/L; mkdir -p "$TL/tree/etc" "$TL/fs"
+printf 'system:x:1000:1000:system:/none:/bin/false\n' > "$TL/tree/etc/passwd"
+chmod 644 "$TL/tree/etc/passwd"
+"$MK" -T 0 -U "$UUIDT" --force-uid=0 --force-gid=0 "$TL/fs/product.img" "$TL/tree" >/dev/null 2>&1
+t "L1: drzewo i obraz zgodne co do try" 0 bash "$HERE/verify_image.sh" --img "$TL/fs/product.img" --tree "$TL/tree" --fsck "$FS" --dump "$DUMP"
+# podmieniam TRY w drzewie (tresc ta sama) - obraz NIE moze tego "przejsc"
+chmod 600 "$TL/tree/etc/passwd"
+out=$(bash "$HERE/verify_image.sh" --img "$TL/fs/product.img" --tree "$TL/tree" --fsck "$FS" --dump "$DUMP" 2>&1); rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q 'roznia sie uprawnienia'; then
+  ok "L2: zmiana try w drzewie wykryta (0o600 vs 0o644)"
+else
+  bad "L2: weryfikator przepuscil zmiane try! rc=$rc"
+  printf '%s\n' "$out" | tail -3 | sed 's/^/      /'
+fi
+# i ta sama podmiana nie moze byc wykryta 'przez przypadek': przywracam try -> znow OK
+chmod 644 "$TL/tree/etc/passwd"
+t "L3: po przywroceniu try znow czysto" 0 bash "$HERE/verify_image.sh" --img "$TL/fs/product.img" --tree "$TL/tree" --fsck "$FS" --dump "$DUMP"
+
+# ---------------------------------------------------------------- M: normalizacja wlasciciela
+echo "== M/6  wlasciciel: --force-uid dziala, a bez niego dostajemy uid hosta"
+# To jest sekcja o defecte znalezionym 2026-09-23: mkfs.erofs bierze uid/gid z drzewa, a
+# drzewa powstaly z ekstrakcji na koncie 1001 - wydane obrazy mialy 'Uid: 1001 Gid: 1001'
+# (korzen /product i /system). Bez tej sekcji nic by nie pilnowalo, ze flaga wciaz dziala.
+TM=$WORK/M; mkdir -p "$TM/tree/etc"
+printf 'x\n' > "$TM/tree/etc/a.txt"; chmod 644 "$TM/tree/etc/a.txt"
+uid_host=$(id -u)
+"$MK" -T 0 -U "$UUIDT" --force-uid=0 --force-gid=0 "$TM/root.img" "$TM/tree" >/dev/null 2>&1
+"$MK" -T 0 -U "$UUIDT"                      "$TM/host.img" "$TM/tree" >/dev/null 2>&1
+r_uid() { local n; n=$("$DUMP" -s "$1" 2>/dev/null | awk -F': *' '/root nid/{print $2}')
+          "$DUMP" --nid="$n" "$1" 2>/dev/null | sed -n 's/.*Uid: \([0-9]*\).*/\1/p'; }
+a=$(r_uid "$TM/root.img"); b=$(r_uid "$TM/host.img")
+[ "$a" = 0 ] && ok "M1: z --force-uid=0 korzen ma uid 0 (bylo: $a)" || bad "M1: --force-uid nie dziala (uid=$a)"
+if [ "$uid_host" = 0 ]; then
+  note "M2: pomijam - runner jest rootem, wiec 'bez flagi' i tak da 0 (nie ma co porownywac)"
+else
+  [ "$b" = "$uid_host" ] && ok "M2: bez flagi korzen dziedziczy uid hosta ($b) - dokladnie to, co psulo wydanie" \
+    || bad "M2: oczekiwalem uid hosta $uid_host, dostalem $b - zmienilo sie cos w mkfs"
+fi
+# i weryfikator MUSI to zobaczyc, gdy mu kazemy
+if bash "$HERE/verify_image.sh" --img "$TM/host.img" --tree "$TM/tree" --fsck "$FS" --dump "$DUMP" \
+     --expect-owner 0:0 >/dev/null 2>&1; then
+  bad "M3: weryfikator przepuscil obraz z uid $b mimo --expect-owner 0:0"
+else
+  ok "M3: --expect-owner 0:0 odrzuca obraz dziedziczacy uid hosta"
+fi
+t "M4: --expect-owner akceptuje obraz znormalizowany" 0 \
+  bash "$HERE/verify_image.sh" --img "$TM/root.img" --tree "$TM/tree" --fsck "$FS" --dump "$DUMP" --expect-owner 0:0
 
 # ---------------------------------------------------------------- J: release realny
 if [ $REAL -eq 1 ]; then

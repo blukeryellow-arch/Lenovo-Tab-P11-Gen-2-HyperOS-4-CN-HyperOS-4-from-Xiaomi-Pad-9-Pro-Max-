@@ -11,11 +11,13 @@
 # Uzycie: tools/verify_image.sh --img <obraz> --tree <drzewo> [--fsck <fsck.erofs>]
 #         tools/verify_image.sh --img rom/system_hyperos4_p11g2.img --tree /tmp/sys-tree2/system_tree
 set -uo pipefail
-IMG=''; TREE=''; HERE=$(cd "$(dirname "$0")" && pwd); FS=${FSCK:-}; EXCL=''
+IMG=''; TREE=''; HERE=$(cd "$(dirname "$0")" && pwd); FS=${FSCK:-}; EXCL=''; EXPECT_OWNER=''; DUMP=${DUMP:-}
 while [ $# -gt 0 ]; do
   case $1 in
     --img) IMG=$2; shift 2;; --tree) TREE=$2; shift 2;; --fsck) FS=$2; shift 2;;
     --exclude) EXCL="$EXCL|$2"; shift 2;;
+    --expect-owner) EXPECT_OWNER=$2; shift 2;;
+    --dump) DUMP=$2; shift 2;;
     *) echo "nieznana opcja: $1" >&2; exit 3;;
   esac
 done
@@ -27,15 +29,15 @@ done
 case $TREE in /*) :;; *) TREE=$PWD/$TREE;; esac
 
 OUT=$(mktemp -d); trap 'rm -rf "$OUT"' EXIT
-echo "== 1/3 fsck.erofs $IMG"
+echo "== 1/4 fsck.erofs $IMG"
 if timeout 900 "$FS" "$IMG" > "$OUT/fsck.txt" 2>&1; then
   echo "   czysto ($(grep -c . "$OUT/fsck.txt") linii raportu)"
 else
   echo "   fsck zgłosił błędy (rc=$?):"; head -6 "$OUT/fsck.txt" | sed 's/^/     /'; exit 1
 fi
-echo "== 2/3 ekstrakcja z obrazu"
+echo "== 2/4 ekstrakcja z obrazu"
 timeout 1800 "$FS" --extract="$OUT/x" "$IMG" >/dev/null 2>&1 || { echo "   ekstrakcja nieudana"; exit 1; }
-echo "== 3/3 porownanie z $TREE"
+echo "== 3/4 porownanie z $TREE"
 python3 - "$TREE" "$OUT/x" "${EXCL#|}" <<'PY'
 import os,sys,hashlib,re
 src,dst=sys.argv[1],sys.argv[2]
@@ -53,9 +55,11 @@ def walk(root):
                 h=hashlib.sha256()
                 with open(p,'rb') as f:
                     for b in iter(lambda:f.read(1<<20),b''): h.update(b)
-                d[k]='F:'+h.hexdigest()
-            elif os.path.isdir(p): d[k]='D'
+                d[k]='F:'+h.hexdigest()+':'+oct(os.stat(p).st_mode & 0o7777)+((':'+str(os.stat(p).st_uid)+':'+str(os.stat(p).st_gid)) if ROOT else '')
+            elif os.path.isdir(p): d[k]='D:'+oct(os.stat(p).st_mode & 0o7777)+((':'+str(os.stat(p).st_uid)+':'+str(os.stat(p).st_gid)) if ROOT else '')
     return d
+ROOT = (os.geteuid()==0)   # uid/gid da sie odczytac z ekstrakcji TYLKO jako root:
+# fsck.erofs jako zwykly uzytkownik nie wykona chown i dostaniemy uid ekstrakcji, nie obrazu.
 A=walk(src); B=walk(dst)
 miss=sorted(set(A)-set(B)); extra=sorted(set(B)-set(A))
 diff=sorted(k for k in set(A)&set(B) if A[k]!=B[k])
@@ -66,7 +70,13 @@ print(f"  wykluczenia: {pats if pats else 'brak'}")
 print(f"  zrodlo: {len(A)} wpisów (pliki {nf}, symlinki {nl}, katalogi {nd})")
 print(f"  z obrazu: {len(B)} wpisów")
 print(f"  ZGODNE: {len(set(A)&set(B))-len(diff)}   rozbiezne: {len(diff)}   brak z obrazu: {len(miss)}   dodatkowe: {len(extra)}")
-for k in diff[:8]: print("   ROZBIEZNOSC:", k, "|", A[k][:24], "vs", B[k][:24])
+def tail(x, n=24): return x[-n:] if len(x) > n else x
+for k in diff[:8]:
+    ax, bx = A[k], B[k]
+    if ax[:40] == bx[:40]:   # sha taki sam -> roznicy jest try albo wlasciciel
+        print("   ROZBIEZNOSC:", k, "| treSC IDENTYCZNA, roznia sie uprawnienia:", tail(ax, 22), "vs", tail(bx, 22))
+    else:
+        print("   ROZBIEZNOSC:", k, "|", tail(ax, 22), "vs", tail(bx, 22))
 for k in miss[:8]: print("   BRAK W OBRAZIE:", k)
 for k in extra[:8]: print("   DODATKOWY:", k)
 sys.exit(0 if not (diff or miss or extra) else 1)
@@ -74,4 +84,29 @@ PY
 rc=$?
 [ $rc -eq 0 ] && echo "WERYFIKACJA OK: obraz oddaje drzewo 1:1 (pliki+symlinki+katalogi)" \
               || echo "WERYFIKACJA NIE PRZESZLA (rc=$rc)"
+
+echo "== 4/4 wlasciciel obrazu (DAC)"
+if [ -n "$EXPECT_OWNER" ]; then
+  [ -x "$DUMP" ] || DUMP=$(command -v dump.erofs || true)
+  if [ -z "$DUMP" ]; then
+    echo "  NIE SPRAWDZONE: brak dump.erofs, a bez niego nie odczytam uid/gid z obrazu"
+    echo "  (ekstrakcja jako zwykly uzytkownik NIE oddaje wlasciciela - nie udaje, ze sprawdzilem)"
+    rc=1
+  else
+    NID=$("$DUMP" -s "$IMG" 2>/dev/null | awk -F': *' '/root nid/{print $2}')
+    LINE=$("$DUMP" --nid="$NID" "$IMG" 2>/dev/null | grep -E 'Uid:' | tr -s ' ')
+    WANT_UID=${EXPECT_OWNER%%:*}; WANT_GID=${EXPECT_OWNER##*:}
+    got=$(printf '%s' "$LINE" | sed -n 's/.*Uid: \([0-9]*\).*Gid: \([0-9]*\).*/\1:\2/p')
+    printf '  korzen obrazu (nid %s): %s   oczekiwano %s\n' "$NID" "${got:-?}" "$EXPECT_OWNER"
+    if [ "$got" = "$WANT_UID:$WANT_GID" ]; then
+      echo "  OK: wlasciciel zgodny z AOSP (korzen); try plikow porownane wyzej 1:1"
+    else
+      echo "  ROZBIEŻNOŚĆ: obraz ma wlasciciela $got, a wydanie musi miec $EXPECT_OWNER"
+      echo "  (uid 1001 = 'radio' - to jest ten blad, ktory wykryto 2026-09-23: mkfs bral uid z drzewa)"
+      rc=1
+    fi
+  fi
+else
+  echo "  (pominiem - nie podano --expect-owner; try byly porownywane)"
+fi
 exit $rc

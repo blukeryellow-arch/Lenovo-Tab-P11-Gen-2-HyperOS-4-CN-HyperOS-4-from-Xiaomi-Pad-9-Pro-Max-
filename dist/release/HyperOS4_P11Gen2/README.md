@@ -42,7 +42,7 @@ drzewie syntetycznym, sprawdza determinizm (dwa budowania = ten sam bajt), **psu
 sprawdza, czy weryfikator to widzi (test negatywny — bez niego „wszystkie pliki OK" może
 znaczyć „nikt nie sprawdził, czy check cokolwiek sprawdza"), podmienia cel symlinka, odpala
 `flash-all.sh` na atrapie `fastboot` w pięciu scenariuszach (za mały slot → zero flashów)
-i na końcu weryfikuje 1:1 **ten** katalog. 24 testy, 0 wymagań sieciowych.
+i na końcu weryfikuje 1:1 **ten** katalog. 24 kontrole (z `--real`: 32), zero wymagań sieciowych.
 
 ## Poziomy dowodu — co sprawdza który test
 
@@ -117,7 +117,7 @@ tools/make_release.sh --product-tree /tmp/tree/product --system-tree /tmp/tree/s
 sha256sum /tmp/release/product_hyperos4_p11g2.img   # 8dcc73f265c9aaf8f52f…
 sha256sum /tmp/release/system_hyperos4_p11g2.img     # 498d85c4986847ee0b49…
 sha256sum /tmp/release/vbmeta_hyperos4_p11g2.img     # 9cf2e7e4e165687abe78…
-# wariant -full: product b28e1c0eb0c769cd… (153 391 104 B; system i vbmeta jak wyzej)
+# wariant -full: product b4bb8064d722dccb… (153 391 104 B; system i vbmeta jak wyzej)
 ```
 
 `make_release.sh --selftest` przechodzi ten łańcuch na drzewie syntetycznym, więc narzędzia
@@ -140,6 +140,15 @@ na swiezej maszynie, 23 IX 2026:
 
 Czego ten bieg **NIE** stwierdzil: ze obraz startuje na TB350FU. To nadal tylko poziom G
 w `docs/07-jak-weryfikowac.md` i nikt go nie wykonal.
+
+## Właściciel plików w partiach (korekta z 23 IX 2026)
+
+Korzeń `/product` i `/system` ma `Uid: 0 Gid: 0`, try `0755`, a pliki `0644`/`0755` zgodnie z
+drzewem — bo `make_release.sh` nadaje `--force-uid=0 --force-gid=0` (przełącznik `--owner`,
+wpis w `build-info.txt`). Poprzednie wydanie dziedziczyło właściciela z drzewa i oba obrazy były
+własnością uid 1001 (`radio`). Na `ro` nie dawało to zapisu, ale było błędnym DAC-iem i — ważniejsze
+dla Ciebie — **uniemożliwiało odtworzenie moich sum na innej maszynie**, bo uid budującego wchodził
+w bajty. Dlatego rozmiary zostały te same, a sha256 się zmieniły. docs/06 §6.19.
 
 ## Czym ten obraz różni się od źródła HyperOS (bez owijania)
 

@@ -23,6 +23,16 @@ COMP=lz4; SYSTREE=''
 # EXCLUDE_FLAGS to flagi mkfs.erofs (--exclude-regex). To NIE jest filtr po naszej stronie:
 # drzewo zostaje nietkniete (notatki ida do gita i do dokumentacji), a do partycji nie wchodza.
 EXCLUDE_FLAGS=${EXCLUDE_FLAGS:-}
+# === normalizacja wlasciciela (uid/gid) =============================================
+# mkfs.erofs bierze uid/gid z DRZEWA. Drzewa w tym projekcie powstaly z 'fsck --extract'
+# odpalonego na koncie 1001 (sandbox agenta), wiec ZAWYKSZOWANE wydanie mialo:
+#   Uid: 1001 Gid: 1001  (korzen /product i /system) - zmierzone dump.erofs --nid 2026-09-23.
+# To nie jest kosmetyka: (a) DAC plikow systemowych nalezy do uid 'radio', nie do roota,
+# (b) budowa na maszynie z uid 0 dalaby INNE BAJTY, czyli 'odtworz bit w bit' byloby
+# nieprawda dla kazego innego czlowieka. '--fs-config-file' nie jest wkompilowane w mojej
+# budowie (brak pliku zrodlowego w tarballu 1.8.2), zato '--force-uid/--force-gid' sa.
+# Wiec: nadajemy 0:0 jawnie i mowimy o tym w build-info.txt. --keep-host-owner zostaje
+# jako przełącznik do dociekania, co robi mkfs (test M w tools/test_release.sh).
 # --allow-no-vbmeta WYLACZNIE do testow instalatora: pozwala zbudowac flash-all.sh bez
 # avbtoolu. Domyslnie brak vbmeta to FATAL (wydanie bez vbmeta nie istnieje) - i tak zostaje.
 ALLOW_NO_VB=0
@@ -39,17 +49,44 @@ while [ $# -gt 0 ]; do
     --compress) COMP=$2; shift 2;;
     --system-tree) SYSTREE=$2; shift 2;;
     --exclude-regex) EXCLUDE_FLAGS="$EXCLUDE_FLAGS --exclude-regex=$2"; shift 2;;
+    --keep-host-owner) KEEP_OWNER=1; shift;;
+    --owner) OWNER_UID=${2%%:*}; OWNER_GID=${2##*:}; shift 2;;
     --allow-no-vbmeta) ALLOW_NO_VB=1; shift;;
     *) echo "nieznana opcja: $1" >&2; exit 3;;
   esac
 done
+
+# WLASCICIEL: te quatro linii MUSI byc PO parsowaniu opcji - pierwsza wersja stala
+# przed petla i przez to --owner oraz --keep-host-owner nie znaczyly NIC (sonda
+# dala Uid: 0 w obu przypadkach, a to jest dokladnie ten typ bledu, ktorego testy
+# nie łapały tego, bo „wyszedł oczekiwany rezultat" — tylko z innego powodu.
+OWNER_UID=${OWNER_UID:-0}
+OWNER_GID=${OWNER_GID:-0}
+KEEP_OWNER=${KEEP_OWNER:-0}
+ID_FLAGS=""
+[ "$KEEP_OWNER" = 1 ] || ID_FLAGS="--force-uid=$OWNER_UID --force-gid=$OWNER_GID"
+
 HERE=$(cd "$(dirname "$0")" && pwd); ROOT=$(dirname "$HERE")
 [ -n "$EROFS_DIR" ] || EROFS_DIR="$HERE/vendor/erofs"
+DUMP=${DUMP:-""}
+[ -n "$DUMP" ] || DUMP="$EROFS_DIR/dump.erofs"
+# Flagy kontroli wlasciciela: DAJEMY je tylko gdy jest czym odczytac uid/gid. Wczesniej
+# liczyłem je przed DUMP-em (efekt: przy braku dump.erofs build tlumil sie rc=1 zamiast
+# ostrzec), a jeszcze wczesniej cala kontrole pomijalem milczaco.
+OWNERFLAG=""
+DUMPFLAG=""
+if [ "$KEEP_OWNER" != 1 ]; then
+  if [ -x "$DUMP" ]; then
+    OWNERFLAG="--expect-owner $OWNER_UID:$OWNER_GID"; DUMPFLAG="--dump $DUMP"
+  else
+    echo "  UWAGA: brak $DUMP - wlasciciel wpisow NIE zostanie sprawdzony (DAC niezmierzone)."
+  fi
+fi
 MK="$EROFS_DIR/mkfs.erofs"; FS="$EROFS_DIR/fsck.erofs"
 [ $SELFTEST -eq 1 ] || { [ -n "$TREE" ] && [ -d "$TREE" ] || { echo "podaj --product-tree (katalog z fonts/)" >&2; exit 3; }; }
 [ -n "$OUT" ] || { echo "podaj --out" >&2; exit 3; }
-# OUT musi byc absolutny. Krok 2 wchodzi w 'cd $(dirname $TREE)', a wiec przekierowanie
-# '>$OUT/mkfs.log' przy wzglednej sciezce trafiles w nieistniejacy katalog - mkfs
+# OUT musi byc absolutny. Krok 2 wchodzi w 'cd $(dirname $TREE)', a więc przekierowanie
+# '>$OUT/mkfs.log' przy wzglednej sciezce trafiłby w nieistniejacy katalog - mkfs
 # wywrocilo sie mimo ze obraz powstal (2026-09-23, pierwsza proba prawdziwego wydania).
 case $OUT in /*) :;; *) OUT=$PWD/$OUT;; esac
 mkdir -p "$OUT" || exit 2
@@ -104,13 +141,13 @@ say "  plikow: $NF  bajtow: $SB"
 # ----------------------------------------------------------------- 2/6 obraz
 say "--- 2/6  mkfs.erofs (T=0, uuid stale -> deterministycznie)"
 IMG="$OUT/product_hyperos4_p11g2.img"
-( cd "$(dirname "$TREE")" && timeout 900 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG $EXCLUDE_FLAGS "$IMG" "$(basename "$TREE")" > "$OUT/mkfs.log" 2>&1 ) \
+( cd "$(dirname "$TREE")" && timeout 900 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG $EXCLUDE_FLAGS $ID_FLAGS "$IMG" "$(basename "$TREE")" > "$OUT/mkfs.log" 2>&1 ) \
   || { tail -5 "$OUT/mkfs.log" | sed 's/^/  /'; die "mkfs.erofs sie wywrocil"; }
 say "  product.img: $(stat -c%s "$IMG") B  sha256=$(sha "$IMG" | cut -c1-16)..."
 
 if [ $SELFTEST -eq 1 ]; then
   I2=$(mktemp --suffix=.img)
-  ( cd "$(dirname "$TREE")" && "$MK" -T 0 -U "$UUIDIMG" $ZFLAG $EXCLUDE_FLAGS "$I2" "$(basename "$TREE")" >/dev/null 2>&1 )
+  ( cd "$(dirname "$TREE")" && "$MK" -T 0 -U "$UUIDIMG" $ZFLAG $EXCLUDE_FLAGS $ID_FLAGS "$I2" "$(basename "$TREE")" >/dev/null 2>&1 )
   if [ "$(sha "$IMG")" = "$(sha "$I2")" ]; then say "  determinizm: DWA BUDOWANIA = IDENTYCZNY sha256 OK"; else say "  determinizm: ROZNI SIE (obraz nie jest powtarzalny!)"; fi
   rm -f "$I2"
 fi
@@ -131,7 +168,7 @@ say "--- 4/6  round-trip: wyciagnij z obrazu i porownaj KAZDY wpis (plik/symlink
 VEX=''
 for _w in $EXCLUDE_FLAGS; do case $_w in --exclude-regex=*) VEX="$VEX --exclude ${_w#*=}";; esac; done
 if [ -f "$HERE/verify_image.sh" ]; then
-  bash "$HERE/verify_image.sh" --img "$IMG" --tree "$TREE" --fsck "$FS" $VEX 2>&1 | sed 's/^/  /'
+  bash "$HERE/verify_image.sh" --img "$IMG" --tree "$TREE" $OWNERFLAG $DUMPFLAG --fsck "$FS" $VEX 2>&1 | sed 's/^/  /'
   rc=${PIPESTATUS[0]}
   [ $rc -eq 0 ] || die "weryfikacja obrazu nie wyszla (rc=$rc)"
   say "  weryfikacja product: OK"
@@ -204,7 +241,7 @@ SYS_IN=0
     # vendor/...) - bez nich init nie ma gdzie zamontowac partycji i tablet nie wstanie,
     # a obraz i tak wyjdzie 'poprawny'. stad parity-krok w testach.
     say "  system.img BUDOWANY z drzewa $SYSTREE (kompresja: $COMP)"
-    ( cd "$(dirname "$SYSTREE")" && timeout 1800 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG $EXCLUDE_FLAGS \
+    ( cd "$(dirname "$SYSTREE")" && timeout 1800 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG $EXCLUDE_FLAGS $ID_FLAGS \
         "$OUT/system_hyperos4_p11g2.img" "$(basename "$SYSTREE")" >> "$OUT/mkfs.log" 2>&1 ) \
       || die "mkfs.erofs dla systema sie wywrocil (patrz $OUT/mkfs.log)"
     SYS_IN=1
@@ -215,6 +252,7 @@ SYS_IN=0
       VEXS=''
       for _w in $EXCLUDE_FLAGS; do case $_w in --exclude-regex=*) VEXS="$VEXS --exclude ${_w#*=}";; esac; done
       if bash "$HERE/verify_image.sh" --img "$OUT/system_hyperos4_p11g2.img" --tree "$SYSTREE" \
+          $OWNERFLAG $DUMPFLAG \
            --fsck "$FS" $VEXS > "$OUT/system-verify.log" 2>&1; then
         tail -4 "$OUT/system-verify.log" | sed 's/^/    /'
         say "  system zweryfikowany: pelny raport w system-verify.log"
@@ -376,6 +414,7 @@ printf 'plik\tbajty\tsha256\tuwaga\n' >> "$OUT/release-manifest.tsv"
 { printf '# parametry budowy (notatka; weryfikuja je SHA256SUMS.txt, nie ten plik)\n'
   printf 'kompresja\t%s\n' "$COMP"
   printf 'wykluczenia_mkfs\t%s\n' "${EXCLUDE_FLAGS:-brak}"
+    printf 'wlasciciel_w_obrazie\t%s\n' "$([ "$KEEP_OWNER" = 1 ] && echo 'z drzewa (HOST - nie do odtworzenia gdzie indziej)' || echo "$OWNER_UID:$OWNER_GID (wymuszone --force-uid/--force-gid)")"
   printf 'uuid_obrazu\t%s\n' "$UUIDIMG"
   printf 'mkfs\t%s\n' "$("$MK" --help 2>&1 | head -1)"
   printf 'drzewo_product\t%s\n' "$TREE"

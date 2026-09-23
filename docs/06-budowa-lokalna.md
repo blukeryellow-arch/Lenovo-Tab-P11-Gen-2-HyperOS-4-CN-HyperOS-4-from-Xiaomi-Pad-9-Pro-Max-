@@ -429,3 +429,46 @@ Sprostonie mojego bledu proceduralnego z tego wieczora: commit `880a67a` oglosil
 punkt 2 powyzej). Nie poprawiam sily, bo commita już wypchnalem — zamiast tego jest tu, w
 historii dokumentu, i to jest koszt własny: komunikat o sukcesie trzeba ogłaszac po
 uruchomieniu, nie po napisaniu.
+
+## 6.19 Obie wydane partie były własnością uid 1001 — jak to wyszło i dlaczego testy tego nie widziały
+
+`mkfs.erofs` zapisuje w inode'ach właściciela **z drzewa**. Moje drzewa powstały z
+`fsck.erofs --extract` odpalonego na koncie sandboxa (uid/gid 1001), więc 1001:1001 przeszedł do
+obrazów i nikt nie protestował:
+
+```
+$ dump.erofs -s product.img | awk -F': *' '/root nid/{print $2}'   # -> 36
+$ dump.erofs --nid=36 product.img | grep Uid:
+  Uid: 1001   Gid: 1001  Access: 0755/rwxr-xr-x        # blednie, powinno byc 0:0
+```
+
+To jest **jedyny błąd w tym projekcie, który zmienił coś w obrazie, a nie zmienił żadnego
+pomiaru**. Trzy rzeczy, które trzeba tu nazwać po imieniu:
+
+1. **Ekstrakcja nie jest lustrem własności.** `fsck.erofs --extract` jako zwykły użytkownik nie
+   wykona `chown` i dostanie uid *wyodrabiającego*, nie obrazu. Pierwszy wniosek, jaki wyciągnąłem
+   z takiego pomiaru, brzmiał „`--force-uid` nie działa" — fałsz. Własność czyta się z
+   `dump.erofs --nid`, a ekstrakcja z `chown` wymaga roota (i wtedy działa: `sudo` potwierdziło
+   1001 na wadanym obrazie i 0 na poprawionym).
+2. **„Deterministyczne 3/3" nie znaczy „niezależne od hosta".** Mój test determinizmu porównywał
+   dwa budowania na *tej samej* maszynie, więc dziedziczony uid był w obu taki sam i kontrola była
+   ślepa na całą klasę błędu. Właściciel partycji systemowej musi być **normowany**, nie
+   dziedziczony.
+3. **Nie mam `--fs-config-file`.** AOSP normalizuje DAC właśnie przez `fs_config`; w mojej budowie
+   tej opcji nie ma (brak pliku źródłowego w tarballu 1.8.2, więc `#ifdef` nigdy się nie załaczył),
+   a jest `--force-uid/--force-gid` — i one wystarczają do korzenia sprawy: `0:0` dla wszystkiego
+   + `mode` z drzewa (try krążą wiernie, nawet `4755`).
+
+Zaimplementowane w `tools/make_release.sh`: `--owner UID:GID` (domyślnie `0:0`) i
+`--keep-host-owner` (wyłącznie do pomiaru, bo dowodzi, że bez flagi wada wraca). Ustawienie trafia
+do `build-info.txt` (`wlasciciel_w_obrazie`), a `verify_image.sh --expect-owner` pilnuje go w
+środku builda (krok 4/6) — przy braku `dump.erofs` build **mówi**, że DAC nie został zmierzony,
+zamiast milcząco przepuszczać. Suite ma sekcje M (M1: z flagą jest 0; M2: bez flagi jest uid hosta;
+M3: weryfikator odrzuca zły obraz; M4: akceptuje dobry) i L (podmiana `mode` w drzewie musi byc
+wykryta przy identycznej treści pliku).
+
+Po przebudowie rozmiary są **identyczne** (77 619 200 / 153 391 104 / 967 503 872), zmieniły się
+sha256: product `298ada60…`, product `-full` `b4bb8064…`, system `5cf58995…` w obu wariantach.
+`vbmeta_hyperos4_p11g2.img` ma **tę samą** sumę `9cf2e7e4…` i to jest poprawne: zawiera tylko
+Prop fingerprint (bez deskryptora HASHTREE), więc nic w niej nie zależy od treści partii — patrz
+`docs/07` sekcja F, gdzie prostuję własne wcześniejsze zdanie o „drzewie haszy dla producta".
