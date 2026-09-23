@@ -92,17 +92,58 @@ def collect_halset(path, tag='hal', kinds=None):
     return out, used
 
 
+def pick_matrix(path, level):
+    """Katalog z wieloma poziomami -> JEDEN plik, tak jak robi to init.
+
+    Po co ta funkcja w ogole. Wcześniejszy raport '400 pozycji obowiazkowych' byl
+    suma po wszystkich plikach w /system/etc/vintf (compatibility_matrix.4..8.xml +
+    datowane 202404/202504/202604.xml). Tymczasem VintfObject wybiera macierz
+    frameworku WG target_fcm_version urzadzenia i czyta JA SAMĄ - poziomy nie lacza
+    się w jeden zestaw wymagań. Efekt sumowania byl podwojnie mylący:
+      a) zawyżal liczbe obowiazkowych (te same HAL-e liczone z kazdego pliku),
+      b) zerowal 'optional', bo ten sam klucz widziany raz w pliku obowiazkowym
+         dawal False and True = False (patrz komentarz w collect_halset).
+    Zmierzona roznica na obrazie z CI (2026-09-23): katalog 9 plikow -> '400
+    obowiazkowych / 0 opcjonalnych'; wybrany level 5 -> '81 pozycji / 0 obowiazkowych
+    / 81 opcjonalnych'. To jest roznica miedzy 'init stanie' a 'init nie stanie'."""
+    if level is None or not os.path.isdir(path):
+        return path
+    bylev = {}
+    for f in glob.glob(os.path.join(path, 'compatibility_matrix.*.xml')):
+        m = re.search(r'compatibility_matrix\.(\d+)\.xml$', f)
+        if m:
+            bylev[int(m.group(1))] = f
+    if not bylev:
+        print(f"  --target-level {level}: w {path} brak plikow compatibility_matrix.<N>.xml, "
+              "czytam calosc")
+        return path
+    pod = [n for n in bylev if n <= level]
+    if not pod:
+        print(f"  --target-level {level}: najnizszy dostępny poziom to {min(bylev)} - "
+              "nie ma pliku <= zadania, czytam calosc (wynik NIE jest then wyborem init)")
+        return path
+    wybr = bylev[max(pod)]
+    print(f"  --target-level {level}: init czytaby {os.path.basename(wybr)}; "
+          f"dostępne poziomy: {sorted(bylev)}")
+    return wybr
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--matrix', help='katalog lub plik z compatibility_matrix*.xml')
     ap.add_argument('--manifest', help='katalog lub plik z manifestem vendora')
     ap.add_argument('--report', action='store_true', help='wypisz samo wymaganie (bez porownania)')
     ap.add_argument('--top', type=int, default=40)
+    ap.add_argument('--target-level', type=int, default=None,
+                    help='wybierz jedna macierz frameworku tak jak init (najblizszy plik '
+                         '<= poziom); bez tego katalog z wieloma poziomami jest SUMOWANY, '
+                         'co zawyza wymagania i zeruje opcjonalne')
     a = ap.parse_args()
 
     if not a.matrix:
         print("podaj --matrix (katalog z compatibility_matrix*.xml)"); return 3
-    req, rfiles = collect_halset(a.matrix, 'hal', kinds=('compatibility-matrix',))
+    req, rfiles = collect_halset(pick_matrix(a.matrix, a.target_level), 'hal',
+                                 kinds=('compatibility-matrix',))
     if not req:
         print(f"w {a.matrix} nie ma HAL-i do odczytania"); return 3
     mand = {k: v for k, v in req.items() if not v['optional']}
