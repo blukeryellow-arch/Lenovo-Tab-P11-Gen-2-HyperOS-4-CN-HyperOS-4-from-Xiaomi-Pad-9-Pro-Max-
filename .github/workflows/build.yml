@@ -285,7 +285,20 @@ jobs:
         run: |
           set -uo pipefail
           sudo apt-get update -qq || true
-          sudo apt-get install -y -qq e2fsprogs erofs-utils simg2img file || true
+          sudo apt-get install -y -qq e2fsprogs erofs-utils simg2img file || echo "  (apt: erofs-utils nie wszedl - budujmy ze zrodla)"
+          # Zmierzone w biegu 35894152349: na runnerze 'fsck.erofs=NIE' mimo apt-get,
+          # a bez mkfs.erofs NIE DA SIE zbudowac przebudowanego system.img (sciezka B').
+          # Zrodla erofs-utils ida z GitHuba, kompilacja to ~50 s - taniej niz caly bieg.
+          if ! command -v mkfs.erofs >/dev/null 2>&1; then
+            sudo apt-get install -y -qq autoconf automake libtool liblz4-dev libzstd-dev zlib1g-dev pkg-config || true
+            if git clone -q --depth 1 https://github.com/erofs/erofs-utils.git "$HOME/erofs-utils" 2>/dev/null; then
+              bash -c 'set -e; cd "$1"; ./autogen.sh >/dev/null 2>&1; ./configure --prefix="$2" --without-uuid --without-fuseblk >/dev/null 2>&1; make -j"$(nproc)" >/dev/null 2>&1; make install >/dev/null 2>&1' _ "$HOME/erofs-utils" "$HOME/.local" || true
+              [ -x "$HOME/.local/bin/mkfs.erofs" ] && echo "  zbudowane: $HOME/.local/bin/mkfs.erofs"
+            fi
+          fi
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "PATH z ~/.local/bin (erofs moze byc wciaz bez PATH - dodajemy do GITHUB_ENV)"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           echo "dumpe2fs: $(command -v dumpe2fs || echo BRAK)"
           echo "debugfs:  $(command -v debugfs || echo BRAK)"
           echo "fsck.erofs: $(command -v fsck.erofs || echo BRAK)"
@@ -382,7 +395,7 @@ jobs:
               # Pod budowe ROM-u potrzebujemy PEWNYCH bajtow w obrazy/ - tryb 'raw' i
               # 'do_unpack' kasuja/konsumuja out/, wiec kopiujemy TERAZ (jedno nadrobne
               # 0,9 GB na dysku runnera - mieści się, bo w tym biegu jest jeden obraz).
-              if [ "${ROM_BUILD:-0}" = "1" ]; then
+              if [ "${ROM_BUILD:-0}" = "1" ] && [ "$sz" -le 1600000000 ]; then
                 mkdir -p obrazy && cp "out/$name" "obrazy/$name" \
                   && echo "  do budowy ROM: obrazy/$name ($(stat -c%s "obrazy/$name") B)" \
                   || echo "  UWAGA: nie udalo sie skopiowac obrazu do obrazy/"

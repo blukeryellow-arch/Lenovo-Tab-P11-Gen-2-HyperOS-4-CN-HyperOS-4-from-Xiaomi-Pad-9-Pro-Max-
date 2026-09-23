@@ -65,6 +65,14 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
     fi
   fi
 
+  # Runner Azure ma ~13 GB wolnego CALEGOOS - przy 6,45 GB obrazie 'pakuj calosc'
+  # to byl strzal w kolano. Wymagam zapasu przed startem i mowie o tym w raporcie.
+  need=$(( isz + (isz/8) + 4194304 ))
+  avail=$(df --output=avail -k "$PWD" 2>/dev/null | tail -1 | tr -d ' ')
+  if [ -n "$avail" ] && [ $((avail*1024)) -lt "$need" ]; then
+    log "    SKIP: potrzeba ~$need B wolnego, jest $((avail*1024)) B - nie dotykam (mniejsze = nastepny bieg)"
+    rm -f "$img"; continue
+  fi
   tree=$(mktemp -d /tmp/tree.XXXXXX)
   method=""
   # 1) mount read-only - najdokladniejsze, dziala na ext4 i EROFS, wymaga sudo (runner ma)
@@ -94,28 +102,58 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
   fi
   [ "$method" = "mount-ro" ] && sudo -n umount "$tree" 2>/dev/null
 
-  # paczka: tylko allowliste, sciezki wzgledne; to, czego nie ma, odpada bez bledu
+  # Paczka = TYLKO to, czego sciezka A potrzebuje. Dobre praktyki, ktore tu siedza:
+  #  - obraz EROFS/ext4 punktuje sie w ITS ROOT, czyli 'product/overlay' NIE ISTNIEJE
+  #    w montowanym drzewie (jest 'overlay'). Wczesniejsza wersja szukala z prefiksem
+  #    nazwy partycji -> nie trafiaa w nic -> wpadala w 'pakuj calosc' -> przy product
+  #    6,45 GB to ENOSPC na runnerze (13 GB wolnego) i ucieta paczka wmanewrowana w
+  #    MANIFEST (bieg 35894152349, 2026-09-23). Dlatego teraz wzorce sa po OGONIE.
   include=()
-  for d in "${ALLOW[@]}"; do
-    for cand in "$d" "./$d" "${d#./}"; do
-      if [ -e "$tree/$cand" ]; then include+=("$cand"); break; fi
-    done
-  done
-  # ONLY_DIRS=zadana nadpisuje allowliste (skrocanie paczki gdy push bilby w 2 GB)
   if [ -n "${ONLY_DIRS:-}" ]; then
-    include=()
     for d in $ONLY_DIRS; do
       for cand in "$d" "./$d" "${d#./}"; do
         [ -e "$tree/$cand" ] && { include+=("$cand"); break; }
       done
     done
-    [ "${#include[@]}" -gt 0 ] || { log "    (!) ONLY_DIRS nie trafilo w nic - odpuszczam paczke"; continue; }
+    [ "${#include[@]}" -gt 0 ] || { log "    (!) ONLY_DIRS nie trafil w nic - odpuszczam paczke"; continue; }
+  else
+    # wzorce po OGONIE sciezki, bo po zamontowaniu nie ma prefiksu partycji.
+    # Bez line-continuation: poprzednia lotka gubila '\', przez co '-not -path'
+    # stawal sie osobnym poleceniem, a filtr znikal (test 2026-09-23).
+    dirs=$(cd "$tree" && find . -xdev -maxdepth 4 -type d -name overlay -not -path './lost+found*' 2>/dev/null)
+    dirs="$dirs
+$(cd "$tree" && find . -xdev -maxdepth 3 -type d -name vintf 2>/dev/null)"
+    dirs="$dirs
+$(cd "$tree" && find . -xdev -maxdepth 3 -type d -name permissions 2>/dev/null)"
+    dirs="$dirs
+$(cd "$tree" && find . -xdev -maxdepth 3 -type d -name sysconfig 2>/dev/null)"
+    dirs="$dirs
+$(cd "$tree" && find . -xdev -maxdepth 3 -type d -name fonts 2>/dev/null)"
+    files=$(cd "$tree" && find . -xdev -maxdepth 2 -type f -name build.prop 2>/dev/null)
+    files="$files
+$(cd "$tree" && find . -xdev -maxdepth 4 -type f -name 'compatibility_matrix*.xml' 2>/dev/null)"
+    files="$files
+$(cd "$tree" && find . -xdev -maxdepth 4 -type f -name manifest.xml 2>/dev/null)"
+    files="$files
+$(cd "$tree" && find . -xdev -maxdepth 4 -type f -name framework-res.apk 2>/dev/null)"
+    files="$files
+$(cd "$tree" && find . -xdev -maxdepth 4 -type f -name fonts.xml 2>/dev/null)"
+    files="$files
+$(cd "$tree" && find . -xdev -maxdepth 4 -type f -name 'public.libraries.txt' 2>/dev/null)"
+    # katalog + plik w nim to w tarze dwojakie wpisy - zostawiam katalog, wyrzucam dzieci
+    all_list=$(printf '%s\n' "$dirs" "$files" | grep -v '^\.$' | sort -u)
+    for rel in $all_list; do
+      keep=1
+      for d in $all_list; do
+        [ "$d" = "$rel" ] && continue
+        case "$rel" in "$d"/*) keep=0; break;; esac
+      done
+      [ "$keep" = "1" ] && include+=("$rel")
+    done
+    [ "${#include[@]}" -gt 0 ] || { log "    (!) allowlista nie trafil w NIC w tym obrazie - NIE pakujemy calosci (patrz komentarz wyzej)"; continue; }
+    log "    trafil: ${#include[@]} pozycji: $(printf '%s ' "${include[@]}" | cut -c1-200)"
   fi
-  if [ "${#include[@]}" -eq 0 ]; then
-    # brak znanych katalogow - bierzemy calosc, ale to sygnal do korekty allowlisty
-    log "    (!) zaden katalog z allowlisty nie istniejal - pakujac calosc"
-    include=(".")
-  fi
+  # (sciezki dobrane wyzej; brak 'pakuj calosc' - to bylo zrodlo ENOSPC)
   pkg="$DST/$base-assets.tar.gz"
   if [ "$method" = "mount-ro" ] && have mount; then
     sudo -n mount -o ro,loop "$work" "$tree" 2>/dev/null && {
@@ -130,6 +168,12 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
   if [ ! -s "$pkg" ]; then
     log "    paczka pusta - nic nie wyciagnieto"
     continue
+  fi
+  # BRAMKA 1: paczka, ktorej tar nie domknal (ENOSPC!), nie moje miec wstepu do
+  # manifestu - 'tar -tzf' czyta calosc i wywala sie na ucietym strumieniu gzipa.
+  if ! tar -tzf "$pkg" >/dev/null 2>&1; then
+    log "    SKIP: paczka USZKODZONA/UCIETA (tar -tzf padl; pewnie brak miejsca) - wyrzucam"
+    rm -f "$pkg"; continue
   fi
   psz=$(stat -c%s "$pkg"); psha=$(sha256sum "$pkg" | cut -d' ' -f1)
   # budzet na bieg: 'git push' GitHuba twardo lata >2 GB (a 100 MB/plik to dopiero
@@ -149,6 +193,14 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
     split -b "$MAX" -d -a 3 "$pkg" "$pkg.part."
     n=$(ls "$pkg".part.* 2>/dev/null | wc -l)
     log "    podzial na $n czastek (limit GitHuba 100 MB/plik)"
+    # BRAMKA 2: sum(a) musi dawac ojcowski sha256 - przy ENOSPC split pisal 131 KB
+    # i 'n=1' wpadlo do manifestu jako pelna paczka (zmierzone 2026-09-23).
+    jsha=$(cat "$pkg".part.* | sha256sum | cut -d' ' -f1)
+    if [ "$jsha" != "$psha" ]; then
+      log "    SKIP: zlozone czastki daja $jsha != $psha - nie ufam tej paczce, kasuje"
+      rm -f "$pkg".part.*; rm -f "$pkg"; continue
+    fi
+    log "    spr: zlozone czastki = paczka rodzic OK"
   fi
 
   {

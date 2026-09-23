@@ -1,11 +1,18 @@
-# Wykaz plikow do przejrzenia przez runnera GitHub Actions.
-# START: commit z "[drive-probe]" ktory ZMIENIA przynajmniej jeden path z on:push.paths.
-# Kolejnosc od najmlodszych: budzet (max_total) przerywa na tym, co sie nie miesci,
-# wiec duze obrazki nie mozbra zjesc miejsca malym.
-13e-okLFNX3m7feTp8AlYoGME2rKFFitr
-1WQMSa-JRo2BeJHBIbhGAH0aTaF0VOcdL
-1rrK7z7PVCB5rQpgubGt6pDeJgh1_pcEl
+# drive-probe.request - wykaz plikow do przemieszczenia przez runner + opcje biegu.
+# KROK 'Wczytaj zapytanie' bierze PIERWSZE POLE kadej linii i szuka golego ID
+# (regex ^[A-Za-z0-9_-]{20,}$) - wiec ID musza byc W LASNE, bez 'nazwa.img:'.
+#
+# Bieg 2026-09-23, po biegu 35894152349 (ten udowodnil mechanizmy, ale):
+#   a) 'product': allowlista nie trafil w drzewo po mount (prefiks nazwy partycji nie
+#      istnieje w korzeniu montowania) -> fallback 'pakuj calosc' -> ENOSPC przy 6,45 GB
+#      ("gzip: stdout: No space left on device") i UCIETA paczka w MANIFESCIE
+#   b) 'odm': paczka 2,57 GB > budzet 1,9 GB -> SKIP (po naprawie to ~dziesiatki MB)
+#   c) runner NIE miat erofs-utils z apt (fsck.erofs=NIE) -> build.yml buduje je ze zrodla
+# Stad ten bieg: system.img pod budowe ROM-u (rom_build) + product/odm pod assety sciezki A.
+1Pu6RU00SsbFiXiGlx6IpG14714jaZThN
 1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1
+1rrK7z7PVCB5rQpgubGt6pDeJgh1_pcEl
+rom_build: 1
 do_unpack: 1
+raw: 0
 max_total: 1900000000
-# START: 2026-09-23T17:13:39Z
