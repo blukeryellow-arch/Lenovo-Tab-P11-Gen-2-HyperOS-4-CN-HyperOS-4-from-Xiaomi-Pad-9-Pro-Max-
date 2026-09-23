@@ -103,6 +103,14 @@ mkfs.erofs (moja budowa) -> fsck.erofs (pakiet Ubuntu) --extract -> porownanie p
 dump.erofs -s <obraz>   # superblock
 ```
 
+Status: **bieg `release-selftest` 35918777924 (23 IX 2026, ubuntu-latest) — wszystkie 13
+kroków success**, w tym ekstrakcja obrazu zbudowanego moim `mkfs.erofs` narzędziem z pakietu
+Ubuntu i porównanie per plik. Wymaga to `sudo add-apt-repository -y universe`: pierwsza
+wersja kroku instalowala z `>/dev/null 2>&1 || true`, pakiet nie wchodzil, a krok byl
+**zielony** — blad wyszedl dwa kroki pozniej jako `127`. Dlatego krok instalacji dzis
+mowi wszystko i ustawia `DISTRO_OK`, ktorego kroki sluchaja (brak pakietu = `::notice::`
+i swiadome pominiecie, NIE FAIL wydania).
+
 Oczekiwane na `system.img`: `Filesystem incompatible features: lz4_0padding`,
 `Required upstream Linux kernel version: 5.4`, `compressed files: 2738`, `uncompressed: 1828`.
 

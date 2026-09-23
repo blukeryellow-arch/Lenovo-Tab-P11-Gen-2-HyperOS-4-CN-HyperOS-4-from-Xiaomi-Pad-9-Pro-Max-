@@ -117,11 +117,29 @@ tools/make_release.sh --product-tree /tmp/tree/product --system-tree /tmp/tree/s
 sha256sum /tmp/release/product_hyperos4_p11g2.img   # 8dcc73f265c9aaf8f52f…
 sha256sum /tmp/release/system_hyperos4_p11g2.img     # 498d85c4986847ee0b49…
 sha256sum /tmp/release/vbmeta_hyperos4_p11g2.img     # 9cf2e7e4e165687abe78…
-# wariant -full: product f801945b295b253cd208… (system i vbmeta jak wyzej)
+# wariant -full: product b28e1c0eb0c769cd… (153 391 104 B; system i vbmeta jak wyzej)
 ```
 
 `make_release.sh --selftest` przechodzi ten łańcuch na drzewie syntetycznym, więc narzędzia
 można sprawdzić, zanim ruszy się prawdziwe obrazy.
+
+## Co stwierdzil bieg CI `release-selftest` (35918777924, ubuntu-latest)
+
+Trzy rzeczy, ktorych nie da sie ustalic z samego katalogu wydania i ktore zostaly zmierzone
+na swiezej maszynie, 23 IX 2026:
+
+1. **Narzędzia da się odtworzyć poza tym sandboxem**: `tools/build_comp_libs.sh` (zlib + lz4
+   ze źródeł, bez pakietów `-dev`) i `tools/build_erofs_local.sh` (erofs-utils 1.8.2 bez
+   autoconfu) budują się na czystym runnerze, a `mkfs.erofs` z tej budowy rozpoznaje `-zlz4`.
+2. **Cała suite przechodzi tam, gdzie nie ma nic z `/tmp`**: `tools/test_release.sh`
+   = 17 kontroli, w tym determinizm (dwa `mkfs` = identyczny plik) i testy negatywne.
+3. **Weryfikacja nie jest samoobslugą**: obraz zbudowany *moim* `mkfs.erofs` zostal
+   rozpakowany i porównany plik-po-pliku przez `fsck.erofs` **z pakietu Ubuntu** (trzeba
+   `add-apt-repository universe` — bez tego apt milcząco nic nie dawał, a krok byl zielony).
+   Krzyżowo: każdy obraz czytany każdym narzędziem.
+
+Czego ten bieg **NIE** stwierdzil: ze obraz startuje na TB350FU. To nadal tylko poziom G
+w `docs/07-jak-weryfikowac.md` i nikt go nie wykonal.
 
 ## Czym ten obraz różni się od źródła HyperOS (bez owijania)
 

@@ -26,8 +26,12 @@ odtworzenia bit w bit: **`../HyperOS4_P11Gen2/README.md`**.
   (np. wyciecie ekranu, gesty i dolny pasek nawigacji), a ich sygnatura Xiaomi nie znaczy niczyjej
   zgody na Lenovo — wtedy awarie trudno przypisac. Wariant lekki zaweza podejrzenia.
 
+Stan wariantu (po przebudowie z 2026-09-23): 132 pliki, w tym `etc/passwd` i `etc/group`
+oraz `etc/vintf/` **swiadomie bez** `manifest.xml` — patrz docs/06 §6.15. Weryfikacja
+obrazu 1:1: **147/147** wpisów, `product.img` = 153 391 104 B, sha256 `b28e1c0eb0c769cd…`.
+
 Czego **nie** ma tu, a ma pełny `product.img` Xiaomi (6,4 GB): `pangu/`, `bin/`,
-`etc/{passwd,group}`, `etc/aconfig_flags.pb`, `etc/fonts_customization.xml`,
+`etc/aconfig_flags.pb`, `etc/fonts_customization.xml`,
 `etc/selinux/product_*.contexts`, `etc/vintf/manifest.xml`, `overlay/partition_order.xml`.
 Liczby odwołań do nich w obrazie `system`: `diagnostics/product-refs.tsv`. Dopięcie ich z
 wlasnego product.img: `tools/enrich_product.sh --src product.img --tree <drzewo>`.
