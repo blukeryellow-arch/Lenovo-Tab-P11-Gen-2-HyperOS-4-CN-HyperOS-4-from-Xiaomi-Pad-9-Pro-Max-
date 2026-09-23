@@ -286,14 +286,16 @@ jobs:
             echo; } > "$R"
 
           # pobranie publiczne odporne na: (a) brak klucza API przy googleapis,
-          # (b) wbudowana strona "Google nie może obecnie skanować..." dla duzych plikow
+          # (b) wbudowana strona "Google nie moze obecnie skanować..." dla duzych plikow
           get_from_drive() { # $1=id $2=plik  (klasyczny obieg "skan Google")
             local id=$1 out=$2 u sz
             for u in \
               "https://drive.usercontent.google.com/download?id=$id&export=download&authuser=0" \
               "https://drive.google.com/uc?export=download&id=$id"; do
               rm -f "$out" /tmp/hdr.html
-              curl -sSL --retry 2 --connect-timeout 25 -c /tmp/dk.txt -o /tmp/hdr.html "$u" || continue
+              rm -f /tmp/hdr.body
+              curl -sSL --retry 2 --connect-timeout 25 -c /tmp/dk.txt -D /tmp/hdr.head -o /tmp/hdr.body "$u" || { echo "curl $u -> rc=1" >> /tmp/probe.log; continue; }
+              cp /tmp/hdr.body /tmp/hdr.html
               # (a) od razu plik?
               if [ "$(stat -c%s /tmp/hdr.html 2>/dev/null || echo 0)" -gt 4096 ] && ! head -c 400 /tmp/hdr.html | grep -qi '<!doctype html'; then
                 mv /tmp/hdr.html "$out"; echo "    pobrane wprost: $(stat -c%s "$out") B"; return 0
@@ -316,7 +318,9 @@ jobs:
                 fi
                 echo "    formularz zwrocil $sz B (HTML lub za malo)" >> /tmp/probe.log
               else
-                echo "    brak pliku i brak formularza pod $u" >> /tmp/probe.log
+                { echo "    pod $u: HTTP $(head -1 /tmp/hdr.head 2>/dev/null) | $(stat -c%s /tmp/hdr.body 2>/dev/null || echo 0) B"
+                  echo "    <<< $(tr -d '\000-\010\013\014\016-\037' < /tmp/hdr.body | head -c 400 | tr '\n' ' ')"
+                } >> /tmp/probe.log
               fi
             done
             # (c) ostatecznie REST bez klucza (dziala dla niektorych udostepnien)
@@ -359,7 +363,7 @@ jobs:
               [ "${UNPACKED:-0}" = "1" ] || rm -f "out/$name"
             else
               echo "::error::$id nie dal sie pobrac publicznie"
-              echo '```'; cat /tmp/probe.log 2>/dev/null; echo '```' >> "$R"
+              { echo "powody odrzucenia:"; echo '```'; cat /tmp/probe.log 2>/dev/null; echo '```'; echo; } >> "$R"
               { echo "**BLAD**: zadny endpoint nie zwrocil pliku (sprawdz 'kazdy z linkiem')."; echo; } >> "$R"
             fi
             df -h "$GITHUB_WORKSPACE" | tail -1

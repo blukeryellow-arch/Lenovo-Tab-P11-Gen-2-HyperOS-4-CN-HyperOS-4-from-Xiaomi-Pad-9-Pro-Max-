@@ -1,12 +1,8 @@
-# Zapytanie do joba drive-probe (.github/workflows/build.yml).
-# Start: commit z "[drive-probe]" w tytule (token agenta nie ma uprawnien do
-# workflow_dispatch - 403 Resource not accessible by integration), albo recznie
-# przez Actions -> Run workflow z inputs.
-#
-# ID plikow na Google Drive (musza byc "kazdy, kto ma link" - agent ustawia to
-# konektorem i zdjema po wykonaniu).
+ids: |
+  1Pu6RU00SsbFiXiGlx6IpG14714jaZThN
+  1rrK7z7PVCB5rQpgubGt6pDeJgh1_pcEl
+  1WQMSa-JRo2BeJHBIbhGAH0aTaF0VOcdL
+  13e-okLFNX3m7feTp8AlYoGME2rKFFitr
+  1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1
 do_unpack: 1
-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN
-1WQMSa-JRo2BeJHBIbhGAH0aTaF0VOcdL
-13e-okLFNX3m7feTp8AlYoGME2rKFFitr
-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1
+out_prefix: images
