@@ -351,3 +351,50 @@ Dwa błędy, które ten skrypt znalazł **w dniu, w którym go pisałem**, oba p
 Warto to zapisać jako lekcję metodologiczną: test, który nigdy nie zawodzi na poprawnych
 danych, nie dowodzi niczego — dlatego w suite jest celowe psucie obrazu (test C) i podmiana
 symlinka (test D). To one pokazały, że poprzedni „round-trip" patrzył tylko na pliki.
+
+## 6.17 Co właściwie dowodzi, że `lz4` jest bezpieczne — i gdzie granica tego dowodu
+
+Pierwszy pomiar, który zrobiłem, był fałszywie pocieszający i warto go opisać, bo taka pułapka
+czai się w każdym „sprawdziłem": w drzewie testowym leżał **losowy** 300 KB plik, więc `-zlz4`
+nie zbijał nic (2 191 360 B → 2 191 360 B) i `fsck` zbudowany **bez** `HAVE_LZ4` zgłaszał sukces.
+Wniosek „kompresja nic nie daje, a stary build i tak czyta" byłby wtedy błędem na całe wydanie.
+Dopiero dane podatne na kompresję (4 MB powtarzalnego tekstu) dały 2 191 360 → 217 088 B i
+odmowę starego `fsck` przy `--extract` (`Failed to extract filesystem`).
+
+Rozstrzygający jest jednak nie `fsck`, tylko **superblock** wydanego obrazu:
+
+```
+Filesystem incompatible features:      lz4_0padding
+Filesystem lz4_max_distance:           65535
+Required upstream Linux kernel version: 5.4
+Filesystem compressed files:           2738      Filesystem uncompressed files: 1828
+Filesystem total original file size:   1 376 005 374 B   (obraz: 967 503 872 B = -29,7 %)
+```
+
+To jest dowód o klasę mocniejszy niż test odczytu: `lz4_0padding` jest w **`incompatible`**
+features, więc kernel bez `CONFIG_EROFS_FS_LZ4` nie „pokaże błędu przy czytaniu pliku" — on
+**odmówi zamontowania** całego `/system`. I ta sama tabela pokazuje drugą stronę medalu:
+1828 z 3892 plików zostało nieskompresowanych (lz4 odrzuciło dane niepakowalne), więc obraz
+nigdy nie jest „w całości skompresowany" i porównywanie go z `gzip -9` nie ma sensu.
+Druga, przykra strona: `fsck.erofs` **bez** `--extract` sprawdza tylko metadane i dlatego zwraca
+rc=0 na obrazie, którego nie umie rozpakować. Ktokolwiek będzie kiedyś wnioskował o obsłudze
+kompresji z „`fsck` przeszedł" — nie przeszedł w tym sensie, co trzeba. Trzeba `--extract`
+albo `dump.erofs -s`.
+
+**Czego ten pomiar NIE dowodzi** i nie będę tego zapisywać jak dowodu: że *urządzenie*
+zmontuje mój obraz. Twierdzenie „źródłowy `system.img` Lenovo też jest lz4, więc kernel
+TB350FU umie lz4" opieram na dwóch poszlakach — stosunku rozmiarów (937 791 488 B źródła
+vs 1 376 899 072 B mojego buildu bez kompresji) i `rom/BUILD_LOG.txt` z bieżni CI — a nie na
+zrzucie superblocku źródła, bo plik `rom/system_hyperos4_p11g2.img` (1,4 GB) usunąłem z
+workspace'u, żeby starczyło miejsca na build. Zrzut jest do powtórzenia jednym poleceniem na
+świeżej ekstrakcji (`dump.erofs -s`) i to jest pierwsza rzecz, którą zrobi każdy, kto będzie to
+kiedyś weryfikował — dlatego jest wpisane do `docs/07` jako test, nie jako przypis.
+Jeśli źródło okazałoby się `lz4hc` albo miało starszy zestaw feature, mój obraz nadal się nada
+(jest samoistnie spójny), ale `--compress lz4hc` przestanie być fanaberią, a stanie się
+opcją „bliżej oryginału".
+
+Dlatego w wydaniu zostaje zdanie, które wcześniej brzmiało jak paranoja: sprawdź
+`adb shell 'zcat /proc/config.gz | grep EROFS'` **przed** flashem, a `--compress none`
+jest ścieżką awaryjną dla kernela bez `EROFS_FS_LZ4` (wtedy product rośnie ~1,5×, a `system`
+przestaje się mieścić — patrz tabela w §6.10 i bramka w §6.11 — więc awaryjność tej ścieżki
+też ma swój limit i to jest uczciwe zdanie na koniec sekcji).

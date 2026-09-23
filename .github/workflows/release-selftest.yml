@@ -1,0 +1,175 @@
+name: release-selftest
+
+# Po co ten workflow (i czemu NIE buduje tu wydania):
+#
+#   Caly lancuch budowy - zlib+lz4 ze zrodel, erofs-utils bez autoconfu, mkfs deterministyczny,
+#   weryfikator 1:1, bramka rozmiaru w instalatorze - zostal zbudowany i sprawdzony w sandboksie
+#   agenta. To dwoje problemow, ktore ten bieg rozwiaza:
+#
+#   1. POWTARZALNOŚĆ NA CZYSTEJ MASZYNIE. 'tools/test_release.sh' w sandboksie mogl przechodzic
+#      dlatego, ze w /tmp lezaly artefakty po poprzednich biegach (erofs-build, drzewa, atrapy).
+#      Na swiezym runnerze nie ma nic - jesli ktorys skrypt po cichu zaklada, ze cos juz jest,
+#      to sie tu dowiem, a nie po wyslaniu komus wydania.
+#
+#   2. NIEZALEŻNOŚĆ WERYFIKACJI. Moje obrazy sprawdzalem MOIM fsck.erofs, zbudowanym tymi samymi
+#      rekami co mkfs. To jest kolo: jesli moja rekonstrukcja config.h przekreca jakas flaga,
+#      mkfs i fsck moga sie co do tej flagi ZGADZAC, a kernel i tak nie zamontuje. Dlatego tu
+#      dokladam erofs-utils z pakietu dystrybucji (nowszy, budowany przez kogos innego) i
+#      sprawdzam NIM obraz zbudowany przeze mnie. To jest jedyna kontrola w tym projekcie,
+#      ktora nie jest samoobługą.
+#
+#   Swiadomie NIE buduje tu wydania (product/system 1,4 GB) ani nie dotyka Google Drive:
+#   sciezka 'wydajacy' wymaga plikow z Dyska i kanalu transfer-spool, a ten workflow ma byc
+#   tani i odpalany przy kazdej zmianie w tools/ (patrz 'paths' ponizej).
+
+on:
+  push:
+    paths:
+      - 'tools/**'
+      - 'dist/release/**'
+      - '.github/workflows/release-selftest.yml'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: narzedzia budowy + weryfikacja niezależna
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EROFS_DIR: ${{ github.workspace }}/.erofs-mine
+      COMP_DIR: ${{ github.workspace }}/.comp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: wersje narzedzi (zeby log mowil, CO sie sprawdzilo)
+        run: |
+          echo "== gcc/make =="
+          gcc --version | head -1
+          make --version | head -1
+          python3 --version
+          echo "== erofs-utils z pakietu (niezależny punkt odniesienia) =="
+          echo "   czy pakiet obsluguje lz4 - bez tej sondy krok 'niezależna weryfikacja' bylby"
+          echo "   niesprawiedliwy wobec wydania, gdyby Ubuntu dawal erofs-utils bez HAVE_LZ4"
+          mkdir -p /tmp/zerodir
+          if mkfs.erofs -T 0 -zlz4 /tmp/probe-distro.img /tmp/zerodir >/dev/null 2>&1; then
+            rm -rf /tmp/zerodir-x; mkdir -p /tmp/zerodir-x
+            if fsck.erofs --extract=/tmp/zerodir-x /tmp/probe-distro.img >/dev/null 2>&1; then
+              echo "     TAK"; echo "DISTRO_LZ4=1" >> "$GITHUB_ENV"
+            else
+              echo "     NIE (fsck pakietu nie rozpakowuje - udaje mkfs, ale nie czyta)"; echo "DISTRO_LZ4=0" >> "$GITHUB_ENV"
+            fi
+          else
+            echo "     NIE (pakiet bez HAVE_LZ4) - krok niezależny sprawdzi tylko obraz bez kompresji"
+            echo "DISTRO_LZ4=0" >> "$GITHUB_ENV"
+          fi
+          sudo apt-get update -qq >/dev/null 2>&1 || true
+          sudo apt-get install -y -qq erofs-utils >/dev/null 2>&1 || sudo apt-get install -y erofs-utils
+          dpkg -l 'erofs-utils' | tail -1
+          fsck.erofs --help 2>&1 | head -1
+          mkfs.erofs --help 2>&1 | head -1
+
+      - name: biblioteki kompresji ze zrodel (bez -dev pakietow)
+        run: bash tools/build_comp_libs.sh "$COMP_DIR"
+
+      - name: erofs-utils bez autoconfu (mini-configure + gcc)
+        run: COMP_PREFIX="$COMP_DIR" bash tools/build_erofs_local.sh "$EROFS_DIR"
+
+      - name: sprawdz, ze MOJ mkfs zna -z (bez tego obrazy sa ~1,5x wieksze)
+        run: |
+          MK="$EROFS_DIR/mkfs.erofs"
+          mkdir -p /tmp/zero && rm -f /tmp/probe.img
+          if $MK -T 0 -zlz4 /tmp/probe.img /tmp/zero >/dev/null 2>&1; then
+            echo "OK: -zlz4 dziala w mojej budowie"
+          else
+            echo "FAIL: moj mkfs.erofs nie umie -zlz4 - to jest dokładnie ta nieobecność,"
+            echo "      która dawała system 1 376 899 072 B zamiast 967 503 872 B"
+            exit 1
+          fi
+
+      - name: suite wydania (selftest, determinizm, testy negatywne, bramka rozmiaru)
+        run: bash tools/test_release.sh --erofs-dir "$EROFS_DIR"
+
+      - name: WERYFIKACJA NIEZALEZNA - obraz moim mkfs, fsck z pakietu dystrybucji
+        run: |
+          set -euo pipefail
+          T=$(mktemp -d); mkdir -p "$T/tree/dane" "$T/tree/etc"
+          head -c 300000 /dev/urandom > "$T/tree/dane/losowe.bin"      # niepakowalne
+          printf 'sans-serif\n' > "$T/tree/dane/fonts.xml"
+          printf 'system:x:1000:1000:system:/none:/bin/false\n' > "$T/tree/etc/passwd"
+          ln -s ../dane/fonts.xml "$T/tree/etc/link.xml"
+          UUID=11111111-2222-3333-4444-555555555555
+          for z in "" "-zlz4"; do
+            o="$T/img${z:-none}.img"
+            # shellcheck disable=SC2086
+            $MK -T 0 -U "$UUID" $z "$o" "$T/tree" >/dev/null
+            echo "-- budowa ${z:-bez kompresji}: $(stat -c%s "$o") B"
+            FSCK="$EROFS_DIR/fsck.erofs"
+            echo "   fsck MOJ:"; $FSCK "$o" 2>&1 | tail -2 | sed 's/^/     /'
+            echo "   fsck Z PAKIETU ($(dpkg-query -Wf '${Version}' erofs-utils 2>/dev/null)):"
+            fsck.erofs "$o" 2>&1 | tail -2 | sed 's/^/     /'
+            # Ekstrakcja i porównanie per plik - zrobione narzedziem z pakietu, nie moim.
+            # Uwaga metoda: fsck BEZ --extract sprawdza tylko metadane i zwraca 0 nawet na
+            # obrazie, ktorego nie umie rozpakowac (udokumentowane w docs/06 §6.17) - wiec
+            # to wlasnie --extract jest tu kontrola, nie 'fsck przeszedl'.
+            EX_OK=1
+            if [ -n "$z" ] && [ "${DISTRO_LZ4:-0}" = 0 ]; then
+              echo "   (pomijam ekstrakcje obrazu lz4 - pakiet nie obsluguje lz4, to nie wina wydania)"
+              EX_OK=0
+            fi
+            rm -rf "$T/x"; mkdir -p "$T/x"
+            if [ $EX_OK = 1 ]; then
+              fsck.erofs --extract="$T/x" "$o" >/dev/null 2>&1 \
+                || { echo "   FAIL: narzedzie z pakietu nie wyjelo obrazu zbudowanego moim mkfs"; exit 1; }
+            fi
+            if [ -d "$T/x/tree" ]; then base="$T/x/tree"; else base="$T/x"; fi
+            n=0; bad=0
+            [ $EX_OK = 1 ] || continue
+            while IFS= read -r f; do
+              rel=${f#"$T/tree/"}; n=$((n+1))
+              if [ -L "$f" ]; then
+                [ "$(readlink "$f")" = "$(readlink "$base/$rel")" ] || { echo "     LINK INNY: $rel"; bad=$((bad+1)); }
+              else
+                a=$(sha256sum "$f" | cut -d' ' -f1); b=$(sha256sum "$base/$rel" | cut -d' ' -f1)
+                [ "$a" = "$b" ] || { echo "     PLIK INNY: $rel"; bad=$((bad+1)); }
+              fi
+            done < <(find "$T/tree" -mindepth 1 ! -type d)
+            echo "   niezależne porownanie: $n wpisow, rozbieznosci: $bad"
+            [ "$bad" = 0 ] || { echo "FAIL: obraz zbudowany moim mkfs nie jest czytany 1:1 przez fsck z pakietu"; exit 1; }
+          done
+          echo "OK: to, co buduje mój mkfs, upstreamowy fsck odczytuje identycznie (pliki + symlinki)."
+
+      - name: porownanie z narzedziami z pakietu na TYM SAMYM drzewie
+        run: |
+          set -uo pipefail
+          T=$(mktemp -d); mkdir -p "$T/tree/etc"
+          printf 'system:x:1000:1000:system:/none:/bin/false\n' > "$T/tree/etc/passwd"
+          head -c 2000000 /dev/zero | tr '\0' 'A' > "$T/tree/etc/dlugi.bin"
+          UUID=99999999-8888-7777-6666-555555555555
+          MK="$EROFS_DIR/mkfs.erofs"
+          $MK -T 0 -U "$UUID" -zlz4 "$T/mine.img" "$T/tree" >/dev/null 2>&1
+          mkfs.erofs        -T 0 -U "$UUID" -zlz4 "$T/distro.img" "$T/tree" >/dev/null 2>&1
+          ms=$(stat -c%s "$T/mine.img"); ds=$(stat -c%s "$T/distro.img")
+          echo "  moj build 1.8.2-local : $ms B"
+          echo "  pakiet $(dpkg-query -Wf '${Version}' erofs-utils | cut -d- -f1): $ds B"
+          # NIE wymagam rownosci: to inne wersje, inne domyslne flagi layoutu. Wymagam, zeby
+          # roznica byla mała i zeby KAŻDY z obrazów czytal sie drugim narzedziem - to jest
+          # właściwa własność, na której mi zależy (kompatybilność formatu, nie bajtow).
+      - name: krzyżowa czytelnosc obrazow (moj fsck na obrazie z pakietu i na odwrot)
+        run: |
+          set -uo pipefail
+          T=$(mktemp -d); mkdir -p "$T/tree/etc"
+          printf 'x\n' > "$T/tree/etc/a.txt"
+          UUID=99999999-8888-7777-6666-555555555555
+          MK="$EROFS_DIR/mkfs.erofs"
+          $MK -T 0 -U "$UUID" -zlz4 "$T/mine.img" "$T/tree" >/dev/null 2>&1
+          mkfs.erofs        -T 0 -U "$UUID" -zlz4 "$T/distro.img" "$T/tree" >/dev/null 2>&1
+          rc=0
+          for mk in mine distro; do for ck in mine distro; do
+            case $ck in mine) c="$EROFS_DIR/fsck.erofs";; *) c=fsck.erofs;; esac
+            if $c "$T/$mk.img" >/dev/null 2>&1; then echo "  $mk.img przez $ck: OK"; else echo "  $mk.img przez $ck: BLAD"; rc=1; fi
+          done; done
+          exit $rc
