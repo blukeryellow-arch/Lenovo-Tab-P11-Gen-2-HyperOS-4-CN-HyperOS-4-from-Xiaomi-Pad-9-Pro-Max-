@@ -415,7 +415,7 @@ jobs:
               # Bez tego 11,9 GB lezaloby naraz - runner ma ~14 GB i padloby ENOSPC.
               if [ "${RAW_MODE:-0}" = "1" ]; then
                 mkdir -p one raw && mv "out/$name" "one/$name"
-bash tools/raw_parts_on_runner.sh "one/$name" raw "${PART_FROM:-0}" "${PART_COUNT:-0}" 2>&1 | sed 's/^/    /' | tee -a "$R"
+                bash tools/raw_parts_on_runner.sh "one/$name" raw "${PART_FROM:-0}" "${PART_COUNT:-0}" 2>&1 | sed 's/^/    /' | tee -a "$R"
                 rc=${PIPESTATUS[0]}; [ "$rc" -eq 0 ] || { echo "::error::raw_parts_on_runner.sh (raw) rc=$rc - kawalki na spoolu nie powstaly, nie ma czego pobrac"; exit 1; }
                 rm -rf one
                 UNPACKED=1
@@ -462,7 +462,7 @@ bash tools/raw_parts_on_runner.sh "one/$name" raw "${PART_FROM:-0}" "${PART_COUN
               for f in rom-docs rom-kit; do
                 [ -f "$f.tar.gz" ] || continue
                 echo "  paczka $f.tar.gz: $(stat -c%s "$f.tar.gz") B"
-bash tools/raw_parts_on_runner.sh "$f.tar.gz" transfer 0 0 2>&1 | sed 's/^/    /' | tee -a "$R"
+                bash tools/raw_parts_on_runner.sh "$f.tar.gz" transfer 0 0 2>&1 | sed 's/^/    /' | tee -a "$R"
                 rc=${PIPESTATUS[0]}; [ "$rc" -eq 0 ] || { echo "::error::raw_parts_on_runner.sh (transfer) rc=$rc - kawalki na spoolu nie powstaly, nie ma czego pobrac"; exit 1; }
               done
               { echo; echo '### Paczki ROM na spoolu'; echo; echo '```'

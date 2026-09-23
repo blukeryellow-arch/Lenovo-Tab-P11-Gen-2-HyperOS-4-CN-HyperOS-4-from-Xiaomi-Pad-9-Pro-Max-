@@ -721,3 +721,33 @@ Wniosek do zapamiętania jest szerszy niż ten plik: zielony przebieg, który ni
 wyjścia testu, nie jest dowodem niczego — a ja przez cztery dni budowałem na nim poczucie
 bezpieczeństwa. Emulacja świeżego checkoutu (`git archive HEAD` do katalogu poza repo) jest tania i
 jest pierwszym czymś, co warto zrobić, gdy kontrola „przecież przechodzi".
+
+## 6.28 Zepsuty plik workflow nie jest czerwonym testem — jest brakiem testów
+
+Naprawiając głuchotę suity (patrz §6.27), podmieniłem dwie linie w `build.yml` i **zgubiłem ich
+wcięcie**: `bash tools/raw_parts_on_runner.sh …` wylądowało w kolumnie 0. Dla YAML-a to nie jest
+„brzydko wcięty skrypt", tylko koniec bloku scalarowego w środku zdania — cały workflow stał się
+nieparsowalny, GitHub zgłosił `workflow file issue`, a `jobs` zwróciło **zero jobów** (`total_count: 0`).
+Inaczej niż przy FAIL-u testów: tu nikt niczego nie uruchomił, więc nawet adnotacji w UI nie było.
+
+Mój własny walidator z tej samej tury (patrzyłem, czy po zmianach nie ma dziur) **tego nie złapał**:
+sprawdzał tylko, że każda linia bloku ma wcięcie większe od rodzica, a nie że jest **spójne w obrębie
+bloku**. Czym innym jest „nie weszłem za płytko", czym innym „nie wyskoczyłem za wysoko".
+
+Teraz pilnuje tego sekcja R w `tools/test_release.sh`:
+
+* `yaml.safe_load` każdego pliku w `.github/workflows` (runner ubuntu-latest ma PyYAML; w tym
+  sandboxie musiałem go doinstalować `--break-system-packages` — bez niego zostałem na heurystyce,
+  i to jest uczciwie zapisane w wyniku jako `pyyaml: NIEACCESSNY (tylko heurystyka wciecen)`),
+* plus heurystyka niezależna od parsera: żadne polecenie powłoki (`bash `, `rc=`, `if `, `fi`, `done`,
+  `echo `, `set `, `exit `, `mkdir `, `sudo `, `[ `, `export `) nie może stać w kolumnie 0,
+* oraz próg `bloki run >= 8` — zeby „znalazłem zero bloków" nie było zielone.
+
+Test negatywny: wstrzyknąłem z powrotem dokładnie tę podmianę, która zepsuła `build.yml`. R mówi
+dwa razy — `BLAD parsowania YAML -> while scanning a simple key` i `build.yml:418: polecenie powloki
+w kolumnie 0` — i cały przebieg jest czerwony. Po przywróceniu: 46 PASS / 0 FAIL z `--real`,
+38 PASS bez.
+
+Drobna, ale dla mnie ważna obserwacja: `pip install pyyaml` domyślnie odmawia (PEP 668, „externally
+managed"). Odmowa instalacji to nie to samo co brak biblioteki w sensie logicznym — kontrola musi
+działać w obu światach, a jej wynik musi mówić, w którym właśnie działa.

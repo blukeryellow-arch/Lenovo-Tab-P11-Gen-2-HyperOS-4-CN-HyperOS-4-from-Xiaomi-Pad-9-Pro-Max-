@@ -535,6 +535,77 @@ for a_ in absent: print("     absent-skip: "+a_)
 PYQ
 then ok "rozmiary w README = rozmiary plikow (kontrakt Q)"; else bad "kontrakt rozmirow nie przechodzi"; fi
 
+echo "== R      pliki workflow: YAML parsowalny, zadnego 'run:' rozsypanego wcieceniem"
+# 24 IX 2026: moja podmiana dwóch linii w build.yml zgubila wciecie, 'bash tools/...' wyladowalo
+# w kolumnie 0, YAML uznal to za koniec bloku scalarowego i CALY workflow zostal odrzucony
+# ('workflow file issue', zero jobow) - GitHub nie uruchomil nawet testow. Heurystyka ponizej
+# łapie to lokalnie, bez czekania na czerwony bieg.
+if python3 - "$ROOT" <<'PYR'
+import os, re, sys
+
+root = sys.argv[1]
+wd = os.path.join(root, '.github', 'workflows')
+bad = []
+files = []
+blocks = 0
+if os.path.isdir(wd):
+    files = [f for f in sorted(os.listdir(wd)) if f.endswith(('.yml', '.yaml'))]
+if len(files) < 2:
+    bad.append(f"w .github/workflows jest {len(files)} plik(ow) yaml, oczekuje >=2 - kontrola nie ma czego pilnowac")
+try:
+    import yaml
+    have = True
+except Exception:
+    have = False
+for fn in files:
+    path = os.path.join(wd, fn)
+    txt = open(path, encoding='utf-8').read()
+    L = txt.split('\n')
+    if have:
+        try:
+            d = yaml.safe_load(txt)
+            if not isinstance(d, dict) or 'jobs' not in d:
+                bad.append(f"{fn}: YAML czyta sie, ale nie ma klucza 'jobs:'")
+            elif not d['jobs']:
+                bad.append(f"{fn}: 'jobs:' puste")
+        except Exception as e:
+            bad.append(f"{fn}: BLAD parsowania YAML -> {str(e).splitlines()[0][:200]}")
+    for i, l in enumerate(L):
+        m = re.match(r'^(\s*)run:\s*[|>][-+]?\s*$', l)
+        if not m:
+            continue
+        blocks += 1
+        k = len(m.group(1))
+        j = i + 1
+        base = None
+        while j < len(L):
+            cur = L[j]
+            if cur.strip() == '':
+                j += 1
+                continue
+            ind = len(cur) - len(cur.lstrip(' '))
+            if ind <= k:
+                break
+            if base is None:
+                base = ind
+            elif ind < base:
+                bad.append(f"{fn}:{j+1}: wciecenie {ind} < {base} wewnatrz bloku 'run:' - YAML domknie blok w polowie")
+            j += 1
+        for j, cur in enumerate(L):
+            if re.match(r'^(bash |rc=|if |fi$|done$|for |echo |set |exit |mkdir |sudo |\[ |export )', cur):
+                msg=f"{fn}:{j+1}: polecenie powloki w kolumnie 0 ({cur[:48]}...)"
+                if msg not in bad: bad.append(msg)
+                break
+if blocks < 8:
+    bad.append(f"znalazlem {blocks} blokow 'run:', powinno byc >=8 - petla blokow nie zadzialala")
+print(f"  pliki: {', '.join(files) if files else 'BRAK'}; bloki run: {blocks}; " +
+      ("pyyaml: wlaczony" if have else "pyyaml: NIEDOSTEPNY (tylko heurystyka wciecen)"))
+if bad:
+    print("\n".join("  " + b for b in bad))
+    sys.exit(1)
+PYR
+then ok "workflowy parsowalne, bloki run spojne (sekcja R)"; else bad "pliki workflow sa uszkodzone - patrz R"; fi
+
 echo; echo "=== podsumowanie: $pass PASS, $fail FAIL ==="
 [ $fail -eq 0 ] || echo "UWAGA: ktorys test padl — nie wydawaj zmiany w tools/, ktora to wywolala."
 exit $([ $fail -eq 0 ] && echo 0 || echo 1)
