@@ -87,6 +87,32 @@ jobs:
             echo "DISTRO_LZ4=0" >> "$GITHUB_ENV"
           fi
 
+      - name: erofs-utils z pakietu - instalacja z pelnym wypisem
+        # Osobny krok, bo wczesniejsza wersja probowala dwoch komend z '>/dev/null 2>&1' i
+        # '|| true', wiec runner melmol 'success' w kroku, a pakietu NIE BYLO - i dopier
+        # dwa kroki pozniej wyszlo 127 / 'nie jest czytany przez fsck z pakietu'.
+        # Teraz: apt mowi wszystko, a wynik trafia do DISTRO_OK, ktore下游 kroki SZANUJA.
+        run: |
+          { echo "== apt-cache policy =="
+            apt-cache policy erofs-utils 2>&1 | head -12
+            echo "== proba 1: install (universe moze byc potrzebne) =="
+            sudo add-apt-repository -y universe 2>&1 | tail -2 || true
+            sudo apt-get update -qq 2>&1 | tail -3 || true
+            if sudo apt-get install -y erofs-utils 2>&1 | tail -6; then ok1=1; else ok1=0; fi
+            echo "== co wyszlo =="
+            for t in mkfs.erofs fsck.erofs dump.erofs; do
+              if command -v "$t" >/dev/null 2>&1; then echo "   $t -> $(command -v "$t")  [$($t --version 2>&1 | head -1)]"
+              else echo "   $t -> BRAK"; fi
+            done
+            dpkg -l erofs-utils 2>/dev/null | tail -1 || echo "   dpkg: pakiet niezainstalowany (rc instalacji=$ok1)"
+          } 2>&1 | tee -a "$RUNLOG"
+          if command -v fsck.erofs >/dev/null 2>&1 && command -v mkfs.erofs >/dev/null 2>&1; then
+            echo "DISTRO_OK=1" >> "$GITHUB_ENV"
+          else
+            echo "DISTRO_OK=0" >> "$GITHUB_ENV"
+            echo "::notice::erofs-utils z pakietu niedostepny (apt rc instalacji=$ok1) - kroki niezalezne sie pomina, NIE jest to FAIL wydania"
+          fi
+
       - name: biblioteki kompresji ze zrodel (bez -dev pakietow)
         run: bash tools/build_comp_libs.sh "$COMP_DIR" 2>&1 | tee -a "$RUNLOG"
 
@@ -133,6 +159,14 @@ jobs:
             if command -v "$t" >/dev/null 2>&1; then echo "   z pakietu: $t -> $(command -v "$t")"
             else echo "::warning::brak $t z pakietu - 'weryfikacja niezalezna' nie bedzie niezalezna"; HD=0; fi
           done
+          if [ "${DISTRO_OK:-0}" = 1 ] && [ $HD = 0 ]; then
+            echo "::error::DISTRO_OK=1, ale $t nie jest w PATH - kroki sluchaja zmiennej wbrew faktom"
+            exit 1
+          fi
+          if [ "${DISTRO_OK:-0}" = 0 ] && [ $HD = 1 ]; then
+            echo "::error::DISTRO_OK=0, a narzedzia z pakietu SĄ w PATH - sonda instalacji kłamie"
+            exit 1
+          fi
           if [ $HD = 0 ]; then
             echo "   WOAA: bez narzedzia z pakietu ten krok nie ma sensu - loguje i wychodze 0,"
             echo "         zamiast udawac, ze sprawdzilem format czyims narzedziem." | tee -a "$RUNLOG"
@@ -238,11 +272,17 @@ jobs:
           # 'pakiet-lz4 4096 B' wygladalo jak wynik, a byl to plik zostaly po odmowie mkfs
           sz() { if [ -f "$1" ]; then printf '%s %s B ' "$2" "$(stat -c%s "$1")"; fi; }
           echo "   rozmiary: $(sz "$T/moj-bez.img" moj-bez)$(sz "$T/moj-lz4.img" moj-lz4)$(sz "$T/pakiet-bez.img" pakiet-bez)$(sz "$T/pakiet-lz4.img" pakiet-lz4)" | tee -a "$RUNLOG"
+          # Lista narzedzi do czytania = TYLKO te, ktore sa. Wczesniej 'pakiet:fsck.erofs'
+          # bylo wpiete na sztylno: bez pakietu dostawalem 'command not found' i krok
+          # obwinial WYDANIE o 'format nie jest wymienny' - a to byla usterka testu.
+          Tools="moj:$FSCK"
+          if command -v fsck.erofs >/dev/null 2>&1; then Tools="$Tools pakiet:fsck.erofs"
+          else echo "   (pakietowego fsck.erofs nie ma - sprawdzam tylko moim; to NIE jest dowod niezaleznosci)" | tee -a "$RUNLOG"; fi
           rc=0
-          for img in moj-bez:1 moj-lz4:$MINEZ pakiet-bez:1 pakiet-lz4:$DISTROZ; do
-            name=${img%%:*}; have=${img##*:}
+          for img in "moj-bez:$MINE" "moj-lz4:$MINEZ" "pakiet-bez:$DISTRO" "pakiet-lz4:$DISTROZ"; do
+            name=$(echo "$img" | cut -d: -f1); have=$(echo "$img" | cut -d: -f2)
             [ "$have" = 1 ] || { echo "   $name.img: nie zbudowany - pomijam" | tee -a "$RUNLOG"; continue; }
-            for ck in "moj:$FSCK" "pakiet:fsck.erofs"; do
+            for ck in $Tools; do
               lbl=${ck%%:*}; tool=${ck#*:}
               # Obraz lz4 badamy tylko narzedziem, ktory potrafi lz4 - inaczej testuje
               # nie format, a to, czy pakiet ma biblioteke.
