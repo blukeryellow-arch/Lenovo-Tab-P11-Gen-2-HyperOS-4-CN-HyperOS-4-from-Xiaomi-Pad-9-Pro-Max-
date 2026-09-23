@@ -267,6 +267,7 @@ jobs:
             PFROM=$(sed -n 's/^[[:space:]]*part_from:[[:space:]]*\([0-9]*\).*/\1/p' drive-probe.request | head -1)
             PCNT=$(sed -n 's/^[[:space:]]*part_count:[[:space:]]*\([0-9]*\).*/\1/p' drive-probe.request | head -1)
             MT=$(sed -n 's/^[[:space:]]*max_total:[[:space:]]*\([0-9]*\).*/\1/p' drive-probe.request | head -1)
+            RB=$(sed -n 's/^[[:space:]]*rom_build:[[:space:]]*\([01]\).*/\1/p' drive-probe.request | head -1)
           fi
           echo "DRIVE_IDS=$IDS" >> "$GITHUB_ENV"
           echo "DO_UNPACK=${UNP:-0}" >> "$GITHUB_ENV"
@@ -275,6 +276,7 @@ jobs:
           echo "PART_FROM=${PFROM:-0}" >> "$GITHUB_ENV"
           echo "PART_COUNT=${PCNT:-0}" >> "$GITHUB_ENV"
           echo "MAX_TOTAL=${MT:-1900000000}" >> "$GITHUB_ENV"
+          echo "ROM_BUILD=${RB:-0}" >> "$GITHUB_ENV"
           [ -n "$OD" ] && echo "tylko sciezki: $OD" || true
           echo "liczba id: $(echo $IDS | wc -w)  do_unpack=${UNP:-0}"
           if [ -z "$IDS" ]; then echo "nic do roboty - pusty wykaz id"; fi
@@ -377,6 +379,16 @@ jobs:
                 python3 tools/fs_probe.py "out/$name" 2>&1; echo '```'; echo; } >> "$R"
               { echo '### AVB (avbtool info_image)'; echo; echo '```'
                 python3 "$AVBTOOL" info_image --image "out/$name" 2>&1 | head -90; echo '```'; echo; } >> "$R"
+              # Pod budowe ROM-u potrzebujemy PEWNYCH bajtow w obrazy/ - tryb 'raw' i
+              # 'do_unpack' kasuja/konsumuja out/, wiec kopiujemy TERAZ (jedno nadrobne
+              # 0,9 GB na dysku runnera - mieści się, bo w tym biegu jest jeden obraz).
+              if [ "${ROM_BUILD:-0}" = "1" ]; then
+                mkdir -p obrazy && cp "out/$name" "obrazy/$name" \
+                  && echo "  do budowy ROM: obrazy/$name ($(stat -c%s "obrazy/$name") B)" \
+                  || echo "  UWAGA: nie udalo sie skopiowac obrazu do obrazy/"
+              fi
+              { echo '### Budowa ROM - wejscie'; echo '```'
+                ls -l obrazy 2>/dev/null; echo '```'; echo; } >> "$R"
               # ROZPAKOWANIE W TEJ SAMEJ ITERACJI: skrypt kasuje obraz po zapakowaniu.
               # Bez tego 11,9 GB lezaloby naraz - runner ma ~14 GB i padloby ENOSPC.
               if [ "${RAW_MODE:-0}" = "1" ]; then
@@ -402,6 +414,31 @@ jobs:
             fi
             df -h "$GITHUB_WORKSPACE" | tail -1
           done
+          # ===================== BUDOWA ROM =====================
+          if [ "${ROM_BUILD:-0}" = "1" ] && [ -n "$(ls obrazy 2>/dev/null || true)" ]; then
+            echo "===== BUDOWA ROM (tools/build_rom_on_runner.sh) ====="
+            SRC=obrazy OUT=rom AVB="${AVBTOOL:-$HOME/avb/avbtool.py}" \
+              KEY="$HOME/avb/test/data/testkey_rsa2048.pem" \
+              bash tools/build_rom_on_runner.sh 2>&1 | tail -70
+            BRC=${PIPESTATUS[0]}
+            echo "  build rc=$BRC"
+            { echo "### Budowa ROM"; echo; echo "- return code: \`$BRC\`"; echo; } >> "$R"
+            if [ -d rom ]; then
+              # (a) dokumentacja + skrypty: male, sciagam NATYCHMIAST
+              tar czf rom-docs.tar.gz -C rom MISMATCH.md flash.sh SHA256SUMS.txt BUILD_LOG.txt 2>/dev/null || true
+              # (b) pelny kit (obrazy): duzy, idzie na spool jako kawalki
+              tar czf rom-kit.tar.gz -C rom . 2>/dev/null || true
+              for f in rom-docs rom-kit; do
+                [ -f "$f.tar.gz" ] || continue
+                echo "  paczka $f.tar.gz: $(stat -c%s "$f.tar.gz") B"
+                bash tools/raw_parts_on_runner.sh "$f.tar.gz" transfer 0 0 2>&1 | sed 's/^/    /' | tee -a "$R"
+              done
+              { echo; echo '### Paczki ROM na spoolu'; echo; echo '```'
+                ls -l rom-kit.tar.gz rom-docs.tar.gz 2>/dev/null
+                sha256sum rom-kit.tar.gz rom-docs.tar.gz 2>/dev/null
+                echo '```'; } >> "$R"
+            fi
+          fi
           echo; echo "=========== RAPORT ==========="; cat "$R"
 
       - name: Podsumowanie kawalkow do sciagniecia przez agenta

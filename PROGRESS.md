@@ -21,3 +21,4 @@ Start bloku: 2026-09-23 ~16:55 (Europe/Warsaw), limit czasowy 3h.
 Uwaga o uprawnieniach: kazdy bieg wymaga wczasowo 'kazdy z linkiem' na plikach, ktore
 sa pobierane, i `make_private` zaraz po nim. Kazdorazowo weryfikowane przez
 `list_permissions` (ma zostac tylko 'owner').
+etap 4/5: VINTF + budowa ROM-u gotowe i wpiete w workflow (rom_build: 1)
