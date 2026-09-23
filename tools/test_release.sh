@@ -249,7 +249,10 @@ for d,known in sums.items():
     # poslubi 'cdbb7717…', czyli sha1 KLUCZA AVB (avbtool info_image), za sume obrazu
     # i zglosi ducha, ktorego nie ma (2026-09-23, pierwsza wersja N).
     WANT=re.compile(r'product|system|vbmeta|flash-all|rollback|release-manifest|build-info')
-    SKIP=re.compile(r'sha1|klucz|key|cdbb7717', re.I)
+    # 'ROZMIARY-KONTRAKT' to linia z ROZMIARAMI plikow (product=75198464 ...). Sama w sobie jest
+    # poprawnym ciagiem hex (150560768 to osiem-cyfrowy 'prefiks sumy'!), wiec Nbralaby ja jako
+    # duke sume i FAILowala. Za te linie odpowiada sekcja Q — kontrola rozmiarow, nie sum.
+    SKIP=re.compile(r'sha1|klucz|key|cdbb7717|ROZMIARY-KONTRAKT', re.I)
     for line in txt.split('\n'):
         if not WANT.search(line) or SKIP.search(line): continue
         for pref in re.findall(r'[`#\s*]?([0-9a-f]{8,64})\u2026?', line):
@@ -394,6 +397,51 @@ SHA
     ok "odmowa rozmiaru cytuje slot i liczbe bajtow"
   else bad "odmowa rozmiaru nie pokazuje liczb (samo 'NO-GO')"; fi
 fi
+
+# --------------------------------------------------- Q: kontrakt rozmirow w README
+echo "== Q      rozmiary w dokumentach wydania musza zgadzac sie z plikami (kontrakt)"
+# Sekcja N pilnuje, ze dokumenty cytują ISTNIEJACE sumy. To za malo: 23 IX 2026 automat
+# odswiezajacy dokumentacje zmienil sumy, a ROZMIARY zostawil sprzed przebudowy — i zadna
+# kontrola nie krzyknela, bo liczba '967 503 872' byla poprawna w dniu, w ktory ja wpisano.
+# Leczenie: blok '<!-- ROZMIARY-KONTRAKT nazwa=bajty ... -->' w README, liczony przez
+# make_release'i, plus drugi czlony: ta sama liczba musi wystepowac w PROZE ktoregos README
+# (inaczej blok jest swiezy, a akapit klamie — dokladnie klasa bledu, ktora zrobilem).
+if python3 - "$ROOT" <<'PYQ'
+import os,re,sys
+root=sys.argv[1]; rel=[d for d in ('dist/release/HyperOS4_P11Gen2','dist/release/HyperOS4_P11Gen2-full')]
+seen=0; bad=[]
+texts={}; sizes={}
+for d in rel:
+    dd=os.path.join(root,d)
+    if not os.path.isdir(dd): bad.append(f"brak katalogu {d}"); continue
+    for f in os.listdir(dd):
+        if f.endswith('.img'): sizes[(d,f)]=os.path.getsize(os.path.join(dd,f))
+    rp=os.path.join(dd,'README.md')
+    if not os.path.isfile(rp): bad.append(f"brak {d}/README.md"); continue
+    texts[d]=open(rp,encoding='utf-8').read()
+for d,txt in texts.items():
+    m=re.search(r'<!--\s*ROZMIARY-KONTRAKT([^\n]*)-->', txt)
+    if not m:
+        bad.append(f"{d}/README.md: brak bloku ROZMIARY-KONTRAKT (make_release go nie wstrzyknal?)"); continue
+    for name,val in re.findall(r'([\w.]+\.img)=(\d+)', m.group(1)):
+        seen+=1
+        real=sizes.get((d,name))
+        if real is None: bad.append(f"{d}: {name} z kontraktu nie istnieje w katalogu"); continue
+        if real!=int(val): bad.append(f"{d}: {name} kontrakt mowi {val} B, plik ma {real} B")
+        pretty=f"{int(val):,}".replace(',',' ')
+        # TA SAM proza, nie 'ktorakolwiek': pierwszy wersji pozwolila, by -full README
+        # ratowal lekki (ten przywoluje jego rozmiar przy porownaniu wariantow) i test
+        # negatywny 'sklam proze w lekkim' przeszedl na zielono. Kontrola, ktora tak
+        # wybacza, nie istnieje (23 IX 2026).
+        prose=re.sub(r'<!--.*?-->','',txt,flags=re.S)
+        if pretty not in prose:
+            bad.append(f"{d}: {name} = {val} B jest w kontrakcie, ale nie ma tej liczby w PROZIE"
+                       f" tego README — akapity zostaly z poprzednia liczba (blok swiezy, tekst klamie)")
+if seen<3: bad.append(f"przeanalizowano tylko {seen} pozycji kontraktu — kontrola jest martwa, nie zielona")
+if bad: print("\n".join("  "+b for b in bad)); sys.exit(1)
+print(f"  przeanalizowane pozycje kontraktu: {seen}")
+PYQ
+then ok "rozmiary w README = rozmiary plikow (kontrakt Q)"; else bad "kontrakt rozmirow nie przechodzi"; fi
 
 echo; echo "=== podsumowanie: $pass PASS, $fail FAIL ==="
 [ $fail -eq 0 ] || echo "UWAGA: ktorys test padl — nie wydawaj zmiany w tools/, ktora to wywolala."

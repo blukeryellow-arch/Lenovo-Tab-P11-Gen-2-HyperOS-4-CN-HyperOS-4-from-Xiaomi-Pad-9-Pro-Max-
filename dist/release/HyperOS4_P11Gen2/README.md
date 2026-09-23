@@ -200,3 +200,9 @@ weryfikacji, więc awaria wygląda jak cisza. Ratunek: `rollback.sh`, stockowe o
 Braki HAL-i, których vendor `mt6789` nie ma (audio AIDL, health, power, thermal — `docs/05`
 §5.1), nie znikają przez obniżenie ich do `optional`: to usuwa blokadę startu, nie dodaje
 implementacji.
+
+<!-- ROZMIARY-KONTRAKT product_hyperos4_p11g2.img=75198464 system_hyperos4_p11g2.img=920047616 vbmeta_hyperos4_p11g2.img=4096 -->
+<!-- tools/test_release.sh, sekcja Q, wywala FAIL jesli ktora kolwiek z tych liczb przestanie
+     zgadzac sie z plikiem. Dzieki temu 'odswiezanie dokumentacji' nie moze zostawic przedawnionego
+     rozmiaru (23 IX 2026: podmiana sum pomiedzy wariantami wlasnie to zrobila i nikt by nie
+     zauwazyl, bo sekcja N patrzyla wtedy wyłącznie na sha256). -->
