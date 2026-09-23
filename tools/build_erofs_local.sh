@@ -130,9 +130,18 @@ say "== 3/4  kompilacja (kompresja wlaczona, jesli 1.5/4 znalazla biblioteki) ==
 # lz4/lz4hc/deflate wchodza do budowy TYLKO jesli config.h je wlaczyl - inaczej gcc
 # wywoli sie na '#include <lz4.h>'.
 EXCL='compressor_lib(lzma|zstd|deflate)|compress_qpl|liberofs_sha256'
-grep -q '^#define LZ4_ENABLED'    config.h || EXCL="$EXCL|compressor_lz4$"
-grep -q '^#define LZ4HC_ENABLED'  config.h || EXCL="$EXCL|compressor_lz4hc"
-grep -q '^#define HAVE_ZLIB'      config.h || EXCL="$EXCL|compressor_deflate|kite_deflate|gzran"
+# UWAGA na '.c': 'compressor_lz4$' NIGDY by nie trafilo (sciezka to
+# 'lib/compressor_lz4.c'), wiec przy braku lz4 kompilowalem plik, ktory require'uje
+# lz4.h -> 'fatal error: lz4.h'. Zlorbne '($|\.c$)' łapie oba zapisy.
+grep -q '^#define LZ4_ENABLED'    config.h || EXCL="$EXCL|compressor_lz4($|\.c$)"
+grep -q '^#define LZ4HC_ENABLED'  config.h || EXCL="$EXCL|compressor_lz4hc($|\.c$)"
+# BEZ zlib NIE wolno wyciagac compressor_deflate.c / kite_deflate.c / gzran.c: te pliki SAME
+# maja w srodku '#ifdef HAVE_ZLIB' i sciezke zapasowa, a lib/compressor.c (linia 33) wola
+# &erofs_compressor_deflate BEZ warunku - wiec ich wykluczenie dawalo 'undefined reference'
+# i caly build bez bibliotek padal na linku (2026-09-23). Wykluczamy tylko to, co NAPRAWDE
+# wymaga naglowkow: compressor_lz4* (include'uje lz4.h bez guardu).
+# Wlasciwosc do pamietania: 'brak zlib' != 'nie kompilujemy deflate' - to dwie rozne rzeczy.
+grep -q '^#define HAVE_ZLIB'      config.h || EXCL="$EXCL|compressor_libdeflate($|\.c$)"
 say "  wlaczniki: $(grep -oE 'HAVE_ZLIB|LZ4_ENABLED|LZ4HC_ENABLED' config.h | tr '\n' ' ')"
 LIB=$(find lib -maxdepth 1 -name '*.c' | grep -vE "$EXCL" | tr '\n' ' ')
 CFLAGS="-O2 -DHAVE_CONFIG_H -D_GNU_SOURCE -I. -Iinclude -Ilib $CMPLINC"

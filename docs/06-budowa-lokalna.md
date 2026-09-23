@@ -503,3 +503,43 @@ brak takiej liczby to wynik podejrzaney, nie sukces. Wersja testowa tej zasady: 
 przechodzic **po wmieszaniu błędu** — i to jest jedyny sposób, żeby odróżnić „sprawdzone" od
 „nic nie było do sprawdzenia". `tools/test_release.sh` robi to dla weryfikatora (C, L, M3)
 i teraz także dla samej siebie (test negatywny N: wbitie `deadbeef…` daje FAIL, usuniecie — 0).
+
+## 6.21 `--compress none` byl sciezka, ktora nie istniala — naprawione, i teraz zmierzone
+
+README wydania od dawna radzil: „jesli Twoj kernel nie ma `EROFS_FS_LZ4`, zbuduj z
+`--compress none`". Zdanie bylo uczciwe co do intencji i **nieprawdziwe co do skutku**: taka
+budowa padala na linku, bo `build_erofs_local.sh` przy braku `zlib` wykluczal
+`compressor_deflate.c`, `kite_deflate.c` i `gzran.c` — a te pliki SAME mają
+`#ifdef HAVE_ZLIB` w środku i ścieżkę zapasową, natomiast `lib/compressor.c:33` woła
+`&erofs_compressor_deflate` **bez warunku**. Efekt: `undefined reference` i `FATAL`, czyli
+rada „awaryjna" byla niedostepna dokladnie wtedy, gdy ktos jej potrzebowal.
+
+Poprawka: przy braku `HAVE_ZLIB` wykluczamy tylko `compressor_libdeflate.c` (ten naprawde
+wymaga biblioteki), a `lz4` wykluczamy dalej — `compressor_lz4.c` include'uje `lz4.h` bez
+guardu i to jest jedyny plik, ktory wolno wyciac. Zasada, ktora z tego zostaje:
+**„nie mam biblioteki" to nie to samo co „ten plik nie ma byc skompilowany"** — najpierw
+sprawdz, czy plik sam sie nie strzeze, bo wykluczenie go psuje link, a nie naprawia.
+
+Zmierzone po poprawce (23 IX 2026, obie sciezki na tej samej maszynie, `COMP_PREFIX` wskazujace
+pusty katalog vs `/tmp/comp-build`):
+
+| budowa | `-zlz4` | obraz drzewa 1 588 894 B (dane podatne) | `fsck` wlasnego obrazu |
+|---|---|---|---|
+| bez `zlib`/`lz4` | **rc=1 — odmowa** (zgodnie z §6.10) | 1 806 336 B (bez kompresji) | rc=0 |
+| z `zlib`+`lz4` | rc=0 | 237 568 B | rc=0 |
+
+I rzecz, ktora liczy sie dla Ciebie najbardziej: **ta nowo skompilowana budowa odtwarza
+wydany `product.img` bajt w bajt** (`298ada607150d3f71099…`, `cmp` bez roznicy), tak samo jak
+dwa wczesniejsze, niezalezne kompilacje (`cb1d5940…` na tym samym drzewie bez `--exclude`).
+Czyli `odtworzenie bit w bit` nie jest tu haslem, tylko poleceniem do wpisania:
+
+```
+mkfs.erofs -T 0 -U 67b7eb22-3ebb-4c21-8b01-8ff545f10d8d -zlz4 \\
+           --force-uid=0 --force-gid=0 --exclude-regex '\\.komentarz\\.txt$' \\
+           out.img <drzewo-product>
+```
+
+Kolumna „1 806 336 vs 237 568" dotyczy drzewa syntetycznego z tekstem powtarzalnym — na
+prawdziwym `/system` roznica jest inna i zmierzona osobno: 1 376 899 072 B bez kompresji vs
+967 503 872 B z `lz4` (+42 % zamiast −85 %). Nie mixuj tych dwoch liczb, bo primera jest
+dowodzie, ze lz4 dziala, a druga tym, ile miejsca zostaje na partycji.

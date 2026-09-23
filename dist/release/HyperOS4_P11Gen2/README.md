@@ -81,6 +81,22 @@ Nie ma? Wtedy flashuj wariant bez kompresji: `tools/make_release.sh … --compre
 (pliki ~1,5× większe — `system` 1 376 759 808 B (bez wykluczen: 1 376 899 072 B z CI), `product` 87 973 888 B), albo zrezygnuj.
 Format lz4 nie jest tu moim widzimisię: źródłowy `system.img` HyperOS-u jest lz4-owy.
 
+## Odtworzenie bit w bajt — przepis sprawdzony na nowo skompilowanym narzędziu
+
+`mkfs.erofs` zbudowany od zera (inna kompilacja, ten sam kod) odtwarza `product.img` wydania
+**co do bajta** (`cmp` bez różnicy, sha256 `298ada607150d3f7…`):
+
+```
+mkfs.erofs -T 0 -U 67b7eb22-3ebb-4c21-8b01-8ff545f10d8d -zlz4 \
+           --force-uid=0 --force-gid=0 --exclude-regex '\.komentarz\.txt$' \
+           out.img <drzewo-product>
+```
+
+Trzy flagi, bez których się nie uda: `-T 0` (zeruje timestamps, bez tego każdy bieg ma inne
+bajty), `--force-uid/gid=0` (bez tego właściciel wchodzi z drzewa — patrz sekcja DAC wyżej)
+i `--exclude-regex` (pliki-notatki generatora). To jest też powód, dla którego `make_release.sh`
+ma je wpisane, a nie zostawia do recznego pilnowania.
+
 ## Odtworzyenie bit w bit (bez CI, z plików na Dysku)
 
 Kanał git nie pomieści 967 MB, więc `system_hyperos4_p11g2.img` jest do zbudowania.
