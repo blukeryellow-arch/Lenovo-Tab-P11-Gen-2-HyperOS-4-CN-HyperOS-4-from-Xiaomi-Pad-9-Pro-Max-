@@ -140,8 +140,25 @@ odrzuceniem nakładek** — nie komunikatem błędu, tylko brakiem zmiany wyglą
 `a53ff508…` zgodny z runnerem i z sumą Dysku):** w `product/overlay` jest **67 plików APK w 12
 katalogach** (80 MB), z czego **54 mają klucz MIUI `c9009d01ebf9…`**, a **13 inny**. Czyli reguła
 z tabeli wyżej dotyczy także `product`, nie tylko `vendor_mystical` — i dotyczy 4/5 nakładek.
-Te 13 spoza klucza MIUI to jedyne, które da się rozważyć bez przepisywania czegokolwiek; reszta
-wymaga własnego podpisu. Nie jest to wniosek z dokumentacji Xiaomi, tylko policzenie plików.
+Rozbiłem to na krzyżówkę „cel nakładki × klucz podpisu" (`diagnostics/rro-crosstab-product.tsv`,
+`tools/rro_targets.py` — parser binarnego `AndroidManifest.xml`, bo `res/values.xml` w auto-RRO
+nie istnieje):
+
+| cel (`targetPackage`) | klucz MIUI | inny klucz | sens na TB350FU |
+|---|---|---|---|
+| `android` (= `framework-res.apk`) | 16 | 10 | **26 nakładek** — najcenniejszych (pasek stanu, zaokrąglenia, animacje), ale wymagają klucza `android` z targetu |
+| `com.android.settings` | 6 | 0 | działałyby po przepodpisaniu |
+| `com.android.systemui` | 4 | 0 | j.w. |
+| `com.miui.miwallpaper` | 6 | 0 | **pakiet nie istnieje na Lenovo** → martwy ciężar |
+| `com.miui.rom`, `com.miui.securitycore`, `com.miui.system`, `com.xiaomi.phone`, `com.xiaomi.bluetooth`, `com.newcall` | 7 | 0 | **też pakiety Xiaomi** → zawsze bezczynne |
+| `providers.settings`, `server.telecom`, `bluetooth`, `phone`, `wifi.resources`, `networkstack`, `thememanager`, `managedprovisioning`, `cellbroadcast*` (AOSP) | 15 | 3 | istnieją na tablecie, czekają na podpis |
+
+Liczby: **54 z 67 na kluczu MIUI, 13 na innym; 13 z 67 celuje w pakiety Xiaomi, których na
+tablecie nie ma** (czyli 1/5 paczki to bagaż nie do użycia nigdy). Wniosek dla playbooka:
+`--debug-key` (przepodpisanie własnym kluczem, w CI `apksigner`) dotyczy **całych 26**
+frameworkowych nakładek, a nie „wybranych"; i przed przepodpisaniem warto odrzucić te 13
+xiaomi-only, bo zwiększają tylko ryzyko cichej kolizji nazw pakietów.
+Nie jest to wniosek z dokumentacji Xiaomi, tylko policzenie plików.
 
 ### Etap 4c — to, co działa bez podpisu: fonty
 

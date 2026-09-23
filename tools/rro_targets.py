@@ -31,12 +31,17 @@ def string_pool(d, off):
     """(lista stringow, koniec chunku). UTF-16 i UTF-8 obsluzone."""
     typ, hdr, size = struct.unpack_from('<HHI', d, off)
     assert typ == RES_STRING_POOL_TYPE, f'spul nie jest pula stringow (0x{typ:04x})'
-    count, _styled, flags, _smin, sofs = struct.unpack_from('<IIIII', d, off + 8)
-    data_start = off + hdr + count * 4
+    count, _styled, flags, sstart, _ssizes = struct.unpack_from('<IIIII', d, off + 8)
+    # stringsStart jest offsetem WZGLEDNYM do poczatku chunka (AOSP ResStringPool_header), a tablica indeksow nastepuje bezposrednio po naglowku
+    # o rozmiarze 'hdr'. Wzor 'hdr + count*4' + 'off + 20' przesuwal wszystko
+    # o 8 bajtow, przez co 'targetPackage' czytano jako 0x10000008 (zmierzone na
+    # 67 apk w product/overlay, 2026-09-23).
+    itab = off + hdr
+    data_start = off + (sstart if sstart >= hdr + count * 4 else hdr + count * 4)
     utf8 = bool(flags & (1 << 8))
     out = []
     for i in range(count):
-        o = struct.unpack_from('<I', d, off + 20 + i * 4)[0]
+        o = struct.unpack_from('<I', d, itab + i * 4)[0]
         p = data_start + o
         if utf8:
             def dec(b):
@@ -80,18 +85,30 @@ def scan_all(d, start, pool):
         if size < 8 or off + size > len(d):
             break
         if typ == RES_XML_START_ELEMENT_TYPE:
-            _line, _cmt, _ind, ns, name = struct.unpack_from('<IIIII', d, off + 4)
-            astart, asize, acount, aidxs, avalues = struct.unpack_from('<HHHHI', d, off + 28)
+            _line, _cmt, ns, name = struct.unpack_from('<IIII', d, off + 8)
+            astart, asize, acount = struct.unpack_from('<HHH', d, off + 24)
             attrs = {}
             for i in range(acount):
-                base = off + aidxs + i * 20
-                ans, aname, avalue = struct.unpack_from('<III', d, base)
-                raw = d[base + 16:base + 24]
-                vtype = raw[0] if raw else 0
-                key = pool[aname] if aname < len(pool) else f'#{aname}'
-                val = pool[avalue] if 0 <= avalue < len(pool) else None
+                # ResXMLTree_attribute = { i32 ns; i32 name; Res_value } a Res_value =
+                # { u16 size; u8 res0; u8 dataType; i32 data } -> 16 B na atrybut.
+                # Kroku NIE wymuszamy 20 (to byl blad: 'targetPackage' czytelismy jako
+                # 0x25, bo drugi atrybut zaczynal sie 4 bajty za daleko).
+                stride = asize if asize >= 16 else 16
+                base = off + 16 + astart + i * stride
+                _ans, aname = struct.unpack_from('<ii', d, base)
+                _vsz, _r0, vtype = struct.unpack_from('<HBB', d, base + 12)
+                vdata, = struct.unpack_from('<i', d, base + 16)
+                key = pool[aname] if 0 <= aname < len(pool) else f'#attr{aname}'
+                if vtype == 0x03 and 0 <= vdata < len(pool):
+                    val = pool[vdata]                        # TYPE_STRING
+                elif vtype == 0x01:
+                    val = f'@0x{vdata & 0xFFFFFFFF:08x}'      # TYPE_REFERENCE
+                elif vtype in (0x12, 0x11):
+                    val = 'true' if vdata else 'false'        # TYPE_INT32/BOOLEAN (0!=true)
+                else:
+                    val = f'0x{vdata & 0xFFFFFFFF:x}'
                 attrs[key] = val
-            tag = pool[name] if name < len(pool) else '?'
+            tag = pool[name] if 0 <= name < len(pool) else '?'
             out['tags'].append(tag)
             if tag == 'manifest':
                 out['package'] = attrs.get('package')
