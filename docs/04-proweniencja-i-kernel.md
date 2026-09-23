@@ -331,3 +331,54 @@ Dwie wazne granice tego kanalu, zebym nie zostawil wrazenia, ze to dziura bezpla
    czyste (`git rm -r transfer` w `0163e4c`+), ale `git clone` sciaga packa z tym balastem — przy
    wlasciwym transferze to bez znaczenia (raz ~60 MB), jezeli bedzie przeszkadzac, wystarczy
    `git filter-repo --path transfer --invert-paths` po Twojej stronie i force-push.
+
+## 4.9 Rozpakowanie na runnerze i kawalki <=90 MB  kanale przetestowany koncow do konca
+
+Zmierzone 2026-09-23 na Twoich plikach, nie na sondach. Pekl: pobranie z Dysku przez
+runniera GitHub Actions -> `fs_probe` + `avbtool` -> rozpakowanie partycji -> `split -b 90m`
+na galaz -> `tools/pull_via_git.sh` po mojej stronie -> weryfikacja `sha256`.
+
+**Bieg 17 (`35823024969`) przeszedl w calosci na zielono.** `system.img`
+(`1Pu6RU00SsbFiXiGlx6IpG14714jaZThN`, 937 791 488 B, sha256 `4d3c61fe358f...`) zostal
+pobrany, rozpakowany, zapakowany (`749 834 731 B`, sha256 `afb1e37bc86b...`), pociete na
+**8 czastek** (7 x 94 371 840 + 1 x 89 231 851 B) i wypchniety na galaz z `MANIFEST.tsv`.
+Zlozone u mnie: rozmiar co do bajta i **sha256 identyczny z tym z MANIFESTu runnera**;
+w paczce 4298 plikow, w tym `system/framework/framework.jar` (51,2 MB), `services.jar`
+(39,9 MB), `system/fonts/NotoSansCJK-Regular.ttc` (32,4 MB) i apexy.
+
+Piatra, ktore wypadly po drodze (kazda udokumentowana w commitach, bo logow CI nie widac):
+
+| prob | objaw | przyczyna (zmierzona) |
+|---|---|---|
+| 1 | `exit 127` | `echo` rozbity na dwie linie w `run: |` - druga byla wywolaniem polecenia |
+| 2 | `exit 1` po 57 s | zadny endpoint nie zwrocil pliku; brakolo `confirm=t` w query |
+| 3 | `formularz zwrocil 0 B` | POST do `action` bez pol: Google trzyma `id/export/confirm/uuid` w **query** i przycisk robi **GET**, nie POST |
+| 4 | `No space left on device` | workflow robil `cp out/$name one/` - surowy obraz lezial DWUKROTNIE (11,9 GB zamiast 5,9 GB) |
+| 5 | push po 2m38s, exit 1 | `git add -f transfer/` bral rowniez tarball rodzica >100 MB -> GitHub odrzuca CALY push |
+| 6 | brak biegow w ogole | filtr `on: push.paths` nie znal `tools/**` - zmiana naprawy nie tworzyla runa |
+| 7 | `MANIFEST` z 1 wpisem, 0 czastek | moja ata wstawila `rm -f "$pkg"` PRZED `split` |
+
+Wnioski praktyczne, do zapamietania:
+
+1. **Limit konektora Drive (104 857 600 B, whole-file) nie obowiazuje runniera Actions.**
+   Dla plikow >~100 MB Drive nie skanuje antywirusowo i oddaje strone
+   `<title>Google Drive - Download warning</title>` (HTTP 200, ~2,5 kB HTML).
+   `tools/drive_form_post.py` wyciaga z niej `action` wlasciwego `<form>` (NIE pierwszego -
+   pierwszym jest formularz logowania) i pobiera GET-em po query z `uuid`. `--selftest`
+   pokrywa dwa uklady strony bez sieci.
+2. **Publiczny link jest niezbedny tylko na czas pobierania.** Przywolalem `make_public`
+   (reader, bez indeksowania) dla pieciu obrazow i po kazdym biegu `make_private`;
+   `list_permissions` na wszystkich pieciu pokazuje dzis wylacznie `owner`.
+3. **Budzet runniera to ~14 GB, a limit GitHuba to 2 GB na push i 100 MB na blob.**
+   Dlatego: jeden duzy obraz na bieg, `mv` zamiast `cp`, `split` przed usunieciem rodzica.
+   Dla `product.img` (6,45 GB surowe) dojdzie prawdopodobnie limit 2 GB/push - wtedy
+   trzeba rezerowac podzbior sciezek (`product/overlay`, `product/media`), nie calosc.
+4. Allowlist `tools/unpack_on_runner.sh` na razie nie trafia w sciezki (korzen EROFS to
+   `./system/...`, nie `system/...`), wiec paczka `system.img` jest cala partycja. To
+   bezpieczne, tylko duze; do poprawienia przed `product.img`.
+
+Urzadzenia sluzace do powtorzenia: `drive-probe.request` (lista ID; start = commit z
+`[drive-probe]` w tytule, bo token sandboxa nie ma prawa do `workflow_dispatch`),
+`tools/unpack_on_runner.sh` (strona runniera), `tools/pull_via_git.sh` (moja strona),
+`tools/lint_workflow_steps.py` (apie wpadki typu #1 lokalnie, `bash -n` + heurystyka
+linii o ksztalcie tekstu; test negatywny potwierdzony).
