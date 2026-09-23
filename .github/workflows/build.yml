@@ -281,8 +281,7 @@ jobs:
           R="reports/drive-probe-$GITHUB_RUN_ID.md"
           { echo "# Raport drive-probe"; echo
             echo "- run: \`$GITHUB_REPOSITORY@$GITHUB_SHA\`"; echo "- wejscie ids: \`$DRIVE_IDS\`"; echo
-            echo "Pobieranie idzie bez OAuth/klucza API, wiec probujemy trzech endpoitntow:"
-            "usercontent (z confirm=t, omija strone skanu), uc?export=download, googleapis alt=media."
+            echo "Pobieranie bez OAuth i bez klucza API: probujemy drive.usercontent (confirm=t, omija strone skanu), drive.google.com/uc oraz googleapis alt=media."
             echo; } > "$R"
 
           # pobranie publiczne odporne na: (a) brak klucza API przy googleapis,
@@ -343,6 +342,7 @@ jobs:
           echo; echo "=========== RAPORT ==========="; cat "$R"
 
       - name: Podsumowanie kawalkow do sciagniecia przez agenta
+        if: always()
         run: |
           set -uo pipefail
           mkdir -p transfer
