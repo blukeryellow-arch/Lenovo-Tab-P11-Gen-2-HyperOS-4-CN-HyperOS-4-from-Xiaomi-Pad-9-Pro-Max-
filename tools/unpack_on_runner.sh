@@ -78,7 +78,7 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
   # 1) mount read-only - najdokladniejsze, dziala na ext4 i EROFS, wymaga sudo (runner ma)
   if have mount; then
     if sudo -n mount -o ro,loop "$work" "$tree" 2>/dev/null; then
-      method="mount-ro"; log "    zamontowane read-only"
+      method="mount-ro"; mounted=1; log "    zamontowane read-only"
     fi
   fi
   # 2) debugfs - ext4 bez montowania (odczyt)
@@ -100,7 +100,7 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
     [ -d "$tree" ] && rmdir "$tree" 2>/dev/null
     continue
   fi
-  [ "$method" = "mount-ro" ] && sudo -n umount "$tree" 2>/dev/null
+  umount_tree() { [ "${mounted:-0}" = "1" ] && sudo -n umount "$tree" 2>/dev/null; mounted=0; }
 
   # Paczka = TYLKO to, czego sciezka A potrzebuje. Dobre praktyki, ktore tu siedza:
   #  - obraz EROFS/ext4 punktuje sie w ITS ROOT, czyli 'product/overlay' NIE ISTNIEJE
@@ -150,23 +150,24 @@ $(cd "$tree" && find . -xdev -maxdepth 4 -type f -name 'public.libraries.txt' 2>
       done
       [ "$keep" = "1" ] && include+=("$rel")
     done
-    [ "${#include[@]}" -gt 0 ] || { log "    (!) allowlista nie trafil w NIC w tym obrazie - NIE pakujemy calosci (patrz komentarz wyzej)"; continue; }
+    [ "${#include[@]}" -gt 0 ] || { log "    (!) allowlista nie trafil w NIC w tym obrazie - NIE pakujemy calosci (patrz komentarz wyzej)"; umount_tree; continue; }
     log "    trafil: ${#include[@]} pozycji: $(printf '%s ' "${include[@]}" | cut -c1-200)"
   fi
   # (sciezki dobrane wyzej; brak 'pakuj calosc' - to bylo zrodlo ENOSPC)
   pkg="$DST/$base-assets.tar.gz"
-  if [ "$method" = "mount-ro" ] && have mount; then
-    sudo -n mount -o ro,loop "$work" "$tree" 2>/dev/null && {
-      sudo -n tar -I "gzip -1" -cf "$pkg" -C "$tree" "${include[@]}" 2>>"$DST/UNPACK_REPORT.txt" || {
-        sudo -n umount "$tree"; tree_packed=0; }
-      sudo -n umount "$tree" 2>/dev/null
-    }
+  # 'sudo' potrzebne, bo na zamontowanym ro drzewie nie zawsze da sie czytac bez roota;
+  # tar dostaje liste 'include' wzgledem '$tree' - te same sciezki, ktore wlasnie dobralem.
+  if [ "${mounted:-0}" = "1" ]; then
+    sudo -n tar -I "gzip -1" -cf "$pkg" -C "$tree" "${include[@]}" 2>>"$DST/UNPACK_REPORT.txt" || \
+      log "    (sudo tar rc=$? - probuje bez sudo)"
+    umount_tree
   fi
   [ -s "$pkg" ] || tar -I "gzip -1" -cf "$pkg" -C "$tree" "${include[@]}" 2>>"$DST/UNPACK_REPORT.txt" || true
   rm -rf "$tree"
 
   if [ ! -s "$pkg" ]; then
     log "    paczka pusta - nic nie wyciagnieto"
+    umount_tree 2>/dev/null || true
     continue
   fi
   # BRAMKA 1: paczka, ktorej tar nie domknal (ENOSPC!), nie moje miec wstepu do

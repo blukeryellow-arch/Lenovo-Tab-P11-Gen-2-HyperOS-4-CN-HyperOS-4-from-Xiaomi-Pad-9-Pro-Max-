@@ -310,6 +310,15 @@ jobs:
         run: |
           set +e
           set -u
+          # Runner Azure ma ~13 GB wolnego NA STARCIE - to za malo na 6,45 GB obraz
+          # plus paczke (bieg 35896026438: 'product' dostal SKIP, bo zostalo 0,4 GB).
+          # Kasujemy to, czego ten job nie uzywa - typowe odzyski CI, ~10-15 GB.
+          for d in /usr/share/dotnet /usr/local/lib/android /opt/hostedtoolcache/CodeQL \
+                   /usr/share/swift /usr/local/graalvm /usr/lib/jvm/*11* ; do
+            [ -e "$d" ] && sudo rm -rf "$d" 2>/dev/null
+          done
+          sudo rm -rf /home/runner/.gradle/caches 2>/dev/null
+          echo "  wolne po odzysku: $(df -h . | tail -1)"
           mkdir -p out reports
           R="reports/drive-probe-$GITHUB_RUN_ID.md"
           { echo "# Raport drive-probe"; echo
@@ -430,7 +439,13 @@ jobs:
           # ===================== BUDOWA ROM =====================
           if [ "${ROM_BUILD:-0}" = "1" ] && [ -n "$(ls obrazy 2>/dev/null || true)" ]; then
             echo "===== BUDOWA ROM (tools/build_rom_on_runner.sh) ====="
-            SRC=obrazy OUT=rom AVB="${AVBTOOL:-$HOME/avb/avbtool.py}" \
+            # Plik sciagniety z Drive nosi nazwe 'drive-<ID>.img' (API anonimowo nie zwraca
+            # nazwy) - budowany skrypt szukal 'obrazy/system.img' i padl bez obrazu w paczce
+            # (rom-kit wyszedl 306 B). Wybor: ten z 'system' w nazwie, else pierwszy.
+            SYSIMG=$(ls -1 obrazy/*.img 2>/dev/null | grep -i 'system' | head -1)
+            [ -n "$SYSIMG" ] || SYSIMG=$(ls -1 obrazy/*.img 2>/dev/null | head -1)
+            echo "  obraz do przebudowy: $SYSIMG ($(stat -c%s "$SYSIMG" 2>/dev/null) B)"
+            SRC=obrazy OUT=rom SYSIMG="$SYSIMG" AVB="${AVBTOOL:-$HOME/avb/avbtool.py}" \
               KEY="$HOME/avb/test/data/testkey_rsa2048.pem" \
               bash tools/build_rom_on_runner.sh 2>&1 | tail -70
             BRC=${PIPESTATUS[0]}
@@ -452,6 +467,7 @@ jobs:
                 echo '```'; } >> "$R"
             fi
           fi
+          rm -rf obrazy out one 2>/dev/null
           echo; echo "=========== RAPORT ==========="; cat "$R"
 
       - name: Podsumowanie kawalkow do sciagniecia przez agenta
