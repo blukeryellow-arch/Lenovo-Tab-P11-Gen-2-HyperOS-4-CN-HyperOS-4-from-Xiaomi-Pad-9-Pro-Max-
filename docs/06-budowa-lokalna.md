@@ -141,7 +141,9 @@ wymagania, ten regeneruje obraz (`tools/make_release.sh`), i to jest w `dist/rel
 
 Bootalność. Nic powyżej nie dowodzi, że tablet wstanie: `Flags: 3` wyłącza komunikat weryfikacji,
 więc awaria wygląda jak cisza. Ratunek: `dist/release/.../rollback.sh` (vbmeta z kopii wykonanej
-przed flashem) + obrazy Lenovo z Dysku (`diagnostics/drive-inventory.tsv`), zapasowo EDL.
+przed flashem) + obrazy Lenovo z Dysku (`diagnostics/drive-inventory.tsv`); zapasowo tryb
+BROM/DA MediaTeka (`mtkclient`/SP Flash Tool) — **nie EDL**, bo `mt6789` to MediaTek, a EDL jest
+terminem i procedurą Qualcomma. Myliłem je w trzech dokumentach do 23 IX 2026.
 Wymagania HAL-ów, których vendor `mt6789` nie ma (audio AIDL, health, power — `docs/05` §5.1),
 nadal istnieją: obniżenie ich do `optional` usuwa blokadę startu, nie dodaje implementacji.
 

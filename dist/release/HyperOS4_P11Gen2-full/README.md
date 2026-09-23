@@ -50,7 +50,7 @@ Czego **nie** ma tu, a ma pełny `product.img` Xiaomi (6,4 GB): `pangu/`, `bin/`
 `etc/selinux/product_*.contexts`, `etc/vintf/manifest.xml`, `overlay/partition_order.xml`.
 Liczby odwołań do nich w obrazie `system`: `diagnostics/product-refs.tsv`. Dopięcie ich z
 wlasnego product.img: `tools/enrich_product.sh --src product.img --tree <drzewo>`.
-<!-- ROZMIARY-KONTRAKT product_hyperos4_p11g2.img=150560768 system_hyperos4_p11g2.img=920047616 vbmeta_hyperos4_p11g2.img=4096  -->
+<!-- ROZMIARY-KONTRAKT product_hyperos4_p11g2.img=150560768 system_hyperos4_p11g2.img=920047616 vbmeta_hyperos4_p11g2.img=4096 -->
 <!-- Utrzymuje go tools/make_release.sh, sprawdza tools/test_release.sh (sekcja Q).
      Jezli ktora kolwiek z tych liczb nie zgadza sie z plikiem albo znika z prozy
      tego README, test wydania FAILuje. To nie jest komentarz do recznego pilnowania. -->

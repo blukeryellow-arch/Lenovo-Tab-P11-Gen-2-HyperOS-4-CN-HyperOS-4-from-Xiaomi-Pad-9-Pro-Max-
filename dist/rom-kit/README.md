@@ -23,4 +23,6 @@ a nie z tej gałęzi. Wnioski z jego pomiarów są w `docs/05` §5.7 (marker gen
 
 Nie rusza `framework-res.apk`, `boot.img`, ramdisku, tablicy partycji, APEX-ów. Nie przerabia
 vendora `mt6789` pod HAL-e A17. Bootloop jest realnym scenariuszem; `Flags: 3` oznacza, że
-awaria nie da komunikatu — ratunek to EDL / Lenovo Rescue & Smart Assistant.
+awaria nie da komunikatu — ratunek to `rollback.sh` + tryb BROM/DA MediaTeka (`mtkclient` /
+SP Flash Tool); EDL nie wchodzi w grę, bo to nie Qualcomm. Lenovo Rescue & Smart Assistant jest
+opisany na stronie Lenovo, ale przeze mnie nie wypróbowany.

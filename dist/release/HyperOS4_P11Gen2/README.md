@@ -24,9 +24,9 @@ z tego samego drzewa i tego samego UUID).
 | `product_hyperos4_p11g2.img` | 75 198 464 | `/product` (EROFS+lz4): `fonts/` + `etc/passwd` + `etc/group`; zweryfikowany **67/67** wpisów 1:1 |
 | `system_hyperos4_p11g2.img` | 920 047 616 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowane macierze VINTF 4/5/6). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | `Flags: 3` (weryfikacja + verity wyłączone), `rollback_index 0`, SHA256_RSA2048, key `cdbb7717…` |
-| `flash-all.sh` | ~3,4 kB | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
-| `device-probe.sh` | 6 393 | **krok 0 przed flashem**: czyta `fastboot getvar` + `adb shell` i drukuje GO / GO z zastrzeżeniami / NO-GO (fastbootd, rozmiary slotów, `CONFIG_EROFS_FS{,_LZ4}`). Tylko odczyty — nic nie zapisuje, nic nie mountuje |
-| `rollback.sh` | 469 | przywraca vbmeta z kopii wykonanej przed flashem |
+| `flash-all.sh` | 6 631 | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
+| `device-probe.sh` | 6533 | **krok 0 przed flashem**: czyta `fastboot getvar` + `adb shell` i drukuje GO / GO z zastrzeżeniami / NO-GO (fastbootd, rozmiary slotów, `CONFIG_EROFS_FS{,_LZ4}`). Tylko odczyty — nic nie zapisuje, nic nie mountuje |
+| `rollback.sh` | 1 152 | przywraca vbmeta z kopii wykonanej przed flashem |
 | `release-manifest.tsv` | ~0,6 kB | `plik ⇥ bajty ⇥ sha256 ⇥ uwaga` |
 | `SHA256SUMS.txt` | — | liczony na końcu; `sha256sum -c` = 8/8 OK. **`*.md` jest poza sumami** — README to dokumentacja, nie ładunek: inaczej redakcja zdania „unieważnia" wydanie (złapane przez `tools/test_release.sh`) |
 | `build-info.txt` | — | kompresja, UUID, wersja `mkfs.erofs`, ścieżki drzew |
@@ -192,11 +192,47 @@ w bajty. Dlatego rozmiary zostały te same, a sha256 się zmieniły. docs/06 §6
    `etc/fonts_customization.xml`, `etc/selinux/product_*.contexts`, `pangu/`) listę z
    liczbą odwołań masz w `diagnostics/product-refs.tsv`, a narzędzie `enrich_product.sh`.
 
+## Awaria — kolejność, która istnieje naprawdę
+
+**Krok 0, przed cokolwiek: zrób kopię `system`, `product`, `system_ext`, `vendor`, `odm` ze
+swojego tabletu albo wyciągnij je z oficjalnego firmware Lenovo dla TB350FU.** Brzmi jak
+biurokracja, a jest całym ubezpieczeniem: na Dysku leżą obrazy Lenovo `boot`, `vendor_boot`,
+`vbmeta` — i ANI JEDEN stockowy `system`/`product` (te dwie pozycje na Dysku to HyperOS z
+Xiaomi Pad 9 Pro Max, który nie ma tablicy partycji Twojego tabletu). Kto tego nie zrobi, ten
+po awarii układa firmware z pobranej paczki zamiast wlać kopię.
+
+Dalej, w tej kolejności — każda pozycja jest o jeden krok dalej od cegły:
+
+1. **Tablet wisi, ale USB żyje** → przytrzymaj `zasilanie + ściszanie` ~20 s, aż wejdzie w
+   fastboot/fastbootd (`fastboot devices` powinno go pokazać). Uruchom `bash rollback.sh`:
+   przywraca on `vbmeta_a`/`vbmeta_b` z kopii, którą `flash-all.sh` zrobił PRZED nadpisaniem.
+   To odkręca wyłączenie weryfikacji AVB, nie dotyka `product`/`system`.
+2. **Przywróć kernel, jeśli go ruszałeś** — ten zestaw NIE flashuje `boot` ani `vendor_boot`,
+   więc w normalnym scenariuszu ten krok jest zbędny. Jeśli mimo wszystko flashowałeś:
+   `fastboot flash boot boot.img` (plik z Dysku, Lenovo).
+3. **Nie licz na przełączenie slotu.** `flash-all.sh` wlewa `product` i `system` na OBA sloty —
+   `fastboot --set-active=b` prowadzi do tego samego obrazu. To była cena za to, że flash tylko
+   bieżącego slotu daje „flash OK, boot stop" po restarcie na drugi.
+4. **Brak fastbootu w ogóle** → zostań na trybie **BROM/DA MediaTeka** (`mtkclient` albo
+   SP Flash Tool z obejściem `auth` dla `mt6789`). Nie EDL — EDL to procedura Qualcomma, ten
+   tablet go nie ma, i wpisanie go do checklisty byłoby obietnicą bez pokrycia (sprawdziłem,
+   że sam tak miałem w trzech dokumentach do 23 IX 2026). Tej ścieżki NIE testowałem tutaj:
+   wymaga drugiego komputera i kabla w trybie bootromu, więc traktuj ją jako kierunek, nie
+   instrukcję.
+5. **NIE robij `fastboot erase userdata`.** Nie daje nic, czego krok 1–4 nie da, a kasuje dane.
+
+Jeśli po kroku 1 tablet wstaje na stock, to znaczy, że `product`/`system` wróciły z Twojej
+kopii albo że w ogóle ich nie ruszałeś — w drugim przypadku to wciąż mój obraz, tylko bez
+weryfikacji. Wtedy `bash device-probe.sh --release .` zanim spróbujesz ponownie.
+
 ## Czego NIE sprawdzono
 
 **Bootalności.** Nic wyżej nie dowodzi, że tablet wstanie; `Flags: 3` wygasza komunikat
-weryfikacji, więc awaria wygląda jak cisza. Ratunek: `rollback.sh`, stockowe obrazy Lenovo
-(`boot`/`vendor_boot`/`vbmeta` — ID w `diagnostics/drive-inventory.tsv`), zapasowo EDL.
+weryfikacji, więc awaria wygląda jak cisza. Ratunek: `rollback.sh` (przywraca stock `vbmeta`), stockowe obrazy Lenovo
+(`boot`/`vendor_boot`/`vbmeta` — ID w `diagnostics/drive-inventory.tsv`), a na ostatecznosc
+**tryb BROM/DA MediaTeka** (`mtkclient` albo SP Flash Tool z obejściem `auth` dla `mt6789`).
+Nie ma tu EDL — to jest procedura Qualcomma, nie tego tabletu; wpisanie jej w checklistę
+byłoby obietnicą, której nikt nie spełni. NIE testowałem jej w tym sandboxie.
 Braki HAL-i, których vendor `mt6789` nie ma (audio AIDL, health, power, thermal — `docs/05`
 §5.1), nie znikają przez obniżenie ich do `optional`: to usuwa blokadę startu, nie dodaje
 implementacji.
