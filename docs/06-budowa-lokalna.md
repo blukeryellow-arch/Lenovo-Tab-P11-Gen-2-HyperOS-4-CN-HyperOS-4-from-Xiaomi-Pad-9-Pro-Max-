@@ -264,3 +264,28 @@ wydanym obrazie zwraca 11 plików i zero `komentarz`.
 Lekcja przy okazji: `mkfs.erofs -C <rozmiar>` (większe pcluster) pozwala dobijać rozmiar
 jeszcze niżej, ale grandes pclusters wymagają `EROFS_FEATURE_INCOMPAT_BIG_PCLUSTER` w kernelu —
 a tu zostaje kernel Lenovo. Nie ryzykuję montowania partycji startowej dla kilku megabajtów.
+
+## 6.14 Dwie rzeczy, które wyszły przy sprawdzaniu własnego tekstu
+
+**a) `fsck.erofs` abortuje na sciezce „o jeden poziom za gleboko".** Na obrazie `system`:
+
+```
+--extract=X --path=system/product            -> rc=1  (uczciwie: nie ma takiego wpisu)
+--extract=X --path=system/product/overlay    -> SIGABRT, rc=134, zero komunikatu
+```
+
+Czyli ta sama nieistniejaca sciezka, ale glebiej o szczebel, konczy sie `Aborted` zamiast
+kodu bledu. Dla mnie to nie ciekawostka: kazdy skrypt, ktory pyta `fsck --path=…` i
+podejmuje decyzje po kodzie wyjscia, musi traktowac **kazdy** wynik inny od zera jako
+„nie ma/odmowa", nie tylko `1`. `tools/enrich_product.sh` i `make_release.sh` tak robia
+(`if … && [ -e … ]`), `verify_image.sh` w ogole nie uzywa `--path` (berze caly FS) - stad
+zadna z tych awarii nie mogla przeoczyc bledu. Zgloszone tutaj, bo to jest zachowanie
+narzedzia, nie moje: nie buduje sie na tym skryptu „sprawdz, czy plik istnieje w obrazie".
+
+**b) Nie wolno pisac do README zdania, ktorego sie nie zmierzylо.** W README bylo
+„67 RRO w `/system/…`" — falsz, wryty dlatego, że *skad* inamiecia拿 te nakladki (z
+`product.img`) i zalozylem, ze CI je wlozyl tez do `system`. Pomiar dal: `system/product`
+w obrazie nie istnieje (rc=1), `system/etc/permissions` istnieją (27 plików, 110 965 B).
+Konsekwencja dla czytelnika jest odwrotna niz myslalem: montujac wlasny `/product` **nic
+nie przykrywam** — wariant lekki nie „kasuje" HyperOS-owego wygladu, bo ten w `system`
+nigdy nie był; natomiast `--full` go *dodaje*. To jedno zdanie zmienilo sens calego akapitu.

@@ -12,7 +12,7 @@ Mój `lz4` daje 967 503 872 B (+3,2 % wobec źródła, −29,7 % wobec wersji be
 | | co w `/product` | rozmiar `product.img` | dla kogo |
 |---|---|---|---|
 | `HyperOS4_P11G2` (ten katalog) | `fonts/` (28 plików MiSans VF w 13 wariantach, Arimo, SourceHanSansCN) | **77 619 200 B** | domyślny: minimalny surface zmiany |
-| `HyperOS4_P11G2-full` | fonty **+ 67 nakładek RRO** (HyperOS-owy wygląd, `SettingsRroCommonOverlay` itd.) | **153 391 104 B** | jeśli ma być „HyperOS Look", nie tylko fonty |
+| `HyperOS4_P11G2-full` | fonty **+ 67 nakładek RRO** (HyperOS-owy wygląd; `SettingsRroCommonOverlay` itd.) — jedyne miejsce, gdzie te RRO sie powoduja | **153 391 104 B** | jeśli ma być „HyperOS Look", nie tylko fonty |
 
 `system` i `vbmeta` są w obu wariantach **tym samym plikiem** (identyczne sha256 — budowane
 z tego samego drzewa i tego samego UUID).
@@ -22,7 +22,7 @@ z tego samego drzewa i tego samego UUID).
 | plik | bajty | co to |
 |---|---|---|
 | `product_hyperos4_p11g2.img` | 77 619 200 | `/product` (EROFS+lz4), zweryfikowany 64/64 wpisów 1:1 |
-| `system_hyperos4_p11g2.img` | 967 503 872 | `/system` z HyperOS 4 (framework, MiSans, 67 RRO w `/system/...`, wygenerowane macierze VINTF 4/5/6), zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
+| `system_hyperos4_p11g2.img` | 967 503 872 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowane macierze VINTF 4/5/6). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | `Flags: 3` (weryfikacja + verity wyłączone), `rollback_index 0`, SHA256_RSA2048, key `cdbb7717…` |
 | `flash-all.sh` | ~3,4 kB | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
 | `rollback.sh` | 469 | przywraca vbmeta z kopii wykonanej przed flashem |
