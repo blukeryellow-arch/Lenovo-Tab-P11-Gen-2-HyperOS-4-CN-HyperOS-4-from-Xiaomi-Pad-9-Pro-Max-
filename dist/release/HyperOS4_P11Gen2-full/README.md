@@ -14,8 +14,10 @@ system   5cf58995174c7dc3…   (967 503 872 B, 4 565/4 565 wpisow 1:1; 967 507 9
 vbmeta   9cf2e7e4e165687a…   (Flags: 3, rollback_index 0)
 ```
 
-Instrukcja, wymagania kernela (`CONFIG_EROFS_FS_LZ4`), bramka rozmiaru partycji i przepis
-odtworzenia bit w bit: **`../HyperOS4_P11Gen2/README.md`**.
+Instrukcja (w tym **krok 0**: `bash device-probe.sh --release .`, ktory mowi GO/NO-GO na
+podstawie odczytan z tabletu), wymagania kernela (`CONFIG_EROFS_FS_LZ4`), bramka rozmiaru
+partycji i przepis odtworzenia bit w bit: **`../HyperOS4_P11Gen2/README.md`**. Ten katalog tez
+zawiera `device-probe.sh` i ma 8 pozycji w `SHA256SUMS.txt` (`sha256sum -c` = 8/8 OK).
 
 ## Wlasciciel plikow w partii
 

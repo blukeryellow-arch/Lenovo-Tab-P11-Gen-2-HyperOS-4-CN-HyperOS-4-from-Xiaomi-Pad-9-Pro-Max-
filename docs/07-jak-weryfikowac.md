@@ -16,6 +16,20 @@ Wartości oczekiwane (wydanie po korekcie DAC z 23 IX 2026, uuid `67b7eb22-3ebb-
 
 ---
 
+## 0. Zanim cokolwiek: `device-probe.sh` (krok 0, tylko odczyty)
+
+```
+bash device-probe.sh --release .        # w katalogu wydania; rc 0 = go, 2 = nie flashuj
+```
+
+Mierzy trzy rzeczy, ktorych z plikami na dysku nie da sie zmierzyc: czy tablet jest w
+fastbootd (`is-userspace`), czy oba sloty pomieszcza obrazy (`partition-size:product_a`,
+`system_a`, ... porownywane z `release-manifest.tsv`) i czy kernel ma `CONFIG_EROFS_FS=y`
+oraz `CONFIG_EROFS_FS_LZ4=y` (przez adb, jezeli device zyje). To trzecie jest warunkiem
+wstepnym wydania, nie ciekawostka: bez `LZ4` montaz odmawia, a wariant bez kompresji trzeba
+zbudowac samemu (§6.10, §6.21). Scenariusze bramek sa w testach (sekcja P suite, osiem
+przypadkow + dwie kontrole formy wypowiedzi).
+
 ## A. Integralność pobrania
 
 ```

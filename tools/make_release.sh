@@ -408,6 +408,17 @@ done
 echo "Partycje product/system przywraca sie obrazami Lenovo/stock z Dysku (IDs in diagnostics/drive-inventory.tsv)."
 ROLL
 chmod +x "$OUT/rollback.sh"
+# krok 0 dla flashujacego: decyzja PRZED flashem. Bez tego skryptu caly warunek wstepny
+# (kernel EROFS+lz4, rozmiar slotu) zywty jest tylko w moich dokumentach, ktorych nikt
+# nie czyta w polowie nocy. Skrypt tylko czyta: getvar / adb shell, zero zapisow.
+if [ -f "$HERE/device_probe.sh" ]; then
+  sed "s|^# tools/device_probe.sh.*|# device-probe.sh - kontrola urzadzenia PRZED flashem (tylko odczyty).\n# Kopia z repo: tools/device_probe.sh (ta partia, bez --adb do montowania).|" \
+      "$HERE/device_probe.sh" > "$OUT/device-probe.sh"
+  chmod 0755 "$OUT/device-probe.sh"
+  say "  device-probe.sh dolaczony do wydania (uruchom go PRZED flash-all.sh)"
+else
+  say "  UWAGA: brak tools/device_probe.sh - wydanie bez kontroli wstepnej urzadzenia"
+fi
 
 : > "$OUT/release-manifest.tsv"
 printf 'plik\tbajty\tsha256\tuwaga\n' >> "$OUT/release-manifest.tsv"
@@ -423,7 +434,7 @@ printf 'plik\tbajty\tsha256\tuwaga\n' >> "$OUT/release-manifest.tsv"
   :
 } > "$OUT/build-info.txt"
 
-for f in product_hyperos4_p11g2.img vbmeta_hyperos4_p11g2.img system_hyperos4_p11g2.img flash-all.sh rollback.sh; do
+for f in product_hyperos4_p11g2.img vbmeta_hyperos4_p11g2.img system_hyperos4_p11g2.img flash-all.sh rollback.sh device-probe.sh; do
   [ -f "$OUT/$f" ] || continue
   printf '%s\t%s\t%s\t%s\n' "$f" "$(stat -c%s "$OUT/$f")" "$(sha "$OUT/$f")" \
     "$([ "$f" = system_hyperos4_p11g2.img ] && { [ -n "$SYSTREE" ] && echo 'lokalnie z drzewa, weryfikacja 1:1 (verify_image.sh)' || echo 'kopia z pliku zewnetrzneego (--system-img)'; } || echo 'lokalnie')" \

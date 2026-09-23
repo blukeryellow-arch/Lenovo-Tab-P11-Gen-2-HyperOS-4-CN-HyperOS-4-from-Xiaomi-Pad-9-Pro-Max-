@@ -322,6 +322,79 @@ PYPY
   done
 fi
 
+# --------------------------------------------------------------- P: device_probe
+echo "== P      device_probe.sh: werdykt PRZED flashem (atrapa fastboot/adb)"
+# Atrapa uderza w punkt, ktory sam sie nie widzi: 'getvar X' to DRUGI argument, a
+# odpowiedz fastboota leci na STDERR w formie 'klucz: wartosc' plus linie OKAY. Kazde
+# uproszczenie ktore tu wczesniej zrobilem (odpowiedz na stdout; zapytanie
+# 'partition-size:systema' bez podkreślenia; parser 'cokolwiek przed dwukropkiem')
+# dawalo zielony werdykt przy zerowej liczbie odczytanych parametrow. Dlatego test
+# liczy scenariusze i pilnuje, by NO-GO bylo UZASADNIONE liczba, nie tylko kodem.
+PROBE=$ROOT/tools/device_probe.sh
+if [ ! -f "$PROBE" ]; then
+  bad "brak tools/device_probe.sh"
+else
+  PP=$WORK/probe; mkdir -p $PP/fb $PP/adb $PP/rel
+  cat > $PP/fb/fastboot <<'SHF'
+#!/usr/bin/env bash
+k=${2:-}
+o() { printf '%s\n' "$1" >&2; }
+case $k in
+  devices) exit 0;;
+  product) o "product: misty3g";;
+  current-slot) o "current-slot: a";;
+  is-userspace) o "is-userspace: ${FB_USR:-yes}";;
+  partition-size:product_a) o "partition-size:product_a: ${FB_SIZE_PRODUCT_A:-0x4c000000}";;
+  partition-size:product_b) o "partition-size:product_b: ${FB_SIZE_PRODUCT_B:-0x4c000000}";;
+  partition-size:system_a) o "partition-size:system_a: ${FB_SIZE_SYSTEM_A:-0x3d000000}";;
+  partition-size:system_b) o "partition-size:system_b: ${FB_SIZE_SYSTEM_B:-0x3d000000}";;
+  *) o "OKAY [  0.001s]"; o "finished. total time: 0.001s";;
+esac
+SHF
+  cat > $PP/adb/adb <<'SHA'
+#!/usr/bin/env bash
+[ "${FAKE_ADB_DOWN:-0}" = 1 ] && exit 1
+{ [ "${FAKE_EROFS:-1}" = 1 ] && echo "CONFIG_EROFS_FS=y"
+  [ "${FAKE_LZ4:-1}" = 1 ] && echo "CONFIG_EROFS_FS_LZ4=y"
+  echo "Enforcing"; } 2>/dev/null
+SHA
+  chmod +x $PP/fb/fastboot $PP/adb/adb
+  printf 'product_hyperos4_p11g2.img\t77619200\tx\tproduct_a\nsystem_hyperos4_p11g2.img\t967503872\tx\tsystem_a\n' \
+    > $PP/rel/release-manifest.tsv
+  pj() { # pj <nazwa> <oczekiwane rc> [ZMIENNE=SRODOWISKA...]
+    local name=$1 want=$2; shift 2; local rc=0
+    env FASTBOOT=$PP/fb/fastboot ADB=$PP/adb/adb "$@" \
+      bash "$PROBE" --release $PP/rel --assume-booted > $PP/log 2>&1 || rc=$?
+    seen=$((seen+1))
+    if [ "$rc" = "$want" ]; then ok "$name (rc=$rc)"; else
+      bad "$name: rc=$rc zamiast $want; wypis: $(grep -E '^ +\[(NE|UW)' $PP/log | head -2 | tr '\n' ' ')"
+    fi
+  }
+  seen=0
+  pj "urzadzenie zgodne -> GO"                                   0
+  pj "brak CONFIG_EROFS_FS_LZ4 -> NO-GO"                         2 FAKE_LZ4=0
+  pj "brak EROFS w kernelu (w ogole) -> NO-GO"                   2 FAKE_EROFS=0
+  pj "slot system_a mniejszy niz obraz -> NO-GO"                 2 FB_SIZE_SYSTEM_A=0x10000000
+  pj "slot rowny obrazowi co do bajta -> GO (granica '<')"       0 FB_SIZE_SYSTEM_A=$(printf '0x%x' 967503872)
+  pj "slot o bajt mniejszy -> NO-GO"                             2 FB_SIZE_SYSTEM_A=$(printf '0x%x' 967503871)
+  pj "bootloader zamiast fastbootd -> NO-GO"                     2 FB_USR=no
+  pj "adb nie odpowiada -> GO z zastrzezeniem (nie klamstwo)"    0 FAKE_ADB_DOWN=1
+  if [ $seen -ge 8 ]; then ok "przeanalizowanych scenariuszy urzadzenia: $seen"; else
+    bad "tylko $seen/8 scenariuszy przebieglo - petla padla w polowie"
+  fi
+  # NO-GO musi mowic, DLACZEGO i CO Z ROBI (nie byc samotnym kodem wyjścia):
+  env FASTBOOT=$PP/fb/fastboot ADB=$PP/adb/adb FAKE_LZ4=0 \
+    bash "$PROBE" --release $PP/rel --assume-booted > $PP/log 2>&1
+  if grep -q 'EROFS_FS_LZ4' $PP/log && grep -q 'compress none' $PP/log; then
+    ok "odmowa bez lz4 wskazuje rozwiazanie (--compress none)"
+  else bad "odmowa bez lz4 nie podaje zadnego wyjscia"; fi
+  env FASTBOOT=$PP/fb/fastboot ADB=$PP/adb/adb FB_SIZE_SYSTEM_A=0x10000000 \
+    bash "$PROBE" --release $PP/rel --assume-booted > $PP/log 2>&1
+  if grep '\[NE \]' $PP/log | grep -q 'system_a' && grep '\[NE \]' $PP/log | grep -q '268435456'; then
+    ok "odmowa rozmiaru cytuje slot i liczbe bajtow"
+  else bad "odmowa rozmiaru nie pokazuje liczb (samo 'NO-GO')"; fi
+fi
+
 echo; echo "=== podsumowanie: $pass PASS, $fail FAIL ==="
 [ $fail -eq 0 ] || echo "UWAGA: ktorys test padl — nie wydawaj zmiany w tools/, ktora to wywolala."
 exit $([ $fail -eq 0 ] && echo 0 || echo 1)

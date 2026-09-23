@@ -25,9 +25,10 @@ z tego samego drzewa i tego samego UUID).
 | `system_hyperos4_p11g2.img` | 967 503 872 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowane macierze VINTF 4/5/6). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | `Flags: 3` (weryfikacja + verity wyłączone), `rollback_index 0`, SHA256_RSA2048, key `cdbb7717…` |
 | `flash-all.sh` | ~3,4 kB | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
+| `device-probe.sh` | 6 393 | **krok 0 przed flashem**: czyta `fastboot getvar` + `adb shell` i drukuje GO / GO z zastrzeżeniami / NO-GO (fastbootd, rozmiary slotów, `CONFIG_EROFS_FS{,_LZ4}`). Tylko odczyty — nic nie zapisuje, nic nie mountuje |
 | `rollback.sh` | 469 | przywraca vbmeta z kopii wykonanej przed flashem |
 | `release-manifest.tsv` | ~0,6 kB | `plik ⇥ bajty ⇥ sha256 ⇥ uwaga` |
-| `SHA256SUMS.txt` | — | liczony na końcu; `sha256sum -c` = 7/7 OK. **`*.md` jest poza sumami** — README to dokumentacja, nie ładunek: inaczej redakcja zdania „unieważnia" wydanie (złapane przez `tools/test_release.sh`) |
+| `SHA256SUMS.txt` | — | liczony na końcu; `sha256sum -c` = 8/8 OK. **`*.md` jest poza sumami** — README to dokumentacja, nie ładunek: inaczej redakcja zdania „unieważnia" wydanie (złapane przez `tools/test_release.sh`) |
 | `build-info.txt` | — | kompresja, UUID, wersja `mkfs.erofs`, ścieżki drzew |
 | `mkfs.log`, `fsck.log`, `system-verify.log` | — | surowe logi budowy i obu sprawdzeń |
 
@@ -56,6 +57,7 @@ nie umie rozpakować, a `vbmeta` ma klucz testowy, więc obraz jest *samo-spójn
 ## Jak to wgrać
 
 ```
+bash device-probe.sh --release .   # KROK 0: tylko odczyty
 sha256sum -c SHA256SUMS.txt      # musi byc OK dla kazdej pozycji (system zobaczysz dopiero po ściągnięciu)
 bash flash-all.sh                # bootloader odblokowany; tablet w fastbootd (adb reboot fastboot)
 ```
@@ -77,6 +79,7 @@ Obraz `system`/`product` z `lz4` wymaga, żeby **kernel Lenovo** miał `CONFIG_E
 adb shell 'zcat /proc/config.gz | grep EROFS'
 ```
 
+`device-probe.sh` (krok 0) robi to zdanie za Ciebie i zatrzymuje flash, jezeli `LZ4` nie ma.
 Nie ma? Wtedy flashuj wariant bez kompresji: `tools/make_release.sh … --compress none`
 (pliki ~1,5× większe — `system` 1 376 759 808 B (bez wykluczen: 1 376 899 072 B z CI), `product` 87 973 888 B), albo zrezygnuj.
 Format lz4 nie jest tu moim widzimisię: źródłowy `system.img` HyperOS-u jest lz4-owy.

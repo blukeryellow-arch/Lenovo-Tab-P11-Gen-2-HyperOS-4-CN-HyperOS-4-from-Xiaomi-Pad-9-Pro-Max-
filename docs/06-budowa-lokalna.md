@@ -543,3 +543,30 @@ Kolumna „1 806 336 vs 237 568" dotyczy drzewa syntetycznego z tekstem powtarza
 prawdziwym `/system` roznica jest inna i zmierzona osobno: 1 376 899 072 B bez kompresji vs
 967 503 872 B z `lz4` (+42 % zamiast −85 %). Nie mixuj tych dwoch liczb, bo primera jest
 dowodzie, ze lz4 dziala, a druga tym, ile miejsca zostaje na partycji.
+
+## 6.22 `device-probe.sh`: decyzja przed flashem jest częścią wydania, nie moją notatką
+
+Warunki wstępne (§6.10 kernel, §6.11 rozmiary slotu) żyły do dziś wyłącznie w dokumentach,
+których nikt nie czyta w połowie nocy, zanim wpisze `flash-all.sh`. Od tej wersji budowanie
+wydania dołącza `device-probe.sh` (kopia z `tools/`, wpisywana do `release-manifest.tsv`
+i `SHA256SUMS.txt` jak każdy ładunek), a README każe go uruchomić jako krok 0. Skrypt tylko
+czyta: `fastboot getvar` + `adb shell`, zero zapisów, zero montowań. Werdykt ma trzy stany i
+kody wyjścia: `0` GO (także „GO z zastrzeżeniami"), `2` NO-GO, `1` brak urządzenia w fastboot.
+Testowane sekcją P w `tools/test_release.sh`: osiem scenariuszy plus dwa sprawdzające, że
+odmowa **cytuje powód z liczbą**, a nie jest samotnym kodem wyjścia.
+
+Co przy pisaniu tego wyszło — wszystko złapane przez atrapę, nic przez patrzenie w kod:
+
+| usterka | co by dala na żywym urządzeniu |
+|---|---|
+| parser przyjmował `cokolwiek przed dwukropkiem` | `product=0.001s` z linii `OKAY`, czyli `[OK ]` przy zerowym odczycie |
+| `getvar` czytany tylko ze stdout | puste odpowiedzi (fastboot pisze je na **stderr**) i samo `[UW]` |
+| zapytanie `partition-size:systema` (bez `_`) | bramka rozmiaru, która nigdy nic nie zmierzyła, ale grzecznie ostrzega |
+| `go()` bez `GO=$((GO+1))` | werdykt „kontrol OK: 0" przy ośmiu udanych kontrolach |
+| `"$part_$slot"` pod `set -u` | bash czyta `part_` jako nazwę → `unbound variable` → wyjscie `1` zamiast `2` |
+
+Wnioski do zapamiętania są dwa i oba są o formie komunikatu, nie o logice. Pierwszy: **brak
+pomiaru nie może wyglądać jak sukces** — dlatego `toparse` zwraca błąd zamiast zera, a
+nieznane `partition-size` idzie jako `[UW]`, nigdy jako `[OK]`. Drugi: licznik w podsumowaniu
+musi być **inkrementowany w funkcji drukującej**, bo licznik inkrementowany „w miejscach,
+gdzie pamiętałem" pokazuje 0 i nadal mówi „GO".
