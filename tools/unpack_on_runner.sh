@@ -37,6 +37,9 @@ log "narzedzia: mount=$(have mount && echo tak || echo NIE) debugfs=$(have debug
 df -h "$PWD" | tail -1 | sed 's/^/  /'
 
 total_pkgs=0
+MAX_TOTAL="${MAX_TOTAL:-1900000000}"
+budget_left="$MAX_TOTAL"
+SKIP_IDS=""
 for img in "$SRC"/*.img "$SRC"/*.raw; do
   [ -e "$img" ] || continue
   base=$(basename "$img"); base=${base%.img}; base=${base%.raw}
@@ -85,8 +88,20 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
   # paczka: tylko allowliste, sciezki wzgledne; to, czego nie ma, odpada bez bledu
   include=()
   for d in "${ALLOW[@]}"; do
-    [ -e "$tree/$d" ] && include+=("$d")
+    for cand in "$d" "./$d" "${d#./}"; do
+      if [ -e "$tree/$cand" ]; then include+=("$cand"); break; fi
+    done
   done
+  # ONLY_DIRS=zadana nadpisuje allowliste (skrocanie paczki gdy push bilby w 2 GB)
+  if [ -n "${ONLY_DIRS:-}" ]; then
+    include=()
+    for d in $ONLY_DIRS; do
+      for cand in "$d" "./$d" "${d#./}"; do
+        [ -e "$tree/$cand" ] && { include+=("$cand"); break; }
+      done
+    done
+    [ "${#include[@]}" -gt 0 ] || { log "    (!) ONLY_DIRS nie trafilo w nic - odpuszczam paczke"; continue; }
+  fi
   if [ "${#include[@]}" -eq 0 ]; then
     # brak znanych katalogow - bierzemy calosc, ale to sygnal do korekty allowlisty
     log "    (!) zaden katalog z allowlisty nie istniejal - pakujac calosc"
@@ -108,6 +123,15 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
     continue
   fi
   psz=$(stat -c%s "$pkg"); psha=$(sha256sum "$pkg" | cut -d' ' -f1)
+  # budzet na bieg: 'git push' GitHuba twardo lata >2 GB (a 100 MB/plik to dopiero
+  # pocdatek), wiec zamiast wywracac bieg - przerzucamy reszte na nastepny i mowimy o tym
+  if [ $(( budget_left - psz )) -lt 0 ]; then
+    log "    SKIP: paczka $psz B przekracza budzet biegu (zostal $budget_left B) - wpisz ten obraz do drive-probe.request jeszcze raz"
+    SKIP_IDS="$SKIP_IDS $(basename "$base")"
+    rm -f "$pkg"; continue
+  fi
+  budget_left=$(( budget_left - psz ))
+  log "    budzet po tej paczce: $budget_left B"
   log "    paczka: $(basename "$pkg") $psz B sha256=${psha:0:16}..."
 
   n=0
@@ -139,7 +163,7 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
 done
 
 log
-log "=== podsumowanie: $total_pkgs paczek ==="
+log "=== podsumowanie: $total_pkgs paczek, pominietych:${SKIP_IDS:-brak} ==="
 cat "$DST/MANIFEST.tsv" >> "$DST/UNPACK_REPORT.txt"
 cat "$DST/MANIFEST.tsv"
 echo

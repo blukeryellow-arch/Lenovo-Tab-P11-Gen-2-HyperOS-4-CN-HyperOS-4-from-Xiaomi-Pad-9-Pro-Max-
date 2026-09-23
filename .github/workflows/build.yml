@@ -262,9 +262,14 @@ jobs:
               echo "zapytanie z pliku drive-probe.request"
             fi
             [ -z "$UNP" ] && UNP=$(sed -n 's/^[[:space:]]*do_unpack:[[:space:]]*\([01]\).*/\1/p' drive-probe.request | head -1)
+            OD=$(sed -n 's/^[[:space:]]*only_dirs:[[:space:]]*\(.*\)$/\1/p' drive-probe.request | head -1 | tr -d '\r')
+            MT=$(sed -n 's/^[[:space:]]*max_total:[[:space:]]*\([0-9]*\).*/\1/p' drive-probe.request | head -1)
           fi
           echo "DRIVE_IDS=$IDS" >> "$GITHUB_ENV"
           echo "DO_UNPACK=${UNP:-0}" >> "$GITHUB_ENV"
+          echo "ONLY_DIRS=$OD" >> "$GITHUB_ENV"
+          echo "MAX_TOTAL=${MT:-1900000000}" >> "$GITHUB_ENV"
+          [ -n "$OD" ] && echo "tylko sciezki: $OD" || true
           echo "liczba id: $(echo $IDS | wc -w)  do_unpack=${UNP:-0}"
           if [ -z "$IDS" ]; then echo "nic do roboty - pusty wykaz id"; fi
 
@@ -370,7 +375,7 @@ jobs:
               # Bez tego 11,9 GB lezaloby naraz - runner ma ~14 GB i padloby ENOSPC.
               if [ "${DO_UNPACK:-0}" = "1" ]; then
                 mkdir -p one && mv "out/$name" "one/$name" && {
-                  KEEP_MANIFEST=1 bash tools/unpack_on_runner.sh one transfer || true; }
+                  KEEP_MANIFEST=1 ONLY_DIRS="${ONLY_DIRS:-}" MAX_TOTAL="${MAX_TOTAL:-1900000000}" bash tools/unpack_on_runner.sh one transfer || true; }
                 rm -rf one
                 # po 'mv' nie ma czego Kasowac w out/ - surowy obraz zostal skonsumowany
                 UNPACKED=1

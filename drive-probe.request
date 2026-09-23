@@ -1,12 +1,10 @@
 # Wykaz plikow do przejrzenia przez runnera GitHub Actions.
-# Jedno ID Google Drive w pierwszej kolumnie (linie # pomijane), opcje:
-#   do_unpack: 1   rozpakuj, spakuj i poodawaj kawalkami <=90 MB na galaz
-#   out_prefix: X  katalog docelowy po mojej stronie
-# START: commit z "[drive-probe]" w tytule (z sandboxa nie ma zgody na workflow_dispatch).
-#
-# Jeden duzy obraz na bieg - runner ma ~14 GB i placze ENOSPC przy dwoch
-# (poprzedni bieg zglosil "No space left on device" w _diag/Worker log runnera).
-# Po zakonczeniu biegu przywracam "prywatne"; link zostaje tylko na czas pobierania.
-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN
-do_unpack: 1
-out_prefix: images
+# Jedno ID Google Drive w pierwszej kolumnie (linie # pomijane). Opcje:
+#   do_unpack: 1      rozpakuj i pociagnij kawalkami <=90 MB na galaz
+#   only_dirs: a b c   tylko te sciezki z partycji (skrocanie paczki)
+#   max_total: B       budzet bajtow na bieg (limit GitHuba 2 GB/push)
+# START: commit z "[drive-probe]" w tytule. Po kazdym biegu przywracam 'prywatne'.
+1u3HPzK0HyYu4kvA5WBYPl4Zbv_AWS7Ao
+1funWH4Bdcf7XCouKu9eAu-umCv9L1NgG
+14hSJeBkfX1zNnVWd99NCxoskC-oKfy9f
+do_unpack: 0
