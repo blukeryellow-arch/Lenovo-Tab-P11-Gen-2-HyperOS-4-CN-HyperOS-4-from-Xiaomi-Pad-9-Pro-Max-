@@ -160,6 +160,16 @@ runfb "F: system 900 MB na slocie 768 MB -> abort" 1 0 $sz_v $sz_pr FB_SIZE_SYST
 runfb "G: product 4 KB przy obrazie product" 1 0 FB_SIZE_VBMETA_A=0x1000000 FB_SIZE_VBMETA_B=0x1000000 FB_SIZE_PRODUCT_A=0x1000 FB_SIZE_PRODUCT_B=0x1000 $sz_sy
 runfb "H: fastboot nie zna partition-size -> ostrzezenie + kontynuacja" 0 6 FB_USERSPACE=yes
 runfb "I: brak fastbootd (is-userspace:no) -> zero flashow" 1 0 $sz_v $sz_pr $sz_sy FB_USERSPACE=no
+# ---------------------------------------------------------------- K: higiena tekstu
+echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
+# Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt
+# tego nie widzial, bo skaner patrzyl po glob(), ktory omija .github/.
+if python3 "$HERE/lint_pismo.py" --quiet; then
+  ok "repo bez znakow obcego pisma (lint_pismo.py)"
+else
+  bad "lint_pismo.py znalazl obce znaki - patrz komunikat powyzej"
+fi
+
 # ---------------------------------------------------------------- J: release realny
 if [ $REAL -eq 1 ]; then
   echo "== J    wydanie realne (dist/release) — nie tylko syntetyki"

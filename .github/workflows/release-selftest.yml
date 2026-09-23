@@ -91,7 +91,7 @@ jobs:
         # Osobny krok, bo wczesniejsza wersja probowala dwoch komend z '>/dev/null 2>&1' i
         # '|| true', wiec runner melmol 'success' w kroku, a pakietu NIE BYLO - i dopier
         # dwa kroki pozniej wyszlo 127 / 'nie jest czytany przez fsck z pakietu'.
-        # Teraz: apt mowi wszystko, a wynik trafia do DISTRO_OK, ktore下游 kroki SZANUJA.
+        # Teraz: apt mowi wszystko, a wynik trafia do DISTRO_OK, ktore pozniejsze kroki SZANUJA.
         run: |
           { echo "== apt-cache policy =="
             apt-cache policy erofs-utils 2>&1 | head -12
