@@ -27,9 +27,22 @@ z tego samego drzewa i tego samego UUID).
 | `flash-all.sh` | ~3,4 kB | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
 | `rollback.sh` | 469 | przywraca vbmeta z kopii wykonanej przed flashem |
 | `release-manifest.tsv` | ~0,6 kB | `plik ⇥ bajty ⇥ sha256 ⇥ uwaga` |
-| `SHA256SUMS.txt` | — | liczony na końcu; `sha256sum -c` = 8/8 OK |
+| `SHA256SUMS.txt` | — | liczony na końcu; `sha256sum -c` = 7/7 OK. **`*.md` jest poza sumami** — README to dokumentacja, nie ładunek: inaczej redakcja zdania „unieważnia" wydanie (złapane przez `tools/test_release.sh`) |
 | `build-info.txt` | — | kompresja, UUID, wersja `mkfs.erofs`, ścieżki drzew |
 | `mkfs.log`, `fsck.log`, `system-verify.log` | — | surowe logi budowy i obu sprawdzeń |
+
+## Jak sprawdzic, ze to, co masz, to to, co zbudowalem
+
+```
+tools/test_release.sh --real --erofs-dir <katalog z mkfs.erofs/fsck.erofs>
+```
+
+Ten skrypt robi wszystko, czego nie da sie zrobic patrzeniem na plik: buduje obrazy na
+drzewie syntetycznym, sprawdza determinizm (dwa budowania = ten sam bajt), **psuje** obraz i
+sprawdza, czy weryfikator to widzi (test negatywny — bez niego „wszystkie pliki OK" może
+znaczyć „nikt nie sprawdził, czy check cokolwiek sprawdza"), podmienia cel symlinka, odpala
+`flash-all.sh` na atrapie `fastboot` w pięciu scenariuszach (za mały slot → zero flashów)
+i na końcu weryfikuje 1:1 **ten** katalog. 24 testy, 0 wymagań sieciowych.
 
 ## Jak to wgrać
 

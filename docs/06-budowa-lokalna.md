@@ -291,34 +291,63 @@ własny `/product` **niczego nie przykrywam** — wariant lekki nie „kasuje" H
 wyglądu, bo ten w `system` nigdy nie był; `--full` go dokładnie dokłada. Koszt pomiaru
 to dwie minuty, a koszt założenia — cały akapit do wyrzucenia.
 
-## 6.15 Dwie pozycje z `system`-owych życzeń jednak dostały treść — i jedna nie
+## 6.15 Dwie pozycje z listy „życzeń systemu" jednak dostały treść — a jedna nie
 
 Pomiar (`diagnostics/product-refs.tsv`) mówił: `/product/etc/passwd` 6×, `/product/etc/group` 6×,
-`/product/etc/vintf/manifest.xml` 2× (i `/product/etc/vintf/manifest/` 2× jako katalog).
-Wcześniejsza decyzja brzmiała „nie da się bez paczki 6,4 GB". Fałsz dla dwóch z nich: te pliki
-w AOSP mają **z góry wiadomą treść**, nie treść od Xiaomi:
+`/product/etc/vintf/manifest.xml` 2× (oraz `/product/etc/vintf/manifest/` 2× jako katalog).
+Wcześniejsza decyzja brzmiała: „nie da się bez paczki 6,4 GB". Dla dwóch z tych pozycji to był
+błąd — te pliki w AOSP mają treść **z góry wiadomą**, nie „xiaomiową" do wyjęcia z obrazu:
 
 ```
 etc/passwd:  system:x:1000:1000:system:/none:/bin/false
 etc/group:   system:x:1000:
 ```
 
-Dorzucone do obu wariantów. Efekt uboczny, którego nie oczekiwałem: **rozmiar obrazu ani drgnął**
-(77 619 200 B i 153 391 104 B), bo 58 B zmieściło się w blokach, które i tak były wolne; zmieniło
-się tylko sha256 (`16afbc35…` i `b28e1c0e…`). Weryfikacja 1:1: 67/67 i 147/147.
+Dorzucone do obu wariantów. Efekt, którego nie oczekiwałem: **rozmiar obrazu ani drgnął**
+(77 619 200 B i 153 391 104 B), bo 58 B weszło w bloki, które i tak były wolne; zmieniło się
+tylko sha256 (`16afbc35…` i `b28e1c0e…`). Weryfikacja 1:1 wyszła 67/67 i 147/147, więc pliki
+są w partycji, nie tylko w drzewie — sprawdzone `fsck.erofs --extract --path=etc`.
 
-`etc/vintf/manifest.xml` **świadamie pomijam** — i to jest cenniejsza decyzja niż dodanie:
-brak pliku jest dla `VintfObject` stanem normalnym (partycja bez manifestu = zero nownych
-żądań), a plik *sformatowany o włos źle* albo *deklarujący coś, co już jest ogłoszone* to
-inny ciężar gatunkowy. Pierwsza wersja, którą napisałem, miała być „pusta", a zawierała
-`android.hidl.manager` — czyli dokładała deklarację HAL-a i mogła dać `multiple instances`
-w assemblingu. Asymetria ryzyka jest tu pełna: zysk = usunięcie odwołania, ktore i tak jest
-opcjonalne; strata = boot, ktorego nie da się zdiagnoszowac bez serialu. Wiec: nie.
+**`etc/vintf/manifest.xml` pomijam świadomie** i to jest decyzja cenniejsza niż samo dodanie.
+Brak pliku jest dla `VintfObject` stanem normalnym (partycja bez manifestu = zero nowych
+żądań), a plik *sformatowany o włos źle* albo *ogłaszający coś, co już jest ogłoszone* to
+zupełnie inna kategoria ryzyka. Pierwsza wersja, którą napisałem, miała być „pusta", a zawierała
+`android.hidl.manager` — czyli dokładała deklarację HAL-a i mogła dać `multiple instances` przy
+assemblingu macierzy. Asymetria jest pełna: zysk = usunięcie odwołania, które i tak jest
+opcjonalne; strata = boot, którego nie da się zdiagnozować bez serialu. Więc: nie.
 
-Nie dorzucam rowniez `etc/selinux/product_*.contexts` ani `etc/aconfig_flags.pb` w wersji
-„zapasowej, puste pliki". Pierwsze musialyby miec **wlasciwe etykiety SELinux** (te
-rezultuja z `file_contexts` urzadzenia, nie z mojego widzimisię) i realna treść policy — pusty
-plik w tym miejscu nie jest „mniejszym złem", jest nowym stanem, ktorego nikt nie testował;
-drugie to protobuf z flagami czasu uruchomienia, ktorego zgadywanie zmieniłoby zachowanie
-frameworku. Oba sa do wziecia TYLKO z prawdziwego `product.img` — `tools/enrich_product.sh`
-do tego sluzzy i ma to w opisie.
+Nie dorzucam też `etc/selinux/product_*.contexts` ani `etc/aconfig_flags.pb` w wersji „niech
+będą puste". Pierwsze muszą mieć **właściwe etykiety SELinux** (wynikają z `file_contexts`
+urządzenia, nie z mojego widzimisię) i realną treść policy — pusty plik w tym miejscu nie jest
+„mniejszym złem", tylko nowym stanem, którego nikt nie testował. Drugie to protobuf ze flagami
+czasu uruchomienia, więc zgadywanie zmieniłoby zachowanie frameworku. Oba można wziąć wyłącznie
+z prawdziwego `product.img` — do tego służy `tools/enrich_product.sh`, tak jest opisane w jego
+nagłówku i tak zostanie.
+
+## 6.16 `tools/test_release.sh` — i dwa błędy, które znalazł w dniu, w którym powstał
+
+Do tej pory „sprawdzone" znaczyło „agent uruchomił właściwe polecenia właściwej kolejności".
+To nie jest własność, którą da się przenieść na inną maszynę, więc łańcuch kontroli trafił do
+skryptu: `bash tools/test_release.sh [--erofs-dir KATALOG] [--real]`. Bez `--real` działa na
+drzewach syntetycznych (sekundy, zero zależności od 1,4 GB), z `--real` dokłada weryfikację
+1:1 wydanych obrazów i spójność `SHA256SUMS.txt` / `release-manifest.tsv`.
+
+Co testuje: `make_release --selftest`, determinizm (dwa `mkfs` = identyczny plik),
+**test negatywny weryfikatora** (drzewo ma plik, którego nie ma w obrazie → musi być FAIL
+i wskazanie nazwy), symlinki (zmiana celu linka musi być wykryta), bramkę rozmiaru
+na atrapie `fastboot` w pięciu scenariuszach (E–I) i — w `--real` — oba wydania.
+
+Dwa błędy, które ten skrypt znalazł **w dniu, w którym go pisałem**, oba po mojej stronie:
+
+1. **`SHA256SUMS.txt` obejmował `README.md`.** Po przebudowie wydania poprawiłem jedno zdanie
+   w dokumentacji i `sha256sum -c` w katalogu przestało przechodzić — czyli redakcja tekstu
+   „unieważniała" wydanie, a `flash-all.sh` (który zaczyna się od tej bramki) odmówiłby
+   flashowania. Rozwiązanie: `*.md` jest wyłączone z sum (ładunek = to, co leci na urządzenie),
+   a fakt jest opisany w README, żeby nikt nie uznał tego za dziurę.
+2. **Test `--real` podstawiał lekkie drzewo do wariantu `-full`.** Efekt: 67 nakładek RRO
+   wyglądało jak „DODATKOWE wpisy w obrazie", czyli jak usterka wydania, a była usterka testu.
+   Po naprawie: 24 PASS / 0 FAIL (product 67/67 i 147/147, system 4 565/4 565 w obu wariantach).
+
+Warto to zapisać jako lekcję metodologiczną: test, który nigdy nie zawodzi na poprawnych
+danych, nie dowodzi niczego — dlatego w suite jest celowe psucie obrazu (test C) i podmiana
+symlinka (test D). To one pokazały, że poprzedni „round-trip" patrzył tylko na pliki.

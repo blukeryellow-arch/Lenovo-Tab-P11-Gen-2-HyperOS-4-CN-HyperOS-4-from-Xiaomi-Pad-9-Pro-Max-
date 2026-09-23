@@ -390,6 +390,10 @@ for f in product_hyperos4_p11g2.img vbmeta_hyperos4_p11g2.img system_hyperos4_p1
     "$([ "$f" = system_hyperos4_p11g2.img ] && { [ -n "$SYSTREE" ] && echo 'lokalnie z drzewa, weryfikacja 1:1 (verify_image.sh)' || echo 'kopia z pliku zewnetrzneego (--system-img)'; } || echo 'lokalnie')" \
     >> "$OUT/release-manifest.tsv"
 done
-( cd "$OUT" && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt ! -name '*.log' -printf '%P\n' | sort | xargs -r sha256sum > SHA256SUMS.txt )
+# *.md POZA sumami: README jest dokumentacja, nie pladunkiem do flashowania. Brak tego
+# wylaczenia dawal sytuacje, ktora zlapaly testy (2026-09-23): poprawienie zdania w README
+# po budowie wywrocilo 'sha256sum -c' w catatym katalogu, czyli redaktor dokumentacji
+# 'psul' wydanie. Bramka flasha ma liczyc to, co leci na urzadzenie.
+( cd "$OUT" && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt ! -name '*.log' ! -name '*.md' -printf '%P\n' | sort | xargs -r sha256sum > SHA256SUMS.txt )
 say "  manifest: $(( $(wc -l < "$OUT/release-manifest.tsv") - 1 )) pozycji; sumy na koncu: $(wc -l < "$OUT/SHA256SUMS.txt")"
 say "== KONIEC: $OUT"

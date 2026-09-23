@@ -17,9 +17,18 @@
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd); ROOT=$(dirname "$HERE")
 EROFS_DIR=${EROFS_DIR:-}
-[ -n "$EROFS_DIR" ] || EROFS_DIR="$HERE/vendor/erofs"
-[ -x "$EROFS_DIR/mkfs.erofs" ] || EROFS_DIR=${EROFSC:-/tmp/erofs-c}
-KEEP=0; [ "${1:-}" = --keep ] && KEEP=1 && shift
+KEEP=0; REAL=0
+# Opcje moga byc w dowolnej kolejnosci i dowolna ilosc - pierwsza wersja czytala je tylko
+# z $1, wiec './test_release.sh --erofs-dir X --real' cicho pomijala blok J (16 PASS, zero
+# 'realnych'). To jest ten sam blad, co 'opcja po opcji' w kazdym skrypcie powloki.
+while [ $# -gt 0 ]; do
+  case $1 in
+    --keep) KEEP=1; shift;;
+    --real) REAL=1; shift;;
+    --erofs-dir) EROFS_DIR=$2; shift 2;;
+    *) echo "nieznana opcja: $1 (zna --keep, --real, --erofs-dir)" >&2; exit 3;;
+  esac
+done
 WORK=$(mktemp -d /tmp/reltest.XXXXXX)
 trap '[ $KEEP -eq 1 ] || rm -rf "$WORK"' EXIT
 MK="$EROFS_DIR/mkfs.erofs"; FS="$EROFS_DIR/fsck.erofs"
@@ -151,6 +160,51 @@ runfb "F: system 900 MB na slocie 768 MB -> abort" 1 0 $sz_v $sz_pr FB_SIZE_SYST
 runfb "G: product 4 KB przy obrazie product" 1 0 FB_SIZE_VBMETA_A=0x1000000 FB_SIZE_VBMETA_B=0x1000000 FB_SIZE_PRODUCT_A=0x1000 FB_SIZE_PRODUCT_B=0x1000 $sz_sy
 runfb "H: fastboot nie zna partition-size -> ostrzezenie + kontynuacja" 0 6 FB_USERSPACE=yes
 runfb "I: brak fastbootd (is-userspace:no) -> zero flashow" 1 0 $sz_v $sz_pr $sz_sy FB_USERSPACE=no
+# ---------------------------------------------------------------- J: release realny
+if [ $REAL -eq 1 ]; then
+  echo "== J    wydanie realne (dist/release) — nie tylko syntetyki"
+  for d in "$ROOT"/dist/release/HyperOS4_P11Gen2*; do
+    [ -d "$d" ] || continue
+    b=$(basename "$d")
+    for img in product_hyperos4_p11g2.img system_hyperos4_p11g2.img; do
+      [ -f "$d/$img" ] || { note "$b: brak $img (oczekiwane - nie jest w gicie)"; continue; }
+      # drzewo ZALEZY OD WARIANTU - 'product' w -full ma overlay, lekkie drzewo nie;
+      # pierwsza wersja testu podstawiala /tmp/tree-product do obu i 'DODATKOWE' wpisy
+      # z -full wygladaly jak usterka wydania, a byly usterka testu (2026-09-23)
+      case "$b" in
+        *-full) pt=${PRODTREE_FULL:-/tmp/tree-full};;
+        *)      pt=${PRODTREE:-/tmp/tree-product};;
+      esac
+      case $img in
+        product_hyperos4_p11g2.img) tree=$pt;;
+        *)                          tree=${SYSTREE:-/tmp/sys-tree2/system_tree};;
+      esac
+      if ! [ -d "$tree" ]; then note "$b/$img: brak drzewa $tree - pomijam (nie mam czego porownywac)"; continue; fi
+      if [ "$img" = system_hyperos4_p11g2.img ]; then
+        t "$b/$img weryfikacja 1:1 (z wykluczeniami)" 0 bash "$HERE/verify_image.sh" --img "$d/$img" --tree "$tree" \
+            --fsck "$FS" --exclude '\.komentarz\.txt$'
+      else
+        t "$b/$img weryfikacja 1:1" 0 bash "$HERE/verify_image.sh" --img "$d/$img" --tree "$tree" --fsck "$FS"
+      fi
+    done
+    # suma kontrolna wydania musi sie zgadzac co do pliku (brak system.img = innny test, patrz wyzej)
+    t "$b: sha256sum -c SHA256SUMS.txt" 0 bash -c "cd '$d' && sha256sum -c SHA256SUMS.txt >/dev/null 2>&1"
+    # manifest musi mowic te same rozmiary, co pliki na dysku (w Pythonie, nie w gniazdkach awk)
+    if python3 - "$d" <<'PYPY'
+import os,sys
+d=sys.argv[1]
+bad=[]
+for ln in open(os.path.join(d,'release-manifest.tsv'),encoding='utf-8') :
+    p=ln.rstrip('\n').split('\t')
+    if len(p)>=2 and p[0].endswith('.img') and os.path.exists(os.path.join(d,p[0])):
+        real=os.path.getsize(os.path.join(d,p[0]))
+        if str(real)!=p[1]: bad.append(f"{p[0]}: manifest {p[1]} vs plik {real}")
+if bad: print('\n'.join(bad)); sys.exit(1)
+PYPY
+    then ok "$b: rozmiary w manifeście = rozmiary plików"; else bad "$b: manifest nie zgadza się z plikami"; fi
+  done
+fi
+
 echo; echo "=== podsumowanie: $pass PASS, $fail FAIL ==="
 [ $fail -eq 0 ] || echo "UWAGA: ktorys test padl — nie wydawaj zmiany w tools/, ktora to wywolala."
 exit $([ $fail -eq 0 ] && echo 0 || echo 1)
