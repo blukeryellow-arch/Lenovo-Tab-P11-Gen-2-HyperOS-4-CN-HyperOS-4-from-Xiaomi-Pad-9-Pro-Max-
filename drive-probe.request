@@ -16,3 +16,4 @@ rom_build: 1
 do_unpack: 1
 raw: 0
 max_total: 1900000000
+# (marker startu biegu: ponizsza linia nie zmienia opcji, tylko tytul commitu)
