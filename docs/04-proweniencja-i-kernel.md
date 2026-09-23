@@ -154,7 +154,7 @@ https://www.googleapis.com               000     https://objects.githubuserconte
 ```
 
 Wiec kanał do agenta prowadzi przez `api.github.com` (`GET /repos/.../git/blobs/{sha}`, base64
-w JSON). Zmierzone na sondzie 5 MB wlanej do repo i sciagnietej z powrotem:
+w JSON). Zmierzone na sondzie 5 MB wlanej do repo i ściągniętej z powrotem:
 
 ```
 blob 320162b56cbb3588db4400ca26b1ff87f53b1983
@@ -273,3 +273,61 @@ dobra forma magazynu dla runnera**, jesli nie chcesz publicznych linkow na Drive
 jako LFS na galaz, runner robi `git lfs pull`, analizuje i zwraca raport commitem. Agent czyta
 wtedy tylko raport (KB), nie obrazy. To jest wlasciwy podzial roboty: duze bajty nigdy nie
 przechodza przez sandbox.
+
+## 4.8 Obejscie znalezione w drugiej probie: git transport, nie REST
+
+Pierwsza runda (sekcja 4.6/4.7) zakonczyla sie na kanale `api.github.com` z base64 — 2.6-3.7 MB/s.
+Druga runda, po przeczyszczeniu macierzy egressu pod katem *kazdego* hosta plikowego, dawala
+przeoczony fakt: `codeload.github.com` odpowiada **301**, czyli dziala, a to jest wlasnie
+transport `git` (te sama sciezke uzywa `git clone`, ktorym klonowalem avbtool).
+
+Macierz z tej samej tury (wszystko poza GitHubem i PyPI jest martwe):
+
+```
+raw.githubusercontent.com 000   gist.github.com 000        transfer.sh 000   archive.org 000
+uploads.github.com 000         catbox.moe 000              file.io 000       tmpfiles.org 000
+gitlab.com 000                 sourceforge.net 000         mega.nz 000       docs.google.com 000
+drive.usercontent.google.com 000                           speed.hetzner.de 000
+codeload.github.com 301  <-- JEDYNE WJSCIE O WIEKSZEJ PRZEPUSTOWOSCI
+pypi.org 200                   github.com 200               api.github.com 200
+```
+
+Pomiar tej samej objetosci dwoma kanalami, na prawdziwych bajtach (fragmenty `boot.img`
+i `vendor_boot.img`, wypchniete tu do repo i ściągnięte z powrotem):
+
+| payload | `git clone --depth 1` | `api.github.com` blob + base64 |
+|---|---|---|
+| 12,58 MB (3 czastki) | **0,93 s = 13,5 MB/s** | 3,69 s = 3,41 MB/s |
+| 48,00 MB (3 czastki) | **1,54 s = 31,3 MB/s**, 2,42 s = 19,8 MB/s | — |
+
+`sha256` złożonego pliku identyczny z oryginaliem w kazdym przebiegu.
+
+Ekstrapolacja przy ostroznym 19,8 MB/s:
+
+| co | czas |
+|---|---|
+| `system_ext.img` 633 MB | 0,5 min |
+| `system.img` 938 MB | 0,8 min |
+| `product.img` 6,45 GB | 5,4 min |
+| wszystkie piec obrazy 11,9 GB | **~10 min** |
+
+Czyli problem „limitu 100 MB" przestal byc problemem transferu, a stal sie problemem
+**jednego `git push` po Twojej stronie**. Limit GitHuba 100 MB/plik wciaz obowiazuje przy
+wysylce (serwer go sprawdza w pre-receive), wiec `split -b 90m` zostaje — ale po mojej stronie
+nie ma juz zadnego limitu: `git clone` dostarcza cala galaz naraz.
+
+Narzedzie: `tools/pull_via_git.sh <repo-url> <galaz> [dest]` — plaski clone, skladanie czastek
+wg `transfer/MANIFEST.tsv`, weryfikacja `sha256`, potem `tools/fs_probe.py`. Przetestowane
+cyklem na lokalnym repo (`file://`, 9 MB w 3 czastkach): `IDENTYCZNY BAJT DO BAJTU`, a na
+danych losowych uczciwie zglosilo `naglowek nierozpoznany` zamiast zmyślać geometrie.
+
+Dwie wazne granice tego kanalu, zebym nie zostawil wrazenia, ze to dziura bezplatna:
+
+1. **Nie przenosi nic, czego nie ma na GitHubie.** Sonda 48 MB byla moja wlasna — Twoje obrazy
+   musza najpierw przejsc `tools/ship_to_github.sh` u Ciebie. Konektor Drive wciaz nie da ich
+   zdjac (>100 MB), a `fetch_page` nie przywraca binariow.
+2. **Historia repo platna za pomiar**: zostawilem w niej ~60 MB sondu (12 MB + 48 MB), bo usuniecie
+   wymaga przepisania historii galazi session, co rusza sledzenie pracy przez Arena. Drzewo jest
+   czyste (`git rm -r transfer` w `0163e4c`+), ale `git clone` sciaga packa z tym balastem — przy
+   wlasciwym transferze to bez znaczenia (raz ~60 MB), jezeli bedzie przeszkadzac, wystarczy
+   `git filter-repo --path transfer --invert-paths` po Twojej stronie i force-push.
