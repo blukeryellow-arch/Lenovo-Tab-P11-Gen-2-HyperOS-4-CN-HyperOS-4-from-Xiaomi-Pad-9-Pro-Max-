@@ -25,6 +25,7 @@ DST=${2:?podaj katalog docelowy}
 FROM=${3:-0}
 COUNT=${4:-0}          # 0 = do konca
 PART_SIZE=${PART_SIZE:-90m}
+RUN_TAG=${RUN_TAG:-${GITHUB_RUN_ID:-local}}
 
 [ -f "$SRC" ] || { echo "BRAK PLIKU: $SRC" >&2; exit 2; }
 mkdir -p "$DST"
@@ -65,7 +66,9 @@ rm -rf "$tmp"
     d="$DST/$(basename "$f")"
     printf 'part\t%s\t%s\t%s\n' "$(basename "$f")" "$(stat -c%s "$d" 2>/dev/null || echo -1)" "$(sha256sum "$d" 2>/dev/null | cut -d' ' -f1)"
   done
-} >> "$DST/RAW_MANIFEST.tsv"
+} >> "$DST/RAW_MANIFEST-${RUN_TAG:-local}.tsv"   # nazwa per bieg: dwa biegi
+# nie moga nadpisac tego samego pliku na spoolu ('--skip-old-files' odrzucilby starszy
+# manifest i czastki z pierwszego biegu zostalyby sierotami - test 2026-09-23)
 
 echo "  wypchniete czastki $FROM..$((FROM+moved-1)) z $np ($moved szt.)"
 echo "  RAZEM w katalogu: $(du -sh "$DST" | cut -f1)"

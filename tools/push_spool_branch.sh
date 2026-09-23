@@ -15,7 +15,12 @@ set -uo pipefail
 DST=${1:?podaj katalog z kawalkami}
 SPOOL=${2:-transfer-spool}
 REPO_URL=${SPOOL_REPO_URL:-$(git remote get-url origin)}
-BRANCH_FROM_HEAD=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "$GITHUB_REF_NAME")
+# W Actions checkout siedzi na ODLOZONYM HEAD, wiec 'git rev-parse --abbrev-ref HEAD'
+# zwraca "HEAD" i wczesniejszy powrot 'git checkout "$BRANCH_FROM_HEAD"' byl no-op -
+# runner zostawal na orphan-branchu, a kolejny krok ('git push HEAD:arena/...')
+# dostawal non-fast-forward: raport nie docie (bieg 35892866524). Trzymamy SHA.
+ORIG_SHA=$(git rev-parse HEAD)
+BRANCH_FROM_HEAD="$ORIG_SHA"
 
 [ -d "$DST" ] || { echo "BRAK KATALOGU: $DST" >&2; exit 2; }
 n=$(find "$DST" -type f | wc -l)
@@ -24,8 +29,19 @@ echo "  wypycham $n plik(6) z $DST na $SPOOL ($(du -sh "$DST" | cut -f1))"
 
 git checkout -q --orphan "$SPOOL" 2>/dev/null || { git checkout -q -B "$SPOOL"; }
 git rm -r -q --cached . 2>/dev/null || true
+# Dolaczenie brakowalo ktoregos ogniwa: nadpisanie jeziory (force) wywalaloby czastki z poprzedniego
+# biegu, a 'product.img' potrzebuje czterech biegow (2 GB/push). Wystawiamy drzewo
+# POPRZEDNIEGO spoolu obok nowych plikow - 'tar --skip-old-files' nie rusza tego, co
+# wlasnie zapisal ten bieg, a 'git archive' nie prowdzi konfliktow z checkoutem.
+SPOOL_REMOTE=${SPOOL_REPO_URL:-origin}
+prev=$(git ls-remote "$SPOOL_REMOTE" "$SPOOL" 2>/dev/null | cut -f1)
+if [ -n "$prev" ]; then
+  n0=$(find "$DST" -type f | wc -l)
+  git archive "$prev" "$DST" 2>/dev/null | tar -x --skip-old-files -C . 2>/dev/null || true
+  echo "  dolaczone czastki z poprzedniego biegu: $n0 -> $(find "$DST" -type f | wc -l) plik(6)"
+fi
 git add -f "$DST" 2>/dev/null || true
-if git diff --cached --quiet 2>/dev/null; then echo "nic w indeksie - pomijam"; git checkout -q "$BRANCH_FROM_HEAD" 2>/dev/null; exit 0; fi
+if git diff --cached --quiet 2>/dev/null; then echo "nic w indeksie - pomijam"; git checkout -q "$ORIG_SHA" 2>/dev/null; exit 0; fi
 git -c user.name=drive-probe -c user.email=drive-probe@users.noreply.github.com \
   commit -q -m "kawalki do sciagniecia (run ${GITHUB_RUN_ID:-local})"
 
@@ -34,5 +50,6 @@ if [ -n "${GITHUB_SERVER_URL:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
   REPO_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
 fi
 git push -q --force "$REPO_URL" "HEAD:$SPOOL" && echo "  OK na $SPOOL" || { echo "  PUSH NA SPOOL PADL" >&2; git checkout -q "$BRANCH_FROM_HEAD" 2>/dev/null; exit 1; }
-git checkout -q "$BRANCH_FROM_HEAD" 2>/dev/null || git checkout -q "$GITHUB_SHA" 2>/dev/null || true
+git checkout -q "$ORIG_SHA" 2>/dev/null || git checkout -q "$GITHUB_SHA" 2>/dev/null || true
+git branch -q -D "$SPOOL" 2>/dev/null || true
 echo "  wrocone do $(git rev-parse --short HEAD)"

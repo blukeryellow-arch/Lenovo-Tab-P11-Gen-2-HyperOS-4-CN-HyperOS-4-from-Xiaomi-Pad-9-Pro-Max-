@@ -10,10 +10,11 @@ Start bloku: 2026-09-23 ~16:55 (Europe/Warsaw), limit czasowy 3h.
 | 2 | odzysk po resize sandboxa (praca z gałęzi) | GOTOWE | `images/system.assets.tar.gz` 716 MB, sha256 ZGODNY z MANIFESTem |
 | 3 | tryb RAW (surowe czastki z zakresem) + jeziorny branch `transfer-spool` | GOTOWE | test lokalny: 2 zakresy -> sha256 oryginalu |
 | 4 | transfer `vbmeta` + `boot` + `vendor_boot` (małe, Lenovo) | DO ZROBIENIA | — |
-| 5 | transfer `vendor_mystical` + `system_ext` (HyperOS) | DO ZROBIENIA | — |
+| 5 | transfer overlayow `product`+`odm`+`system_ext`+`vendor_mystical` | W TRAKCIE | jeden bieg, subset sciezek |
 | 6 | transfer `odm` (HyperOS) | DO ZROBIENIA | — |
 | 7 | transfer `product` (HyperOS, najwiekszy) | DO ZROBIENIA | — |
-| 8 | analiza: AVB/fingerprinty/VINTF na prawidzwych bajtach | DO ZROBIENIA | docs/05 |
+| 8a | AVB targetu + build.prop zrodla + VINTF | GOTOWE | sdk=37, A17, mat. 202604 (92 HAL), device.xml 144 |
+| 8b | vintf_diff tool + porownanie z manifiesitem targetu | NARZEDZE GOTOWE | czeka na /vendor z adb |
 | 9 | przebudowa lancucha AVB (hashtree + testkey) i vbmeta spójna | DO ZROBIENIA | out/vbmeta-hyperos4.img |
 | 10 | flashkit (skrypt + obrazy + rollback) + wariant modulu | DO ZROBIENIA | scripts/make_flash_kit.sh |
 
