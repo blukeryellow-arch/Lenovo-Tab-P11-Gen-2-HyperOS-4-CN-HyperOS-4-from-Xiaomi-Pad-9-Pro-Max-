@@ -1,0 +1,12 @@
+# Inwentarz plikow na Google Drive usera - pobrany 2026-09-23 przez konektor (list_files).
+# kolumny: nazwa <TAB> id <TAB> rozmiar_B <TAB> md5_z_Google <TAB> pochodzenie (wg usera: 3 Lenovo / 5 HyperOS)
+# md5 to suma KONTROLNA SERWERA Google - po zlozeniu kawalkow porownujemy wlasnie z nia,
+# wowczas dowod nie brzmi "runner zgodny z agentem" tylko "to sa TE SAME bajty co na Dysku".
+vendor_boot.img	14hSJeBkfX1zNnVWd99NCxoskC-oKfy9f	67108864	78bde88857b40a4a0f25d833eb964bd3	Lenovo (target)
+boot.img	1funWH4Bdcf7XCouKu9eAu-umCv9L1NgG	67108864	5b9080215e37efcc1e459b6b7856d3b4	Lenovo (target)
+vbmeta.img	1u3HPzK0HyYu4kvA5WBYPl4Zbv_AWS7Ao	8192	4975158b97d90acdc6fb5f15dd0a074e	Lenovo (target)
+system.img	1Pu6RU00SsbFiXiGlx6IpG14714jaZThN	937791488	e8248a9a9a1f393750a20e2d9b6e91cd	HyperOS 4 (Xiaomi Pad 9 Pro Max)
+product.img	1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1	6445187072	2b8d393435091c45c864c525ce769340	HyperOS 4 (Xiaomi Pad 9 Pro Max)
+system_ext.img	13e-okLFNX3m7feTp8AlYoGME2rKFFitr	632840192	f879747f3f7ebb5eb026eddeb02f8d13	HyperOS 4 (Xiaomi Pad 9 Pro Max)
+vendor_mystical.img	1WQMSa-JRo2BeJHBIbhGAH0aTaF0VOcdL	665260032	9a124d16d287a615d503eb79a6ff32c7	HyperOS 4 (Xiaomi Pad 9 Pro Max)
+odm.img	1rrK7z7PVCB5rQpgubGt6pDeJgh1_pcEl	3096117248	ca05703e32fdaa399e1aed6a0b359ab8	HyperOS 4 (Xiaomi Pad 9 Pro Max)
