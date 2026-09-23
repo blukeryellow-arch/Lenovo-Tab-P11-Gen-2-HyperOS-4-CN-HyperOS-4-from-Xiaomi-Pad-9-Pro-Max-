@@ -9,13 +9,19 @@ drzewo katalogow z `staging/product/overlay`, bo to one daja „HyperOS Look", a
 samymi bajtami** co w wariancie lekkim — te same sha256, ten sam UUID, ta sama budowa:
 
 ```
-product  b28e1c0eb0c769cd…   (153 391 104 B, 147/147 wpisow 1:1)
-system   36238fac308fb674…   (967 507 968 B, 4 565/4 565 wpisow 1:1)
+product  b4bb8064d722dccb…   (153 391 104 B, 147/147 wpisow 1:1)
+system   5cf58995174c7dc3…   (967 503 872 B, 4 565/4 565 wpisow 1:1; 967 507 968 to rozmiar SPRZED wykluczen)
 vbmeta   9cf2e7e4e165687a…   (Flags: 3, rollback_index 0)
 ```
 
 Instrukcja, wymagania kernela (`CONFIG_EROFS_FS_LZ4`), bramka rozmiaru partycji i przepis
 odtworzenia bit w bit: **`../HyperOS4_P11Gen2/README.md`**.
+
+## Wlasciciel plikow w partii
+
+`Uid: 0 Gid: 0 Access: 0755` dla korzenia `/product` (normowane `--force-uid/--force-gid`,
+patrz `../HyperOS4_P11Gen2/README.md` i docs/06 §6.19). Rozmiary po tej korekcie zostaly te same,
+sha sie zmienily.
 
 ## Kiedy wybrac ten wariant, a kiedy nie
 
@@ -28,7 +34,7 @@ odtworzenia bit w bit: **`../HyperOS4_P11Gen2/README.md`**.
 
 Stan wariantu (po przebudowie z 2026-09-23): 132 pliki, w tym `etc/passwd` i `etc/group`
 oraz `etc/vintf/` **swiadomie bez** `manifest.xml` — patrz docs/06 §6.15. Weryfikacja
-obrazu 1:1: **147/147** wpisów, `product.img` = 153 391 104 B, sha256 `b28e1c0eb0c769cd…`.
+obrazu 1:1: **147/147** wpisów, `product.img` = 153 391 104 B, sha256 `b4bb8064d722dccb…`.
 
 Czego **nie** ma tu, a ma pełny `product.img` Xiaomi (6,4 GB): `pangu/`, `bin/`,
 `etc/aconfig_flags.pb`, `etc/fonts_customization.xml`,

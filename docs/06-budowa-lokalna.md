@@ -305,7 +305,8 @@ etc/group:   system:x:1000:
 
 Dorzucone do obu wariantów. Efekt, którego nie oczekiwałem: **rozmiar obrazu ani drgnął**
 (77 619 200 B i 153 391 104 B), bo 58 B weszło w bloki, które i tak były wolne; zmieniło się
-tylko sha256 (`16afbc35…` i `b28e1c0e…`). Weryfikacja 1:1 wyszła 67/67 i 147/147, więc pliki
+tylko sha256 (`16afbc35…` i `b28e1c0e…`; obie kwity sa juz nieaktualne po korekcie DAC
+z §6.19: `298ada60…` i `b4bb8064…`). Weryfikacja 1:1 wyszła 67/67 i 147/147, więc pliki
 są w partycji, nie tylko w drzewie — sprawdzone `fsck.erofs --extract --path=etc`.
 
 **`etc/vintf/manifest.xml` pomijam świadomie** i to jest decyzja cenniejsza niż samo dodanie.
