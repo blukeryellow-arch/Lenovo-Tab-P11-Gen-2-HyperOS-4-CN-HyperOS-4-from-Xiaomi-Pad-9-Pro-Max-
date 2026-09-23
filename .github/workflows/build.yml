@@ -263,11 +263,17 @@ jobs:
             fi
             [ -z "$UNP" ] && UNP=$(sed -n 's/^[[:space:]]*do_unpack:[[:space:]]*\([01]\).*/\1/p' drive-probe.request | head -1)
             OD=$(sed -n 's/^[[:space:]]*only_dirs:[[:space:]]*\(.*\)$/\1/p' drive-probe.request | head -1 | tr -d '\r')
+            RAW=$(sed -n 's/^[[:space:]]*raw:[[:space:]]*\([01]\).*/\1/p' drive-probe.request | head -1)
+            PFROM=$(sed -n 's/^[[:space:]]*part_from:[[:space:]]*\([0-9]*\).*/\1/p' drive-probe.request | head -1)
+            PCNT=$(sed -n 's/^[[:space:]]*part_count:[[:space:]]*\([0-9]*\).*/\1/p' drive-probe.request | head -1)
             MT=$(sed -n 's/^[[:space:]]*max_total:[[:space:]]*\([0-9]*\).*/\1/p' drive-probe.request | head -1)
           fi
           echo "DRIVE_IDS=$IDS" >> "$GITHUB_ENV"
           echo "DO_UNPACK=${UNP:-0}" >> "$GITHUB_ENV"
           echo "ONLY_DIRS=$OD" >> "$GITHUB_ENV"
+          echo "RAW_MODE=${RAW:-0}" >> "$GITHUB_ENV"
+          echo "PART_FROM=${PFROM:-0}" >> "$GITHUB_ENV"
+          echo "PART_COUNT=${PCNT:-0}" >> "$GITHUB_ENV"
           echo "MAX_TOTAL=${MT:-1900000000}" >> "$GITHUB_ENV"
           [ -n "$OD" ] && echo "tylko sciezki: $OD" || true
           echo "liczba id: $(echo $IDS | wc -w)  do_unpack=${UNP:-0}"
@@ -373,7 +379,14 @@ jobs:
                 python3 "$AVBTOOL" info_image --image "out/$name" 2>&1 | head -90; echo '```'; echo; } >> "$R"
               # ROZPAKOWANIE W TEJ SAMEJ ITERACJI: skrypt kasuje obraz po zapakowaniu.
               # Bez tego 11,9 GB lezaloby naraz - runner ma ~14 GB i padloby ENOSPC.
-              if [ "${DO_UNPACK:-0}" = "1" ]; then
+              if [ "${RAW_MODE:-0}" = "1" ]; then
+                mkdir -p one raw && mv "out/$name" "one/$name"
+                bash tools/raw_parts_on_runner.sh "one/$name" raw "${PART_FROM:-0}" "${PART_COUNT:-0}" 2>&1 | sed 's/^/    /' | tee -a "$R"
+                rm -rf one
+                UNPACKED=1
+                { echo; echo "### kawalki surowe (raw)"; echo; echo '```'; cat raw/RAW_MANIFEST.tsv 2>/dev/null; echo '```'; } >> "$R"
+                mkdir -p transfer && cp raw/* transfer/ 2>/dev/null; rm -rf raw
+              elif [ "${DO_UNPACK:-0}" = "1" ]; then
                 mkdir -p one && mv "out/$name" "one/$name" && {
                   KEEP_MANIFEST=1 ONLY_DIRS="${ONLY_DIRS:-}" MAX_TOTAL="${MAX_TOTAL:-1900000000}" bash tools/unpack_on_runner.sh one transfer || true; }
                 rm -rf one
@@ -407,6 +420,16 @@ jobs:
           else
             echo "brak kawalkow (do_unpack=0 albo zaden FS nie dal sie rozpakowac)"
           fi
+
+      - name: Kawalki na galaz transfer-spool
+        # Jeziorna galaz (nadpisywana --force), NIE historia sesji: patrz nagslowek
+        # tools/push_spool_branch.sh. Agent kasuje ja po zlozeniu.
+        if: always()
+        run: |
+          set +e
+          if [ ! -d transfer ] || [ -z "$(ls -A transfer 2>/dev/null)" ]; then echo "brak kawalkow - pomijam"; exit 0; fi
+          bash tools/push_spool_branch.sh transfer transfer-spool
+          echo "spool: $(du -sh transfer | cut -f1)"
 
       - name: Wypchnij raport do repo
         # always(): przy timeout/cancel i tak chcemy to, co zdazylo sie zebrac -

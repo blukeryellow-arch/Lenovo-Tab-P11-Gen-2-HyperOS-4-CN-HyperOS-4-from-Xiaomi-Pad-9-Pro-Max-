@@ -1,10 +1,14 @@
 # Wykaz plikow do przejrzenia przez runnera GitHub Actions.
 # Jedno ID Google Drive w pierwszej kolumnie (linie # pomijane). Opcje:
-#   do_unpack: 1      rozpakuj i pociagnij kawalkami <=90 MB na galaz
-#   only_dirs: a b c   tylko te sciezki z partycji (skrocanie paczki)
-#   max_total: B       budzet bajtow na bieg (limit GitHuba 2 GB/push)
-# START: commit z "[drive-probe]" w tytule. Po kazdym biegu przywracam 'prywatne'.
+#   raw: 1           wypchnij SUROWE czastki (nie rozpakowane drzewo) - do analizy bajtowej
+#   part_from: N     od ktorej czastki (dla obrazow przekraczajacych 2 GB/push)
+#   part_count: M    ile czastek w tym biegu (0 = do konca)
+#   do_unpack: 1     rozpakuj partycje i spakuj allowliste (tylko gdy potrzebny subset)
+#   only_dirs: a b   sciezki do zapakowania, gdy do_unpack=1
+#   max_total: B     budzet bajtow na bieg (limit GitHuba: 2 GB/push, 100 MB/blob)
+# START: commit z "[drive-probe]" w tytule, ktory ZMIENI przynajmniej jeden path z
+# on:push.paths (pusty commit NIE tworzy bieg - filtr sciezek nie widzi zmian).
 1u3HPzK0HyYu4kvA5WBYPl4Zbv_AWS7Ao
 1funWH4Bdcf7XCouKu9eAu-umCv9L1NgG
 14hSJeBkfX1zNnVWd99NCxoskC-oKfy9f
-do_unpack: 0
+raw: 1

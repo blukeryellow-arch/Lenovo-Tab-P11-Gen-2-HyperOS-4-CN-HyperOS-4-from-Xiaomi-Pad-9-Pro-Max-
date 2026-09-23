@@ -8,7 +8,7 @@ Start bloku: 2026-09-23 ~16:55 (Europe/Warsaw), limit czasowy 3h.
 |--:|---|---|---|
 | 1 | kanaal transferowy (runner + kawalki <=90 MB) | GOTOWE (poprz. tura) | bieg 17 `35823024969`, sha256 `afb1e37bc86b` |
 | 2 | odzysk po resize sandboxa (praca z gałęzi) | GOTOWE | `images/system.assets.tar.gz` 716 MB, sha256 ZGODNY z MANIFESTem |
-| 3 | unpack: allowlist `./`, ONLY_DIRS, budzet 2 GB na push | W TRAKCIE | — |
+| 3 | tryb RAW (surowe czastki z zakresem) + jeziorny branch `transfer-spool` | GOTOWE | test lokalny: 2 zakresy -> sha256 oryginalu |
 | 4 | transfer `vbmeta` + `boot` + `vendor_boot` (małe, Lenovo) | DO ZROBIENIA | — |
 | 5 | transfer `vendor_mystical` + `system_ext` (HyperOS) | DO ZROBIENIA | — |
 | 6 | transfer `odm` (HyperOS) | DO ZROBIENIA | — |
