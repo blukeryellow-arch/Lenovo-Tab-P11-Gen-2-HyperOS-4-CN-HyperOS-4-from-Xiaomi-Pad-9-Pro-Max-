@@ -230,16 +230,37 @@ jobs:
   # ---------------------------------------------------------------------------
   drive-probe:
     name: Analiza obrazow prosto z Google Drive
-    if: github.event_name == 'workflow_dispatch'
+    # Start: reczny dispatch LUB push z "[drive-probe]" w tytule commita.
+    # To drugie istnieje, bo token integration (Arena) nie dostaje prawa do
+    # POST /actions/workflows/.../dispatches -> 403 Resource not accessible by
+    # integration. Uruchomienie przez commit jest jedyna trasa z sandboxa.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[drive-probe]'))
     runs-on: ubuntu-latest
     timeout-minutes: 55
     permissions:
       contents: write
-    env:
-      DRIVE_IDS: ${{ inputs.drive_ids }}
-      DO_UNPACK: ${{ inputs.do_unpack }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Wczytaj zapytanie (input albo drive-probe.request)
+        id: req
+        run: |
+          set -uo pipefail
+          IDS="${{ inputs.drive_ids }}"
+          UNP="${{ inputs.do_unpack }}"
+          if [ -f drive-probe.request ]; then
+            if [ -z "$IDS" ]; then
+              IDS=$(grep -Ev '^[[:space:]]*(#|do_unpack:)' drive-probe.request | tr -d '\r' | paste -sd' ' -)
+              echo "zapytanie z pliku drive-probe.request"
+            fi
+            [ -z "$UNP" ] && UNP=$(sed -n 's/^[[:space:]]*do_unpack:[[:space:]]*\([01]\).*/\1/p' drive-probe.request | head -1)
+          fi
+          echo "DRIVE_IDS=$IDS" >> "$GITHUB_ENV"
+          echo "DO_UNPACK=${UNP:-0}" >> "$GITHUB_ENV"
+          echo "liczba id: $(echo $IDS | wc -w)  do_unpack=${UNP:-0}"
+          if [ -z "$IDS" ]; then echo "nic do roboty - pusty wykaz id"; fi
 
       - name: Narzedzia FS i AVB
         run: |
@@ -338,6 +359,9 @@ jobs:
           fi
 
       - name: Wypchnij raport do repo
+        # always(): przy timeout/cancel i tak chcemy to, co zdazylo sie zebrac -
+        # bez tego przerwany run nie zostawia zadnego slad (logow CI nie widac).
+        if: always()
         run: |
           set -uo pipefail
           git config user.name "github-actions[bot]"
