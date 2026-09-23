@@ -646,3 +646,36 @@ konkretny i jest to szóstma odmiana tego samego błędu: pierwsza wersja sprawd
 występuje *gdziekolwiek* w pliku", więc podmiana sumy w wierszu na `DEADBEEF…` przeszła na
 zielono, bo identyczny prefiks został w akapicie niżej. Test negatywny to wykrył — i dlatego
 każda nowa kontrola w tym repo dostaje swój negatyw, zanim trafi do commita.
+
+## 6.26 Kontrakt rozmiarów objal caly katalog — i przy okazji pokazal, ze umiem usunac wlasna kontrole
+
+Rozszerzenie §6.25 poszło o krok dalej: blok `ROZMIARY-KONTRAKT` w README liczy **wszystkie**
+pliki wydania (`*.img`, `flash-all.sh`, `rollback.sh`, `device-probe.sh`, `build-info.txt`,
+`release-manifest.tsv`), poza `*.md`, `*.log` i `SHA256SUMS.txt` (ten ostatni nie może: jego
+własny rozmiar zmienia się *po* wpisaniu bloku, byłoby to równanie samoodwołujące). Q wymaga
+więcej niż 16 przeanalizowanych pozycji i sprawdza dodatkowo **liczbę kolumn wierszy tabeli**
+w README.
+
+Po co ta druga kontrola: podmieniając rozmiary w tabeli „Skład wydania", wstawiłem `| 6 749 | |`
+— pięć wierszy z czterema kolumnami przy nagłówku trójkolumnowym. Markdown i tak by to
+wyrenderował, tylko przesunięte; nikt nie nazwałby tego błędem merytorycznym, a jest.
+
+Co z tej tury naprawdę warto zapamiętać, bo dotyczy nie tabeli, a mnie:
+
+1. **Wpisałem `6 631` tam, gdzie `stat` mówił `6 749`.** Ręka, z głowy, przy pliku `.sh`,
+   którego kontrakt wtedy nie pilnował. Odpowiedź nie brzmi „będę uważniejszy" — brzmi:
+   rozmiar każdego pliku w wydaniu ma być maszynowo trzymany i maszynowo sprawdzony.
+2. **Rozbudowując Q, zgubiłem jego własny próg.** Wstawka z `docs/07` wzięła jako kotwicę linię
+   `if seen<3: …` i *zastąpiła* ją, zamiast dopisać się obok. Q zostało przez dwie przebudowy
+   bez asercji „ile przejrzałem" — czyli dokładnie z tą wadą, dla której §6.20 powstało.
+  Reguła: przy rozbudowie kontrolki nie wolno używać jej linii ochronnej jako kotwicy; nowe
+   zdania dopisuje się **powyżej** albo **poniżej**, a potem `git diff` pokazuje, że stara linia
+   nadal istnieje.
+3. **Strażnik, który wyłączal kontrolę.** Napisałem `if os.path.isfile(d7) and 'rows_done' not
+   in globals():` i w tym samym secie dodałem `rows_done=0` na górze. Warunek stał się wiecznie
+   fałszywy, skan wierszy nigdy się nie odpalił, a `rows_done<4` — JEDYNA rzecz, która została
+   po punkcie 2 — krzyknęło „kontrola martwa" na zielonym baseline'owym przebiegu. Progi
+   „ile przejrzałem" nie są dekoracją: to one zamieniły moje dwa kolejne samobójstwa w testy.
+4. Trzy negatywy, każdy osobno uruchomiony i każdy czerwony: kolumna `+1` w tabeli → FAIL
+   z numerem linii; skrócony blok kontraktowy → FAIL „przeanalizowano tylko 9 pozycji"; zły
+   rozmiar vbmeta w bloku → FAIL „kontrakt mówi 8192 B, plik ma 4096 B".

@@ -17,7 +17,7 @@ vbmeta   9cf2e7e4e165687a…   (Flags: 3, rollback_index 0)
 Instrukcja (w tym **krok 0**: `bash device-probe.sh --release .`, ktory mowi GO/NO-GO na
 podstawie odczytan z tabletu), wymagania kernela (`CONFIG_EROFS_FS_LZ4`), bramka rozmiaru
 partycji i przepis odtworzenia bit w bit: **`../HyperOS4_P11Gen2/README.md`**. Ten katalog tez
-zawiera `device-probe.sh` i ma 8 pozycji w `SHA256SUMS.txt` (`sha256sum -c` = 8/8 OK).
+zawiera `device-probe.sh` (6 533 B) i ma 8 pozycji w `SHA256SUMS.txt` (`sha256sum -c` = 8/8 OK).
 
 ## Wlasciciel plikow w partii
 
@@ -50,7 +50,7 @@ Czego **nie** ma tu, a ma pełny `product.img` Xiaomi (6,4 GB): `pangu/`, `bin/`
 `etc/selinux/product_*.contexts`, `etc/vintf/manifest.xml`, `overlay/partition_order.xml`.
 Liczby odwołań do nich w obrazie `system`: `diagnostics/product-refs.tsv`. Dopięcie ich z
 wlasnego product.img: `tools/enrich_product.sh --src product.img --tree <drzewo>`.
-<!-- ROZMIARY-KONTRAKT product_hyperos4_p11g2.img=150560768 system_hyperos4_p11g2.img=920047616 vbmeta_hyperos4_p11g2.img=4096 -->
+<!-- ROZMIARY-KONTRAKT build-info.txt=385 device-probe.sh=6533 flash-all.sh=6749 product_hyperos4_p11g2.img=150560768 release-manifest.tsv=672 rollback.sh=1152 system_hyperos4_p11g2.img=920047616 vbmeta_hyperos4_p11g2.img=4096 -->
 <!-- Utrzymuje go tools/make_release.sh, sprawdza tools/test_release.sh (sekcja Q).
      Jezli ktora kolwiek z tych liczb nie zgadza sie z plikiem albo znika z prozy
      tego README, test wydania FAILuje. To nie jest komentarz do recznego pilnowania. -->

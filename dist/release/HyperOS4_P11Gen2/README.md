@@ -24,12 +24,12 @@ z tego samego drzewa i tego samego UUID).
 | `product_hyperos4_p11g2.img` | 75 198 464 | `/product` (EROFS+lz4): `fonts/` + `etc/passwd` + `etc/group`; zweryfikowany **67/67** wpisów 1:1 |
 | `system_hyperos4_p11g2.img` | 920 047 616 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowane macierze VINTF 4/5/6). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | `Flags: 3` (weryfikacja + verity wyłączone), `rollback_index 0`, SHA256_RSA2048, key `cdbb7717…` |
-| `flash-all.sh` | 6 631 | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
-| `device-probe.sh` | 6533 | **krok 0 przed flashem**: czyta `fastboot getvar` + `adb shell` i drukuje GO / GO z zastrzeżeniami / NO-GO (fastbootd, rozmiary slotów, `CONFIG_EROFS_FS{,_LZ4}`). Tylko odczyty — nic nie zapisuje, nic nie mountuje |
+| `flash-all.sh` | 6 749 | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
+| `device-probe.sh` | 6 533 | **krok 0 przed flashem**: czyta `fastboot getvar` + `adb shell` i drukuje GO / GO z zastrzeżeniami / NO-GO (fastbootd, rozmiary slotów, `CONFIG_EROFS_FS{,_LZ4}`). Tylko odczyty — nic nie zapisuje, nic nie mountuje |
 | `rollback.sh` | 1 152 | przywraca vbmeta z kopii wykonanej przed flashem |
-| `release-manifest.tsv` | ~0,6 kB | `plik ⇥ bajty ⇥ sha256 ⇥ uwaga` |
+| `release-manifest.tsv` | 671 | `plik ⇥ bajty ⇥ sha256 ⇥ uwaga` |
 | `SHA256SUMS.txt` | — | liczony na końcu; `sha256sum -c` = 8/8 OK. **`*.md` jest poza sumami** — README to dokumentacja, nie ładunek: inaczej redakcja zdania „unieważnia" wydanie (złapane przez `tools/test_release.sh`) |
-| `build-info.txt` | — | kompresja, UUID, wersja `mkfs.erofs`, ścieżki drzew |
+| `build-info.txt` | 388 | kompresja, UUID, wersja `mkfs.erofs`, ścieżki drzew |
 | `mkfs.log`, `fsck.log`, `system-verify.log` | — | surowe logi budowy i obu sprawdzeń |
 
 ## Jak sprawdzic, ze to, co masz, to to, co zbudowalem
@@ -237,7 +237,7 @@ Braki HAL-i, których vendor `mt6789` nie ma (audio AIDL, health, power, thermal
 §5.1), nie znikają przez obniżenie ich do `optional`: to usuwa blokadę startu, nie dodaje
 implementacji.
 
-<!-- ROZMIARY-KONTRAKT product_hyperos4_p11g2.img=75198464 system_hyperos4_p11g2.img=920047616 vbmeta_hyperos4_p11g2.img=4096 -->
+<!-- ROZMIARY-KONTRAKT build-info.txt=388 device-probe.sh=6533 flash-all.sh=6749 product_hyperos4_p11g2.img=75198464 release-manifest.tsv=671 rollback.sh=1152 system_hyperos4_p11g2.img=920047616 vbmeta_hyperos4_p11g2.img=4096 -->
 <!-- tools/test_release.sh, sekcja Q, wywala FAIL jesli ktora kolwiek z tych liczb przestanie
      zgadzac sie z plikiem. Dzieki temu 'odswiezanie dokumentacji' nie moze zostawic przedawnionego
      rozmiaru (23 IX 2026: podmiana sum pomiedzy wariantami wlasnie to zrobila i nikt by nie

@@ -410,12 +410,15 @@ if python3 - "$ROOT" <<'PYQ'
 import os,re,sys
 root=sys.argv[1]; rel=[d for d in ('dist/release/HyperOS4_P11Gen2','dist/release/HyperOS4_P11Gen2-full')]
 seen=0; bad=[]
-texts={}; sizes={}; d7seen=0
+texts={}; sizes={}; d7seen=0; rows_done=0
 for d in rel:
     dd=os.path.join(root,d)
     if not os.path.isdir(dd): bad.append(f"brak katalogu {d}"); continue
     for f in os.listdir(dd):
-        if f.endswith('.img'): sizes[(d,f)]=os.path.getsize(os.path.join(dd,f))
+        # kontrakt obejmuje WSZYSTKO w katalogu poza dokumentacja, logami i samym plikiem sum
+        # (SHA256SUMS.txt liczy sie PO bloku, wiec jego rozmiar bylby samoodwolaniem)
+        if f.endswith(('.md','.log')) or f=='SHA256SUMS.txt': continue
+        sizes[(d,f)]=os.path.getsize(os.path.join(dd,f))
     rp=os.path.join(dd,'README.md')
     if not os.path.isfile(rp): bad.append(f"brak {d}/README.md"); continue
     texts[d]=open(rp,encoding='utf-8').read()
@@ -423,7 +426,7 @@ for d,txt in texts.items():
     m=re.search(r'<!--\s*ROZMIARY-KONTRAKT([^\n]*)-->', txt)
     if not m:
         bad.append(f"{d}/README.md: brak bloku ROZMIARY-KONTRAKT (make_release go nie wstrzyknal?)"); continue
-    for name,val in re.findall(r'([\w.]+\.img)=(\d+)', m.group(1)):
+    for name,val in re.findall(r'([\w.-]+\.(?:img|sh|tsv|txt))=(\d+)', m.group(1)):
         seen+=1
         real=sizes.get((d,name))
         if real is None: bad.append(f"{d}: {name} z kontraktu nie istnieje w katalogu"); continue
@@ -434,7 +437,7 @@ for d,txt in texts.items():
         # negatywny 'sklam proze w lekkim' przeszedl na zielono. Kontrola, ktora tak
         # wybacza, nie istnieje (23 IX 2026).
         prose=re.sub(r'<!--.*?-->','',txt,flags=re.S)
-        if pretty not in prose:
+        if name in prose and pretty not in prose:
             bad.append(f"{d}: {name} = {val} B jest w kontrakcie, ale nie ma tej liczby w PROZIE"
                        f" tego README — akapity zostaly z poprzednia liczba (blok swiezy, tekst klamie)")
     # ten sam rozmiar i ta sama suma musza byc w docs/07 (tabelka 'stan wydania') - tam blok
@@ -445,8 +448,7 @@ for d,txt in texts.items():
     # 2026). Tolerancja = 'wiersz, ktorego nie umiem sklasyfikowac, pomijam', ale liczbe
     # przejranych wierszy asertuje ponizej — zeby 'puste przejscie' nie udawalo PASS-a.
     d7=os.path.join(root,'docs/07-jak-weryfikowac.md')
-    if os.path.isfile(d7) and 'rows_done' not in globals():
-        globals()['rows_done']=0
+    if os.path.isfile(d7) and rows_done==0:      # skan raz na przebieg (docs/07 jest jeden)
         for line in open(d7,encoding='utf-8'):
             if not line.lstrip().startswith('|') or '---' in line: continue
             low=line.lower()
@@ -478,8 +480,9 @@ for d,txt in texts.items():
         if rows_done<4: bad.append(f"docs/07: przejrzalem tylko {rows_done} wierszy tabelki (oczekuje >=4) — kontrola sie nie wykonala")
     if os.path.isfile(d7):
         t7=open(d7,encoding='utf-8').read(); d7seen+=1
-        for name,val in re.findall(r'([\w.]+\.img)=(\d+)', m.group(1)):
+        for name,val in re.findall(r'([\w.-]+\.(?:img|sh|tsv|txt))=(\d+)', m.group(1)):
             pretty=f"{int(val):,}".replace(',',' ')          # '920 047 616' — jak w tabelce
+            if not name.endswith('.img'): continue     # docs/07 opisuje ladunek, nie metadane
             msg=f"docs/07 nie ma rozmiaru {name} = {pretty} B (przedawniona tabelka)"
             if pretty not in t7 and msg not in bad:
                 bad.append(msg)
@@ -493,6 +496,25 @@ for d,txt in texts.items():
                 if not any(full[:L] in t7 for L in range(8, len(full)+1)) and msg2 not in bad:
                     bad.append(msg2)
 if d7seen<1: bad.append("docs/07 nie zostalo przejrzone (brak pliku lub brak blokow) - kontrola nie zadzialala")
+# spojnosc tabel markdown — 23 IX 2026 moja podmiana rozmiarow w 'Sklad wydania' zwrocila
+# piec wierszy z czterema kolumnami zamiast trzech ('| |'); markdown przesuwa wtedy kolumny i
+# nikt by nie powiedzial 'dokument jest zly', tylko 'brzydko sie renderuje'
+for d,txt in texts.items():
+    L=txt.splitlines(); i=0
+    while i<len(L):
+        if L[i].lstrip().startswith('|') and i+1<len(L) and re.match(r'^\s*\|[\s:|-]+\|\s*$', L[i+1]):
+            ncol=L[i].count('|'); j=i+2
+            while j<len(L) and L[j].lstrip().startswith('|'):
+                if L[j].count('|')!=ncol:
+                    msg=f"{d}/README.md:{j+1}: wiersz tabeli ma {L[j].count('|')-1} kol., naglowek {ncol-1}"
+                    if msg not in bad: bad.append(msg)
+                j+=1
+            i=j
+        else: i+=1
+# asercja 'ile przejrzalem' — te trzy linie zniknely raz przy rozbudowie Q (23 IX) i Q zostalo
+# kontrola bez zadnego progu: zero pozycji dawaloby PASS. Nie powtarzac.
+if seen<16: bad.append(f"przeanalizowano tylko {seen} pozycji kontraktu (dwa README x 8 plikow) - kontrola martwa")
+if rows_done<4: bad.append(f"przejrzalem {rows_done} wierszy tabeli docs/07 (oczekuje >=4) - kontrola martwa")
 if bad: print("\n".join("  "+b for b in bad)); sys.exit(1)
 print(f"  przeanalizowane pozycje kontraktu: {seen}")
 PYQ

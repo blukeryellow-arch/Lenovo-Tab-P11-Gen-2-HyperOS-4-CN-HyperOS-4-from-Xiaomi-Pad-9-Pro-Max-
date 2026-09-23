@@ -468,8 +468,12 @@ done
 # kompresji, a trzy akapity wciaz podawaly 77 619 200). README czyta czlowiek, kontrakt czyta
 # test (tools/test_release.sh, sekcja Q) - dlatego generuje go builder, nie redaktor.
 if [ -f "$OUT/README.md" ]; then
-  PARTS=$(for f in $(cd "$OUT" && ls *.img 2>/dev/null | sort); do
-             printf '%s=%s ' "$f" "$(stat -c%s "$OUT/$f")"
+  # Kontrakt obejmuje WSZYSTKIE pliki wydania poza *.md, *.log i samym SHA256SUMS.txt (tego
+  # nie da sie wlaczyc: jego rozmiar zmienia sie PO wpisaniu bloku, bylby samoodwolaniem).
+  # Powod jest wprost: 23 IX 2026 wpisalem w README 'flash-all.sh 6 631' przy pliku 6 749 B -
+  # reka, z glowy, przy pliku .sh ktorego Q nie pilnowalo. Niech pilnuje.
+  PARTS=$(for f in $(cd "$OUT" && ls 2>/dev/null | grep -vE '\.(md|log)$|^SHA256SUMS\.txt$' | sort); do
+             [ -f "$OUT/$f" ] && printf '%s=%s ' "$f" "$(stat -c%s "$OUT/$f")"
          done)
   if grep -q 'ROZMIARY-KONTRAKT' "$OUT/README.md"; then
     python3 - "$OUT/README.md" "$PARTS" <<'PYX'
