@@ -37,16 +37,19 @@ boota jest gorszym podejrzanym, więc jeśli coś nie wstanie, zacznij od lekkie
 
 ## Zablokowane po stronie narzędzi (nie kodu)
 
-1. **GitHub: `GH_TOKEN` wygasł.** `git push` → „could not read Username for 'https://github.com'".
-   Pięć commitów nad `41f1ebf` leży tylko lokalnie: `ef1918c` (DAC 0:0), `7623c87` i `2ce5343`
-   (kontrola N w testach + naprawa tej kontroli), `45854a7` (ścieżka `--compress none`),
-   `df32841` (krok 0 w wydaniu). CI **nigdy nie widziało sekcji K, L, M, N, P** — ostatni
-   zielony run (`35918777924`, 13/13) dotyczy commita sprzed korekty DAC-a. Trzeba odświeżyć
-   połączenie z GitHubem w Arena, potem: push + `gh run list --workflow=release-selftest.yml`.
-2. **`codeload.github.com` zwraca 404** na tarballu źródeł (np. `madler/zlib` v1.3.1), więc
-   `tools/build_comp_libs.sh` nie da się teraz uruchomić od zera. Cache w `/tmp/erofs-src` i
-   `/tmp/comp-build` działa; po reboocie sandboxa trzeba będzie pobrać inaczej (repo `git clone`
-   działało, `codeload` nie).
+1. **~~`GH_TOKEN` wygasł~~ — naprawione 24 IX ~00:50 UTC.** Pushy poszły, gałąź
+   `arena/01a0ca42-…` stoi na `d84c3cc`, a bieg `release-selftest` **35927660767 ma 15/15
+   kroków success**. To pierwszy bieg w historii, w którym „success" znaczy, że
+   `tools/test_release.sh` **wyszedł zerem**: poprzednie (w tym chwalone 13/13 z `35918777924`)
+   liczyły status `tee`, więc suita mogła failować do woli — `docs/06` §6.27. Sekcje K–N, P i Q
+   widziały runnera dopiero teraz, realnie.
+2. **~~`codeload.github.com` zwracał 404~~ — minęło.** 24 IX ~01:55 UTC oba tarballe
+   (`madler/zlib` v1.3.1, `erofs/erofs-utils` master) odpowiadają `HTTP/2 200`. Cache
+   `/tmp/erofs-c` nadal jest najszybszą ścieżką, ale odbudowa od zera znowu jest możliwa.
+3. **Logi Actions pozostają nieczytelne z tej piaskownicy**: `gh run view --log` zwraca pusty
+   wynik, a `gh run download` na artefakt `weryfikacja-log` 3 razy dostał EOF od
+   `blob.core.windows.net`. Widoczne są więc statusy kroków i adnotacje (`::error::`/`::notice::`),
+   nie treść logu — i o tym trzeba pamiętać, czytając moje „CI zielone".
 
 ## Jak odtworzyć środowisko po reboocie sandboxa
 

@@ -114,10 +114,18 @@ jobs:
           fi
 
       - name: biblioteki kompresji ze zrodel (bez -dev pakietow)
-        run: bash tools/build_comp_libs.sh "$COMP_DIR" 2>&1 | tee -a "$RUNLOG"
+        run: |
+          bash tools/build_comp_libs.sh "$COMP_DIR" 2>&1 | tee -a "$RUNLOG"
+          # bez pipefail rura zwraca status tee = 0, wiec porazka budowy byla niemy; rc z PIPESTATUS
+          rc=${PIPESTATUS[0]}
+          [ "$rc" -eq 0 ] || { echo "::error::build_comp_libs.sh rc=$rc - bez bibliotek kompresji mkfs.erofs nie zna -z, obrazy wyrosna ~1,5x wieksze (docs/06 §6.10)"; exit 1; }
 
       - name: erofs-utils bez autoconfu (mini-configure + gcc)
-        run: COMP_PREFIX="$COMP_DIR" bash tools/build_erofs_local.sh "$EROFS_DIR" 2>&1 | tee -a "$RUNLOG"
+        run: |
+          COMP_PREFIX="$COMP_DIR" bash tools/build_erofs_local.sh "$EROFS_DIR" 2>&1 | tee -a "$RUNLOG"
+          # bez pipefail rura zwraca status tee = 0, wiec porazka budowy byla niemy; rc z PIPESTATUS
+          rc=${PIPESTATUS[0]}
+          [ "$rc" -eq 0 ] || { echo "::error::build_erofs_local.sh rc=$rc - brak mkfs.erofs/fsck.erofs - pozniejsze kroki padlyby rc=127 bez wskazania, ze to nie wina wydania"; exit 1; }
 
       - name: sprawdz, ze MOJ mkfs zna -z (bez tego obrazy sa ~1,5x wieksze)
         run: |
