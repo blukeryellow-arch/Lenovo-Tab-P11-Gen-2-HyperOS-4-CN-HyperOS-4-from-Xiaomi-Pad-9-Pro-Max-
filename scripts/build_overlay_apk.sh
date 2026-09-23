@@ -16,7 +16,7 @@ MIN_SDK=${MIN_SDK:-31}
 PKG=com.hyperos.look
 
 # Kandydaci: PATH, potem znane lokalizacje SDK (runner GitHub ma SDK preinstalowany
-# w /usr/local/lib/android/sdk - nie odwolujemy sie do zadnych akcj外部).
+# w /usr/local/lib/android/sdk - nie odwołujemy się do żadnych akcji zewnętrznych).
 sdk_roots() {
   for c in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" /usr/local/lib/android/sdk "$HOME/Android/Sdk" /opt/android-sdk; do
     [ -n "$c" ] && [ -d "$c" ] && printf '%s\n' "$c"

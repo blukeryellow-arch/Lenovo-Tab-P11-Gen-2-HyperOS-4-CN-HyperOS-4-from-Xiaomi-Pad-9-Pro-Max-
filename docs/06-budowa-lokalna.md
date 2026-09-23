@@ -282,10 +282,11 @@ podejmuje decyzje po kodzie wyjscia, musi traktowac **kazdy** wynik inny od zera
 zadna z tych awarii nie mogla przeoczyc bledu. Zgloszone tutaj, bo to jest zachowanie
 narzedzia, nie moje: nie buduje sie na tym skryptu „sprawdz, czy plik istnieje w obrazie".
 
-**b) Nie wolno pisac do README zdania, ktorego sie nie zmierzylо.** W README bylo
-„67 RRO w `/system/…`" — falsz, wryty dlatego, że *skad* inamiecia拿 te nakladki (z
-`product.img`) i zalozylem, ze CI je wlozyl tez do `system`. Pomiar dal: `system/product`
-w obrazie nie istnieje (rc=1), `system/etc/permissions` istnieją (27 plików, 110 965 B).
-Konsekwencja dla czytelnika jest odwrotna niz myslalem: montujac wlasny `/product` **nic
-nie przykrywam** — wariant lekki nie „kasuje" HyperOS-owego wygladu, bo ten w `system`
-nigdy nie był; natomiast `--full` go *dodaje*. To jedno zdanie zmienilo sens calego akapitu.
+**b) Nie wolno pisać do README zdania, którego się nie zmierzyło.** W README było
+„67 RRO w `/system/…`" — fałsz, wryty dlatego, że skoro brałem te nakładki z
+`product.img`, założyłem, iż CI włożył je również do `system`. Pomiar mówi co innego:
+`system/product` w tym obrazie nie istnieje (rc=1), za to `system/etc/permissions`
+istnieją (27 plików, 110 965 B). Konsekwencja jest odwrotna, niż myślałem: montując
+własny `/product` **niczego nie przykrywam** — wariant lekki nie „kasuje" HyperOS-owego
+wyglądu, bo ten w `system` nigdy nie był; `--full` go dokładnie dokłada. Koszt pomiaru
+to dwie minuty, a koszt założenia — cały akapit do wyrzucenia.
