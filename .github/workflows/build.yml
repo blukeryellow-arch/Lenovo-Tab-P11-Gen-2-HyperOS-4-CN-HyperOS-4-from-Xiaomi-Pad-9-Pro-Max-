@@ -363,9 +363,10 @@ jobs:
               # ROZPAKOWANIE W TEJ SAMEJ ITERACJI: skrypt kasuje obraz po zapakowaniu.
               # Bez tego 11,9 GB lezaloby naraz - runner ma ~14 GB i padloby ENOSPC.
               if [ "${DO_UNPACK:-0}" = "1" ]; then
-                mkdir -p one && cp "out/$name" "one/$name" && {
+                mkdir -p one && mv "out/$name" "one/$name" && {
                   KEEP_MANIFEST=1 bash tools/unpack_on_runner.sh one transfer || true; }
                 rm -rf one
+                # po 'mv' nie ma czego Kasowac w out/ - surowy obraz zostal skonsumowany
                 UNPACKED=1
                 { echo '### Rozpakowanie'; echo; echo '```'; tail -25 transfer/UNPACK_REPORT.txt 2>/dev/null; echo '```'; echo; } >> "$R"
               fi
