@@ -5,7 +5,7 @@ w tym samym sandboksie. Historia decyzji i wszystkie pomiary: `docs/06-budowa-lo
 
 **Format obrazów: EROFS + `lz4`.** To nie kosmetyka — bez kompresji `system` miał
 1 376 899 072 B, a źródłowy obraz HyperOS ma 937 791 488 B, bo HyperOS pakuje lz4.
-Mój `lz4` daje 967 507 968 B (+3,2 % wobec źródła, −29,7 % wobec wersji bez kompresji).
+Mój `lz4` daje 967 503 872 B (+3,2 % wobec źródła, −29,7 % wobec wersji bez kompresji).
 
 ## Warianty
 
@@ -22,7 +22,7 @@ z tego samego drzewa i tego samego UUID).
 | plik | bajty | co to |
 |---|---|---|
 | `product_hyperos4_p11g2.img` | 77 619 200 | `/product` (EROFS+lz4), zweryfikowany 64/64 wpisów 1:1 |
-| `system_hyperos4_p11g2.img` | 967 507 968 | `/system` z HyperOS 4 (framework, MiSans, 67 RRO w `/system/...`, wygenerowane macierze VINTF 4/5/6), zweryfikowany **4 568/4 568** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
+| `system_hyperos4_p11g2.img` | 967 503 872 | `/system` z HyperOS 4 (framework, MiSans, 67 RRO w `/system/...`, wygenerowane macierze VINTF 4/5/6), zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | `Flags: 3` (weryfikacja + verity wyłączone), `rollback_index 0`, SHA256_RSA2048, key `cdbb7717…` |
 | `flash-all.sh` | ~3,4 kB | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
 | `rollback.sh` | 469 | przywraca vbmeta z kopii wykonanej przed flashem |
@@ -56,7 +56,7 @@ adb shell 'zcat /proc/config.gz | grep EROFS'
 ```
 
 Nie ma? Wtedy flashuj wariant bez kompresji: `tools/make_release.sh … --compress none`
-(pliki ~1,5× większe — `system` 1 376 759 808 B, `product` 87 973 888 B), albo zrezygnuj.
+(pliki ~1,5× większe — `system` 1 376 759 808 B (bez wykluczen: 1 376 899 072 B z CI), `product` 87 973 888 B), albo zrezygnuj.
 Format lz4 nie jest tu moim widzimisię: źródłowy `system.img` HyperOS-u jest lz4-owy.
 
 ## Odtworzyenie bit w bit (bez CI, z plików na Dysku)
@@ -86,8 +86,10 @@ tools/enrich_product.sh --src product.img --tree /tmp/tree/product
 
 # 4) budowa + weryfikacja (fsck + 1:1 na kazdym wpisie) + vbmeta + instalator
 tools/make_release.sh --product-tree /tmp/tree/product --system-tree /tmp/tree/system_src \
-  --compress lz4 --avb <avbtool.py> --key <testkey_rsa2048.pem> --erofs-dir /tmp/erofs \
-  --out /tmp/release
+  --compress lz4 --exclude-regex '\.komentarz\.txt$' \
+  --avb <avbtool.py> --key <testkey_rsa2048.pem> --erofs-dir /tmp/erofs --out /tmp/release
+#   --exclude-regex wylacza z PARTYCJI pliki-notatki generatora (*.komentarz.txt, 3 x ~400 B);
+#   drzewo zostaje z notatkami, obraz jest o 4 096 B czystszy i bez nich w /system/etc/vintf
 
 # 5) dowod, ze to TO SAMO
 sha256sum /tmp/release/product_hyperos4_p11g2.img   # 8dcc73f265c9aaf8f52f…

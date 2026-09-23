@@ -246,3 +246,21 @@ Stąd dwa rzeczy w procedurze: ekstrakcja z `--strip-components=1`, i **krok „
 (40 ścieżek porównanych między moim obrazem a obrazem CI — wynik: 40 zgodnych, 0 rozjazdów).
 Zapamiętać: *sprawdzanie, czy obraz jest poprawnym EROFS, nie sprawdza, czy jest poprawnym
 systemem plików Androida*.
+
+## 6.13 Notatki generatora poza partycją (`--exclude-regex`)
+
+Drzewo `system`, które dostałem z kitu CI, zawierało 3 pliki `compatibility_matrix.{4,5,6}.komentarz.txt`
+(405/400/400 B) — to notatki `make_level_matrix.py` o tym, że plik jest generowany, nie AOSP-owy.
+W partycji `/system/etc/vintf` nie mają niczego do roboty, a `VintfObject` i tak czyta tylko
+`*.xml`. `mkfs.erofs` ma `--exclude-regex`, więc: drzewo zostaje z notatkami (widoczne w gicie),
+obraz jest ich pozbawiony.
+
+Efekt pomierzony: `system` 967 507 968 → **967 503 872 B** (−4 096 B, dokładnie jeden blok),
+liczba wpisów w weryfikacji 4 568 → **4 565** (pliki 3 895 → 3 892), a `verify_image.sh`
+dostaje te same wykluczenia (`--exclude`), żeby nie krzyczeć „brak w obrazie" na tym, co
+celowo wylatuje. Dowód, a nie obietnica: `fsck.erofs --extract --path=system/etc/vintf` na
+wydanym obrazie zwraca 11 plików i zero `komentarz`.
+
+Lekcja przy okazji: `mkfs.erofs -C <rozmiar>` (większe pcluster) pozwala dobijać rozmiar
+jeszcze niżej, ale grandes pclusters wymagają `EROFS_FEATURE_INCOMPAT_BIG_PCLUSTER` w kernelu —
+a tu zostaje kernel Lenovo. Nie ryzykuję montowania partycji startowej dla kilku megabajtów.

@@ -20,6 +20,9 @@ EROFS_DIR=${EROFS_DIR:-}; AVB=${AVB:-}; KEY=${KEY:-}
 # -zlz4 967 507 968 B; zrodlo HyperOS ma 937 791 488 B, czyli ono jest wlasnie lz4.
 # --compress none zostawia wariant starszy i pewniejszy wobec kernela, ale duzo wiekszy.
 COMP=lz4; SYSTREE=''
+# EXCLUDE_FLAGS to flagi mkfs.erofs (--exclude-regex). To NIE jest filtr po naszej stronie:
+# drzewo zostaje nietkniete (notatki ida do gita i do dokumentacji), a do partycji nie wchodza.
+EXCLUDE_FLAGS=${EXCLUDE_FLAGS:-}
 while [ $# -gt 0 ]; do
   case $1 in
     --selftest) SELFTEST=1; shift;;
@@ -32,6 +35,7 @@ while [ $# -gt 0 ]; do
     --key) KEY=$2; shift 2;;
     --compress) COMP=$2; shift 2;;
     --system-tree) SYSTREE=$2; shift 2;;
+    --exclude-regex) EXCLUDE_FLAGS="$EXCLUDE_FLAGS --exclude-regex=$2"; shift 2;;
     *) echo "nieznana opcja: $1" >&2; exit 3;;
   esac
 done
@@ -96,13 +100,13 @@ say "  plikow: $NF  bajtow: $SB"
 # ----------------------------------------------------------------- 2/6 obraz
 say "--- 2/6  mkfs.erofs (T=0, uuid stale -> deterministycznie)"
 IMG="$OUT/product_hyperos4_p11g2.img"
-( cd "$(dirname "$TREE")" && timeout 900 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG "$IMG" "$(basename "$TREE")" > "$OUT/mkfs.log" 2>&1 ) \
+( cd "$(dirname "$TREE")" && timeout 900 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG $EXCLUDE_FLAGS "$IMG" "$(basename "$TREE")" > "$OUT/mkfs.log" 2>&1 ) \
   || { tail -5 "$OUT/mkfs.log" | sed 's/^/  /'; die "mkfs.erofs sie wywrocil"; }
 say "  product.img: $(stat -c%s "$IMG") B  sha256=$(sha "$IMG" | cut -c1-16)..."
 
 if [ $SELFTEST -eq 1 ]; then
   I2=$(mktemp --suffix=.img)
-  ( cd "$(dirname "$TREE")" && "$MK" -T 0 -U "$UUIDIMG" $ZFLAG "$I2" "$(basename "$TREE")" >/dev/null 2>&1 )
+  ( cd "$(dirname "$TREE")" && "$MK" -T 0 -U "$UUIDIMG" $ZFLAG $EXCLUDE_FLAGS "$I2" "$(basename "$TREE")" >/dev/null 2>&1 )
   if [ "$(sha "$IMG")" = "$(sha "$I2")" ]; then say "  determinizm: DWA BUDOWANIA = IDENTYCZNY sha256 OK"; else say "  determinizm: ROZNI SIE (obraz nie jest powtarzalny!)"; fi
   rm -f "$I2"
 fi
@@ -120,8 +124,10 @@ say "--- 4/6  round-trip: wyciagnij z obrazu i porownaj KAZDY wpis (plik/symlink
 # Wolze tools/verify_image.sh, bo ona porownuje tez symlinki i katalogi. Wlasna petla nizej
 # zostaje jako fallback - patrzyla TYLKO na pliki, a to na drzewie systemowym przegapiloby
 # 409 symlinkow (komunikat: 'pliki OK' przy utraconych linkach = zielone swiatlo na bledzie).
+VEX=''
+for _w in $EXCLUDE_FLAGS; do case $_w in --exclude-regex=*) VEX="$VEX --exclude ${_w#*=}";; esac; done
 if [ -f "$HERE/verify_image.sh" ]; then
-  bash "$HERE/verify_image.sh" --img "$IMG" --tree "$TREE" --fsck "$FS" 2>&1 | sed 's/^/  /'
+  bash "$HERE/verify_image.sh" --img "$IMG" --tree "$TREE" --fsck "$FS" $VEX 2>&1 | sed 's/^/  /'
   rc=${PIPESTATUS[0]}
   [ $rc -eq 0 ] || die "weryfikacja obrazu nie wyszla (rc=$rc)"
   say "  weryfikacja product: OK"
@@ -188,7 +194,7 @@ SYS_IN=0
     # vendor/...) - bez nich init nie ma gdzie zamontowac partycji i tablet nie wstanie,
     # a obraz i tak wyjdzie 'poprawny'. stad parity-krok w testach.
     say "  system.img BUDOWANY z drzewa $SYSTREE (kompresja: $COMP)"
-    ( cd "$(dirname "$SYSTREE")" && timeout 1800 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG \
+    ( cd "$(dirname "$SYSTREE")" && timeout 1800 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG $EXCLUDE_FLAGS \
         "$OUT/system_hyperos4_p11g2.img" "$(basename "$SYSTREE")" >> "$OUT/mkfs.log" 2>&1 ) \
       || die "mkfs.erofs dla systema sie wywrocil (patrz $OUT/mkfs.log)"
     SYS_IN=1
@@ -196,8 +202,10 @@ SYS_IN=0
     # Ten obraz buduje sam, to go sprzadam swoim weryikatorem (nie ufam 'rc=0' z mkfs).
     if [ -f "$HERE/verify_image.sh" ]; then
       say "  weryfikuje system (fsck + 1:1 z drzewem) - to potrwa, bo to 4 568 wpisow"
+      VEXS=''
+      for _w in $EXCLUDE_FLAGS; do case $_w in --exclude-regex=*) VEXS="$VEXS --exclude ${_w#*=}";; esac; done
       if bash "$HERE/verify_image.sh" --img "$OUT/system_hyperos4_p11g2.img" --tree "$SYSTREE" \
-           --fsck "$FS" > "$OUT/system-verify.log" 2>&1; then
+           --fsck "$FS" $VEXS > "$OUT/system-verify.log" 2>&1; then
         tail -4 "$OUT/system-verify.log" | sed 's/^/    /'
         say "  system zweryfikowany: pelny raport w system-verify.log"
       else
@@ -357,6 +365,7 @@ chmod +x "$OUT/rollback.sh"
 printf 'plik\tbajty\tsha256\tuwaga\n' >> "$OUT/release-manifest.tsv"
 { printf '# parametry budowy (notatka; weryfikuja je SHA256SUMS.txt, nie ten plik)\n'
   printf 'kompresja\t%s\n' "$COMP"
+  printf 'wykluczenia_mkfs\t%s\n' "${EXCLUDE_FLAGS:-brak}"
   printf 'uuid_obrazu\t%s\n' "$UUIDIMG"
   printf 'mkfs\t%s\n' "$("$MK" --help 2>&1 | head -1)"
   printf 'drzewo_product\t%s\n' "$TREE"

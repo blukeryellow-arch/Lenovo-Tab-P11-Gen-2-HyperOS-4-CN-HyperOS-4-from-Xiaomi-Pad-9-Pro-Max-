@@ -11,10 +11,11 @@
 # Uzycie: tools/verify_image.sh --img <obraz> --tree <drzewo> [--fsck <fsck.erofs>]
 #         tools/verify_image.sh --img rom/system_hyperos4_p11g2.img --tree /tmp/sys-tree2/system_tree
 set -uo pipefail
-IMG=''; TREE=''; HERE=$(cd "$(dirname "$0")" && pwd); FS=${FSCK:-}
+IMG=''; TREE=''; HERE=$(cd "$(dirname "$0")" && pwd); FS=${FSCK:-}; EXCL=''
 while [ $# -gt 0 ]; do
   case $1 in
     --img) IMG=$2; shift 2;; --tree) TREE=$2; shift 2;; --fsck) FS=$2; shift 2;;
+    --exclude) EXCL="$EXCL|$2"; shift 2;;
     *) echo "nieznana opcja: $1" >&2; exit 3;;
   esac
 done
@@ -35,14 +36,18 @@ fi
 echo "== 2/3 ekstrakcja z obrazu"
 timeout 1800 "$FS" --extract="$OUT/x" "$IMG" >/dev/null 2>&1 || { echo "   ekstrakcja nieudana"; exit 1; }
 echo "== 3/3 porownanie z $TREE"
-python3 - "$TREE" "$OUT/x" <<'PY'
-import os,sys,hashlib
+python3 - "$TREE" "$OUT/x" "${EXCL#|}" <<'PY'
+import os,sys,hashlib,re
 src,dst=sys.argv[1],sys.argv[2]
+pats=[p for p in (sys.argv[3].split('|') if len(sys.argv)>3 and sys.argv[3] else []) if p]
+def skip(rel):
+    return any(re.search(p, rel) for p in pats)
 def walk(root):
     d={}
     for r,ds,fs in os.walk(root, followlinks=False):
         for name in ds+fs:
             p=os.path.join(r,name); k=os.path.relpath(p,root)
+            if skip(k): continue
             if os.path.islink(p): d[k]='L:'+os.readlink(p)
             elif os.path.isfile(p):
                 h=hashlib.sha256()
@@ -57,6 +62,7 @@ diff=sorted(k for k in set(A)&set(B) if A[k]!=B[k])
 nf=sum(1 for v in A.values() if v.startswith('F:'))
 nl=sum(1 for v in A.values() if v.startswith('L:'))
 nd=sum(1 for v in A.values() if v=='D')
+print(f"  wykluczenia: {[p for p in pats] or chr(10)+chr(32)}")
 print(f"  zrodlo: {len(A)} wpisów (pliki {nf}, symlinki {nl}, katalogi {nd})")
 print(f"  z obrazu: {len(B)} wpisów")
 print(f"  ZGODNE: {len(set(A)&set(B))-len(diff)}   rozbiezne: {len(diff)}   brak z obrazu: {len(miss)}   dodatkowe: {len(extra)}")

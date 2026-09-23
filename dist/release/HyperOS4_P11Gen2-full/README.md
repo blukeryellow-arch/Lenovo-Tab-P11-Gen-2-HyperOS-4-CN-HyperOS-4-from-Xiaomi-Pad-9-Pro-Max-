@@ -5,12 +5,12 @@ Ten katalog rożni się od `../HyperOS4_P11Gen2` **jedynie plikiem `product_hype
 `SettingsRroCommonOverlay` 42 MB, `DevicesOverlay` 12 MB, `MiuiSecurityCoreOverlay` 13 MB) plus
 drzewo katalogow z `staging/product/overlay`, bo to one daja „HyperOS Look", a nie same fonty.
 
-`system_hyperos4_p11g2.img` (967 507 968 B) i `vbmeta_hyperos4_p11g2.img` (4 096 B) sa **tymi
+`system_hyperos4_p11g2.img` (967 503 872 B) i `vbmeta_hyperos4_p11g2.img` (4 096 B) sa **tymi
 samymi bajtami** co w wariancie lekkim — te same sha256, ten sam UUID, ta sama budowa:
 
 ```
 product  f801945b295b253c…   (153 391 104 B, 144/144 wpisy 1:1)
-system   498d85c4986847ee…   (967 507 968 B, 4 568/4 568 wpisow 1:1)
+system   36238fac308fb674…   (967 507 968 B, 4 565/4 565 wpisow 1:1)
 vbmeta   9cf2e7e4e165687a…   (Flags: 3, rollback_index 0)
 ```
 
