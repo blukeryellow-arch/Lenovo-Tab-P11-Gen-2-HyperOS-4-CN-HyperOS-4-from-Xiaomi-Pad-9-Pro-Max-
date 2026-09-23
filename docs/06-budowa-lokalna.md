@@ -144,3 +144,105 @@ więc awaria wygląda jak cisza. Ratunek: `dist/release/.../rollback.sh` (vbmeta
 przed flashem) + obrazy Lenovo z Dysku (`diagnostics/drive-inventory.tsv`), zapasowo EDL.
 Wymagania HAL-ów, których vendor `mt6789` nie ma (audio AIDL, health, power — `docs/05` §5.1),
 nadal istnieją: obniżenie ich do `optional` usuwa blokadę startu, nie dodaje implementacji.
+
+## 6.9 Weryfikacja 1:1 — i dlaczego „wszystkie pliki się zgadzają" nie znaczyło „wszystko"
+
+Krok 4/6 w `make_release.sh` przez jakiś czas porównywał **tylko pliki** (`find -type f`).
+Na drzewie `system` wyszło, co to znaczy: obraz ma 4 568 wpisów — 3 895 plików, **409
+symlinków** i 264 katalogi. Sprawdzając same pliki, 409 linków (`/system/bin/sh` → itd.,
+linki `../` w `system/etc`, wiszący `adb_keys`) mogłoby zniknąć, a tester powiedziałby
+„round-trip OK". Pierwsza próba pełnego porównania padła zresztą na `FileNotFoundError`
+właśnie na `adb_keys`: to wiszący symlink, którego `os.walk` nie odrzuca.
+
+Dlatego jest `tools/verify_image.sh`: wyciąga obraz `fsck.erofs --extract` i porównuje
+**każdy wpis**: plik po sha256, symlink po `readlink`, katalog po istnieniu. Wyniki:
+
+| obraz | wpisy | zgodne | rozbieżne |
+|---|---|---|---|
+| `product` (fonty, lz4) | 64 | 64 | 0 |
+| `product-full` (fonty + 67 RRO, lz4) | 144 | 144 | 0 |
+| `system` (lz4) | 4 568 | **4 568** | **0** |
+
+i ten sam sprawdz jest teraz wbudowany w `make_release.sh` (krok 4/6 + weryfikacja
+systemu po zbudowaniu z drzewa — nie ufałem samemu `rc=0` z `mkfs`).
+
+## 6.10 Kompresja: utracone 409 MB i jak je odzyskać bez `apt`
+
+Przez większą część tego projektu `system.img` miał **1 376 899 072 B**, podczas gdy
+źródłowy obraz HyperOS — **937 791 488 B**. Podejrzenie było takie, że to mój format
+jest gorszy. Pomiar paddingu blokowego na drzewie product dał **32 124 B na 87,9 MB
+(0,0 %)**, więc nie padding.
+
+Różnica robi się oczywista, gdy doczytać, że `mkfs.erofs` z `build_erofs_local.sh` był
+zbudowany **bez `HAVE_LZ4`/`HAVE_ZLIB`** — bo w sandboksie nie ma `-dev`-pakietów, a `apt`
+nie działa. Czyli: nie miałem kompresora, a HyperOS pakuje EROFS+lz4. `rom/BUILD_LOG.txt`
+dokumentuje zresztą, że CI też się o to potknęło: `mkfs.erofs: invalid option -- 'O'`
+→ „wariant z opcjami nie wszedł - próbujemy domyślnie" → i stąd 1,38 GB.
+
+Obejście: `tools/build_comp_libs.sh` buduje `zlib 1.3.1` i `lz4 1.10.0` ze źródłów z
+`codeload.github.com` (12 sekund, bez autoconfu: `configure` zlibu to zwykły shell-skrypt,
+lz4 ma `Makefile` w `lib/`), a `build_erofs_local.sh` sonduje je przez **linkowanie**
+(`probe_lib`), nie przez sam nagłówek — bo `configure.ac` erofs robi `AC_CHECK_LIB`
++ `AC_CHECK_DECL`, a pierwsze wydanie tej sondy zapomniało `-lz -llz4` i wszystkie trzy
+binarki padły na `undefined reference to 'gzerror'` w `tar.c`.
+
+| przypadek (drzewo 1 376 006 579 B) | bajty obrazu | wobec źródła |
+|---|---|---|
+| `system` bez kompresji (jak z CI) | 1 376 899 072 | +46,8 % |
+| `system` z `-zlz4` (moja budowa) | **967 507 968** | **+3,2 %** |
+| `system` źródłowy (HyperOS) | 937 791 488 | — |
+
+Czyli mój obraz jest o 3,2 % większy niż oryginalny — tyle, ile wynosi różnica między
+`lz4` a opcjami, których HyperOS użył dodatkowo (dopasowanie `max_pcluster` itd.).
+To dowód, a nie wymówka: **źródło jest spakowane lz4**, więc lz4 jest tu formatem
+rodzimym, a nie moją fanaberią. Na product: 87 973 888 → 77 619 200 (`lz4`) →
+75 198 464 (`lz4hc`).
+
+**Ryzyko, które trzeba znać**: obraz z `-zlz4` wymaga `CONFIG_EROFS_FS_LZ4` w kernelu
+**tabletu Lenovo** (to jego kernel zostaje w tej eksperymentalnej konfiguracji). Jeśli
+go nie ma — mount padnie. Dlatego `--compress none` nadal istnieje i jest jedyną drogą,
+która nie wymaga niczego ponad `EROFS_FS`. Sprawdzenie na urządzeniu:
+
+```
+adb shell 'zcat /proc/config.gz | grep -E "EROFS_FS(_LZ4)?="'      # albo /boot/config-…
+```
+
+## 6.11 Bramka rozmiaru partycji i atrapa `fastboot` jako narzędzie testowe
+
+Rozmiar **slotu logicznego** w `super` zna tylko urządzenie — w fabrycznej vbmeta Lenovo
+są rozmiary *źródłowych* obrazów (`product 2 748 350 464 B`, `system_ext 744 968 192 B`),
+czyli co innego. `flash-all.sh` ma więc krok „5. czy obrazy mieszczą się w partycjach":
+pyta `getvar partition-size:<part>_<slot>` dla obu slotów, porównuje z `stat -Lc%s` i
+**przerywa przed pierwszym flaszem**, jeśli nie mieści. Jeśli `fastboot` nie zna tego
+zapytania — ostrzega i idzie dalej (brak informacji nie może blokować flashowania).
+
+Testowane na atrapie `fastboot` (`/tmp/fb2/bin/fastboot`, sterowana zmiennymi
+`FB_SIZE_*`, `FB_SLOT`, `FB_USERSPACE`) — pięć scenariuszy:
+
+| scenariusz | oczekiwanie | wynik |
+|---|---|---|
+| duże sloty (product 4 GB, system 64 GB) | 6 flashów, reboot | rc 0, 6 ✓ |
+| `system` 768 MB (obraz 922 MB) | abort, „brakuje 155 MB" | rc 1, **0 flashów** ✓ |
+| `product` wariantu `-full` 128 MB (obraz 146 MB) | abort | rc 1, 0 flashów ✓ |
+| `product 0xA3B10000` (2 619 MB = rozmiar z vbmeta Lenovo) | przejdź, hex wielkimi literami | rc 0 ✓ |
+| brak odpowiedzi na `partition-size` | ostrzeżenie + kontynuacja | rc 0, 6 flashów ✓ |
+
+Trzy prawdziwe usterki, które ta atrapa złapała — po mojej stronie, nie po stronie sprzętu:
+1. `stat -c%s` na **symlinku** zwraca długość ścieżki, nie rozmiar pliku → bramka widziała
+   `need=0` i przepuszczała nawet 1,38 GB na partycję 768 MB → teraz `stat -Lc%s`;
+2. `$(((need-have)+1048575)/1048576)` to dla basha **podstawienie polecenia**, nie
+   arytmetyka → komunikat „brakuje  MB" (pusto) → spacja po `$((`;
+3. warunek `*[!0-9]*` odrzucał każdy rozmiar z prefiksem `0x` (bo w nim jest `x`) →
+   najpierw odejmij prefiks, potem sprawdzaj cyfry.
+
+## 6.12 Pułapka, którą sobie sam wykopałem: `tar --strip-components`
+
+`tar xzf rom-kit.tar.gz --strip-components=2 -C /tmp/x` na ścieżkach `./system_tree/system_ext/`
+skracza je do **zera** i takie katalogi po prostu znikają. Efekt: drzewo do `mkfs` miało
+`system/` i `init.environ.rc`, ale **żadnego punktu montowania** (`product`, `system_ext`,
+`vendor`, `odm`, `apex`, `metadata`, `mnt`, `dev`…) — obraz 922 MB, `fsck` czysty,
+round-trip plików OK, a tablet by na nim nie zamontował nawet `/product`.
+Stąd dwa rzeczy w procedurze: ekstrakcja z `--strip-components=1`, i **krok „parity korzenia"**
+(40 ścieżek porównanych między moim obrazem a obrazem CI — wynik: 40 zgodnych, 0 rozjazdów).
+Zapamiętać: *sprawdzanie, czy obraz jest poprawnym EROFS, nie sprawdza, czy jest poprawnym
+systemem plików Androida*.

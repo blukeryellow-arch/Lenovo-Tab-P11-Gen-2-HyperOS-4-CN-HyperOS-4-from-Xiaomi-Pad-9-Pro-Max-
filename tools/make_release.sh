@@ -16,6 +16,10 @@ set -uo pipefail
 
 SELFTEST=0; TREE=''; SYSIMG=''; OUT=''; UUIDIMG=67b7eb22-3ebb-4c21-8b01-8ff545f10d8d
 EROFS_DIR=${EROFS_DIR:-}; AVB=${AVB:-}; KEY=${KEY:-}
+# COMP=lz4 DOMYLNIE od 2026-09-23: bez kompresji system wychodzi 1 376 759 808 B, a z
+# -zlz4 967 507 968 B; zrodlo HyperOS ma 937 791 488 B, czyli ono jest wlasnie lz4.
+# --compress none zostawia wariant starszy i pewniejszy wobec kernela, ale duzo wiekszy.
+COMP=lz4; SYSTREE=''
 while [ $# -gt 0 ]; do
   case $1 in
     --selftest) SELFTEST=1; shift;;
@@ -26,6 +30,8 @@ while [ $# -gt 0 ]; do
     --erofs-dir) EROFS_DIR=$2; shift 2;;
     --avb) AVB=$2; shift 2;;
     --key) KEY=$2; shift 2;;
+    --compress) COMP=$2; shift 2;;
+    --system-tree) SYSTREE=$2; shift 2;;
     *) echo "nieznana opcja: $1" >&2; exit 3;;
   esac
 done
@@ -57,6 +63,23 @@ fi
 [ -x "$FS" ] || die "brak $FS"
 say "  mkfs.erofs: $("$MK" --help 2>&1 | head -1 | cut -c1-40)"
 
+# Czy ten mkfs.erofs REALNIE zna zadany kompresor. Sonduje BUDOWA, nie --help: --help
+# wypisuje '-zX[,level=Y]' zawsze, nawet gdy erofs-utils skompilowano bez HAVE_LZ4/HAVE_ZLIB.
+ZFLAG=''
+if [ "$COMP" != none ]; then
+  mkdir -p /tmp/.czprobe; rm -f /tmp/.czprobe.img
+  if timeout 120 "$MK" -T 0 -z"$COMP" /tmp/.czprobe.img /tmp/.czprobe >/dev/null 2>&1; then
+    ZFLAG="-z$COMP"; say "  kompresja: $COMP (sonda budowy przeszla)"
+  else
+    say "    -> zbuduj biblioteki i przebuduj narzedzia:"
+    say "       tools/build_comp_libs.sh /tmp/comp-build"
+    say "       COMP_PREFIX=/tmp/comp-build tools/build_erofs_local.sh <dir>"
+    say "    -> albo --compress none (wtedy obrazy ~1,5x wieksze niz source)"
+    die "kompresja zadeklarowana, ale niewkompilowana - przerywam, zamiast wydac wiekszy obraz"
+  fi
+  rm -f /tmp/.czprobe.img; rmdir /tmp/.czprobe 2>/dev/null
+fi
+
 if [ $SELFTEST -eq 1 ]; then
   say "--- SELFTEST: syntetyczne drzewo 3 plikow + dwukrotna budowa (determinizm)"
   T=$(mktemp -d); mkdir -p "$T/fonts"
@@ -73,13 +96,13 @@ say "  plikow: $NF  bajtow: $SB"
 # ----------------------------------------------------------------- 2/6 obraz
 say "--- 2/6  mkfs.erofs (T=0, uuid stale -> deterministycznie)"
 IMG="$OUT/product_hyperos4_p11g2.img"
-( cd "$(dirname "$TREE")" && timeout 900 "$MK" -T 0 -U "$UUIDIMG" "$IMG" "$(basename "$TREE")" > "$OUT/mkfs.log" 2>&1 ) \
+( cd "$(dirname "$TREE")" && timeout 900 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG "$IMG" "$(basename "$TREE")" > "$OUT/mkfs.log" 2>&1 ) \
   || { tail -5 "$OUT/mkfs.log" | sed 's/^/  /'; die "mkfs.erofs sie wywrocil"; }
 say "  product.img: $(stat -c%s "$IMG") B  sha256=$(sha "$IMG" | cut -c1-16)..."
 
 if [ $SELFTEST -eq 1 ]; then
   I2=$(mktemp --suffix=.img)
-  ( cd "$(dirname "$TREE")" && "$MK" -T 0 -U "$UUIDIMG" "$I2" "$(basename "$TREE")" >/dev/null 2>&1 )
+  ( cd "$(dirname "$TREE")" && "$MK" -T 0 -U "$UUIDIMG" $ZFLAG "$I2" "$(basename "$TREE")" >/dev/null 2>&1 )
   if [ "$(sha "$IMG")" = "$(sha "$I2")" ]; then say "  determinizm: DWA BUDOWANIA = IDENTYCZNY sha256 OK"; else say "  determinizm: ROZNI SIE (obraz nie jest powtarzalny!)"; fi
   rm -f "$I2"
 fi
@@ -93,7 +116,20 @@ if timeout 600 "$FS" -d1 "$IMG" > "$OUT/fsck.log" 2>&1; then
 else say "  fsck rc!=0:"; tail -4 "$OUT/fsck.log" | sed 's/^/    /'; die "obraz jest niezdatny"; fi
 
 # ----------------------------------------------------------------- 4/6 round-trip
-say "--- 4/6  round-trip: wyciagnij z obrazu i porownaj kazdy plik"
+say "--- 4/6  round-trip: wyciagnij z obrazu i porownaj KAZDY wpis (plik/symlink/katalog)"
+# Wolze tools/verify_image.sh, bo ona porownuje tez symlinki i katalogi. Wlasna petla nizej
+# zostaje jako fallback - patrzyla TYLKO na pliki, a to na drzewie systemowym przegapiloby
+# 409 symlinkow (komunikat: 'pliki OK' przy utraconych linkach = zielone swiatlo na bledzie).
+if [ -f "$HERE/verify_image.sh" ]; then
+  bash "$HERE/verify_image.sh" --img "$IMG" --tree "$TREE" --fsck "$FS" 2>&1 | sed 's/^/  /'
+  rc=${PIPESTATUS[0]}
+  [ $rc -eq 0 ] || die "weryfikacja obrazu nie wyszla (rc=$rc)"
+  say "  weryfikacja product: OK"
+  RC_SKIP=1
+else
+  RC_SKIP=0
+fi
+if [ $RC_SKIP -eq 0 ]; then
 RT=$(mktemp -d); timeout 900 "$FS" --extract="$RT" "$IMG" >/dev/null 2>&1 || die "fsck --extract nie dziala (a bez tego nie mam jak sprawdzic obrazu)"
 python3 - "$IMG" "$TREE" "$RT" <<'PY'
 import os, sys, hashlib
@@ -124,6 +160,7 @@ rc=$?
 [ $rc -eq 0 ] || die "round-trip NIE wyszedl - obraz nie odzwierciedla zrodla"
 say "  round-trip: OK"
 rm -rf "$RT"
+fi
 
 # ----------------------------------------------------------------- 5/6 vbmeta
 say "--- 5/6  vbmeta (Flags: 3 = verification + verity wylaczone)"
@@ -145,7 +182,30 @@ fi
 # ----------------------------------------------------------------- 6/6 instalator
 say "--- 6/6  flash-all.sh + rollback.sh + manifest"
 SYS_IN=0
-if [ -n "$SYSIMG" ] && [ -f "$SYSIMG" ]; then
+  if [ -n "$SYSTREE" ] && [ -d "$SYSTREE" ]; then
+    # System BUDOWANY lokalnie = caly ladunek weryfikowany u mnie (fsck + round-trip),
+    # a nie dostawany z CI. Drzewo musi MIEC puste punkty montowania (product/, system_ext/,
+    # vendor/...) - bez nich init nie ma gdzie zamontowac partycji i tablet nie wstanie,
+    # a obraz i tak wyjdzie 'poprawny'. stad parity-krok w testach.
+    say "  system.img BUDOWANY z drzewa $SYSTREE (kompresja: $COMP)"
+    ( cd "$(dirname "$SYSTREE")" && timeout 1800 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG \
+        "$OUT/system_hyperos4_p11g2.img" "$(basename "$SYSTREE")" >> "$OUT/mkfs.log" 2>&1 ) \
+      || die "mkfs.erofs dla systema sie wywrocil (patrz $OUT/mkfs.log)"
+    SYS_IN=1
+    say "  system.img: $(stat -c%s "$OUT/system_hyperos4_p11g2.img") B"
+    # Ten obraz buduje sam, to go sprzadam swoim weryikatorem (nie ufam 'rc=0' z mkfs).
+    if [ -f "$HERE/verify_image.sh" ]; then
+      say "  weryfikuje system (fsck + 1:1 z drzewem) - to potrwa, bo to 4 568 wpisow"
+      if bash "$HERE/verify_image.sh" --img "$OUT/system_hyperos4_p11g2.img" --tree "$SYSTREE" \
+           --fsck "$FS" > "$OUT/system-verify.log" 2>&1; then
+        tail -4 "$OUT/system-verify.log" | sed 's/^/    /'
+        say "  system zweryfikowany: pelny raport w system-verify.log"
+      else
+        tail -8 "$OUT/system-verify.log" | sed 's/^/    /'
+        die "system.img NIE przechodzi weryfikacji 1:1 - NIE wydaję takiego obrazu"
+      fi
+    fi
+  elif [ -n "$SYSIMG" ] && [ -f "$SYSIMG" ]; then
   cp "$SYSIMG" "$OUT/system_hyperos4_p11g2.img"; SYS_IN=1
   say "  system.img skopiowany: $(stat -c%s "$OUT/system_hyperos4_p11g2.img") B"
 else
@@ -208,14 +268,72 @@ echo "== 4. tryb"
 US=$(fb getvar is-userspace 2>&1 | tr -d $'\r' | sed -n 's/^is-userspace: *//p')
 echo "  is-userspace=${US:-nieznany}"; [ "$US" = yes ] || { echo "  potrzebny fastbootd: adb reboot fastboot (albo fb reboot fastboot)"; exit 1; }
 
-echo "== 5. flash"
+echo "== 5. czy obrazy mieszcza sie w partycjach"
+# Rozmiar SLOTU logicznego zna tylko urzadzenie. W fabrycznej vbmeta Lenovo sa rozmiary
+# ZRODLOWYCH obrazow (product 2 748 350 464 B, system_ext 744 968 192 B) - to NIE jest
+# limit slotu w super, a ten build ma system 1 376 899 072 B, czyli wiecej niz source
+# (937 791 488 B). stad ta bron: przerwac PRZED pierwszym flaszem, nie po trzecim.
+FIT=1
+for p in vbmeta product system; do
+  case $p in
+    vbmeta) img=$IMG_VB;;
+    product) img=$IMG_PR;;
+    system) img=$IMG_SY;;
+  esac
+  # -L (dereference): bez tego 'stat' na symlinku zwraca dlugosc sciezki, nie rozmiar
+  # pliku - bramka widziala need=0 i przepuszczala nawet 1,4 GB na partycje 768 MB
+  # (test B/D, 2026-09-23 20:0x). Wydobycie tego bylo wlasnie po to te atrapy.
+  need=$(stat -Lc%s "$img" 2>/dev/null || echo 0)
+  [ "$need" = 0 ] && { echo "  ${p}: brak obrazu, pomijam"; continue; }
+  for s in a b; do
+    raw=$(fb getvar partition-size:${p}_$s 2>&1 | tr -d $'\r' | sed -n 's/^partition-size\['"${p}_${s}"'\]: *//p' | sed 's/ .*//')
+    if [ -z "$raw" ]; then
+      echo "  ${p}_$s: fastboot nie zwrocil partition-size -> nie moge grac rozmiarem (kontynuuje)"
+      continue
+    fi
+    # Parsowanie: NIE wolno po prostu sprawdzic '*[!0-9]*', bo '0x...' ma w sobie 'x' i
+    # taka bramka odrzucalaby KAZDY hex (wlanie to zepsulem w pierwszej poprawce, test A
+    # 2026-09-23: 'nieparsowany rozmiar 0x1000000'). Najpierw odejmij prefiks, potem
+    # sprawdzaj cyfry. A-F tolerowane: nie kazdy fastboot pisze malymi literami.
+    body=$raw
+    case $raw in 0[xX]*) body=${raw#0[xX]};; esac
+    if [ -z "$body" ]; then
+      echo "  ${p}_$s: pusty rozmiar po 0x - odpuszczam bron"; continue
+    fi
+    case $body in *[!0-9a-fA-F]*) echo "  ${p}_$s: nieparsowany rozmiar '$raw' - odpuszczam bron"; continue;; esac
+    have=$((raw))
+    if [ "$need" -gt "$have" ]; then
+      # spacja po '((' jest MUSI: '$(((need-have)+x)/y)' bash czyta jako podstawienie
+      # polecenia '$(' + arytmentacja i w efekcie 'brakuje  MB' (pusto) - zmierzone 2026-09-23.
+      echo "  ZMALE: ${p}_$s = $((have/1048576)) MB, obraz = $((need/1048576)) MB, brakuje $(( (need-have+1048575)/1048576 )) MB"
+      FIT=0
+    else
+      echo "  ok ${p}_$s: $((have/1048576)) MB mieSci $((need/1048576)) MB (zapas $(((have-need)/1048576)) MB)"
+    fi
+  done
+done
+if [ "$FIT" != 1 ]; then
+  echo "  PRZERWANE, ZADEN flash nie poszedl. Co mozna:"
+  # Bez liczb: one sie zmieniaja z kompresja, a glupie '88 MB' przy 74 MB w obrazie
+  # bylaby gorsze niz milczenie. Rozmiary sa w release-manifest.tsv tego katalogu.
+  echo "   - product: jest wariant lekki (tylko fonty, bez 67 nakladek RRO) - patrz"
+  echo "     dist/release/HyperOS4_P11Gen2 vs -full; rozmiary w release-manifest.tsv;"
+  echo "   - system: najczesciej wystarczy kompresja: -zlz4 daje 967 MB zamiast 1 376 MB"
+  echo "     (tools/make_release.sh --compress lz4 --system-tree <drzewo>); bez kompresji"
+  echo "     obraz jest wiekszy niz mial source, bo source HyperOS jest EROFS+lz4;"
+  echo "   - powiekszanie super rusza /data i jest nieodwracalne, wiec ten skrypt tego"
+  echo "     nie robi - nawet na request."
+  exit 1
+fi
+
+echo "== 6. flash"
 run flash vbmeta_a "$IMG_VB"; run flash vbmeta_b "$IMG_VB"
 run flash product_a "$IMG_PR"; run flash product_b "$IMG_PR"
 run flash system_a "$IMG_SY";  run flash system_b "$IMG_SY"
 echo "  (product i system ida na OBA sloty: flashowanie tylko biezacego daje 'flash OK, boot stop',"
 echo "   bo weryfikacja i init patrza na slot startowy - patrz dist/rom-kit/README.sumy.md)"
 
-echo "== 6. reboot (bez wipe /data: decyzja nalezy do Ciebie)"
+echo "== 7. reboot (bez wipe /data: decyzja nalezy do Ciebie)"
 echo "  framework Inny niz stockowy -> czesto potrzebny 'fastboot erase userdata'."
 echo "  Nie robie tego za Ciebie: utrata danych jest nieodwracalna."
 run reboot
@@ -237,10 +355,20 @@ chmod +x "$OUT/rollback.sh"
 
 : > "$OUT/release-manifest.tsv"
 printf 'plik\tbajty\tsha256\tuwaga\n' >> "$OUT/release-manifest.tsv"
+{ printf '# parametry budowy (notatka; weryfikuja je SHA256SUMS.txt, nie ten plik)\n'
+  printf 'kompresja\t%s\n' "$COMP"
+  printf 'uuid_obrazu\t%s\n' "$UUIDIMG"
+  printf 'mkfs\t%s\n' "$("$MK" --help 2>&1 | head -1)"
+  printf 'drzewo_product\t%s\n' "$TREE"
+  [ -n "$SYSTREE" ] && printf 'drzewo_system\t%s\n' "$SYSTREE"
+  [ -n "$SYSIMG" ] && printf 'system_z_pliku\t%s\n' "$SYSIMG"
+  :
+} > "$OUT/build-info.txt"
+
 for f in product_hyperos4_p11g2.img vbmeta_hyperos4_p11g2.img system_hyperos4_p11g2.img flash-all.sh rollback.sh; do
   [ -f "$OUT/$f" ] || continue
   printf '%s\t%s\t%s\t%s\n' "$f" "$(stat -c%s "$OUT/$f")" "$(sha "$OUT/$f")" \
-    "$([ "$f" = system_hyperos4_p11g2.img ] && echo 'z CI, weryfikowany fsck.erofs' || echo 'lokalnie')" \
+    "$([ "$f" = system_hyperos4_p11g2.img ] && { [ -n "$SYSTREE" ] && echo 'lokalnie z drzewa, weryfikacja 1:1 (verify_image.sh)' || echo 'kopia z pliku zewnetrzneego (--system-img)'; } || echo 'lokalnie')" \
     >> "$OUT/release-manifest.tsv"
 done
 ( cd "$OUT" && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt ! -name '*.log' -printf '%P\n' | sort | xargs -r sha256sum > SHA256SUMS.txt )

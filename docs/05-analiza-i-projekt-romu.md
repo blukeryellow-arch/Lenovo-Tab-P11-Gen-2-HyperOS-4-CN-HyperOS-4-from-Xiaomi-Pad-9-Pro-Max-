@@ -56,7 +56,13 @@ dostępnej macierzy (`202404`, level 6) zwraca **84 pozycje HAL, w tym 0 z flag�
 **0 HIDL / 83 AIDL**. Vendor epoki A12 nie ma tych interfejsów w ogóle (AIDL-owe
 
 **Korekta liczb po naprawie samego narzędzia** (2026-09-23): na całym zestawie sześciu
-plików `vintf_diff.py` zwraca **400 pozycji obowiązkowych**, nie 412 — wczesniej liczył
+plików `vintf_diff.py` zwraca **400 pozycji** i ta liczba NIE jest tym, co widzi init —
+patrz §6.6 w `docs/06`: to suma wszystkich poziomów macierzy, a `VintfObject` wybiera
+**jedną** wg `target_fcm_version`. Dla TB350FU (A12L, level 5/6) wychodzi **81 pozycji,
+0 obowiązkowych, 81 opcjonalnych**; przy level 8 bywałoby 88. Słowo „obowiązkowych" przy
+400 było błędem, który przez pewien czas ustawiał cały plan pracy na niewłaściwej półce.
+
+(oryginalny tekst zdania brzmiał: „…zwraca 400 pozycji obowiązkowych, nie 412 — wcześniej liczył")
 też `device.xml`/`manifest.xml` jako wymagania, bo filtrował po nazwie pliku zamiast po
 korzeniu dokumentu; dodatkowo `optional` było liczono jako `False and opt`, więc każde
 oznaczenie w pliku ignorowano. Naprawione.

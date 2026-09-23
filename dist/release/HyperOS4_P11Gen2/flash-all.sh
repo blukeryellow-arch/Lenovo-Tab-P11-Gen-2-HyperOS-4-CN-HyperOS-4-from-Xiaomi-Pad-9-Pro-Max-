@@ -53,14 +53,72 @@ echo "== 4. tryb"
 US=$(fb getvar is-userspace 2>&1 | tr -d $'\r' | sed -n 's/^is-userspace: *//p')
 echo "  is-userspace=${US:-nieznany}"; [ "$US" = yes ] || { echo "  potrzebny fastbootd: adb reboot fastboot (albo fb reboot fastboot)"; exit 1; }
 
-echo "== 5. flash"
+echo "== 5. czy obrazy mieszcza sie w partycjach"
+# Rozmiar SLOTU logicznego zna tylko urzadzenie. W fabrycznej vbmeta Lenovo sa rozmiary
+# ZRODLOWYCH obrazow (product 2 748 350 464 B, system_ext 744 968 192 B) - to NIE jest
+# limit slotu w super, a ten build ma system 1 376 899 072 B, czyli wiecej niz source
+# (937 791 488 B). stad ta bron: przerwac PRZED pierwszym flaszem, nie po trzecim.
+FIT=1
+for p in vbmeta product system; do
+  case $p in
+    vbmeta) img=$IMG_VB;;
+    product) img=$IMG_PR;;
+    system) img=$IMG_SY;;
+  esac
+  # -L (dereference): bez tego 'stat' na symlinku zwraca dlugosc sciezki, nie rozmiar
+  # pliku - bramka widziala need=0 i przepuszczala nawet 1,4 GB na partycje 768 MB
+  # (test B/D, 2026-09-23 20:0x). Wydobycie tego bylo wlasnie po to te atrapy.
+  need=$(stat -Lc%s "$img" 2>/dev/null || echo 0)
+  [ "$need" = 0 ] && { echo "  ${p}: brak obrazu, pomijam"; continue; }
+  for s in a b; do
+    raw=$(fb getvar partition-size:${p}_$s 2>&1 | tr -d $'\r' | sed -n 's/^partition-size\['"${p}_${s}"'\]: *//p' | sed 's/ .*//')
+    if [ -z "$raw" ]; then
+      echo "  ${p}_$s: fastboot nie zwrocil partition-size -> nie moge grac rozmiarem (kontynuuje)"
+      continue
+    fi
+    # Parsowanie: NIE wolno po prostu sprawdzic '*[!0-9]*', bo '0x...' ma w sobie 'x' i
+    # taka bramka odrzucalaby KAZDY hex (wlanie to zepsulem w pierwszej poprawce, test A
+    # 2026-09-23: 'nieparsowany rozmiar 0x1000000'). Najpierw odejmij prefiks, potem
+    # sprawdzaj cyfry. A-F tolerowane: nie kazdy fastboot pisze malymi literami.
+    body=$raw
+    case $raw in 0[xX]*) body=${raw#0[xX]};; esac
+    if [ -z "$body" ]; then
+      echo "  ${p}_$s: pusty rozmiar po 0x - odpuszczam bron"; continue
+    fi
+    case $body in *[!0-9a-fA-F]*) echo "  ${p}_$s: nieparsowany rozmiar '$raw' - odpuszczam bron"; continue;; esac
+    have=$((raw))
+    if [ "$need" -gt "$have" ]; then
+      # spacja po '((' jest MUSI: '$(((need-have)+x)/y)' bash czyta jako podstawienie
+      # polecenia '$(' + arytmentacja i w efekcie 'brakuje  MB' (pusto) - zmierzone 2026-09-23.
+      echo "  ZMALE: ${p}_$s = $((have/1048576)) MB, obraz = $((need/1048576)) MB, brakuje $(( (need-have+1048575)/1048576 )) MB"
+      FIT=0
+    else
+      echo "  ok ${p}_$s: $((have/1048576)) MB mieSci $((need/1048576)) MB (zapas $(((have-need)/1048576)) MB)"
+    fi
+  done
+done
+if [ "$FIT" != 1 ]; then
+  echo "  PRZERWANE, ZADEN flash nie poszedl. Co mozna:"
+  # Bez liczb: one sie zmieniaja z kompresja, a glupie '88 MB' przy 74 MB w obrazie
+  # bylaby gorsze niz milczenie. Rozmiary sa w release-manifest.tsv tego katalogu.
+  echo "   - product: jest wariant lekki (tylko fonty, bez 67 nakladek RRO) - patrz"
+  echo "     dist/release/HyperOS4_P11Gen2 vs -full; rozmiary w release-manifest.tsv;"
+  echo "   - system: najczesciej wystarczy kompresja: -zlz4 daje 967 MB zamiast 1 376 MB"
+  echo "     (tools/make_release.sh --compress lz4 --system-tree <drzewo>); bez kompresji"
+  echo "     obraz jest wiekszy niz mial source, bo source HyperOS jest EROFS+lz4;"
+  echo "   - powiekszanie super rusza /data i jest nieodwracalne, wiec ten skrypt tego"
+  echo "     nie robi - nawet na request."
+  exit 1
+fi
+
+echo "== 6. flash"
 run flash vbmeta_a "$IMG_VB"; run flash vbmeta_b "$IMG_VB"
 run flash product_a "$IMG_PR"; run flash product_b "$IMG_PR"
 run flash system_a "$IMG_SY";  run flash system_b "$IMG_SY"
 echo "  (product i system ida na OBA sloty: flashowanie tylko biezacego daje 'flash OK, boot stop',"
 echo "   bo weryfikacja i init patrza na slot startowy - patrz dist/rom-kit/README.sumy.md)"
 
-echo "== 6. reboot (bez wipe /data: decyzja nalezy do Ciebie)"
+echo "== 7. reboot (bez wipe /data: decyzja nalezy do Ciebie)"
 echo "  framework Inny niz stockowy -> czesto potrzebny 'fastboot erase userdata'."
 echo "  Nie robie tego za Ciebie: utrata danych jest nieodwracalna."
 run reboot
