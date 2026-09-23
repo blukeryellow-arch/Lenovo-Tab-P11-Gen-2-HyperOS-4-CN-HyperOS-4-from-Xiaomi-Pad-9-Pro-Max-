@@ -5,14 +5,14 @@ w tym samym sandboksie. Historia decyzji i wszystkie pomiary: `docs/06-budowa-lo
 
 **Format obrazów: EROFS + `lz4`.** To nie kosmetyka — bez kompresji `system` miał
 1 376 899 072 B, a źródłowy obraz HyperOS ma 937 791 488 B, bo HyperOS pakuje lz4.
-Mój `lz4` daje 967 503 872 B (+3,2 % wobec źródła, −29,7 % wobec wersji bez kompresji).
+Mój `lz4` daje 920 047 616 B (+3,2 % wobec źródła, −29,7 % wobec wersji bez kompresji).
 
 ## Warianty
 
 | | co w `/product` | rozmiar `product.img` | dla kogo |
 |---|---|---|---|
-| `HyperOS4_P11G2` (ten katalog) | `fonts/` (28 plików MiSans VF w 13 wariantach, Arimo, SourceHanSansCN) | **77 619 200 B** | domyślny: minimalny surface zmiany |
-| `HyperOS4_P11G2-full` | fonty **+ 67 nakładek RRO** (HyperOS-owy wygląd; `SettingsRroCommonOverlay` itd.) — jedyne miejsce, gdzie te RRO sie powoduja | **153 391 104 B** | jeśli ma być „HyperOS Look", nie tylko fonty |
+| `HyperOS4_P11G2` (ten katalog) | `fonts/` (28 plików MiSans VF w 13 wariantach, Arimo, SourceHanSansCN) | **75 198 464 B** | domyślny: minimalny surface zmiany |
+| `HyperOS4_P11G2-full` | fonty **+ 67 nakładek RRO** (HyperOS-owy wygląd; `SettingsRroCommonOverlay` itd.) — jedyne miejsce, gdzie te RRO sie powoduja | **150 560 768 B** | jeśli ma być „HyperOS Look", nie tylko fonty |
 
 `system` i `vbmeta` są w obu wariantach **tym samym plikiem** (identyczne sha256 — budowane
 z tego samego drzewa i tego samego UUID).
@@ -21,8 +21,8 @@ z tego samego drzewa i tego samego UUID).
 
 | plik | bajty | co to |
 |---|---|---|
-| `product_hyperos4_p11g2.img` | 77 619 200 | `/product` (EROFS+lz4): `fonts/` + `etc/passwd` + `etc/group`; zweryfikowany **67/67** wpisów 1:1 |
-| `system_hyperos4_p11g2.img` | 967 503 872 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowane macierze VINTF 4/5/6). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
+| `product_hyperos4_p11g2.img` | 75 198 464 | `/product` (EROFS+lz4): `fonts/` + `etc/passwd` + `etc/group`; zweryfikowany **67/67** wpisów 1:1 |
+| `system_hyperos4_p11g2.img` | 920 047 616 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowane macierze VINTF 4/5/6). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | `Flags: 3` (weryfikacja + verity wyłączone), `rollback_index 0`, SHA256_RSA2048, key `cdbb7717…` |
 | `flash-all.sh` | ~3,4 kB | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
 | `device-probe.sh` | 6 393 | **krok 0 przed flashem**: czyta `fastboot getvar` + `adb shell` i drukuje GO / GO z zastrzeżeniami / NO-GO (fastbootd, rozmiary slotów, `CONFIG_EROFS_FS{,_LZ4}`). Tylko odczyty — nic nie zapisuje, nic nie mountuje |
@@ -71,6 +71,15 @@ bash flash-all.sh                # bootloader odblokowany; tablet w fastbootd (a
 - kopiuje `vbmeta_stock_{a,b}.img` zanim cokolwiek nadpisze (to jest Twój rollback AVB);
 - **nie** robi `erase userdata` za Ciebie — utrata danych jest nieodwracalna.
 
+## Dlaczego `lz4hc,9`, a nie zwykłe `lz4`
+
+Oba dają ten sam format na dysku (identyfikator `Z_EROFS_COMPRESSION_LZ4`, te same bity
+`sb_csum mtime` / `lz4_0padding`), więc kernel nie ma żadnego nowego zadania. Różnica jest
+wyłącznie w tym, jak mocno napina się kompresor przy budowie — i ile miejsca zostaje na
+partycji: 920 047 616 B zamiast 967 503 872 B, czyli **45,3 MiB zapasu** za 14 sekund extra.
+Przy wąskiej partycji `system` to jest dokładnie ten bufor, którego brak zabił próbę z GSIm.
+Pełne porównanie trzech wariantów: docs/06 §6.23.
+
 ## Wymóg kernela (to jedyne, co może Cię zaskoczyć)
 
 Obraz `system`/`product` z `lz4` wymaga, żeby **kernel Lenovo** miał `CONFIG_EROFS_FS_LZ4=y`:
@@ -87,10 +96,10 @@ Format lz4 nie jest tu moim widzimisię: źródłowy `system.img` HyperOS-u jest
 ## Odtworzenie bit w bajt — przepis sprawdzony na nowo skompilowanym narzędziu
 
 `mkfs.erofs` zbudowany od zera (inna kompilacja, ten sam kod) odtwarza `product.img` wydania
-**co do bajta** (`cmp` bez różnicy, sha256 `298ada607150d3f7…`):
+**co do bajta** (`cmp` bez różnicy, sha256 `a961bec46085883d…`):
 
 ```
-mkfs.erofs -T 0 -U 67b7eb22-3ebb-4c21-8b01-8ff545f10d8d -zlz4 \
+mkfs.erofs -T 0 -U 67b7eb22-3ebb-4c21-8b01-8ff545f10d8d -zlz4hc,9 \
            --force-uid=0 --force-gid=0 --exclude-regex '\.komentarz\.txt$' \
            out.img <drzewo-product>
 ```
@@ -127,16 +136,16 @@ tools/enrich_product.sh --src product.img --tree /tmp/tree/product
 
 # 4) budowa + weryfikacja (fsck + 1:1 na kazdym wpisie) + vbmeta + instalator
 tools/make_release.sh --product-tree /tmp/tree/product --system-tree /tmp/tree/system_src \
-  --compress lz4 --exclude-regex '\.komentarz\.txt$' \
+  --compress lz4hc,9 --exclude-regex '\.komentarz\.txt$' \
   --avb <avbtool.py> --key <testkey_rsa2048.pem> --erofs-dir /tmp/erofs --out /tmp/release
 #   --exclude-regex wylacza z PARTYCJI pliki-notatki generatora (*.komentarz.txt, 3 x ~400 B);
 #   drzewo zostaje z notatkami, obraz jest o 4 096 B czystszy i bez nich w /system/etc/vintf
 
 # 5) dowod, ze to TO SAMO
-sha256sum /tmp/release/product_hyperos4_p11g2.img   # 298ada607150d3f71099…
-sha256sum /tmp/release/system_hyperos4_p11g2.img     # 5cf58995174c7dc3d681…
+sha256sum /tmp/release/product_hyperos4_p11g2.img   # a961bec46085883d6d9c…
+sha256sum /tmp/release/system_hyperos4_p11g2.img     # cf0b889d45a6bb4f6af3…
 sha256sum /tmp/release/vbmeta_hyperos4_p11g2.img     # 9cf2e7e4e165687abe78…
-# wariant -full: product b4bb8064d722dccbdf4e… (153 391 104 B; system i vbmeta jak wyzej)
+# wariant -full: product da17ffcd20c0ab4e8d0d… (150 560 768 B; system i vbmeta jak wyzej)
 ```
 
 `make_release.sh --selftest` przechodzi ten łańcuch na drzewie syntetycznym, więc narzędzia

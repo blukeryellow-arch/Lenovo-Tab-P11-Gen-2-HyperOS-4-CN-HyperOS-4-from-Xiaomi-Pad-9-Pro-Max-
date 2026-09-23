@@ -103,11 +103,15 @@ if [ "$FIT" != 1 ]; then
   # bylaby gorsze niz milczenie. Rozmiary sa w release-manifest.tsv tego katalogu.
   echo "   - product: jest wariant lekki (tylko fonty, bez 67 nakladek RRO) - patrz"
   echo "     dist/release/HyperOS4_P11Gen2 vs -full; rozmiary w release-manifest.tsv;"
-  echo "   - system: najczesciej wystarczy kompresja: -zlz4 daje 967 MB zamiast 1 376 MB"
-  echo "     (tools/make_release.sh --compress lz4 --system-tree <drzewo>); bez kompresji"
-  echo "     obraz jest wiekszy niz mial source, bo source HyperOS jest EROFS+lz4;"
-  echo "   - powiekszanie super rusza /data i jest nieodwracalne, wiec ten skrypt tego"
-  echo "     nie robi - nawet na request."
+echo "   - system: drabinka kompresji (zmierzone na tym samym drzewie 1 376 899 072 B):"
+      echo "       --compress lz4hc,9 -> 920 047 616 B  (to jest DOMYSLNE w tym wydaniu)"
+      echo "       --compress lz4     -> 967 503 872 B  (+45,3 MiB, mkfs 2,3x szybciej)"
+      echo "       --compress none    -> 1 376 899 072 B (wymaga tylko EROFS, bez lz4)"
+      echo "     lz4hc NIE podnosi poprzeczki dla kernela: na dysku ten sam identyfikator"
+      echo "     Z_EROFS_COMPRESSION_LZ4, wiec jezeli '-zlz4' wstanie, lz4hc tez wstanie."
+      echo "     Bez kompresji obraz jest wiekszy niz source HyperOS, bo source jest EROFS+lz4;"
+      echo "   - powiekszanie super rusza /data i jest nieodwracalne, wiec ten skrypt tego"
+      echo "     nie robi - nawet na request."
   exit 1
 fi
 

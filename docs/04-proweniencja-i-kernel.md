@@ -382,3 +382,23 @@ Urzadzenia sluzace do powtorzenia: `drive-probe.request` (lista ID; start = comm
 `tools/unpack_on_runner.sh` (strona runniera), `tools/pull_via_git.sh` (moja strona),
 `tools/lint_workflow_steps.py` (apie wpadki typu #1 lokalnie, `bash -n` + heurystyka
 linii o ksztalcie tekstu; test negatywny potwierdzony).
+
+## 4.x Bity, ktoreg obrazu bronią albo nie bronią (dopisane 23 IX 2026, po zmianie kompresji)
+
+Nasze obrazy (i `lz4`, i `lz4hc,9`) zadaja od kernela dokladnie jednego bitu
+niekompatybilnosci: `lz4_0padding`. Sprawdzilemy w drzewie upstream, czy kernel 5.4 ten bit
+**zna**, czy musi go odrzucic — bo „mount failed" i „feature unsupported" to dwie rózne
+klęski, a pierwsza bywa cicha. W `v5.4/fs/erofs/erofs_fs.h`:
+
+```c
+#define EROFS_FEATURE_INCOMPAT_LZ4_0PADDING  0x00000001
+#define EROFS_ALL_FEATURE_INCOMPAT           EROFS_FEATURE_INCOMPAT_LZ4_0PADDING
+```
+
+Czyli 5.4 nie tylko definiuje bit, ale ma go w masce „znam to" — montaz nie zostanie
+odrzuchony z powodu formatu. Źródło: `raw.githubusercontent.com/torvalds/linux/v5.4/fs/erofs/erofs_fs.h`
+(pobrane 23 IX 2026; w tym sandboxie jedyny sposob na upstream, bo `curl` nie ma sieci, a
+`raw.githubusercontent` przez `fetch_page` dziala). Czego to NIE dowodzi: że kernel Lenovo ma
+wbudowany w ogole `EROFS_FS` i `EROFS_FS_LZ4` — to dalej jest warunkiem wstepnym, mierzonym na
+urzadzeniu przez `device-probe.sh` (krok 0), nie przez ten dokument. Dowodzi natomiast, ze
+zmiana `lz4` -> `lz4hc,9` nie doklada zadnego nowego zadania kernelowi (patrz docs/06 §6.23).

@@ -16,10 +16,12 @@ set -uo pipefail
 
 SELFTEST=0; TREE=''; SYSIMG=''; OUT=''; UUIDIMG=67b7eb22-3ebb-4c21-8b01-8ff545f10d8d
 EROFS_DIR=${EROFS_DIR:-}; AVB=${AVB:-}; KEY=${KEY:-}
-# COMP=lz4 DOMYLNIE od 2026-09-23: bez kompresji system wychodzi 1 376 759 808 B, a z
-# -zlz4 967 507 968 B; zrodlo HyperOS ma 937 791 488 B, czyli ono jest wlasnie lz4.
-# --compress none zostawia wariant starszy i pewniejszy wobec kernela, ale duzo wiekszy.
-COMP=lz4; SYSTREE=''
+COMP=lz4hc,9; SYSTREE=''  # DOMYSLNIE od 23 IX 2026: lz4hc,9 zamiast lz4. Zmierzone na tym
+# samym drzewie system: 920 047 616 B vs 967 503 872 B (-45,3 MiB, -4,9 %) przy IDENTYCZNYCH
+# wymaganiach on-disk (compat sb_csum mtime / incompat lz4_0padding) i tym samym identyfikatorze
+# algorytmu Z_EROFS_COMPRESSION_LZ4 (lib/compressor.c:21-22) - kernel nie widzi roznicy, placi
+# tylko mkfs: 25 s zamiast 11 s. Cena bledu w strone 'miesci sie' byla za duza, wiec bierziemy
+# zapas, ktory jest za darmo (§6.23). --compress none zwalnia wymog EROFS_FS_LZ4 (§6.10, §6.21).
 # EXCLUDE_FLAGS to flagi mkfs.erofs (--exclude-regex). To NIE jest filtr po naszej stronie:
 # drzewo zostaje nietkniete (notatki ida do gita i do dokumentacji), a do partycji nie wchodza.
 EXCLUDE_FLAGS=${EXCLUDE_FLAGS:-}
@@ -374,11 +376,15 @@ if [ "$FIT" != 1 ]; then
   # bylaby gorsze niz milczenie. Rozmiary sa w release-manifest.tsv tego katalogu.
   echo "   - product: jest wariant lekki (tylko fonty, bez 67 nakladek RRO) - patrz"
   echo "     dist/release/HyperOS4_P11Gen2 vs -full; rozmiary w release-manifest.tsv;"
-  echo "   - system: najczesciej wystarczy kompresja: -zlz4 daje 967 MB zamiast 1 376 MB"
-  echo "     (tools/make_release.sh --compress lz4 --system-tree <drzewo>); bez kompresji"
-  echo "     obraz jest wiekszy niz mial source, bo source HyperOS jest EROFS+lz4;"
-  echo "   - powiekszanie super rusza /data i jest nieodwracalne, wiec ten skrypt tego"
-  echo "     nie robi - nawet na request."
+echo "   - system: drabinka kompresji (zmierzone na tym samym drzewie 1 376 899 072 B):"
+      echo "       --compress lz4hc,9 -> 920 047 616 B  (to jest DOMYSLNE w tym wydaniu)"
+      echo "       --compress lz4     -> 967 503 872 B  (+45,3 MiB, mkfs 2,3x szybciej)"
+      echo "       --compress none    -> 1 376 899 072 B (wymaga tylko EROFS, bez lz4)"
+      echo "     lz4hc NIE podnosi poprzeczki dla kernela: na dysku ten sam identyfikator"
+      echo "     Z_EROFS_COMPRESSION_LZ4, wiec jezeli '-zlz4' wstanie, lz4hc tez wstanie."
+      echo "     Bez kompresji obraz jest wiekszy niz source HyperOS, bo source jest EROFS+lz4;"
+      echo "   - powiekszanie super rusza /data i jest nieodwracalne, wiec ten skrypt tego"
+      echo "     nie robi - nawet na request."
   exit 1
 fi
 

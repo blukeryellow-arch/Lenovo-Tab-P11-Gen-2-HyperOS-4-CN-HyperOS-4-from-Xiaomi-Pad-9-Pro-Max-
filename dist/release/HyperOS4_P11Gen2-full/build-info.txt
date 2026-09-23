@@ -1,5 +1,5 @@
 # parametry budowy (notatka; weryfikuja je SHA256SUMS.txt, nie ten plik)
-kompresja	lz4
+kompresja	lz4hc,9
 wykluczenia_mkfs	 --exclude-regex=\.komentarz\.txt$
 wlasciciel_w_obrazie	0:0 (wymuszone --force-uid/--force-gid)
 uuid_obrazu	67b7eb22-3ebb-4c21-8b01-8ff545f10d8d

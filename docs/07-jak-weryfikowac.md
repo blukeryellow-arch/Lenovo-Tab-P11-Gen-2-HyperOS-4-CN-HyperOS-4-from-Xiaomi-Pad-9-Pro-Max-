@@ -9,9 +9,9 @@ Wartości oczekiwane (wydanie po korekcie DAC z 23 IX 2026, uuid `67b7eb22-3ebb-
 
 | artefakt | bajty | sha256 (prefiks) | wpisy 1:1 |
 |---|---|---|---|
-| `HyperOS4_P11Gen2/product` | 77 619 200 | `298ada607150d3f7…` | 67/67 |
-| `HyperOS4_P11Gen2-full/product` | 153 391 104 | `b4bb8064d722dccb…` | 147/147 |
-| `system` (oba warianty) | 967 503 872 | `5cf58995174c7dc3…` | 4 565/4 565 |
+| `HyperOS4_P11Gen2/product` | 75 198 464 | `a961bec46085883d…` | 67/67 |
+| `HyperOS4_P11Gen2-full/product` | 150 560 768 | `da17ffcd20c0ab4e…` | 147/147 |
+| `system` (oba warianty) | 920 047 616 | `cf0b889d45a6bb4f…` | 4 565/4 565 |
 | `vbmeta` (oba warianty) | 4 096 | `9cf2e7e4…` | — |
 
 ---

@@ -65,10 +65,17 @@ miss=sorted(set(A)-set(B)); extra=sorted(set(B)-set(A))
 diff=sorted(k for k in set(A)&set(B) if A[k]!=B[k])
 nf=sum(1 for v in A.values() if v.startswith('F:'))
 nl=sum(1 for v in A.values() if v.startswith('L:'))
-nd=sum(1 for v in A.values() if v=='D')
+nd=sum(1 for v in A.values() if v.startswith('D:'))   # 'D' NIGDY nie trafia: wartosc to
+#   'D:0o755' (+ uid/gid jako root), wiec stary warunek 'v==D' dawal zero katalogow w
+#   wyswietle przy 264 katalogach w drzewie (23 IX 2026). Sama weryfikacja byla poprawna -
+#   porownanie liczy pelne wartosci - ale komunikat klamal, a komunikatem podejmuje decyzje.
 print(f"  wykluczenia: {pats if pats else 'brak'}")
 print(f"  zrodlo: {len(A)} wpisów (pliki {nf}, symlinki {nl}, katalogi {nd})")
-print(f"  z obrazu: {len(B)} wpisów")
+print(f"  z obrazu: {len(B)} wpisów (pliki {sum(1 for v in B.values() if v.startswith('F:'))}, symlinki {sum(1 for v in B.values() if v.startswith('L:'))}, katalogi {sum(1 for v in B.values() if v.startswith('D:'))})")
+if nf+nl+nd != len(A):
+    print(f"  BLAD KONTROLNY: podzial {nf}+{nl}+{nd} != {len(A)} wpisow - licznik w tym skrypcie")
+    print("     jest martwy, nie ufaj wyswietlenym kategoriom (patrz docs/06 §6.20).")
+    sys.exit(4)
 print(f"  ZGODNE: {len(set(A)&set(B))-len(diff)}   rozbiezne: {len(diff)}   brak z obrazu: {len(miss)}   dodatkowe: {len(extra)}")
 def tail(x, n=24): return x[-n:] if len(x) > n else x
 for k in diff[:8]:

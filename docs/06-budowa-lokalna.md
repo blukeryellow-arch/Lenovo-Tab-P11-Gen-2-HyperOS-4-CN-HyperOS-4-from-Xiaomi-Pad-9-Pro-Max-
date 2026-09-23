@@ -570,3 +570,49 @@ pomiaru nie może wyglądać jak sukces** — dlatego `toparse` zwraca błąd za
 nieznane `partition-size` idzie jako `[UW]`, nigdy jako `[OK]`. Drugi: licznik w podsumowaniu
 musi być **inkrementowany w funkcji drukującej**, bo licznik inkrementowany „w miejscach,
 gdzie pamiętałem" pokazuje 0 i nadal mówi „GO".
+
+## 6.23 Wydanie jest na `lz4hc,9`: 45,3 MiB zapasu za 14 sekund budowania
+
+Decyzja z 23 IX 2026 wieczorem. Zmierzone na **tym samym** drzewie `system` (surowe
+1 376 899 072 B, 3 892 pliki + 409 symlinków + 264 katalogi), ta sama kompilacja
+`mkfs.erofs`, te same flagi (`-T 0`, UUID, `--force-uid/gid=0`, `--exclude-regex`):
+
+| kompresja | rozmiar obrazu | vs surowe | czas `mkfs` na 1,37 GB | wymagane bity on-disk |
+|---|---|---|---|---|
+| `-zlz4` (bylo) | 967 503 872 B | −29,7 % | 11 s | `compat: sb_csum mtime`, `incompat: lz4_0padding` |
+| `-zlz4hc,9` (jest) | 920 047 616 B | −33,2 % | 25 s | **identyczne** |
+| bez kompresji | 1 376 899 072 B | 0 % | ~7 s | `compat: sb_csum mtime`, `incompat: (brak)` |
+
+Zysk: **47 456 256 B (45,3 MiB, 4,9 %)** na `system` i 2 420 736 B na `product` — razem
+49 876 992 B (47,6 MiB) mniej do wgrania. Wariant `-full` zyskuje 2 830 336 B.
+
+Dlaczego to jest darmowe, a nie „tansze na jakims wymiarze": **identyfikator algorytmu na
+dysku zostaje ten sam**. `lib/compressor.c` w erofs-utils wpisuje
+`{ "lz4hc", &erofs_compressor_lz4hc, Z_EROFS_COMPRESSION_LZ4, true }` (linie 21–22) —
+`hc` oznacza tylko mocniejsze naprezenie kompresora przy budowie, kernel widzi zwykly `lz4`. `dump.erofs` obu
+obrazow zwraca ten sam zestaw bitow, a `tools/verify_image.sh` przechodzi na obrazie `hc`
+**4565/4565 z hashy 1:1 plus DAC 0:0**, wiec dekompresja nie gubi zawartosci. Placimy
+wyłącznie czasem budowy i miejscem w głowie: `--compress lz4` zostaje w drabince, a
+`flash-all.sh` teraz wypisuje wszystkie trzy liczby, zamiast radzić jedną.
+
+Reguła, którą z tego wyciągam: **jeśli partycja jest wąskim gardłem, najpierw szukaj free
+zapasu w parametrach, ktore nic nie kosztuja na urzadzeniu, dopiero potem ruszaj
+`super`/tabele partycji** (to drugie dotyka `/data` i jest nieodwracalne).
+
+## 6.24 Dwa bledy, ktore sam sobie zrobilem w tej turze — i ktore nie sa bledami w obrazie
+
+1. **`No space left on device` udawało awarię formatu.** Drugi bieg `lz4hc` skonczył sie
+   `Assertion '!(__erofs_bflush(...))' failed` i `Aborted`, a pierwszy — `FATAL: system.img
+   NIE przechodzi weryfikacji 1:1`. Oba miały tę samą przyczynę: /tmp wypchany czterema
+   kopiach obrazu po ~1 GB (`df`: 21 G użyte, 0 wolne). Pierwsza reakcja powinna byc
+   `df -h`, nie „narzędzie jest zlej wersi". Obie pomylki kosztowalyby mnie odwolanie
+   slusznego wyniku, gdybym zalac komentarz do dokumentacji zamiast spojrzec w `mkfs.log`.
+2. **Automatyczna podmiana liczb w dokumentach przemapowala `product` miedzy wariantami.**
+   Skrypt `old->new` kluczujac po *nazwie pliku* wstawil do lekkiego README sume `product`
+   z `-full` i pozostawił martwy `b4bb8064…` w trzech plikach. Klucz musi byc pelnym sha,
+   nie nazwą — poza tym dokumenty historyczne (`docs/06`) w ogole nie powinny byc dotykane
+   przez taka podmianke, bo tam liczby sa **pomiarami**, a nie stanem wydania. Cofnalem
+   dokumenty do `HEAD` i zrobilem podmiane parami jawnymi z asercjami trafien. Reguła:
+   automat edytujacy dokumentacje musi miec zakresem *pliki biezacego stanu* i mapa po
+   pelnym identyfikatorze; inaczej 'odswiezanie sum' produkuje dokument ladniejszy i
+   glupszy niz poprzedni.

@@ -12,13 +12,13 @@ logi `mkfs.log` / `fsck.log` / `system-verify.log`.
 
 | ładunek | bajty | sha256 (prefiks) | zweryfikowane |
 |---|---|---|---|
-| `product` lekki | 77 619 200 | `298ada607150d3f71099…` | ekstrakcja 1:1, 67/67 wpisów; DAC `0:0` |
-| `product` -full | 153 391 104 | `b4bb8064d722dccbdf4e…` | 147/147; DAC `0:0` |
-| `system` (oba) | 967 503 872 | `5cf58995174c7dc3d681…` | 4 565/4 565 (3892 pliki + 409 symlinków + 264 katalogi) |
+| `product` lekki | 75 198 464 | `a961bec46085883d6d9c…` | ekstrakcja 1:1, 67/67 wpisów; DAC `0:0` |
+| `product` -full | 150 560 768 | `da17ffcd20c0ab4e8d0d…` | 147/147; DAC `0:0` |
+| `system` (oba) | 920 047 616 | `cf0b889d45a6bb4f6af3…` | 4 565/4 565 (3892 pliki + 409 symlinków + 264 katalogi) |
 | `vbmeta` | 4 096 | `9cf2e7e4e165687a…` | `avbtool info_image`: Flags 3, rollback 0, SHA256_RSA2048, klucz testowy `cdbb7717…`, **jeden deskryptor: fingerprint** |
 
 Odtwarzalność: cztery niezależne kompilacje `mkfs.erofs` z tego samego kodu dają **identyczne
-bajty** obrazu na tym samym drzewie (`298ada60…`, `cmp` bez różnicy). Przepis jest w README
+bajty** obrazu na tym samym drzewie (`a961bec4…`, `cmp` bez różnicy). Przepis jest w README
 wydania; decydują `-T 0`, `--force-uid=0 --force-gid=0` i UUID-obrazu.
 
 ## Co twierdzę, a czego nie twierdzę
