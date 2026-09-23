@@ -290,8 +290,8 @@ jobs:
           get_from_drive() { # $1=id $2=plik  (klasyczny obieg "skan Google")
             local id=$1 out=$2 u sz
             for u in \
-              "https://drive.usercontent.google.com/download?id=$id&export=download&authuser=0" \
-              "https://drive.google.com/uc?export=download&id=$id"; do
+              "https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t&authuser=0" \
+              "https://drive.google.com/uc?export=download&confirm=t&id=$id"; do
               rm -f "$out" /tmp/hdr.html
               rm -f /tmp/hdr.body
               curl -sSL --retry 2 --connect-timeout 25 -c /tmp/dk.txt -D /tmp/hdr.head -o /tmp/hdr.body "$u" || { echo "curl $u -> rc=1" >> /tmp/probe.log; continue; }
@@ -301,6 +301,15 @@ jobs:
                 mv /tmp/hdr.html "$out"; echo "    pobrane wprost: $(stat -c%s "$out") B"; return 0
               fi
               # (b) strona ze skanem -> wyciagnij formularz i POSTnij go
+            { echo "    probe $u: HTTP $(head -1 /tmp/hdr.head 2>/dev/null | tr -d '\r') $(stat -c%s /tmp/hdr.body 2>/dev/null || echo 0) B"
+              echo "    tresc: $(tr -d '\000-\010\013\014\016-\037' < /tmp/hdr.body | head -c 300 | tr '\n' ' ')"; } >> /tmp/probe.log
+              if grep -qiE 'download warning|virus scan|can.t scan|too large' /tmp/hdr.html 2>/dev/null; then
+                python3 tools/drive_form_post.py --html /tmp/hdr.html --jar /tmp/dk.txt --out "$out" --id "$id" --log /tmp/post.log 2>>/tmp/probe.log
+                if [ $? -eq 0 ]; then
+                  echo "    pobrane przez formularz ostrzezenia: $(stat -c%s "$out") B"; return 0
+                fi
+                { echo "    --- POST nie dal pliku, szczegoly:"; sed 's/^/      /' /tmp/post.log 2>/dev/null; } >> /tmp/probe.log
+              fi
             { echo "    probe $u: HTTP $(head -1 /tmp/hdr.head 2>/dev/null | tr -d '\r') $(stat -c%s /tmp/hdr.body 2>/dev/null || echo 0) B"
               echo "    tresc: $(tr -d '\000-\010\013\014\016-\037' < /tmp/hdr.body | head -c 300 | tr '\n' ' ')"; } >> /tmp/probe.log
               if grep -qi 'drive.usercontent.google.com/download' /tmp/hdr.html 2>/dev/null; then
