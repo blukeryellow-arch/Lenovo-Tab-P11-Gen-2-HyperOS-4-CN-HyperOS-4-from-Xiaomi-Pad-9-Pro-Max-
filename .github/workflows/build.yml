@@ -10,9 +10,15 @@ name: build-hyperos-look
 
 on:
   push:
+    # sciezki ponizej decyduja czy wogole tworzy sie bieg - 'tools/**' i plik
+    # zapytania MUSZA tu byc, bo inaczy naprawa skryptu w tools/ po cichu NIE
+    # uruchamia ponownej sonda (stan na 2026-09-23: dwa commity z [drive-probe]
+    # w tytule nie stworzyly zadnego runa, bo ruszali tylko tools/).
     paths:
       - 'modules/**'
       - 'scripts/**'
+      - 'tools/**'
+      - 'drive-probe.request'
       - '.github/workflows/build.yml'
   pull_request:
   workflow_dispatch:
