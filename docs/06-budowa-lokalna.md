@@ -636,3 +636,11 @@ Zmierzone na obu ścieżkach (23 IX 2026):
 Punkt (2) miał początkowo postać „liczba jest w *którymkolwiek* README" i test negatywny
 przeszedł na zielono, bo `-full` przywołuje rozmiar lekki przy porównaniu wariantów. To ta sama
 klasa błędu co `glob` pomijający kropki: kontrola, która wybacza za dużo, nie istnieje.
+
+Wersja Q po dwóch poprawkach (23 IX, noc) pilnuje juz nie tylko bloku kontraktowego, ale i
+tabelki w `docs/07` — **wierszami**: dla każdego wiersza z `system|vbmeta|product` para
+`(rozmiar, prefiks sumy)` musi istnieć w katalogu wydania, który wiersz wskazuje. Powód jest
+konkretny i jest to szóstma odmiana tego samego błędu: pierwsza wersja sprawdzała „czy ta suma
+występuje *gdziekolwiek* w pliku", więc podmiana sumy w wierszu na `DEADBEEF…` przeszła na
+zielono, bo identyczny prefiks został w akapicie niżej. Test negatywny to wykrył — i dlatego
+każda nowa kontrola w tym repo dostaje swój negatyw, zanim trafi do commita.

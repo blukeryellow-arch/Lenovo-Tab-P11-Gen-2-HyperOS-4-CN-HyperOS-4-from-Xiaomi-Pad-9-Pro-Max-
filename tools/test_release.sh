@@ -410,7 +410,7 @@ if python3 - "$ROOT" <<'PYQ'
 import os,re,sys
 root=sys.argv[1]; rel=[d for d in ('dist/release/HyperOS4_P11Gen2','dist/release/HyperOS4_P11Gen2-full')]
 seen=0; bad=[]
-texts={}; sizes={}
+texts={}; sizes={}; d7seen=0
 for d in rel:
     dd=os.path.join(root,d)
     if not os.path.isdir(dd): bad.append(f"brak katalogu {d}"); continue
@@ -437,7 +437,62 @@ for d,txt in texts.items():
         if pretty not in prose:
             bad.append(f"{d}: {name} = {val} B jest w kontrakcie, ale nie ma tej liczby w PROZIE"
                        f" tego README — akapity zostaly z poprzednia liczba (blok swiezy, tekst klamie)")
-if seen<3: bad.append(f"przeanalizowano tylko {seen} pozycji kontraktu — kontrola jest martwa, nie zielona")
+    # ten sam rozmiar i ta sama suma musza byc w docs/07 (tabelka 'stan wydania') - tam blok
+    # README nie siega, a to wlasnie ten dokument czyta ktos, kto liczy, czy sie miesci.
+    # docs/07: tabelka 'stan wydania' — WIERSZAMI, nie 'czy gdziekolwiek w pliku'. Rozroznienie
+    # po 'gdziekolwiek' udowodnilo sie jako bezwartosciowe: podmienilem sume producta w wierszu
+    # na DEADBEEF, a kontrola byla zielona, bo ten sam prefiks zostal w akapicie ponizej (23 IX
+    # 2026). Tolerancja = 'wiersz, ktorego nie umiem sklasyfikowac, pomijam', ale liczbe
+    # przejranych wierszy asertuje ponizej — zeby 'puste przejscie' nie udawalo PASS-a.
+    d7=os.path.join(root,'docs/07-jak-weryfikowac.md')
+    if os.path.isfile(d7) and 'rows_done' not in globals():
+        globals()['rows_done']=0
+        for line in open(d7,encoding='utf-8'):
+            if not line.lstrip().startswith('|') or '---' in line: continue
+            low=line.lower()
+            art=None
+            for key,f in [('system','system_hyperos4_p11g2.img'),('vbmeta','vbmeta_hyperos4_p11g2.img'),('product','product_hyperos4_p11g2.img')]:
+                if key in low: art=f; break
+            if art is None: continue
+            want_dir='-full' if 'full' in low else None
+            cells=[c.strip() for c in line.strip().strip('|').split('|')]
+            if len(cells)<3: continue
+            nums=[c for c in cells if re.fullmatch(r'[0-9][0-9 ]{3,15}[0-9]', c)]
+            shas=[c for c in cells if re.search(r'[0-9a-f]{8,64}', c)]
+            if not nums or not shas: continue
+            rows_done+=1
+            size=int(nums[0].replace(' ',''))
+            pref=re.search(r'[0-9a-f]{8,64}', shas[0]).group(0)
+            dirs=[want_dir] if want_dir else [None,'-full']
+            ok=False
+            for suffix in dirs:
+                dd=os.path.join(root,'dist/release/HyperOS4_P11Gen2'+(suffix or ''))
+                fp=os.path.join(dd,art)
+                if not os.path.isfile(fp): continue
+                if os.path.getsize(fp)!=size: continue
+                sl=[l for l in open(os.path.join(dd,'SHA256SUMS.txt'),encoding='utf-8') if art in l]
+                if sl and sl[0].split()[0].startswith(pref): ok=True; break
+            if not ok:
+                msg=f"docs/07: wiersz '{cells[0]}' obiecuje {size} B + {pref[:12]}… — zaden katalog wydania nie ma takiego pliku z taka para"
+                if msg not in bad: bad.append(msg)
+        if rows_done<4: bad.append(f"docs/07: przejrzalem tylko {rows_done} wierszy tabelki (oczekuje >=4) — kontrola sie nie wykonala")
+    if os.path.isfile(d7):
+        t7=open(d7,encoding='utf-8').read(); d7seen+=1
+        for name,val in re.findall(r'([\w.]+\.img)=(\d+)', m.group(1)):
+            pretty=f"{int(val):,}".replace(',',' ')          # '920 047 616' — jak w tabelce
+            msg=f"docs/07 nie ma rozmiaru {name} = {pretty} B (przedawniona tabelka)"
+            if pretty not in t7 and msg not in bad:
+                bad.append(msg)
+            sl=[l for l in open(os.path.join(dd,'SHA256SUMS.txt'),encoding='utf-8') if name in l]
+            if sl:
+                full=sl[0].split()[0]
+                # dokument moze skrocic sume dowolnie (8..64); sprawdzam, ktoryzkolwiek prefiks
+                # tej DLUZOSCI wystepuje - sztywny wymog '16 albo 20' wywalilby FAIL na
+                # poprawnym '9cf2e7e4…' w tabeli vbmeta (23 IX 2026, wlasnie tak sie stalo)
+                msg2=f"docs/07 nie cytuje zadnego prefiksu sumy {name} (np. {full[:16]}…)"
+                if not any(full[:L] in t7 for L in range(8, len(full)+1)) and msg2 not in bad:
+                    bad.append(msg2)
+if d7seen<1: bad.append("docs/07 nie zostalo przejrzone (brak pliku lub brak blokow) - kontrola nie zadzialala")
 if bad: print("\n".join("  "+b for b in bad)); sys.exit(1)
 print(f"  przeanalizowane pozycje kontraktu: {seen}")
 PYQ
