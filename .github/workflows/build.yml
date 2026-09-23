@@ -302,17 +302,28 @@ jobs:
               { echo "**BLAD**: HTTP pobierania nie udalo sie."; echo; } >> "$R"
             fi
             df -h "$GITHUB_WORKSPACE" | tail -1
-            rm -f "out/$name"
+            # przy do_unpack=1 obraz musi zostac do nastepnego kroku (rozpakowanie)
+            if [ "${DO_UNPACK:-0}" != "1" ]; then rm -f "out/$name"; fi
           done
           echo; echo "=========== RAPORT ==========="; cat "$R"
+
+      - name: Rozpakuj obrazy i wypchnij kawalki (do_unpack=1)
+        run: |
+          set -uo pipefail
+          if [ "${DO_UNPACK:-0}" != "1" ]; then echo "do_unpack=0 - pomijam rozpakowanie"; exit 0; fi
+          sudo apt-get update -qq || true
+          sudo apt-get install -y -qq e2fsprogs erofs-utils simg2img || true
+          bash tools/unpack_on_runner.sh out transfer
+          ls -l transfer | tail -20
+          du -sh transfer | tail -1
 
       - name: Wypchnij raport do repo
         run: |
           set -uo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f reports/ || true
+          git add -f reports/ transfer/ || true
           if git diff --cached --quiet; then echo "brak zmian"; else
-            git commit -q -m "drive-probe: raport z run ${{ github.run_id }}"
+            git commit -q -m "drive-probe: raport + kawalki (run ${{ github.run_id }})"
             git push -q origin "HEAD:${{ github.ref_name }}" && echo "raport na ${{ github.ref_name }}"
           fi
