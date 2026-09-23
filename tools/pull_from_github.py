@@ -95,6 +95,8 @@ def main():
         if a.max_bytes:
             blob = blob[:a.max_bytes]
         out = a.out or os.path.join(a.dest, 'assembled.bin')
+        # (znalezione przez test: bez tego --out do nieistniejacego kataloga padalo)
+        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
         with open(out, 'wb') as f:
             f.write(blob)
         got = hashlib.sha256(blob).hexdigest()
