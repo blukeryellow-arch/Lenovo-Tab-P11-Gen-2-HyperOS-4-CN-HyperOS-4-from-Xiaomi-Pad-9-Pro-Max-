@@ -295,6 +295,7 @@ jobs:
             case "$name" in *.img) :;; *) name="drive-$id.img";; esac
             echo "  nazwa z API: ${name} ; metadane: $(echo "$meta" | head -c 120)" >> "$R"
             if get_from_drive "$id" "out/$name"; then
+              UNPACKED=0
               sz=$(stat -c%s "out/$name"); sh=$(sha256sum "out/$name" | cut -d' ' -f1)
               echo "  OK $name: $sz B  sha256=$sh"
               { echo "- plik: \`$name\`"; echo "- rozmiar: \`$sz\` B"; echo "- sha256: \`$sh\`"; echo; } >> "$R"
@@ -302,6 +303,16 @@ jobs:
                 python3 tools/fs_probe.py "out/$name" 2>&1; echo '```'; echo; } >> "$R"
               { echo '### AVB (avbtool info_image)'; echo; echo '```'
                 python3 "$AVBTOOL" info_image --image "out/$name" 2>&1 | head -90; echo '```'; echo; } >> "$R"
+              # ROZPAKOWANIE W TEJ SAMEJ ITERACJI: skrypt kasuje obraz po zapakowaniu.
+              # Bez tego 11,9 GB lezaloby naraz - runner ma ~14 GB i padloby ENOSPC.
+              if [ "${DO_UNPACK:-0}" = "1" ]; then
+                mkdir -p one && cp "out/$name" "one/$name" && {
+                  KEEP_MANIFEST=1 bash tools/unpack_on_runner.sh one transfer || true; }
+                rm -rf one
+                UNPACKED=1
+                { echo '### Rozpakowanie'; echo; echo '```'; tail -25 transfer/UNPACK_REPORT.txt 2>/dev/null; echo '```'; echo; } >> "$R"
+              fi
+              [ "${UNPACKED:-0}" = "1" ] || rm -f "out/$name"
             else
               echo "::error::$id nie dal sie pobrac publicznie"
               { echo "**BLAD**: zadny endpoint nie zwrocil pliku (sprawdz 'kazdy z linkiem')."; echo; } >> "$R"
@@ -310,15 +321,21 @@ jobs:
           done
           echo; echo "=========== RAPORT ==========="; cat "$R"
 
-      - name: Rozpakuj obrazy i wypchnij kawalki (do_unpack=1)
+      - name: Podsumowanie kawalkow do sciagniecia przez agenta
         run: |
           set -uo pipefail
-          if [ "${DO_UNPACK:-0}" != "1" ]; then echo "do_unpack=0 - pomijam rozpakowanie"; exit 0; fi
-          sudo apt-get update -qq || true
-          sudo apt-get install -y -qq e2fsprogs erofs-utils simg2img || true
-          bash tools/unpack_on_runner.sh out transfer
-          ls -l transfer | tail -20
-          du -sh transfer | tail -1
+          mkdir -p transfer
+          if [ -s transfer/MANIFEST.tsv ]; then
+            wc -l < transfer/MANIFEST.tsv | sed 's/^/  linii manifestu: /'
+            ls -l transfer | tail -25
+            du -sh transfer | sed 's/^/  do przeslania: /'
+            { echo "## Kawalki do sciagniecia przez agenta"; echo
+              echo "Galaz: \`$GITHUB_REF_NAME\`; potem:"
+              echo "\`\`\`"; echo "tools/pull_via_git.sh <repo-url> $GITHUB_REF_NAME ./incoming"; echo "\`\`\`"; echo
+              cat transfer/MANIFEST.tsv; echo; } >> "reports/drive-probe-$GITHUB_RUN_ID.md"
+          else
+            echo "brak kawalkow (do_unpack=0 albo zaden FS nie dal sie rozpakowac)"
+          fi
 
       - name: Wypchnij raport do repo
         run: |

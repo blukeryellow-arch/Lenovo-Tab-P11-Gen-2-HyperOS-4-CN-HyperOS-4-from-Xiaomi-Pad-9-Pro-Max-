@@ -19,8 +19,8 @@ SRC=${1:-out}
 DST=${2:-transfer}
 MAX=${MAX:-94371840}            # 90 MiB
 mkdir -p "$DST"
-: > "$DST/MANIFEST.tsv"
-: > "$DST/UNPACK_REPORT.txt"
+[ "${KEEP_MANIFEST:-0}" = "1" ] || : > "$DST/MANIFEST.tsv"
+[ "${KEEP_MANIFEST:-0}" = "1" ] || : > "$DST/UNPACK_REPORT.txt"
 
 # To, co realnie potrzebne sciezce A (wyglad HyperOS), nie cale drzewo.
 ALLOW=(
