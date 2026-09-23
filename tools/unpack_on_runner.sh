@@ -25,8 +25,16 @@ mkdir -p "$DST"
 # To, co realnie potrzebne sciezce A (wyglad HyperOS), nie cale drzewo.
 ALLOW=(
   system/fonts system/etc/fonts.xml system/etc/sysconfig system/framework/framework-res.apk
-  product/media product/overlay product/etc/permissions product/app product/priv-app
+  product/overlay product/etc/permissions
   system_ext/overlay system_ext/framework odm/overlay odm/etc vendor_mystical/overlay
+  vendor_mystical/etc/vintf
+  vendor_mystical/etc/permissions
+  odm/etc/vintf
+  product/etc/vintf
+  system_ext/etc/vintf
+  product/etc/permissions
+  system_ext/etc/permissions
+  overlay
 )
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -37,6 +45,7 @@ log "narzedzia: mount=$(have mount && echo tak || echo NIE) debugfs=$(have debug
 df -h "$PWD" | tail -1 | sed 's/^/  /'
 
 total_pkgs=0
+RUN_TAG="${RUN_TAG:-${GITHUB_RUN_ID:-local}}"
 MAX_TOTAL="${MAX_TOTAL:-1900000000}"
 budget_left="$MAX_TOTAL"
 SKIP_IDS=""
@@ -154,6 +163,19 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
   # zniknac PRZED 'git add -f transfer/', ale po splicie i po MANIFESCIE - wczesniejsza
   # ata kasowala go przed splitem, przez co 'split' nie miel czego dzielic (0 czesci).
   rm -f "$pkg"
+
+  # ten sam manifest co w trybie 'raw:' - dzieki temu tools/assemble_raw_parts.py sklada
+  # obie sciezki (rozpakowana paczke i surowy obraz) jednym kodem, bez drugiego parsera
+  {
+    printf '# RAW v1\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(basename "$pkg")" "$psz" "$psha" "$((n>0 ? n : 1))" 0 "$((n>0 ? n-1 : 0))"
+    if [ "$n" -gt 0 ]; then
+      for f in "$pkg".part.*; do
+        printf 'part\t%s\t%s\t%s\n' "$(basename "$f")" "$(stat -c%s "$f")" "$(sha256sum "$f" | cut -d' ' -f1)"
+      done
+    else
+      printf 'part\t%s\t%s\t%s\n' "$(basename "$pkg")" "$psz" "$psha"
+    fi
+  } >> "$DST/RAW_MANIFEST-${RUN_TAG:-local}.tsv"
 
   total_pkgs=$((total_pkgs+1))
 

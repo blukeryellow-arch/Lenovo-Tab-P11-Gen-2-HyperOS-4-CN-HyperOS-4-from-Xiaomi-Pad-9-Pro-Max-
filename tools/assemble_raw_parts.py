@@ -126,12 +126,12 @@ def adopt_orphans(parts_dir, heads, parts):
     # czastki na spoolu. Inwentarz Dysku ma rozmiar i md5 Googlea, wiec weryfikacja
     # jest caly czas skonczona - nie odrzucamy danych tylko dlatego, ze opis zniknal.
     import glob
-    for f in sorted(glob.glob(os.path.join(parts_dir, '**', '*.part.????'), recursive=True)):
-        m = re.search(r'^(.*)\.part\.(\d{4})$', os.path.basename(f))
+    for f in sorted(glob.glob(os.path.join(parts_dir, '**', '*.part.*'), recursive=True)):
+        m = re.search(r'^(.*)\.part\.(\d+)$', os.path.basename(f))
         if not m:
             continue
         base, idx = m.group(1), int(m.group(2))
-        if base in parts and idx in parts[base]:
+        if base in parts and idx in parts.get(base, {}):
             continue
         if base not in heads:
             heads[base] = {'size': -1, 'sha256': '', 'total': -1, 'ranges': [], 'z_orfana': True}
