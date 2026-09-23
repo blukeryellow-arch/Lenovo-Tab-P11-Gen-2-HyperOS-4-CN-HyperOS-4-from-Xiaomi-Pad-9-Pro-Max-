@@ -286,7 +286,7 @@ jobs:
             echo; } > "$R"
 
           # pobranie publiczne odporne na: (a) brak klucza API przy googleapis,
-          # (b) wbudowana strona "Google nie moze obecnie skanować..." dla duzych plikow
+          # (b) wbudowana strona "Google nie moze obecnie skanowac..." dla duzych plikow
           get_from_drive() { # $1=id $2=plik  (klasyczny obieg "skan Google")
             local id=$1 out=$2 u sz
             for u in \
@@ -301,6 +301,8 @@ jobs:
                 mv /tmp/hdr.html "$out"; echo "    pobrane wprost: $(stat -c%s "$out") B"; return 0
               fi
               # (b) strona ze skanem -> wyciagnij formularz i POSTnij go
+            { echo "    probe $u: HTTP $(head -1 /tmp/hdr.head 2>/dev/null | tr -d '\r') $(stat -c%s /tmp/hdr.body 2>/dev/null || echo 0) B"
+              echo "    tresc: $(tr -d '\000-\010\013\014\016-\037' < /tmp/hdr.body | head -c 300 | tr '\n' ' ')"; } >> /tmp/probe.log
               if grep -qi 'drive.usercontent.google.com/download' /tmp/hdr.html 2>/dev/null; then
                 act=$(grep -o 'action="[^"]*"' /tmp/hdr.html | head -1 | sed 's/action="//;s/"$//')
                 [ -n "$act" ] || act="https://drive.usercontent.google.com/download"
@@ -331,8 +333,6 @@ jobs:
             fi
             return 1
           }
-          : > /tmp/probe.log
-
           for id in $DRIVE_IDS; do
             [ -n "$id" ] || continue
             echo "===== $id ====="
