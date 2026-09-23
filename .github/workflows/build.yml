@@ -276,7 +276,8 @@ jobs:
 
       - name: Pobierz i opisaz kazdy plik z Drive
         run: |
-          set -uo pipefail
+          set +e
+          set -u
           mkdir -p out reports
           R="reports/drive-probe-$GITHUB_RUN_ID.md"
           { echo "# Raport drive-probe"; echo
@@ -286,24 +287,47 @@ jobs:
 
           # pobranie publiczne odporne na: (a) brak klucza API przy googleapis,
           # (b) wbudowana strona "Google nie może obecnie skanować..." dla duzych plikow
-          get_from_drive() { # $1=id $2=plik
-            local id=$1 out=$2 u
+          get_from_drive() { # $1=id $2=plik  (klasyczny obieg "skan Google")
+            local id=$1 out=$2 u sz
             for u in \
-              "https://drive.usercontent.google.com/download?id=$id&export=download&authuser=0&confirm=t" \
-              "https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t&uuid=$(cat /proc/sys/kernel/random/uuid)" \
-              "https://drive.google.com/uc?export=download&id=$id&confirm=t" \
-              "https://www.googleapis.com/drive/v3/files/$id?alt=media&supportsAllDrives=true"; do
-              rm -f "$out"
-              curl -sSL --retry 2 --connect-timeout 20 -c /tmp/dk.txt -b /tmp/dk.txt -o "$out" "$u" || continue
-              local sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
-              if [ "$sz" -gt 4096 ] && ! head -c 400 "$out" | grep -qi '<!doctype html'; then
-                echo "    pobrane $sz B z: $u" | tee -a "$R"
-                return 0
+              "https://drive.usercontent.google.com/download?id=$id&export=download&authuser=0" \
+              "https://drive.google.com/uc?export=download&id=$id"; do
+              rm -f "$out" /tmp/hdr.html
+              curl -sSL --retry 2 --connect-timeout 25 -c /tmp/dk.txt -o /tmp/hdr.html "$u" || continue
+              # (a) od razu plik?
+              if [ "$(stat -c%s /tmp/hdr.html 2>/dev/null || echo 0)" -gt 4096 ] && ! head -c 400 /tmp/hdr.html | grep -qi '<!doctype html'; then
+                mv /tmp/hdr.html "$out"; echo "    pobrane wprost: $(stat -c%s "$out") B"; return 0
               fi
-              echo "    odrzucone ($sz B, HTML lub za duzo): $u" >> "$R"
+              # (b) strona ze skanem -> wyciagnij formularz i POSTnij go
+              if grep -qi 'drive.usercontent.google.com/download' /tmp/hdr.html 2>/dev/null; then
+                act=$(grep -o 'action="[^"]*"' /tmp/hdr.html | head -1 | sed 's/action="//;s/"$//')
+                [ -n "$act" ] || act="https://drive.usercontent.google.com/download"
+                for f in id uuid confirm export token; do
+                  eval "F_$f=\"$(sed -n 's/.*name="'$f'"[^>]*value="\([^"]*\)".*/\1/p' /tmp/hdr.html | head -1)\""
+                done
+                rm -f "$out"
+                curl -sSL --retry 2 --connect-timeout 25 -b /tmp/dk.txt -c /tmp/dk.txt -o "$out" \
+                  -X POST "$act" \
+                  --data-urlencode "id=${F_id:-$id}" --data-urlencode "export=download" \
+                  ${F_uuid:+--data-urlencode "uuid=$F_uuid"} ${F_confirm:+--data-urlencode "confirm=$F_confirm"} ${F_token:+--data-urlencode "token=$F_token"} || continue
+                sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
+                if [ "$sz" -gt 4096 ] && ! head -c 400 "$out" | grep -qi '<!doctype html'; then
+                  echo "    pobrane przez formularz skanu ($sz B) z $act"; return 0
+                fi
+                echo "    formularz zwrocil $sz B (HTML lub za malo)" >> /tmp/probe.log
+              else
+                echo "    brak pliku i brak formularza pod $u" >> /tmp/probe.log
+              fi
             done
+            # (c) ostatecznie REST bez klucza (dziala dla niektorych udostepnien)
+            curl -sSL -o "$out" "https://www.googleapis.com/drive/v3/files/$id?alt=media&supportsAllDrives=true" 2>/dev/null
+            sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
+            if [ "$sz" -gt 4096 ] && ! head -c 400 "$out" | grep -qi '<!doctype html'; then
+              echo "    pobrane przez alt=media ($sz B)"; return 0
+            fi
             return 1
           }
+          : > /tmp/probe.log
 
           for id in $DRIVE_IDS; do
             [ -n "$id" ] || continue
@@ -335,6 +359,7 @@ jobs:
               [ "${UNPACKED:-0}" = "1" ] || rm -f "out/$name"
             else
               echo "::error::$id nie dal sie pobrac publicznie"
+              echo '```'; cat /tmp/probe.log 2>/dev/null; echo '```' >> "$R"
               { echo "**BLAD**: zadny endpoint nie zwrocil pliku (sprawdz 'kazdy z linkiem')."; echo; } >> "$R"
             fi
             df -h "$GITHUB_WORKSPACE" | tail -1
@@ -360,13 +385,17 @@ jobs:
 
       - name: Wypchnij raport do repo
         # always(): przy timeout/cancel i tak chcemy to, co zdazylo sie zebrac -
-        # bez tego przerwany run nie zostawia zadnego slad (logow CI nie widac).
+        # bez tego przerwany run nie zostawia zadnego sladu (logow CI nie widac).
         if: always()
         run: |
-          set -uo pipefail
+          set +e
+          set -u
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f reports/ transfer/ || true
+          mkdir -p reports transfer
+          [ -f reports/drive-probe-$GITHUB_RUN_ID.md ] || { ls -la reports/ | sed "s/^/  /"; echo "# pusty raport (krok glowny padl wczesniej)" > reports/drive-probe-$GITHUB_RUN_ID.md; }
+          git add -f reports transfer
+          echo "### do commita:"; git status --porcelain | head -20
           if git diff --cached --quiet; then echo "brak zmian"; else
             git commit -q -m "drive-probe: raport + kawalki (run ${{ github.run_id }})"
             git push -q origin "HEAD:${{ github.ref_name }}" && echo "raport na ${{ github.ref_name }}"
