@@ -45,6 +45,22 @@ fi
 [ -f "$SRC/lib/erofs_fs.h" ] || [ -f "$SRC/include/erofs/internal.h" ] || die "zrodla niepelne"
 say "  plikow .c: $(find "$SRC" -name '*.c' | wc -l)"
 
+say "== 1.5/4  biblioteki kompresji (opcjonalne, ale to one decyduja o -z)"
+# Bez tego mkfs.erofs NIE zna '-zlz4' i kazdy obraz wychodzi ~1,5x wiekszy niz source
+# HyperOS-u (oni pakuja EROFS+lz4: source system = 937 791 488 B, nasz bez kompresji
+# = 1 376 899 072 B). To nie padding - to wlasnie brak lz4. CI tez sie o to potknelo
+# (rom/BUILD_LOG.txt: 'mkfs.erofs: invalid option -- O' -> fallback bez kompresji).
+COMP=${COMP_PREFIX:-/tmp/comp-build}
+if [ -d "$COMP/lib" ] && [ -d "$COMP/include" ]; then
+  say "  uzywam: $COMP ($(ls "$COMP/lib" | tr '\n' ' '))"
+  # -l wtej kolejnosci i DOPIERO po listcie plikow .o/.c w linii gcc (inaczej ld
+  # zglosi 'undefined reference', bo przeszukuje biblioteki raz):
+  CMPLIB="-L$COMP/lib -lz -llz4"; CMPLINC="-I$COMP/include"
+else
+  say "  brak $COMP -> obraz bedzie bez kompresji; zbuduj: tools/build_comp_libs.sh"
+  CMPLIB=''; CMPLINC=''
+fi
+
 say "== 2/4  mini-configure (sondy gcc zamiast autoconfu) =="
 cd "$SRC" || die "brak $SRC"
 : > config.h
@@ -78,6 +94,21 @@ probe HAVE_FGETXATTR 'fgetxattr' sys/xattr.h; probe HAVE_MEMRCHR 'memrchr' strin
 probe HAVE_FDATASYNC 'fdatasync' unistd.h; probe HAVE_STRNLEN 'strnlen' string.h
 probe HAVE_ASPRINTF 'asprintf' stdio.h; probe HAVE_STRCHRNUL 'strchrnul' string.h
 probe HAVE_EXPLICIT_BZERO 'explicit_bzero' stdio.h
+# probe_lib <MAKRA> <funkcja> <naglowek> <biblioteka> - jak probe(), ale LINKUJE, bo
+# kompresor to nie tylko naglowek: configure.ac robi AC_CHECK_LIB + AC_CHECK_DECL.
+probe_lib() {
+  printf '#include <%s>\nint main(){(void)%s;return 0;}\n' "$3" "$2" > /tmp/epl.c
+  if gcc $CMPLINC -o /tmp/epl.bin /tmp/epl.c -L$COMP/lib -l$4 >/dev/null 2>&1; then
+    echo "#define $1 1" >> config.h; say "  + $1 ($2, -l$4)"
+  else
+    say "  - $1 ($2, -l$4)"
+  fi
+}
+probe_lib HAVE_ZLIB        uncompress               zlib.h  z
+probe_lib LZ4_ENABLED      LZ4_compress_destSize    lz4.h   lz4
+probe_lib LZ4HC_ENABLED    LZ4_compress_HC_destSize lz4hc.h lz4
+# to te trzy makra (nie HAVE_LIBLZ4) sa wlacznikiem: lib/compressor.c czyta LZ4_ENABLED,
+# lib/kite_deflate.c i lib/decompress.c czytaja HAVE_ZLIB.
 { echo '#define PACKAGE "erofs-utils"'; echo '#define PACKAGE_NAME "erofs-utils"'
   echo '#define PACKAGE_TARNAME "erofs-utils"'; echo '#define PACKAGE_STRING "erofs-utils local"'
   echo '#define PACKAGE_BUGREPORT ""'; echo '#define PACKAGE_URL ""'
@@ -86,19 +117,26 @@ probe HAVE_EXPLICIT_BZERO 'explicit_bzero' stdio.h
   echo '#define STDC_HEADERS 1'; } >> config.h
 say "  config.h: $(grep -c define config.h) definicji"
 
-say "== 3/4  kompilacja (bez kompresji: brak lz4.h/zlib.h - swiadome) =="
-# Kompresji NIE ma i to nie ubytek: CI dla tego obrazu Tez wyszlo na wariant bez
-# kompresji (sonda flag odrzucila '-O fragment...' w mkfs.erofs 1.9.4), a obraz
-# bez kompresji DA SIĘ weryfikowac i przeszukiwac bez biblitek rozpatrujacych.
-EXCL='compressor_lib(lzma|zstd|deflate)|compressor_lz4|compressor_lz4hc|compress_qpl|liberofs_sha256'
+say "== 3/4  kompilacja (kompresja wlaczona, jesli 1.5/4 znalazla biblioteki) =="
+# Uwaga historyczna: pierwsza wersja tego skryptu budowala WYLACZNIE bez kompresji, co
+# dawalo obrazy ~1,5x wieksze od zrodlowych. Teraz kompresja jest mozliwa do dokupienia
+# bez aptu (tools/build_comp_libs.sh buduje lz4 i zlib z tarbolow z codeload).
+# Zawsze wylaczamy to, na co nie ma bibliotek: liblzma, libzstd, libdeflate, qpl.
+# lz4/lz4hc/deflate wchodza do budowy TYLKO jesli config.h je wlaczyl - inaczej gcc
+# wywoli sie na '#include <lz4.h>'.
+EXCL='compressor_lib(lzma|zstd|deflate)|compress_qpl|liberofs_sha256'
+grep -q '^#define LZ4_ENABLED'    config.h || EXCL="$EXCL|compressor_lz4$"
+grep -q '^#define LZ4HC_ENABLED'  config.h || EXCL="$EXCL|compressor_lz4hc"
+grep -q '^#define HAVE_ZLIB'      config.h || EXCL="$EXCL|compressor_deflate|kite_deflate|gzran"
+say "  wlaczniki: $(grep -oE 'HAVE_ZLIB|LZ4_ENABLED|LZ4HC_ENABLED' config.h | tr '\n' ' ')"
 LIB=$(find lib -maxdepth 1 -name '*.c' | grep -vE "$EXCL" | tr '\n' ' ')
-CFLAGS="-O2 -DHAVE_CONFIG_H -D_GNU_SOURCE -I. -Iinclude -Ilib"
+CFLAGS="-O2 -DHAVE_CONFIG_H -D_GNU_SOURCE -I. -Iinclude -Ilib $CMPLINC"
 fail=0
 for tool in mkfs fsck dump; do
   srcs=$(find "$tool" -maxdepth 1 -name '*.c' 2>/dev/null | tr '\n' ' ')
   [ -n "$srcs" ] || { say "  ! $tool: brak zrodel, pomijam"; continue; }
   # shellcheck disable=SC2086
-  if gcc $CFLAGS -o "$DST/$tool.erofs" $LIB $srcs -lpthread 2>/tmp/egcc.log; then
+  if gcc $CFLAGS -o "$DST/$tool.erofs" $LIB $srcs $CMPLIB -lpthread -lm 2>/tmp/egcc.log; then
     say "  OK $tool.erofs"
   else
     say "  BLAD $tool.erofs (pierwsze 3 bledy):"; grep -m3 'error' /tmp/egcc.log | sed 's/^/     /'; fail=1
