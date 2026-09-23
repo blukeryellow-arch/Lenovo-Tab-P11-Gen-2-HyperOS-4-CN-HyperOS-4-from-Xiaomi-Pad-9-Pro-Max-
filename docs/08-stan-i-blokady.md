@@ -7,7 +7,8 @@ Notatka dla kontynuacji — skrót tego, co jest zmierzone, a co tylko napisane.
 `dist/release/HyperOS4_P11Gen2` (lekki: fonty) i `-full` (fonty + 67 nakładek RRO). Pliki w
 każdym: `product_hyperos4_p11g2.img`, `system_hyperos4_p11g2.img`, `vbmeta_hyperos4_p11g2.img`,
 `flash-all.sh`, `rollback.sh`, `device-probe.sh` (krok 0), `release-manifest.tsv`,
-`SHA256SUMS.txt` (8 pozycji, `sha256sum -c` = 8/8 OK w obu wariantach), `build-info.txt`,
+`SHA256SUMS.txt` (8 pozycji, `sha256sum -c` = 8/8 OK w obu wariantach) i `README.md`
+z blokiem `ROZMIARY-KONTRAKT`, który utrzymuje builder (§6.25), `build-info.txt`,
 logi `mkfs.log` / `fsck.log` / `system-verify.log`.
 
 | ładunek | bajty | sha256 (prefiks) | zweryfikowane |
@@ -52,7 +53,7 @@ boota jest gorszym podejrzanym, więc jeśli coś nie wstanie, zacznij od lekkie
 ```
 tools/build_comp_libs.sh /tmp/comp-build            # zlib + lz4 (wymaga sieci na tarball)
 tools/build_erofs_local.sh /tmp/erofs-c             # mkfs/fsck/dump, selfcheck na 3 binarkach
-tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 44 PASS, 0 FAIL
+tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 45 PASS, 0 FAIL
 ```
 
 Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (patrz `.gitignore`):

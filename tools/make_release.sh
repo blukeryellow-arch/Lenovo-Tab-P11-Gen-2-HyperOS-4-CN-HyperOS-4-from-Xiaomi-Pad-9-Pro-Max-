@@ -451,5 +451,33 @@ done
 # po budowie wywrocilo 'sha256sum -c' w catatym katalogu, czyli redaktor dokumentacji
 # 'psul' wydanie. Bramka flasha ma liczyc to, co leci na urzadzenie.
 ( cd "$OUT" && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt ! -name '*.log' ! -name '*.md' -printf '%P\n' | sort | xargs -r sha256sum > SHA256SUMS.txt )
+# Blok kontraktowy w README: rozmiary plikow LICZONE Z DYSKU, zeby 'odswiezanie dokumentacji'
+# nie moglo zostawic liczby z poprzedniej przebudowy (23 IX 2026: sumy zmienily sie po zmianie
+# kompresji, a trzy akapity wciaz podawaly 77 619 200). README czyta czlowiek, kontrakt czyta
+# test (tools/test_release.sh, sekcja Q) - dlatego generuje go builder, nie redaktor.
+if [ -f "$OUT/README.md" ]; then
+  PARTS=$(for f in $(cd "$OUT" && ls *.img 2>/dev/null | sort); do
+             printf '%s=%s ' "$f" "$(stat -c%s "$OUT/$f")"
+         done)
+  if grep -q 'ROZMIARY-KONTRAKT' "$OUT/README.md"; then
+    python3 - "$OUT/README.md" "$PARTS" <<'PYX'
+import re, sys
+p, parts = sys.argv[1], sys.argv[2].strip()
+t = open(p, encoding='utf-8').read()
+n = len(re.findall(r'<!--\s*ROZMIARY-KONTRAKT[^>]*-->', t))
+t = re.sub(r'<!--\s*ROZMIARY-KONTRAKT[^>]*-->', '<!-- ROZMIARY-KONTRAKT ' + parts + ' -->', t, count=1)
+open(p, 'w', encoding='utf-8').write(t)
+print(f"    kontrakt: {n} blokow, podmieniony pierwszy ({parts.strip()})")
+if n == 0: sys.exit(4)          # nie powinno sie zdarzyc (sprawdzamy grepem), ale niech mowi
+PYX
+    say "  README: blok ROZMIARY-KONTRAKT odswiezony z dysku"
+  else
+    { printf '\n<!-- ROZMIARY-KONTRAKT %s -->\n' "$PARTS"
+      printf '<!-- Utrzymuje go tools/make_release.sh, sprawdza tools/test_release.sh (sekcja Q).\n'
+      printf '     Jezli ktora kolwiek z tych liczb nie zgadza sie z plikiem albo znika z prozy\n'
+      printf '     tego README, test wydania FAILuje. To nie jest komentarz do recznego pilnowania. -->\n'; } >> "$OUT/README.md"
+    say "  README: nie mial bloku kontraktowego - dolozony przez buildera"
+  fi
+fi
 say "  manifest: $(( $(wc -l < "$OUT/release-manifest.tsv") - 1 )) pozycji; sumy na koncu: $(wc -l < "$OUT/SHA256SUMS.txt")"
 say "== KONIEC: $OUT"

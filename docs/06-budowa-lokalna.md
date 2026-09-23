@@ -616,3 +616,23 @@ zapasu w parametrach, ktore nic nie kosztuja na urzadzeniu, dopiero potem ruszaj
    automat edytujacy dokumentacje musi miec zakresem *pliki biezacego stanu* i mapa po
    pelnym identyfikatorze; inaczej 'odswiezanie sum' produkuje dokument ladniejszy i
    glupszy niz poprzedni.
+
+## 6.25 Kontrakt rozmiarów: nie „poprawię opis later“, tylko builder wpisuje liczby do opisu
+
+Leczenie §6.24 nie polega na tym, żeby pamiętać. `make_release.sh` po policzeniu sum przepisuje
+w `$OUT/README.md` linię `<!-- ROZMIARY-KONTRAKT product…=B system…=B vbmeta…=B -->` wartościami
+**z dysku**, a sekcja Q w `tools/test_release.sh` pilnuje trzech rzeczy: (1) każdy wpis bloku
+zgadza się z plikiem, (2) ta sama liczba w formie czytelnej (`75 198 464`) istnieje w prozie
+**tego samego** README, (3) przeanalizowano ≥3 wpisy — bez tego zero trafień wygląda jak sukces.
+
+Zmierzone na obu ścieżkach (23 IX 2026):
+
+| wstrzyknięty stan | co zrobił `make_release` | co na to sekcja Q |
+|---|---|---|
+| blok z `99999999` (przedawniony) | nadpisany prawdziwymi rozmiary | po przebudowie PASS |
+| blok usunięty z README | dopisany od nowa z komentarzem | PASS, 6 pozycji |
+| proza kłamie (`77 619 200` przy bloku `75 198 464`) | — (builder nie czyta prozy) | **FAIL** z cytatem obu liczb |
+
+Punkt (2) miał początkowo postać „liczba jest w *którymkolwiek* README" i test negatywny
+przeszedł na zielono, bo `-full` przywołuje rozmiar lekki przy porównaniu wariantów. To ta sama
+klasa błędu co `glob` pomijający kropki: kontrola, która wybacza za dużo, nie istnieje.
