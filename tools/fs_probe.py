@@ -4,7 +4,7 @@
 Czysty Python, zero zaleznosci, WYLACZNIE odczyt. Dziala w sandboxie agenta (bez
 e2fsprogs) i na runnerze Actions.
 
-Uczone na bledzie: naglowek obrazu boot (ANDROID!) ma kilka układow pol (v0 vs v3/v4
+Uczone na bledzie: naglowek obrazu boot (ANDROID!) ma kilka ukladow pol (v0 vs v3/v4
 vs wlasnosciowy MTK) i zgadywanie ich dawalo liczby typu "ramdisk 384 MB". Dlatego
 boot/vendor_boot DUMP-UJEMY SUROWO, bez interpretacji - a interpretujemy tylko te
 struktury, ktore sa norma i ktore umiemy sprawdzic: ext4, EROFS, Android sparse.

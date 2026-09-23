@@ -221,7 +221,7 @@ jobs:
   # www.googleapis.com, objects.githubusercontent.com = 000. Konektor ma twardy
   # pre-check 104857600 B/plik (sondy: return_download_url -> zablokowany w schema
   # na false; range_header -> laczony z URL-em, a URL serwuje caly plik;
-  # acknowledge_abuse -> limit odpala sie wcześniej). stad nie ciagniemy duzych
+  # acknowledge_abuse -> limit odpala sie wczesniej). stad nie ciagniemy duzych
   # obrazow do agenta, tylko analizujemy je TAM, GDZIE SIE DA - na runnerze.
   #
   # Runner sciaga plik bez zadnych secrets: wystarczy publiczny link

@@ -64,7 +64,7 @@ for img in files:
             rep.append(f"sygnatura naglowka: {sig or head.hex() or 'plik pusty'}")
 
             # ostatni AVB0 w pliku = blok vbmeta tego obrazu; padding partycji to zera,
-            # wiec rfind jest stabilniejszy niż liczenie offsetow ze stopki
+            # wiec rfind jest stabilniejszy niz liczenie offsetow ze stopki
             voff, tail = None, None
             CHUNK = 8 * 1024 * 1024
             pos = size
