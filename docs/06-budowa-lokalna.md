@@ -398,3 +398,34 @@ Dlatego w wydaniu zostaje zdanie, które wcześniej brzmiało jak paranoja: spra
 jest ścieżką awaryjną dla kernela bez `EROFS_FS_LZ4` (wtedy product rośnie ~1,5×, a `system`
 przestaje się mieścić — patrz tabela w §6.10 i bramka w §6.11 — więc awaryjność tej ścieżki
 też ma swój limit i to jest uczciwe zdanie na koniec sekcji).
+
+## 6.18 Narzędzie, które złapało własnego autora trzy razy pod rząd
+
+`tools/lint_pismo.py` pilnuje, żeby do wydania nie wchodziły znaki obcego pisma. Powstał,
+bo trzy razy wplotem CJK i trzy razy tego nie widziałem: `\u62ff` w `docs/06`,
+`\u5916\u90e8` w `scripts/build_overlay_apk.sh`, `\u4e0b\u6e38` w `.github/workflows/release-selftest.yml`.
+Przyczyna za każdym razem była ta sama i **nie leżała w tekście, tylko w metodzie sprawdzenia**:
+`glob.glob("**/*", recursive=True)` nie zagląda do katalogów zaczynających się od kropki,
+czyli cały `.github/` był slepy. Narzędzie bierze listę plików z `git ls-files` — z tego, co
+realnie trafia do wydania.
+
+Trzy decyzje warte zapisania:
+
+1. **Wyjątek jest zawężony co do pliku i co do znaku.** W `*.md` zezwalam wyłącznie na
+   `\u2713 \u2717 \u2705 \u274c` (znaki stanu w tabelach). Nie „emoji wolno", bo wtedy
+   wyjątek jest cały plik, a ma być cztery kod punktu. W `*.sh`/`*.py`/`*.yml`/`*.tsv`/`*.txt`
+   zakaz jest pełny.
+2. **Narzędzie nie zawiera tego, czego zabrania.** Pierwsze uruchomienie zgłosiło
+   `tools/lint_pismo.py` — słusznie, bo w docstringu *zacytowałem* znaki, które były bugiem.
+   Mógłbym dodać wykluczenie dla siebie. Nie dodałem: citat z CJK w pliku kontrolnym psuje
+   kazde `grep -r` i byłby pierwszym wyjątkiem w pliku, ktory ma wyjątków nie mieć. Jest
+   opis przez `\uXXXX`, a tresc pozostala.
+3. **Binaria sa pomijane jawnie, z liczba w wyniku** („2 binarnych (pominiete)") — zeby
+   „czysto" nigdy nie mogło znac „nie zajrzalem". To jest ta sama zasada, co test negatywny
+   w §6.16: kontrola, ktora nie potrafi powiedziec, ze nic nie zrobila, kłamie.
+
+Sprostonie mojego bledu proceduralnego z tego wieczora: commit `880a67a` oglosil
+„Suite teraz: 17 kontroli", a w chwili pusha suite dawala **16 PASS / 1 FAIL** (wlasnie ten
+punkt 2 powyzej). Nie poprawiam sily, bo commita już wypchnalem — zamiast tego jest tu, w
+historii dokumentu, i to jest koszt własny: komunikat o sukcesie trzeba ogłaszac po
+uruchomieniu, nie po napisaniu.

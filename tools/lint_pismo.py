@@ -2,8 +2,8 @@
 """Lint pisma: nie pozwala, zeby do wydania weszly znaki w pismie obcym wobec jezyka dokumentacji.
 
 Po co to istnieje (a nie jest kaprysem estetycznym): w tym repo trzy razy pojawily sie
-znaky CJK wtracone mimowolnie - `拿` w docs/06, `外部` w scripts/build_overlay_apk.sh i
-`下游` w .github/workflows/release-selftest.yml. Zaden z nich nie byl zamiarem; kazdy
+znaky CJK wtracone mimowolnie - `\u62ff` w docs/06, `\u5916\u90e8` w scripts/build_overlay_apk.sh i
+`\u4e0b\u6e38` w .github/workflows/release-selftest.yml. Zaden z nich nie byl zamiarem; kazdy
 przeszedl, bo pierwsza wersja skanera uzywala glob('**/*'), ktory NIE WCHODZI do
 katalogow zaczynajacych sie od kropki - czyli .github/ byl caly slepy. Stad dwie reguly
 wyszyte z tego kodu:
@@ -32,6 +32,13 @@ BANNED = {
     "emoji/piktogramy": r"[\U0001f000-\U0001faff\u2600-\u27bf]",
 }
 MAX_BYTES = 4_000_000
+
+# Wyjatek ZAPISANY, nie milczacy: w plikach Markdown zezwalamy na cztery znaki
+# stosowane w tabelach jako stan kontroli. Nie na 'dowolne emoji' i NIE w kodzie -
+# w .sh/.py/.yml/.tsv/.txt obowiazuje pelny zakaz, bo to wlasnie tam obce znaki
+# wpadaly (patrz docstring). Zezwolenie jest zawezone co do pliku i co do znaku.
+MD_ALLOWED = set("\u2713\u2717\u2705\u274c")   # to sa WYŁĄCZNIE te cztery, nie "jakiekolwiek emoji"
+MD_SUFFIXES = (".md",)
 
 
 def tracked_files():
@@ -64,6 +71,10 @@ def main(argv):
             skipped_bin += 1              # obrazy .img, .apk, .ttf - tu nie ma pisma
             continue
         scanned += 1
+        if rel.endswith(MD_SUFFIXES):
+            # wyciagnac TYLKO dozwolone znaki, nie 'przymknac oko na caly plik'
+            text = "".join(c for c in text if c not in MD_ALLOWED)
+            allowed_used = sum(1 for c in "".join(open(f, encoding="utf-8").read()) if c in MD_ALLOWED)
         for name, pat in BANNED.items():
             found = sorted(set(re.findall(pat, text)))
             if found:
