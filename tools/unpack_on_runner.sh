@@ -95,12 +95,12 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
   pkg="$DST/$base-assets.tar.gz"
   if [ "$method" = "mount-ro" ] && have mount; then
     sudo -n mount -o ro,loop "$work" "$tree" 2>/dev/null && {
-      sudo -n tar czf "$pkg" -C "$tree" "${include[@]}" 2>>"$DST/UNPACK_REPORT.txt" || {
+      sudo -n tar -I "gzip -1" -cf "$pkg" -C "$tree" "${include[@]}" 2>>"$DST/UNPACK_REPORT.txt" || {
         sudo -n umount "$tree"; tree_packed=0; }
       sudo -n umount "$tree" 2>/dev/null
     }
   fi
-  [ -s "$pkg" ] || tar czf "$pkg" -C "$tree" "${include[@]}" 2>>"$DST/UNPACK_REPORT.txt" || true
+  [ -s "$pkg" ] || tar -I "gzip -1" -cf "$pkg" -C "$tree" "${include[@]}" 2>>"$DST/UNPACK_REPORT.txt" || true
   rm -rf "$tree"
 
   if [ ! -s "$pkg" ]; then

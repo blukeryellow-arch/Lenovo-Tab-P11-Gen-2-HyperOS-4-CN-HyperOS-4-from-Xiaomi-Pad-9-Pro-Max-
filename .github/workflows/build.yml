@@ -258,52 +258,55 @@ jobs:
           set -uo pipefail
           mkdir -p out reports
           R="reports/drive-probe-$GITHUB_RUN_ID.md"
-          { echo "# Raport drive-probe"; echo;
-            echo "- run: \`$GITHUB_REPOSITORY@$GITHUB_SHA\`"; echo "- wejscie ids: \`$DRIVE_IDS\`"; echo; } > "$R"
+          { echo "# Raport drive-probe"; echo
+            echo "- run: \`$GITHUB_REPOSITORY@$GITHUB_SHA\`"; echo "- wejscie ids: \`$DRIVE_IDS\`"; echo
+            echo "Pobieranie idzie bez OAuth/klucza API, wiec probujemy trzech endpoitntow:"
+            "usercontent (z confirm=t, omija strone skanu), uc?export=download, googleapis alt=media."
+            echo; } > "$R"
+
+          # pobranie publiczne odporne na: (a) brak klucza API przy googleapis,
+          # (b) wbudowana strona "Google nie może obecnie skanować..." dla duzych plikow
+          get_from_drive() { # $1=id $2=plik
+            local id=$1 out=$2 u
+            for u in \
+              "https://drive.usercontent.google.com/download?id=$id&export=download&authuser=0&confirm=t" \
+              "https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t&uuid=$(cat /proc/sys/kernel/random/uuid)" \
+              "https://drive.google.com/uc?export=download&id=$id&confirm=t" \
+              "https://www.googleapis.com/drive/v3/files/$id?alt=media&supportsAllDrives=true"; do
+              rm -f "$out"
+              curl -sSL --retry 2 --connect-timeout 20 -c /tmp/dk.txt -b /tmp/dk.txt -o "$out" "$u" || continue
+              local sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
+              if [ "$sz" -gt 4096 ] && ! head -c 400 "$out" | grep -qi '<!doctype html'; then
+                echo "    pobrane $sz B z: $u" | tee -a "$R"
+                return 0
+              fi
+              echo "    odrzucone ($sz B, HTML lub za duzo): $u" >> "$R"
+            done
+            return 1
+          }
+
           for id in $DRIVE_IDS; do
             [ -n "$id" ] || continue
             echo "===== $id ====="
             { echo "## \`$id\`"; echo; } >> "$R"
-            meta=$(curl -sS "https://www.googleapis.com/drive/v3/files/$id?fields=id,name,size,mimeType,md5Checksum" || true)
-            echo "$meta" | sed 's/^/  /'
-            if ! echo "$meta" | grep -q '"size"'; then
-              echo "::warning::$id - brak metadanych: plik nie jest publiczny albo nie istnieje"
-              { echo "**ODRZUCONE**: plik nie jest publiczny (albo nie istnieje)."; echo; } >> "$R"
-              continue
-            fi
-            { echo "Metadane:"; echo; echo '```json'; echo "$meta"; echo '```'; echo; } >> "$R"
+            # nazwa z metadanych - anonimowo bywa 403, wiec to tylko ozdobnik
+            meta=$(curl -sS "https://www.googleapis.com/drive/v3/files/$id?fields=id,name,size" 2>/dev/null || true)
             name=$(echo "$meta" | sed -n 's/.*"name" *: *"\([^"]*\)".*/\1/p')
-            if curl -sS --fail --retry 3 -o "out/$name" "https://www.googleapis.com/drive/v3/files/$id?alt=media"; then
+            case "$name" in *.img) :;; *) name="drive-$id.img";; esac
+            echo "  nazwa z API: ${name} ; metadane: $(echo "$meta" | head -c 120)" >> "$R"
+            if get_from_drive "$id" "out/$name"; then
               sz=$(stat -c%s "out/$name"); sh=$(sha256sum "out/$name" | cut -d' ' -f1)
-              echo "  pobrano $name: $sz B sha256=$sh"
-              { echo "- rozmiar: \`$sz\` B"; echo "- sha256: \`$sh\`"; echo; } >> "$R"
-              { echo '### Geometria (tools/fs_probe.py)'; echo; echo '```';
+              echo "  OK $name: $sz B  sha256=$sh"
+              { echo "- plik: \`$name\`"; echo "- rozmiar: \`$sz\` B"; echo "- sha256: \`$sh\`"; echo; } >> "$R"
+              { echo '### Geometria (tools/fs_probe.py)'; echo; echo '```'
                 python3 tools/fs_probe.py "out/$name" 2>&1; echo '```'; echo; } >> "$R"
-              { echo '### AVB (avbtool info_image)'; echo; echo '```';
-                python3 "$AVBTOOL" info_image --image "out/$name" 2>&1 | head -80; echo '```'; echo; } >> "$R"
-              if [ "${DO_UNPACK:-0}" = "1" ]; then
-                { echo '### Drzewo i build.prop'; echo; echo '```'
-                  if dumpe2fs -h "out/$name" >/dev/null 2>&1; then
-                    debugfs -R "ls -l /" "out/$name" 2>&1 | head -40
-                    echo "--- /system/build.prop lub /build.prop:"
-                    debugfs -R "cat /system/build.prop" "out/$name" 2>&1 | head -80
-                    debugfs -R "cat /build.prop" "out/$name" 2>&1 | head -80
-                  elif command -v fsck.erofs >/dev/null 2>&1; then
-                    mkdir -p out/tree
-                    fsck.erofs --extract="out/tree" "out/$name" 2>&1 | head -20
-                    head -80 out/tree/system/build.prop 2>/dev/null || head -80 out/tree/build.prop 2>/dev/null || echo "  (brak build.prop)"
-                  else
-                    echo "zaden parser FS nie zadzialal - sprawdz czy to sparse (simg2img) lub super (lpunpack)"
-                  fi
-                  echo '```'; echo; } >> "$R"
-              fi
+              { echo '### AVB (avbtool info_image)'; echo; echo '```'
+                python3 "$AVBTOOL" info_image --image "out/$name" 2>&1 | head -90; echo '```'; echo; } >> "$R"
             else
-              echo "::error::pobieranie $id nie udalo sie"
-              { echo "**BLAD**: HTTP pobierania nie udalo sie."; echo; } >> "$R"
+              echo "::error::$id nie dal sie pobrac publicznie"
+              { echo "**BLAD**: zadny endpoint nie zwrocil pliku (sprawdz 'kazdy z linkiem')."; echo; } >> "$R"
             fi
             df -h "$GITHUB_WORKSPACE" | tail -1
-            # przy do_unpack=1 obraz musi zostac do nastepnego kroku (rozpakowanie)
-            if [ "${DO_UNPACK:-0}" != "1" ]; then rm -f "out/$name"; fi
           done
           echo; echo "=========== RAPORT ==========="; cat "$R"
 
