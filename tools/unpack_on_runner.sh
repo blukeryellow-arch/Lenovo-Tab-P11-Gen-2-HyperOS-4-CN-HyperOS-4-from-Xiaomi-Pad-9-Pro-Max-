@@ -110,7 +110,10 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
   psz=$(stat -c%s "$pkg"); psha=$(sha256sum "$pkg" | cut -d' ' -f1)
   log "    paczka: $(basename "$pkg") $psz B sha256=${psha:0:16}..."
 
-  rm -f "$DST/$(basename "$base")-assets.tar.gz.part."*
+  # limit GitHuba to 100 MB NA BLOB (zmierzone 2026-09-22): dopoki tarball
+  # lezy obok czesci, 'git add -f transfer/' bierze go rowniez i caly push jest
+  # odrzucany - ostatni bieg wyural 2,5 min na pushu wlasnie na tym.
+  rm -f "$pkg"
   n=0
   if [ "$psz" -gt "$MAX" ]; then
     split -b "$MAX" -d -a 3 "$pkg" "$pkg.part."

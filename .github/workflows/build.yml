@@ -258,7 +258,7 @@ jobs:
           UNP="${{ inputs.do_unpack }}"
           if [ -f drive-probe.request ]; then
             if [ -z "$IDS" ]; then
-              IDS=$(grep -Ev '^[[:space:]]*(#|do_unpack:)' drive-probe.request | tr -d '\r' | paste -sd' ' -)
+              IDS=$(tr -d '\r' < drive-probe.request | grep -Ev '^[[:space:]]*#' | awk '{print $1}' | grep -E '^[A-Za-z0-9_-]{20,}$' | paste -sd' ' -)
               echo "zapytanie z pliku drive-probe.request"
             fi
             [ -z "$UNP" ] && UNP=$(sed -n 's/^[[:space:]]*do_unpack:[[:space:]]*\([01]\).*/\1/p' drive-probe.request | head -1)
@@ -414,7 +414,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           mkdir -p reports transfer
           [ -f reports/drive-probe-$GITHUB_RUN_ID.md ] || { ls -la reports/ | sed "s/^/  /"; echo "# pusty raport (krok glowny padl wczesniej)" > reports/drive-probe-$GITHUB_RUN_ID.md; }
-          git add -f reports transfer
+          git add -f reports transfer && git reset -q -- '*.tar.gz' '*.zip' || true
           echo "### do commita:"; git status --porcelain | head -20
           if git diff --cached --quiet; then echo "brak zmian"; else
             git commit -q -m "drive-probe: raport + kawalki (run ${{ github.run_id }})"
