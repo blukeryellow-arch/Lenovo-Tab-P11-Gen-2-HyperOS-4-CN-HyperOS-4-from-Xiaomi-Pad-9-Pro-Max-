@@ -55,6 +55,9 @@ scripts/
 
 diagnostics/collect_device_state.sh   jeden przebieg, caly wynik do wklejenia w czat
 diagnostics/identify_images.sh        sortowanie sterty obrazow po odciskach kluczy AVB (nie po nazwach)
+tools/ship_to_github.sh                Twoja strona: rozpakuj -> odfiltruj -> split -> push (kanal >100 MB)
+tools/pull_from_github.py              Moja strona: manifest -> blob API -> sha256 -> geometria FS
+tools/fs_probe.py                      ext4/EROFS/sparse w czystym pythonie, z --selftest
 .github/workflows/build.yml           build-module (codziennie) + unpack-source (HF, recznie)
 docs/01-ustalenia-srodowiska.md       limity sandboxa, korekta o bootloaderze
 docs/02-sciezka-A-nakladka.md         procedura krok po kroku i rollback
