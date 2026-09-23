@@ -44,6 +44,15 @@ znaczyć „nikt nie sprawdził, czy check cokolwiek sprawdza"), podmienia cel s
 `flash-all.sh` na atrapie `fastboot` w pięciu scenariuszach (za mały slot → zero flashów)
 i na końcu weryfikuje 1:1 **ten** katalog. 24 testy, 0 wymagań sieciowych.
 
+## Poziomy dowodu — co sprawdza który test
+
+Od najtańszego do jedynego, które dowodzi uruchomienia: **A** sumy → **B** zawartość 1:1 →
+**C** determinizm → **D** instalator na atrapie `fastboot` → **E** format narzędziem z zewnątrz
+(`release-selftest` w CI) → **F** vbmeta → **G** urządzenie. Każdy poziom ma w `docs/07-jak-weryfikowac.md`
+polecenie, oczekiwane wyjście i — to jest rzecz, której zwykle brakuje — **jedno zdanie o tym,
+czego ten test NIE dowodzi**. Np. `fsck.erofs` bez `--extract` zwraca 0 nawet na obrazie, którego
+nie umie rozpakować, a `vbmeta` ma klucz testowy, więc obraz jest *samo-spójny*, nie *zaufany*.
+
 ## Jak to wgrać
 
 ```

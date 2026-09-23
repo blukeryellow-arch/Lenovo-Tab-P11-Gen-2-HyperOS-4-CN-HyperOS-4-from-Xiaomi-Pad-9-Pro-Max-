@@ -43,7 +43,7 @@ składam z tego, co przeszło. Trzy pułapki, każda zjadała połowę godziny:
    typedefuje `__u64` = `unsigned long` → `conflicting types for '__u64'`.
    (Ironia: pierwsza reakcja „undef to" daje ten sam błąd od drugiej strony.)
 
-Wynik: `mkfs.erofs`, `fsck.erofs`, `dump.erofs` 1.8.2 zbudowane i działające. Kompresji nie ma
+Wynik: `mkfs.erofs`, `fsck.erofs`, `dump.erofs` 1.8.2 zbudowane i działające. (Uwaga z 2026-09-23: ten akapit był prawdziwy dla *ręcznego* builda, a nie dla skryptu — `build_erofs_local.sh` budował wprawdzie wszystkie trzy, ale selfcheck pilnował tylko `mkfs` i `fsck`, więc skasowanie `dump.erofs` dawało „już zbudowane" i `exit 0`. Naprawione: selfcheck patrzy na trzy binarki i na `--version` każdej.) Kompresji nie ma
 (brak nagłówków) i to nie jest osłabienie: **CI dla tego samego obrazu też skończyło na wariancie
 bez kompresji** (sonda flag odrzuciła `-O fragment…` w mkfs.erofs 1.9.4), a obraz bez kompresji
 da się zweryfikować i przeszukać bez dodatkowych bibliotek.

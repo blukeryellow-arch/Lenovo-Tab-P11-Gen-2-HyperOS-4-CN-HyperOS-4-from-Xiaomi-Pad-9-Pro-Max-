@@ -32,7 +32,12 @@ die() { printf 'FATAL: %s\n' "$*" >&2; exit 2; }
 need() { command -v "$1" >/dev/null 2>&1 || die "brak programu: $1"; }
 need gcc; need git; need make || true
 
-[ -x "$DST/mkfs.erofs" ] && { say " juz zbudowane: $DST/mkfs.erofs"; exit 0; }
+# "juz zbudowane" musi patrzec na WSZYSTKIE trzy binarki. Wczesniej: tylko mkfs - wiec
+# katalog z recznego builda (mkfs+fsck) dal exit 0 bez dump.erofs i plik sie nigdy nie
+# pojawil, a skrypt twierdzil, ze wszystko gotowe. Naprawione po padzie 35917392222.
+if [ -x "$DST/mkfs.erofs" ] && [ -x "$DST/fsck.erofs" ] && [ -x "$DST/dump.erofs" ]; then
+  say " juz zbudowane: $DST/{mkfs,fsck,dump}.erofs"; exit 0
+fi
 
 say "== 1/4  zrodla =="
 if [ ! -d "$SRC/lib" ]; then
@@ -134,7 +139,10 @@ CFLAGS="-O2 -DHAVE_CONFIG_H -D_GNU_SOURCE -I. -Iinclude -Ilib $CMPLINC"
 fail=0
 for tool in mkfs fsck dump; do
   srcs=$(find "$tool" -maxdepth 1 -name '*.c' 2>/dev/null | tr '\n' ' ')
-  [ -n "$srcs" ] || { say "  ! $tool: brak zrodel, pomijam"; continue; }
+  if [ -z "$srcs" ]; then
+    say "  ! $tool.erofs: brak zrodel w $SRC/$tool - NIE polykam tego, bo konsument"
+    say "      dostalby 127 w najgorszym momencie"; fail=1; continue
+  fi
   # shellcheck disable=SC2086
   if gcc $CFLAGS -o "$DST/$tool.erofs" $LIB $srcs $CMPLIB -lpthread -lm 2>/tmp/egcc.log; then
     say "  OK $tool.erofs"
@@ -145,9 +153,22 @@ done
 [ $fail -eq 0 ] || die "kompilacja nie przeszla"
 
 say "== 4/4  selfcheck =="
-for b in mkfs.erofs fsck.erofs; do
-  [ -x "$DST/$b" ] || die "brak $DST/$b"
+for b in mkfs.erofs fsck.erofs dump.erofs; do
+  if [ ! -x "$DST/$b" ]; then
+    die "brak $DST/$b - build zglosil sukces, a pliku nie ma. To jest dokladnie ta"
+    say "    'zielona asercja przy martwej kontroli': 2026-09-23 konsument tego pliku"
+    say "    dostal 127 w srodku weryfikacji na czystym runnerze."
+  fi
 done
+# Sonda = --version, NIE probka odczytu /dev/null: dump.erofs na zlym wejsciu wychodzi
+# z kodem 251 (erofs-utils zwraca errno w gore), wiec '[ $rc -le 2 ]' byloby mylaca
+# asercja - sama ja zbudowalem i sama padla (2026-09-23). --version ma jeden sensowny wynik.
+rc=0
+for b in mkfs.erofs fsck.erofs dump.erofs; do
+  "$DST/$b" --version >/dev/null 2>&1 || { say "  ! $b --version rc=$?"; rc=1; }
+done
+[ $rc = 0 ] || die "ktora binarka nie startuje (patrz wyzej)"
+say "  selfcheck: mkfs/fsck/dump sa i startuja (--version rc=0)"
 "$DST/mkfs.erofs" --help >/dev/null 2>&1 || die "mkfs.erofs nie uruchamia sie"
 say "  gotowe: $DST/{mkfs,fsck,dump}.erofs"
 say "  uwaga: 'mkfs.erofs -T 0 -U <uuid>' jest deterministyczne (3/3 identyczne obrazy)"

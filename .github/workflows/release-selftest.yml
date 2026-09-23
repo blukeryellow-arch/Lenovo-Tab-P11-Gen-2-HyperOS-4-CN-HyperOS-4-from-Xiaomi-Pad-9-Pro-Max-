@@ -65,9 +65,13 @@ jobs:
             make --version | head -1
             python3 --version
             echo "== erofs-utils z pakietu (niezalezny punkt odniesienia) =="
+            # 'command -v' ZANIM ktokolwiek to pipe'nie: '| head -1' kradlo kod wyjscia
+            # i nastepny krok konczyl sie 127 zamiast tu dostac jasna sygnature.
+            for t in mkfs.erofs fsck.erofs dump.erofs; do
+              if command -v "$t" >/dev/null 2>&1; then echo "   $t -> $(command -v "$t")"
+              else echo "   $t -> BRAK (pakiet nie zostal zainstalowany lub nie ma tego binary)"; fi
+            done
             dpkg -l erofs-utils 2>/dev/null | tail -1
-            fsck.erofs --help 2>&1 | head -1
-            mkfs.erofs --help 2>&1 | head -1
             echo "== moja budowa =="
             $MK --version 2>&1 | head -1
             $FSCK --version 2>&1 | head -1
@@ -111,6 +115,30 @@ jobs:
       - name: WERYFIKACJA NIEZALEZNA - obraz moim mkfs, fsck z pakietu dystrybucji
         run: |
           set -uo pipefail
+          # trap po to, zeby adnotacja w UI (i tylko ona jest tu czytelna - endpoint logow
+          # Actions jest w tym srodowisku nieosiagalny) mowila ktora linia i jaka komenda.
+          # rc=127 bez takiego trapu znaczy 'czegos braklo' i nic wiecej - na tym sie
+          # wlasnie raz utknem (2026-09-23, bieg 35917392222).
+          trap 'echo "::error::krok padl w linii $LINENO: $BASH_COMMAND (rc=$?)"' ERR
+          brak=0
+          for t in "$MK" "$FSCK" "$EROFS_DIR/dump.erofs"; do
+            command -v "$t" >/dev/null 2>&1 || { echo "::error::brak narzedzia $t - build_erofs_local.sh nie wyplul tej binarki"; brak=1; }
+          done
+          [ $brak = 0 ] || exit 1
+          # Narzedzia z PAKIETU to polowa tej kontroli - bez nich nie ma 'niezaleznosci'.
+          # Pierwszy pad (rc=127) byl wlasnie 'fsck.erofs: command not found', a kroki
+          # 'wersje' i 'sonda' tego nie wykryly, bo konczyly sie na '| head -1' (rc=0 pipeline'u).
+          HD=1
+          for t in mkfs.erofs fsck.erofs; do
+            if command -v "$t" >/dev/null 2>&1; then echo "   z pakietu: $t -> $(command -v "$t")"
+            else echo "::warning::brak $t z pakietu - 'weryfikacja niezalezna' nie bedzie niezalezna"; HD=0; fi
+          done
+          if [ $HD = 0 ]; then
+            echo "   WOAA: bez narzedzia z pakietu ten krok nie ma sensu - loguje i wychodze 0,"
+            echo "         zamiast udawac, ze sprawdzilem format czyims narzedziem." | tee -a "$RUNLOG"
+            echo "::notice::pakiet erofs-utils niedostepny na runnerze - krok niezalezny pominiety (nie mylic z FAIL wydania)"
+            exit 0
+          fi
           T=$(mktemp -d); mkdir -p "$T/tree/dane" "$T/tree/etc"
           # Dane PODATNE na kompresje + jedno losowe (zeby 'nic sie nie zbilo' nie moglo
           # udawac sukcesu). Uczenie sie na wlasnym bledzie: docs/06 §6.17.
@@ -171,7 +199,9 @@ jobs:
               exit 1
             fi
             { echo "== efekt kompresji na tym drzewie: bez $u B -> lz4 $c B"
-              $EROFS_DIR/dump.erofs -s "$T/img-zlz4.img" 2>/dev/null | grep -iE 'incompatible|kernel version|lz4_max'
+              DUMP="$EROFS_DIR/dump.erofs"; [ -x "$DUMP" ] || DUMP=dump.erofs
+              $DUMP -s "$T/img-zlz4.img" 2>/dev/null | grep -iE 'incompatible|kernel version|lz4_max' \
+                || echo "   (dump.erofs nie mogl wypisac superblocku - to krok informacyjny, nie kontrolny)"
             } | tee -a "$RUNLOG"
             if [ "$c" -ge "$u" ] || [ "$c" = 0 ]; then
               echo "::error::-zlz4 nie zmniejszylo obrazu ($c >= $u) - kompresja nie weszla"
@@ -183,6 +213,7 @@ jobs:
       - name: krzyzowa czytelnosc + porownanie rozmiarow z pakietem
         run: |
           set -uo pipefail
+          trap 'echo "::error::krok padl w linii $LINENO: $BASH_COMMAND (rc=$?)"' ERR
           T=$(mktemp -d); mkdir -p "$T/tree/etc"
           printf 'system:x:1000:1000:system:/none:/bin/false\n' > "$T/tree/etc/passwd"
           head -c 2000000 /dev/zero | tr '\0' 'A' > "$T/tree/etc/dlugi.bin"
