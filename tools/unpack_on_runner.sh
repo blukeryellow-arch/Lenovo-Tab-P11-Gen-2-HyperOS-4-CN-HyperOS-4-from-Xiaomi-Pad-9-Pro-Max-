@@ -110,12 +110,9 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
   psz=$(stat -c%s "$pkg"); psha=$(sha256sum "$pkg" | cut -d' ' -f1)
   log "    paczka: $(basename "$pkg") $psz B sha256=${psha:0:16}..."
 
-  # limit GitHuba to 100 MB NA BLOB (zmierzone 2026-09-22): dopoki tarball
-  # lezy obok czesci, 'git add -f transfer/' bierze go rowniez i caly push jest
-  # odrzucany - ostatni bieg wyural 2,5 min na pushu wlasnie na tym.
-  rm -f "$pkg"
   n=0
   if [ "$psz" -gt "$MAX" ]; then
+    rm -f "$pkg".part.*   # koscie po poprzednim biegu, zeby nie doaczyc starych czesci
     split -b "$MAX" -d -a 3 "$pkg" "$pkg.part."
     n=$(ls "$pkg".part.* 2>/dev/null | wc -l)
     log "    podzial na $n czastek (limit GitHuba 100 MB/plik)"
@@ -129,6 +126,11 @@ for img in "$SRC"/*.img "$SRC"/*.raw; do
       printf 'transfer/%s\t%s\n' "$(basename "$pkg")" "$(git hash-object -t blob "$pkg")"
     fi
   } >> "$DST/MANIFEST.tsv"
+  # limit GitHuba to 100 MB NA BLOB (zmierzone 2026-09-22): tarball rodzic musial
+  # zniknac PRZED 'git add -f transfer/', ale po splicie i po MANIFESCIE - wczesniejsza
+  # ata kasowala go przed splitem, przez co 'split' nie miel czego dzielic (0 czesci).
+  rm -f "$pkg"
+
   total_pkgs=$((total_pkgs+1))
 
   # sprzatanie duzych plikow miedzy iteracjami - runner ma ~14 GB, nie mniej
