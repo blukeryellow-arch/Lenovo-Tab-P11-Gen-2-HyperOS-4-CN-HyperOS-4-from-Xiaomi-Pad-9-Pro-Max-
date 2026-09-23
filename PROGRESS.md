@@ -28,3 +28,26 @@ etap 5/5: ROM-kit zbiegu 35897100768 zweryfikowany offline (EROFS 1 376 899 072 
 etap 5/5: modul fontow poprawiony pomiarom cmap (MiSansVF zamiast MiSansLatinVF, serif odrzucony: 14 kodow)
 etap 5/5: uprawnienia Dysku zamkniete - 8/8 plikow ma tylko 'owner' (zweryfikowane list_permissions)
 etap 5/5: autoryzacja GitHuba w sandboxie padla w trakcie fazy (gh api 401) - push wstrzymany, dane odzyskane z wiszacego commitu
+
+## Start nastepnego biegu (gdy bedziesz chcial dociagnac reszte) — kolejnosc obowiazkowa
+
+Ten krok CELWO nie zostal odpalony na koncu sesji: bieg CI otwiera na Dysku
+'kazdy z linkiem' dla obrazow, ktore pobiera, a zamknac uprawnienia musi ktos, kto
+jeszcze jest w sesji. Odpalenie i pozostawienie publicznego linku do wyciagnietego
+firmware to nie jest stan, ktory chce sie komus zostawic.
+
+    1) git add -A && git commit -m "[drive-probe] bieg 4: small-tary (system/odm) po fixie rm"
+       git push origin HEAD:refs/heads/arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4
+       # workflow startuje od pusha (workflow_dispatch dawal 403); 'drive-probe.request'
+       # ma juz rom_build: 1, do_unpack: 1, max_total: 1900000000
+    2) poczekaz ~20 min:  gh run list --limit 3
+    3) bash tools/ingest_run.sh          # fetch + skladanie + moduly + INGEST_STATUS.md
+    4) ZAMKNIJC uprawnienia: make_private na 8 plikach i weryfikacja, ze zostal 'owner'
+       (to samo, co bylo zrobione w tej sesji: 8/8 zamkniete)
+    5) bash tools/pull_spool.sh wipe     # nie trzymac 1,5 GB na galazi transfer-spool
+
+W tej sesji zrobione i wgitane: dist/modules/hyperos4_fonts_p11g2.zip (29 015 567 B),
+dist/rom-kit/ (vbmeta Flags:3 + flash.sh 84 linie + sumy runnera i gita), naprawy
+unpack_on_runner/assemble_raw_parts/build_rom_on_runner, fontgen po cmap, rro_targets
+z krzyzowka 67 apk. NIE zrobione: flash na urzadzeniu (brak sprzetu tu) i jakakolwiek
+przerobka vendora pod mt6789.

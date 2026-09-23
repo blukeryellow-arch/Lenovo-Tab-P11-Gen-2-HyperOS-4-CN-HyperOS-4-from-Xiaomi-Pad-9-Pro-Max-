@@ -153,6 +153,12 @@ nie istnieje):
 | `com.miui.rom`, `com.miui.securitycore`, `com.miui.system`, `com.xiaomi.phone`, `com.xiaomi.bluetooth`, `com.newcall` | 7 | 0 | **też pakiety Xiaomi** → zawsze bezczynne |
 | `providers.settings`, `server.telecom`, `bluetooth`, `phone`, `wifi.resources`, `networkstack`, `thememanager`, `managedprovisioning`, `cellbroadcast*` (AOSP) | 15 | 3 | istnieją na tablecie, czekają na podpis |
 
+Klucze „inne" to nie AOSP: wszystkie 13 mają `d45f076fe23a1a5b…`, czyli klucz
+`*__auto_generated_rro_vendor.apk` Xiaomi (`subject=O=Xiaomi, L=Beijing`).ZNACZENIE: **zero
+z 67** nakładek podpisanych jest kluczem, który zna tablet Lenovo — więc „wgrać overlaye i
+mieć HyperOS-owy framework" nie istnieje jako ścieżka bez przepodpisania *każdej* z 26
+frameworkowych nakładek (`apksigner` na runnerze; JDK tam jest, lokalnie nie mam).
+
 Liczby: **54 z 67 na kluczu MIUI, 13 na innym; 13 z 67 celuje w pakiety Xiaomi, których na
 tablecie nie ma** (czyli 1/5 paczki to bagaż nie do użycia nigdy). Wniosek dla playbooka:
 `--debug-key` (przepodpisanie własnym kluczem, w CI `apksigner`) dotyczy **całych 26**
