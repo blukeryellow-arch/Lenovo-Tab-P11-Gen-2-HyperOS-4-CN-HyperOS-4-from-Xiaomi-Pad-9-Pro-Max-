@@ -410,7 +410,7 @@ if python3 - "$ROOT" <<'PYQ'
 import os,re,sys
 root=sys.argv[1]; rel=[d for d in ('dist/release/HyperOS4_P11Gen2','dist/release/HyperOS4_P11Gen2-full')]
 seen=0; bad=[]
-texts={}; sizes={}; d7seen=0; rows_done=0
+texts={}; sizes={}; d7seen=0; rows_done=0; rows_absent=0; absent=[]
 for d in rel:
     dd=os.path.join(root,d)
     if not os.path.isdir(dd): bad.append(f"brak katalogu {d}"); continue
@@ -429,7 +429,13 @@ for d,txt in texts.items():
     for name,val in re.findall(r'([\w.-]+\.(?:img|sh|tsv|txt))=(\d+)', m.group(1)):
         seen+=1
         real=sizes.get((d,name))
-        if real is None: bad.append(f"{d}: {name} z kontraktu nie istnieje w katalogu"); continue
+        if real is None:
+            # GitHub nie pomiesci pliku >100 MB, wiec na swiezym checkoutcie CI 'system.img' nie ma.
+            # To NIE moze byc FAIL (bylo nim przez dwie przebudowy i CI je polknelo brakiem pipefail),
+            # ale nie moze byc tez ciche - raportuje sie ile ich bylo i tylko powyzej limitu.
+            if int(val)>100*1024*1024: absent.append(f"{d}/{name} ({val} B - ponad limit GitHuba)")
+            else: bad.append(f"{d}: {name} z kontraktu nie istnieje w katalogu (a miesci sie w gicie)")
+            continue
         if real!=int(val): bad.append(f"{d}: {name} kontrakt mowi {val} B, plik ma {real} B")
         pretty=f"{int(val):,}".replace(',',' ')
         # TA SAM proza, nie 'ktorakolwiek': pierwszy wersji pozwolila, by -full README
@@ -466,16 +472,23 @@ for d,txt in texts.items():
             size=int(nums[0].replace(' ',''))
             pref=re.search(r'[0-9a-f]{8,64}', shas[0]).group(0)
             dirs=[want_dir] if want_dir else [None,'-full']
-            ok=False
+            ok=False; istnieje=False
             for suffix in dirs:
                 dd=os.path.join(root,'dist/release/HyperOS4_P11Gen2'+(suffix or ''))
                 fp=os.path.join(dd,art)
                 if not os.path.isfile(fp): continue
+                istnieje=True
                 if os.path.getsize(fp)!=size: continue
                 sl=[l for l in open(os.path.join(dd,'SHA256SUMS.txt'),encoding='utf-8') if art in l]
                 if sl and sl[0].split()[0].startswith(pref): ok=True; break
             if not ok:
-                msg=f"docs/07: wiersz '{cells[0]}' obiecuje {size} B + {pref[:12]}… — zaden katalog wydania nie ma takiego pliku z taka para"
+                # pliku nie ma NIGDZIE i jest wiekszy niz limit GitHuba -> na swiezym checkoutcie CI
+                # nie moze byc ani obrazu, ani jego sumy do porownania. To nie dowod, ze dokument klamie,
+                # wiec nie FAIL - ale musi byc POLICZONE, zeby 'zero zweryfikowanych wierszy' nie udalo sukcesu.
+                if not istnieje and size>100*1024*1024: rows_absent+=1; continue
+                msg=f"docs/07: wiersz '{cells[0]}' obiecuje {size} B + {pref[:12]}…"
+                if not istnieje: msg+=" — pliku nie ma w zadnym katalogu wydania (miesci sie w gicie, wiec powinien)"
+                else: msg+=" — plik jest, ale para rozmiar/suma sie nie zgadza"
                 if msg not in bad: bad.append(msg)
         if rows_done<4: bad.append(f"docs/07: przejrzalem tylko {rows_done} wierszy tabelki (oczekuje >=4) — kontrola sie nie wykonala")
     if os.path.isfile(d7):
@@ -516,7 +529,9 @@ for d,txt in texts.items():
 if seen<16: bad.append(f"przeanalizowano tylko {seen} pozycji kontraktu (dwa README x 8 plikow) - kontrola martwa")
 if rows_done<4: bad.append(f"przejrzalem {rows_done} wierszy tabeli docs/07 (oczekuje >=4) - kontrola martwa")
 if bad: print("\n".join("  "+b for b in bad)); sys.exit(1)
-print(f"  przeanalizowane pozycje kontraktu: {seen}")
+print(f"  przeanalizowane pozycje kontraktu: {seen}, z czego pominietych (za duze na GitHuba): {len(absent)}")
+print(f"  wiersze docs/07: zweryfikowane {rows_done-rows_absent}, pominiete (obraz poza limitem GitHuba) {rows_absent}")
+for a_ in absent: print("     absent-skip: "+a_)
 PYQ
 then ok "rozmiary w README = rozmiary plikow (kontrakt Q)"; else bad "kontrakt rozmirow nie przechodzi"; fi
 

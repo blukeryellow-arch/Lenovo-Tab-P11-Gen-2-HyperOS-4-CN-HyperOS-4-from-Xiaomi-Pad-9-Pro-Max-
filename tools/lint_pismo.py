@@ -8,7 +8,8 @@ przeszedl, bo pierwsza wersja skanera uzywala glob('**/*'), ktory NIE WCHODZI do
 katalogow zaczynajacych sie od kropki - czyli .github/ byl caly slepy. Stad dwie reguly
 wyszyte z tego kodu:
 
-  1. zrodlem listy plikow jest `git ls-files` (to, co realnie trafia do wydania),
+  1. zrodlem listy plikow jest `git ls-files` (to, co realnie trafia do wydania), a przy
+     braku `.git` - przejscie kataloga; ktore zrodlo uzyle, pisze w linii wyniku,
      nie glob - dzieki temu `.github/`, `.gitignore` sa skanowane;
   2. pliki binarne (obrazy .img, apk) sa pomijane swiadomie i to jest ZAPISANE w
      wyniku, zeby 'czysto' nie znaczylo 'nie zajrzalem'.
@@ -41,11 +42,24 @@ MD_ALLOWED = set("\u2713\u2717\u2705\u274c")   # to sa WYŁĄCZNIE te cztery, ni
 MD_SUFFIXES = (".md",)
 
 
-def tracked_files():
-    out = subprocess.run(["git", "ls-files", "-z"], capture_output=True, text=True)
-    if out.returncode != 0:
-        sys.exit(f"FATAL: git ls-files nie wyszlo: {out.stderr.strip()[:200]}")
-    return [f for f in out.stdout.split("\0") if f]
+SKIP_DIRS = {".git", "node_modules", "__pycache__", ".mypy_cache", ".ruff_cache", ".venv"}
+
+
+def tracked_files(root):
+    """Zrodlem listy jest to, co realnie trafia do wydania. `git ls-files` jest lepsze niz glob,
+    bo obejmuje `.github/` i `.gitignore`. Swiezo rozpakowane drzewo (tarball, CI bez metadanych)
+    nie ma `.git` i wczesniej lint wywalal sie FATALEM - a to nie znaleziony blad, tylko kontrola,
+    ktora sie nie wykonala. Dlatego jest fallback na przejscie kataloga, Z OZNACZENIEM zrodla
+    w wyniku, zeby jednej listy nie brac za druga."""
+    out = subprocess.run(["git", "ls-files", "-z"], capture_output=True, text=True, cwd=root)
+    if out.returncode == 0:
+        return [f for f in out.stdout.split("\0") if f], "zrodlo: git ls-files"
+    rels = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        for fn in filenames:
+            rels.append(os.path.relpath(os.path.join(dirpath, fn), root))
+    return sorted(rels), "zrodlo: przejscie kataloga (brak repo git)"
 
 
 def main(argv):
@@ -54,7 +68,7 @@ def main(argv):
     args = [a for a in argv if not a.startswith("--")]
     if args:
         root = args[0]
-    files = tracked_files()
+    files, zrodlo = tracked_files(root)
     scanned = skipped_bin = skipped_big = 0
     hits = []
     for rel in files:
@@ -84,7 +98,7 @@ def main(argv):
                         break
                 hits.append((rel, 0, name + " [wystepuje]", " ".join(found[:8])))
     if not quiet:
-        print(f"skan pisma: {scanned} plikow tekstowych, "
+        print(f"skan pisma [{zrodlo}]: {scanned} plikow tekstowych, "
               f"{skipped_bin} binarnych (pominiete), {skipped_big} powyzej {MAX_BYTES//10**6} MB")
     if hits:
         seen = set()

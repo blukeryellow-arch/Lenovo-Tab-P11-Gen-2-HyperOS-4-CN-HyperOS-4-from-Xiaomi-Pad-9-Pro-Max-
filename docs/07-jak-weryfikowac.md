@@ -77,12 +77,19 @@ adb shell 'ls -lZ /system/bin/su /product/bin 2>/dev/null; restorecon -RFv /prod
 bash tools/test_release.sh --erofs-dir <katalog z mkfs/fsck>
 ```
 
-Oczekiwane: `=== podsumowanie: 24 PASS, 0 FAIL (z --real: 32 PASS, 0 FAIL) ===` (bez `--real`: 16 PASS, 0 FAIL).
+Oczekiwane: `=== podsumowanie: 37 PASS, 0 FAIL ===`, a z `--real`: `=== podsumowanie: 45 PASS, 0 FAIL ===`.
 
 Sekcje: A selftest buildera · B determinizm (dwa `mkfs.erofs` na tym samym drzewie = **identyczny
 plik**, `cmp` bez różnic) · C **test negatywny** weryfikatora (drzewo ma plik, którego nie ma w
 obrazie → musi być rc=1 i wskazanie nazwy) · D symlinki (podmiana celu musi być wykryta) ·
-E–I bramka rozmiaru i kolejność flashów na atrapie `fastboot` · J (tylko `--real`) oba wydania.
+E–I bramka rozmiaru i kolejność flashów na atrapie `fastboot` · J (tylko `--real`) oba wydania ·
+K kontrola pisma · L `fsck.erofs` na zbudowanym obrazie (tylko `--real`) · M `device_probe.sh` na
+zestawie pułapek (NO-GO przy braku `EROFS_FS_LZ4`, przy `system_a` 256 MB, przy slocie o bajt
+mniejszym) · N README-y nie mogą obiecywać rozmiaru mniejszego niż build (patrzy też na blok
+`ROZMIARY-KONTRAKT`) · P granica `<` vs `<=` w bramce · Q kontrakt rozmiarów: każdy plik wydania
+w `$OUT/README.md` musi mieć w nim tę samą liczbę bajtów co na dysku, a tam, gdzie README w ogóle
+o pliku mówi, liczba musi wrócić w prozie; plus spójność liczby kolumn w tabelach markdown.
+Licznik „przeanalizowane pozycje kontraktu: 16" jest asercją (`seen<16` = FAIL), nie opisem.
 
 **Dowodzi:** że nie ma ukrytej losowości (timestampy, UUID, kolejność katalogowania), więc
 porównywanie sha256 między maszynami ma sens — i że kontroli B i D nie da się przejść przez ich

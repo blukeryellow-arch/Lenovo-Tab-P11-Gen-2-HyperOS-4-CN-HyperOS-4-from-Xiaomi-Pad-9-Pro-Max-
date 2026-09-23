@@ -679,3 +679,45 @@ Co z tej tury naprawdę warto zapamiętać, bo dotyczy nie tabeli, a mnie:
 4. Trzy negatywy, każdy osobno uruchomiony i każdy czerwony: kolumna `+1` w tabeli → FAIL
    z numerem linii; skrócony blok kontraktowy → FAIL „przeanalizowano tylko 9 pozycji"; zły
    rozmiar vbmeta w bloku → FAIL „kontrakt mówi 8192 B, plik ma 4096 B".
+
+## 6.27 CI było głuche: „15/15 success" nie znaczyło, że suita przeszła
+
+Krok `suite wydania` w `.github/workflows/release-selftest.yml` wyglądał tak:
+
+```bash
+if bash tools/test_release.sh --erofs-dir "$EROFS_DIR" 2>&1 | tee -a "$RUNLOG"; then :; else exit 1; fi
+```
+
+Domyślny shell kroków to `bash -e {0}` — bez `pipefail`. Status rury jest wtedy statusem
+**ostatniego** elementu, czyli `tee`, a `tee` nie ma powodu zwracać czegoś innego niż zero. Warunek
+`if` był więc zawsze prawdziwy i `exit 1` nigdy się nie odpalił. Symulacja w powłoce:
+`if bash -c "exit 1" | tee /tmp/x; then ...` → „krok zielony mimo rc=1".
+
+Ślad, po którym to w ogóle zobaczyłem: `git archive HEAD` (emulacja świeżego checkoutu) dał
+**dwa FAIL-e Q** — brakujący `system.img` wariantu lekkiego i `vbmeta` wariantu `-full`, którego
+w ogóle nie było w `git ls-files` (`.gitignore` ma `*.img`, a negacje były wypisane tylko dla
+katalogu lekkiego). Na runnerze te same braki istnieją od zawsze, bo obrazu 920 MB GitHub nie
+pomieści. CI było zielone, bo patrzyło na `tee`.
+
+Co zostało zrobione, a czego nie:
+
+1. Krok liczy `rc=${PIPESTATUS[0]}` i wychodzi z nim. Nie dałem `set -o pipefail` na górę kroku,
+   choć to pokusa: te same kroki **celowo** połykają `dpkg -l erofs-utils | tail -1` (pakietu może
+   nie być → rc=1) i `$MK --version | head -1` (SIGPIPE = 141). `pipefail` na całym kroku wywracałby
+   bieg rzeczami, które nie są blokerem wydania — czyli zamieniłbym głuchotę na szum.
+2. Q rozróżnia „pliku nie ma, bo jest większy niż limit GitHuba" (odpowiedzialny pominięty
+   i **policzony**: `pominiętych (za duze na GitHuba): 3`) od „pliku nie ma, a powinien być"
+   (FAIL). Wiersze `docs/07` mają to samo: `zweryfikowane 4, pominiete 0` lokalnie,
+   `2 / 2` na czystym checkoutcie.
+3. `vbmeta` wariantu `-full` to te same 4 096 B co w lekkim (`cmp`: identyczne), więc trafił do
+   gita przez negację w `.gitignore` — oba katalogi są teraz sprawdzalne osobno, bez luzowania
+   kontrolki.
+4. `tools/lint_pismo.py` przestał wymagać metadanych gita: przy braku `.git` chodzi po katalogu
+   i **pisze w linii wyniku, którego źródła użył** (`zrodlo: git ls-files` / `przejscie kataloga`),
+   bo „kontrola nie zadziałała" nie może wyglądać jak „kontrola czysta". Obie ścieżki dają u mnie
+   identyczne 90 plików, co jest przy okazji krzyżowym sprawdzeniem samego lintu.
+
+Wniosek do zapamiętania jest szerszy niż ten plik: zielony przebieg, który nie patrzy na kod
+wyjścia testu, nie jest dowodem niczego — a ja przez cztery dni budowałem na nim poczucie
+bezpieczeństwa. Emulacja świeżego checkoutu (`git archive HEAD` do katalogu poza repo) jest tania i
+jest pierwszym czymś, co warto zrobić, gdy kontrola „przecież przechodzi".

@@ -133,8 +133,16 @@ jobs:
 
       - name: suite wydania (selftest, determinizm, testy negatywne, bramka rozmiaru)
         run: |
-          if bash tools/test_release.sh --erofs-dir "$EROFS_DIR" 2>&1 | tee -a "$RUNLOG"; then :; else
-            echo "::error::tools/test_release.sh wyszedl niezerowo - patrz artefakt 'weryfikacja-log'"
+          # 'if bash ... | tee' bierze status OSTATNIEGO elementu rury, czyli tee = zawsze 0.
+          # Domyslny shell kroku to 'bash -e {0}' bez pipefail, wiec przez wszystkie biegi (13/13
+          # na 41f1ebf, 15/15 na a179ed6) suita mogla failowac do woli a CI bylo zielone. Rc wyciągam
+          # z PIPESTATUS, a NIE przez 'set -o pipefail' na calym kroku: te same kroki celowo lykaja
+          # 'dpkg -l ... | tail -1' (rc=1, pakietu moze nie byc) i '--version | head -1' (SIGPIPE=141),
+          # a pipefail na gorze wywrocilby bieg rzecza, ktora nie jest blokerem wydania (23 IX 2026).
+          bash tools/test_release.sh --erofs-dir "$EROFS_DIR" 2>&1 | tee -a "$RUNLOG"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::tools/test_release.sh wyszedl z rc=$rc - patrz artefakt 'weryfikacja-log'"
             exit 1
           fi
 

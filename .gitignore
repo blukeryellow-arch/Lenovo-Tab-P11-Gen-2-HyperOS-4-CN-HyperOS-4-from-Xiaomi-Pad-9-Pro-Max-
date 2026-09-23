@@ -34,5 +34,8 @@ unpacked/
 !dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img
 !dist/release/HyperOS4_P11Gen2/vbmeta_hyperos4_p11g2.img
 dist/release/HyperOS4_P11Gen2/system_hyperos4_p11g2.img
+# -full: vbmeta to TE SAME 4 096 B co w wariancie lekkim (cmp: identyczne) - niech oba
+# katalogi beda sprawdzalne osobno; reszta -full zostaje poza gitem (150 MB i 920 MB).
+!dist/release/HyperOS4_P11Gen2-full/vbmeta_hyperos4_p11g2.img
 dist/release/**/*.log
 tmp/
