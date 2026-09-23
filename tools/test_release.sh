@@ -239,13 +239,12 @@ for d in glob.glob(os.path.join(root,'dist/release/*')):
     if os.path.isfile(p):
         sums[d]={l.split()[0] for l in open(p,encoding='utf-8') if len(l.split())==2}
 ok=True
+total_seen=0
 for d,known in sums.items():
     rd=os.path.join(d,'README.md')
     if not os.path.isfile(rd): continue
     txt=open(rd,encoding='utf-8').read()
     # prefiks 8+ hex '…' albo w tabeli, plus wiersze 'sha256sum ... # <hex>'
-    for m in re.finditer(r'\b([0-9a-f]{8,16})\K(?=…)', txt):
-        pass
     # Prefiksy liczymy TYLKO z linii, ktora mowi o pliku wydania. Bez tego kontrola
     # poslubi 'cdbb7717…', czyli sha1 KLUCZA AVB (avbtool info_image), za sume obrazu
     # i zglosi ducha, ktorego nie ma (2026-09-23, pierwsza wersja N).
@@ -253,21 +252,26 @@ for d,known in sums.items():
     SKIP=re.compile(r'sha1|klucz|key|cdbb7717', re.I)
     for line in txt.split('\n'):
         if not WANT.search(line) or SKIP.search(line): continue
-        for pref in re.findall(r'[`#\s]([0-9a-f]{8,16})\u2026', line):
+        for pref in re.findall(r'[`#\s*]?([0-9a-f]{8,64})\u2026?', line):
+            total_seen += 1
             if not any(h.startswith(pref) for k in sums.values() for h in k):
                 print(f"  {os.path.relpath(rd,root)}: suma {pref}… NIE wystepuje w zadnym SHA256SUMS.txt ({line.strip()[:70]})")
                 ok=False
-# docs/*.md niech cytują tylko to, co jest w ktoryms wydaniu (albo jest opisem historycznym)
-hist=re.compile(r'\u00a7|zmierzone|wczesnie|poprzedni', re.I)
-for md in glob.glob(os.path.join(root,'docs','*.md')):
-    txt=open(md,encoding='utf-8').read()
-    for pref in re.findall(r'`([0-9a-f]{12,16})\u2026', txt):
-        if any(h.startswith(pref) for k in sums.values() for h in k): continue
-        ln=[i for i,l in enumerate(txt.split('\n'),1) if pref in l]
-        if ln and hist.search('\n'.join(txt.split('\n')[max(0,ln[0]-6):ln[0]+2])):
-            print(f"  {os.path.relpath(md,root)}:{ln[0]}: {pref}… - opis historyczny, OK")
-        else:
-            print(f"  {os.path.relpath(md,root)}:{ln[0]}: {pref}… NIE wystepuje w wydaniach i nie jest opisem historycznym"); ok=False
+# Zakres: TYLKO README wydania. 'docs/*.md' celowo POZA tym - dokumentacja modulu RRO
+# cytuje sumy .apk i .zip, ktorych z definicji nie ma w SHA256SUMS.txt partycji (pierwsza
+# wersja kontrolki N wywalila 'duchy' na docs/02:c9009d01…/62b688a8… i to kontrolka
+# byla zla, nie dokumenty: invariant 'suma w README wydania' nie dotyczy modutu).
+# Chcialbym 'kazda suma w kazdym dokumencie' - to wymaga indeksu artifactow, ktorego nie mam,
+# wole wiec waski, ale dzialajacy test niz szeroki, ktory trzeba wylaczac.
+if total_seen == 0:
+    # TO jest najwazniejsza linia tej kontrolki. Bez niej 'PASS' znaczyloby 'nic nie
+    # przeanalizowalem' - i tak wlasnie sie stalo: regex dopuszczal 8-16 znakow hex,
+    # a README cytuje 20, wiec zero linii sie zalapalo i test byl zielony przy
+    # nieaktualnych sumach (2026-09-23). Kontrola musi mowic, ile razy cos zobaczyla.
+    print("  BRACK: zadna suma nie zostala przeanalizowana - kontrola jest martwa, nie zielona")
+    ok=False
+else:
+    print(f"  (przeanalizowane sumy w dokumentach wydania: {total_seen})")
 sys.exit(0 if ok else 1)
 PYN
 then ok "dokumenty cytuja istniejace sumy"

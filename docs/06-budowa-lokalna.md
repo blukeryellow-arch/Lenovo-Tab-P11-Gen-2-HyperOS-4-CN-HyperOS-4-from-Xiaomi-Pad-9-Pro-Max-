@@ -473,3 +473,33 @@ sha256: product `298ada60…`, product `-full` `b4bb8064…`, system `5cf58995�
 `vbmeta_hyperos4_p11g2.img` ma **tę samą** sumę `9cf2e7e4…` i to jest poprawne: zawiera tylko
 Prop fingerprint (bez deskryptora HASHTREE), więc nic w niej nie zależy od treści partii — patrz
 `docs/07` sekcja F, gdzie prostuję własne wcześniejsze zdanie o „drzewie haszy dla producta".
+
+## 6.20 Trzeci raz ta sama patologia: kontrola, która nie mówi, ile razy coś sprawdziła
+
+Lista zdarzeń z jednego dnia, w których check istniał, był zielony i **nie patrzył na nic**:
+
+| # | co miało sprawdzać | dlaczego było martwe | jak sie wydalo |
+|---|---|---|---|
+| 1 | symlinki w `verify_image.sh` (sekcja D) | test szukał `ZGODNE` w `tail -3`; dołożenie bloku DAC wypchnęło tekst z okna | fail przy zdrowym obrazie (na szczęście *widać* było) |
+| 2 | sumy w dokumentach (`--real`) | regex `([0-9a-f]{8,16})…`, a README cytuje 20 znaków → zero linii dopasowanych | **PASS przy nieaktualnych sumach** — cicho |
+| 3 | ta sama kontrolka po raz pierwszy | `docs/*.md` poza invariantem (cytuje sha modułu `.apk`/`.zip`) | fail na dokumentach, które miały rację |
+
+Wypadek 2 jest najgroźniejszy z całej trójki, bo *nikt nic nie zobaczył*: nieaktualne
+`8dcc73f2…` i `498d85c4…` (product i system sprzed korekty DAC) świeciły w README, a kontrolka
+donosiła „dokumenty cytują istniejące sumy". Dlatego sekcja N ma dziś asercję, która nie dotyczy
+wyniku, tylko **wysokości zainteresowania**:
+
+```python
+if total_seen == 0:
+    print("  BRACK: zadna suma nie zostala przeanalizowana - kontrola jest martwa, nie zielona")
+    ok = False
+else:
+    print(f"  (przeanalizowane sumy w dokumentach wydania: {total_seen})")
+```
+
+Reguła, którą z tego zostawiam: **każda kontrola w tym projekta ma wydrukowac, ile elementow
+przejrzala** (`67 wpisów`, `2738 plikow skompresowanych`, `przeanalizowane sumy: 7`). Zero albo
+brak takiej liczby to wynik podejrzaney, nie sukces. Wersja testowa tej zasady: kontrola musi
+przechodzic **po wmieszaniu błędu** — i to jest jedyny sposób, żeby odróżnić „sprawdzone" od
+„nic nie było do sprawdzenia". `tools/test_release.sh` robi to dla weryfikatora (C, L, M3)
+i teraz także dla samej siebie (test negatywny N: wbitie `deadbeef…` daje FAIL, usuniecie — 0).
