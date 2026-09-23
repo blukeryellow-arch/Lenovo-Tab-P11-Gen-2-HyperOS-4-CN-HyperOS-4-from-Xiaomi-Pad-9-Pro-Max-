@@ -23,6 +23,9 @@ COMP=lz4; SYSTREE=''
 # EXCLUDE_FLAGS to flagi mkfs.erofs (--exclude-regex). To NIE jest filtr po naszej stronie:
 # drzewo zostaje nietkniete (notatki ida do gita i do dokumentacji), a do partycji nie wchodza.
 EXCLUDE_FLAGS=${EXCLUDE_FLAGS:-}
+# --allow-no-vbmeta WYLACZNIE do testow instalatora: pozwala zbudowac flash-all.sh bez
+# avbtoolu. Domyslnie brak vbmeta to FATAL (wydanie bez vbmeta nie istnieje) - i tak zostaje.
+ALLOW_NO_VB=0
 while [ $# -gt 0 ]; do
   case $1 in
     --selftest) SELFTEST=1; shift;;
@@ -36,6 +39,7 @@ while [ $# -gt 0 ]; do
     --compress) COMP=$2; shift 2;;
     --system-tree) SYSTREE=$2; shift 2;;
     --exclude-regex) EXCLUDE_FLAGS="$EXCLUDE_FLAGS --exclude-regex=$2"; shift 2;;
+    --allow-no-vbmeta) ALLOW_NO_VB=1; shift;;
     *) echo "nieznana opcja: $1" >&2; exit 3;;
   esac
 done
@@ -180,9 +184,15 @@ if [ -n "$AVB" ] && [ -f "$AVB" ] && [ -n "$KEY" ] && [ -f "$KEY" ]; then
     || die "avbtool make_vbmeta_image niezial"
   python3 "$AVB" info_image --image "$VB" 2>&1 | grep -E 'Flags|Algorithm|Public key|Rollback Index:' | sed 's/^/  /'
 else
-  say "  POMINIETE (brak --avb/--key) - bez vbmy nie da sie tego wgrac, to nie jest opcja"
+  say "  POMINIETE (brak --avb/--key) - bez vbmeta nie da sie tego wgrac, to nie jest opcja"
   say "  jak zbudowac: git clone --depth 1 https://github.com/LineageOS/android_external_avb.git"
-  [ $SELFTEST -eq 1 ] || die "potrzebuje avbtool i klucz"
+    if [ $ALLOW_NO_VB -eq 1 ]; then
+      : > "$OUT/vbmeta_hyperos4_p11g2.img"
+      say "  --allow-no-vbmeta: dolozony PUSTY vbmeta, zebys mogl przetestowac instalator."
+      say "  TO NIE JEST WYDANIE - na urzadzeniu taki plik znaczy brak sledzenia AVB i brak rollbacku."
+    elif [ $SELFTEST -ne 1 ]; then
+      die "potrzebuje avbtool i klucz (albo --allow-no-vbmeta, tylko do testow instalatora)"
+    fi
 fi
 
 # ----------------------------------------------------------------- 6/6 instalator

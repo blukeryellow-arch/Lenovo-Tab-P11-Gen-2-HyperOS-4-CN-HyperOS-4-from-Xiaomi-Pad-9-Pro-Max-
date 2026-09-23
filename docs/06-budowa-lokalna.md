@@ -290,3 +290,35 @@ istnieją (27 plików, 110 965 B). Konsekwencja jest odwrotna, niż myślałem: 
 własny `/product` **niczego nie przykrywam** — wariant lekki nie „kasuje" HyperOS-owego
 wyglądu, bo ten w `system` nigdy nie był; `--full` go dokładnie dokłada. Koszt pomiaru
 to dwie minuty, a koszt założenia — cały akapit do wyrzucenia.
+
+## 6.15 Dwie pozycje z `system`-owych życzeń jednak dostały treść — i jedna nie
+
+Pomiar (`diagnostics/product-refs.tsv`) mówił: `/product/etc/passwd` 6×, `/product/etc/group` 6×,
+`/product/etc/vintf/manifest.xml` 2× (i `/product/etc/vintf/manifest/` 2× jako katalog).
+Wcześniejsza decyzja brzmiała „nie da się bez paczki 6,4 GB". Fałsz dla dwóch z nich: te pliki
+w AOSP mają **z góry wiadomą treść**, nie treść od Xiaomi:
+
+```
+etc/passwd:  system:x:1000:1000:system:/none:/bin/false
+etc/group:   system:x:1000:
+```
+
+Dorzucone do obu wariantów. Efekt uboczny, którego nie oczekiwałem: **rozmiar obrazu ani drgnął**
+(77 619 200 B i 153 391 104 B), bo 58 B zmieściło się w blokach, które i tak były wolne; zmieniło
+się tylko sha256 (`16afbc35…` i `b28e1c0e…`). Weryfikacja 1:1: 67/67 i 147/147.
+
+`etc/vintf/manifest.xml` **świadamie pomijam** — i to jest cenniejsza decyzja niż dodanie:
+brak pliku jest dla `VintfObject` stanem normalnym (partycja bez manifestu = zero nownych
+żądań), a plik *sformatowany o włos źle* albo *deklarujący coś, co już jest ogłoszone* to
+inny ciężar gatunkowy. Pierwsza wersja, którą napisałem, miała być „pusta", a zawierała
+`android.hidl.manager` — czyli dokładała deklarację HAL-a i mogła dać `multiple instances`
+w assemblingu. Asymetria ryzyka jest tu pełna: zysk = usunięcie odwołania, ktore i tak jest
+opcjonalne; strata = boot, ktorego nie da się zdiagnoszowac bez serialu. Wiec: nie.
+
+Nie dorzucam rowniez `etc/selinux/product_*.contexts` ani `etc/aconfig_flags.pb` w wersji
+„zapasowej, puste pliki". Pierwsze musialyby miec **wlasciwe etykiety SELinux** (te
+rezultuja z `file_contexts` urzadzenia, nie z mojego widzimisię) i realna treść policy — pusty
+plik w tym miejscu nie jest „mniejszym złem", jest nowym stanem, ktorego nikt nie testował;
+drugie to protobuf z flagami czasu uruchomienia, ktorego zgadywanie zmieniłoby zachowanie
+frameworku. Oba sa do wziecia TYLKO z prawdziwego `product.img` — `tools/enrich_product.sh`
+do tego sluzzy i ma to w opisie.

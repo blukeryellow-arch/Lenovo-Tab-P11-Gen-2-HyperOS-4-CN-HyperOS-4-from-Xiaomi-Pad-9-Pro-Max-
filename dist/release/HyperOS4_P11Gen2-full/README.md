@@ -9,7 +9,7 @@ drzewo katalogow z `staging/product/overlay`, bo to one daja „HyperOS Look", a
 samymi bajtami** co w wariancie lekkim — te same sha256, ten sam UUID, ta sama budowa:
 
 ```
-product  f801945b295b253c…   (153 391 104 B, 144/144 wpisy 1:1)
+product  b28e1c0eb0c769cd…   (153 391 104 B, 147/147 wpisow 1:1)
 system   36238fac308fb674…   (967 507 968 B, 4 565/4 565 wpisow 1:1)
 vbmeta   9cf2e7e4e165687a…   (Flags: 3, rollback_index 0)
 ```
