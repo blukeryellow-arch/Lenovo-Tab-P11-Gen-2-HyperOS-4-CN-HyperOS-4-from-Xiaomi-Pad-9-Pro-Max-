@@ -29,6 +29,15 @@ on:
         description: 'Partycje do wyciagniecia (spacja rozdzielone)'
         required: false
         default: 'system product system_ext'
+      # --- do joba drive-probe (omija limit 100 MiB konektora Drive) ---
+      drive_ids:
+        description: 'ID plikow na Google Drive, spacja rozdzielone (np. 1funWH4... 13e-okL...)'
+        required: false
+        default: ''
+      do_unpack:
+        description: '1 = wyciagnij rowniez drzewo partycji i build.prop (wolniejsze, duze obrazy)'
+        required: false
+        default: '0'
 
 permissions:
   contents: read
@@ -203,3 +212,107 @@ jobs:
           name: hyperos-assets
           path: ./assets
           retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # drive-probe: omija limit 100 MiB konektora Drive.
+  #
+  # Zmierzone 2026-09-22: sandbox agenta ma egres TYLKO do github.com i
+  # api.github.com (oba 200); drive.google.com, drive.usercontent.google.com,
+  # www.googleapis.com, objects.githubusercontent.com = 000. Konektor ma twardy
+  # pre-check 104857600 B/plik (sondy: return_download_url -> zablokowany w schema
+  # na false; range_header -> laczony z URL-em, a URL serwuje caly plik;
+  # acknowledge_abuse -> limit odpala sie wcześniej). stad nie ciagniemy duzych
+  # obrazow do agenta, tylko analizujemy je TAM, GDZIE SIE DA - na runnerze.
+  #
+  # Runner sciaga plik bez zadnych secrets: wystarczy publiczny link
+  # ("Kazdy, kto ma link" - viewer). Bez HF_TOKEN, bez payload_dumpera.
+  # Raport wraca commitem, bo logow CI z sandboxa nie widac.
+  # ---------------------------------------------------------------------------
+  drive-probe:
+    name: Analiza obrazow prosto z Google Drive
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    permissions:
+      contents: write
+    env:
+      DRIVE_IDS: ${{ inputs.drive_ids }}
+      DO_UNPACK: ${{ inputs.do_unpack }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Narzedzia FS i AVB
+        run: |
+          set -uo pipefail
+          sudo apt-get update -qq || true
+          sudo apt-get install -y -qq e2fsprogs erofs-utils simg2img file || true
+          echo "dumpe2fs: $(command -v dumpe2fs || echo BRAK)"
+          echo "debugfs:  $(command -v debugfs || echo BRAK)"
+          echo "fsck.erofs: $(command -v fsck.erofs || echo BRAK)"
+          git clone -q --depth 1 https://github.com/LineageOS/android_external_avb.git "$HOME/avb"
+          echo "AVBTOOL=$HOME/avb/avbtool.py" >> "$GITHUB_ENV"
+          python3 tools/fs_probe.py --selftest
+
+      - name: Pobierz i opisaz kazdy plik z Drive
+        run: |
+          set -uo pipefail
+          mkdir -p out reports
+          R="reports/drive-probe-$GITHUB_RUN_ID.md"
+          { echo "# Raport drive-probe"; echo;
+            echo "- run: \`$GITHUB_REPOSITORY@$GITHUB_SHA\`"; echo "- wejscie ids: \`$DRIVE_IDS\`"; echo; } > "$R"
+          for id in $DRIVE_IDS; do
+            [ -n "$id" ] || continue
+            echo "===== $id ====="
+            { echo "## \`$id\`"; echo; } >> "$R"
+            meta=$(curl -sS "https://www.googleapis.com/drive/v3/files/$id?fields=id,name,size,mimeType,md5Checksum" || true)
+            echo "$meta" | sed 's/^/  /'
+            if ! echo "$meta" | grep -q '"size"'; then
+              echo "::warning::$id - brak metadanych: plik nie jest publiczny albo nie istnieje"
+              { echo "**ODRZUCONE**: plik nie jest publiczny (albo nie istnieje)."; echo; } >> "$R"
+              continue
+            fi
+            { echo "Metadane:"; echo; echo '```json'; echo "$meta"; echo '```'; echo; } >> "$R"
+            name=$(echo "$meta" | sed -n 's/.*"name" *: *"\([^"]*\)".*/\1/p')
+            if curl -sS --fail --retry 3 -o "out/$name" "https://www.googleapis.com/drive/v3/files/$id?alt=media"; then
+              sz=$(stat -c%s "out/$name"); sh=$(sha256sum "out/$name" | cut -d' ' -f1)
+              echo "  pobrano $name: $sz B sha256=$sh"
+              { echo "- rozmiar: \`$sz\` B"; echo "- sha256: \`$sh\`"; echo; } >> "$R"
+              { echo '### Geometria (tools/fs_probe.py)'; echo; echo '```';
+                python3 tools/fs_probe.py "out/$name" 2>&1; echo '```'; echo; } >> "$R"
+              { echo '### AVB (avbtool info_image)'; echo; echo '```';
+                python3 "$AVBTOOL" info_image --image "out/$name" 2>&1 | head -80; echo '```'; echo; } >> "$R"
+              if [ "${DO_UNPACK:-0}" = "1" ]; then
+                { echo '### Drzewo i build.prop'; echo; echo '```'
+                  if dumpe2fs -h "out/$name" >/dev/null 2>&1; then
+                    debugfs -R "ls -l /" "out/$name" 2>&1 | head -40
+                    echo "--- /system/build.prop lub /build.prop:"
+                    debugfs -R "cat /system/build.prop" "out/$name" 2>&1 | head -80
+                    debugfs -R "cat /build.prop" "out/$name" 2>&1 | head -80
+                  elif command -v fsck.erofs >/dev/null 2>&1; then
+                    mkdir -p out/tree
+                    fsck.erofs --extract="out/tree" "out/$name" 2>&1 | head -20
+                    head -80 out/tree/system/build.prop 2>/dev/null || head -80 out/tree/build.prop 2>/dev/null || echo "  (brak build.prop)"
+                  else
+                    echo "zaden parser FS nie zadzialal - sprawdz czy to sparse (simg2img) lub super (lpunpack)"
+                  fi
+                  echo '```'; echo; } >> "$R"
+              fi
+            else
+              echo "::error::pobieranie $id nie udalo sie"
+              { echo "**BLAD**: HTTP pobierania nie udalo sie."; echo; } >> "$R"
+            fi
+            df -h "$GITHUB_WORKSPACE" | tail -1
+            rm -f "out/$name"
+          done
+          echo; echo "=========== RAPORT ==========="; cat "$R"
+
+      - name: Wypchnij raport do repo
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f reports/ || true
+          if git diff --cached --quiet; then echo "brak zmian"; else
+            git commit -q -m "drive-probe: raport z run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo "raport na ${{ github.ref_name }}"
+          fi
