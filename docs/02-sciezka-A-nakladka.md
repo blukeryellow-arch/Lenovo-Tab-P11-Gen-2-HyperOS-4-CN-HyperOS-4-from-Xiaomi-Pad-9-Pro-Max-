@@ -119,3 +119,44 @@ Ta gwarancja nie istnieje na zadnym sprzecie - jest tylko prawdopodobienstwo
 kupowane wiedza o buildzie. Na tym etapie (modul, zero zmian partycji)
 prawdopodobienstwo jest wysokie wlasnie dlatego, ze nie ma czego zepsuc:
 `vendor`, kernel i tablica partycji pozostaja stockowe.
+
+## Etap 4b (2026-09-23, zmierzone na plikach) — dlaczego sam RRO nie wystarczy
+
+Odczytałem podpisy APK-ów ze źródła (`unzip -p … META-INF/CERT.RSA | openssl x509 -fingerprint -sha256`):
+
+| plik | certyfikat (sha256) |
+|---|---|
+| `system/framework/framework-res.apk` (20 982 848 B) | `c9009d01ebf9f5d0302bc71b2fe9aa9a47a432bba17308a3111b75d7b2149025` (X=Miui) |
+| `vendor_mystical/overlay/WifiResOverlay.apk` | `c9009d01ebf9…` — ten sam klucz MIUI |
+| `vendor_mystical/overlay/*__auto_generated_rro_vendor.apk` | `d45f076fe23a1a5b7f486e3ff41547a2023dbfe1fe73353b1e48ebdfed72cc6f` |
+
+Żaden z nich to nie jest AOSP testkey. Wymuszenie podpisu nakładek (Android 11+) porównuje
+klucz RRO z kluczem nakładanego pakietu, a na tablecie tym pakietem jest `android` z frameworku
+Lenovo/GSI. Czyli **skopiowanie `product/overlay/*.apk` HyperOS na ten tablet skutkuje cichym
+odrzuceniem nakładek** — nie komunikatem błędu, tylko brakiem zmiany wyglądu. Stąd w playbooku
+`--debug-key` (przepodpisanie własnym kluczem), a nie „wgrać i mieć spokój".
+
+## Etap 4c — to, co działa bez podpisu: fonty
+
+Fonty to pliki, nie pakiety APK, więc żadnego wymuszenia podpisu nie przechodzą. Zbudowałem
+generator modułu na podstawie realnych plików źródłowych:
+
+```bash
+# 1) po ściągnięciu paczki assetów z 'product' (tools/pull_spool.sh all):
+tar xzf images/<product-assets>.tar.gz -C /tmp/prod ./product/fonts ./fonts
+# 2) moduł:
+tools/make_font_module.sh --fonts /tmp/prod/fonts --out /tmp/mod --family MiSans
+# 3) ZIP dla Magiska (walidowany: module.prop w korzeniu + CRC):
+tools/pack_module.sh /tmp/mod /tmp/hyperos4_fonts_p11g2.zip
+```
+
+Trzy rzeczy, które ten generator naprawia względem „skopiuj pliki":
+
+- w źródle `/system/fonts/MiSans*.ttf` to **symlinki** do `/product/fonts/…` (21 takich w samej
+  paczce `system`), więc bez `product` nie ma żadnych bajtów do skopiowania;
+- `/system/etc/fonts.xml` źródła to symlink do `/data/system/fonts/theme_webview/fonts.xml`
+  (motyw Xiaomi) — kopiowanie tego na tablet dałoby odwołania do nieistniejących ścieżek,
+  dlatego plik jest **generowany**, a rodzice dobierają się tylko z plików realnie w module;
+- `FontListParser` przyjmuje `<family>` wyłącznie z `name` albo `lang`; fonty bez rozpoznawalnego
+  skryptu są **odrzucane z listy** (w teście na 206 prawdziwych plikach: 110 odpada), zamiast
+  trafić do nieważnej rodziny, którą parser i tak by pominął.

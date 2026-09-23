@@ -23,3 +23,4 @@ sa pobierane, i `make_private` zaraz po nim. Kazdorazowo weryfikowane przez
 `list_permissions` (ma zostac tylko 'owner').
 etap 4/5: VINTF + budowa ROM-u gotowe i wpiete w workflow (rom_build: 1)
 etap 5/5: pack_module.sh (walidacja zipa Magisk) - testy 3 tryby sciezek + 2 ujemne
+etap 5/5: flash.sh z rozrozneniem bootloader/fastbootd (genereowany heredokiem, 79 linii, skladnia OK)
