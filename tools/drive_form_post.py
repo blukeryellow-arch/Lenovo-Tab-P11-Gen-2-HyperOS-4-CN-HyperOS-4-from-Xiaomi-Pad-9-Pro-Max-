@@ -144,9 +144,9 @@ def selftest():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--html', required=True)
+    ap.add_argument('--html')
     ap.add_argument('--jar')
-    ap.add_argument('--out', required=True)
+    ap.add_argument('--out')
     ap.add_argument('--id', default='')
     ap.add_argument('--log')
     ap.add_argument('--selftest', action='store_true')
@@ -154,6 +154,9 @@ def main():
     a = ap.parse_args()
     if a.selftest:
         return selftest()
+    if not a.html or not a.out:
+        print("--html i --out sa wymagane (poza --selftest)", file=sys.stderr)
+        return 2
 
     try:
         html = open(a.html, encoding='utf-8', errors='replace').read()
