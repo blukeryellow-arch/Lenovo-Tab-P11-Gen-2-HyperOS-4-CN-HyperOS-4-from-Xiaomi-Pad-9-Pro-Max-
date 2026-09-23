@@ -1,17 +1,29 @@
+
+!docs/**/*.png
 # generowane - budowane w CI, nie w gicie
-modules/hyperos-look/system/product/overlay/*.apk
-modules/hyperos-look/staging/
-*.tar.gz
-unpacked/
-assets/
-input/
+# sciagniete z Google Drive - obrazy urzadzenia, nie trzymamy ich w gicie
+# zawartosc sciagnieta z GitHuba (skladanka >700 MB) - nie do gita
 *.img
 *.png
-!docs/**/*.png
+*.tar.gz
 .DS_Store
 __pycache__/
-# sciagniete z Google Drive - obrazy urzadzenia, nie trzymamy ich w gicie
+assets/
 google_drive/
-
-# zawartosc sciagnieta z GitHuba (skladanka >700 MB) - nie do gita
+hyperos4_fonts_p11g2.zip
 images/
+input/
+modules-build/
+modules/hyperos-look/staging/
+modules/hyperos-look/system/product/overlay/*.apk
+parts/
+rom/
+staging/
+unpacked/
+
+# deliverable, ktore MA byc w gicie (mimo wzorcow *.img / *.tar.gz wyzej)
+!dist/rom-kit/vbmeta_hyperos4_p11g2.img
+!dist/rom-kit/flash.sh
+!dist/rom-kit/SHA256SUMS.txt
+!dist/modules/*.zip
+!dist/modules/SHA256SUMS.txt

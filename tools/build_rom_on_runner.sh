@@ -105,23 +105,45 @@ done
 say "  wygenerowanych plikow: $made; teraz w partycji: $(ls "$V" | grep -c compatibility_matrix)"
 
 say "--- 3/5  przebudowa EROFS"
+  # pliki .komentarz.txt to dokumentacja generatora - nie moga ladowac sie do partycji
+  nk=$(find "$TREE" -name '*.komentarz.txt' | wc -l); find "$TREE" -name '*.komentarz.txt' -delete 2>/dev/null
+  say "  usuniete z drzewa plikow .komentarz.txt: $nk"
 NEWIMG="$OUT/system_hyperos4_p11g2.img"
 if [ "${SKIP_IMAGE:-0}" = "1" ]; then
   say "  POMINIETE: brak erofs-utils w tym srodowisku (tryb testowy)."
   NEWIMG=""
 else
-  # -z lz4 (nie zstd): kernel 5.10 targetu ma EROFS z lz4, a zstd bywa bez CONFIG_EROFS_ZSTD
-  if mkfs.erofs -zlz4 -O fragment,lz4,decompose --all-root -T 0 -U 67b7eb22-3ebb-4c21-8b01-8ff545f10d8d \
-       "$NEWIMG" "$TREE" >>"$LOG" 2>&1; then
-    say "  mkfs.erofs OK: $(stat -c%s "$NEWIMG") B"
-  else
-    say "  wariant z opcjami nie wszedl - probujemy domyslnie"
-    if mkfs.erofs "$NEWIMG" "$TREE" >>"$LOG" 2>&1; then
-      say "  mkfs.erofs (domyslnie) OK: $(stat -c%s "$NEWIMG") B"
-    else
-      say "FATAL: mkfs.erofs padl - patrz $LOG"
-      exit 6
+  # Nie zgadujemy flag: kazdy zestaw jest najpierw PROBOWANY na malej sonde-katalogu,
+  # bo 'mkfs.erofs' rozniami opcje miedzy wersjami ('-O fragment' vs 'fragments',
+  # '--all-root' bywa nieznane), a blad opcji przy 1,3 GB drzewa kosztuje caly bieg.
+  probe="$OUT/.probe"; rm -rf "$probe"; mkdir -p "$probe/a/b"
+  printf 'x' > "$probe/a/f1"; printf 'yy' > "$probe/a/b/f2"
+  PICK=""
+  for opt in "-zlz4 -O fragment,lz4,decompose --all-root -T 0" "-zlz4 -T 0" "-T 0" ""; do
+    rm -f "$OUT/.probe.img"
+    # shellcheck disable=SC2086
+    if mkfs.erofs $opt "$OUT/.probe.img" "$probe" >>"$LOG" 2>&1 && [ -s "$OUT/.probe.img" ]; then
+      # walidacja sondy: jezeli jest fsck.erofs, niech potwierdzi strukture
+      if command -v fsck.erofs >/dev/null 2>&1; then
+        fsck.erofs "$OUT/.probe.img" >>"$LOG" 2>&1 || { say "    (sonda $opt: fsck.erofs gwizdzie - odpuszczam ten wariant)"; continue; }
+      fi
+      PICK=$opt; break
     fi
+  done
+  rm -rf "$probe" "$OUT/.probe.img"
+  if [ -z "$PICK" ]; then
+    say "FATAL: ZADEN zestaw flag mkfs.erofs nie przeszedl sondy - nie lece w ciemno"
+    exit 6
+  fi
+  say "  sonda wybrala: mkfs.erofs ${PICK:-<bez opcji>} -UUID"
+  # shellcheck disable=SC2086
+  if mkfs.erofs $PICK -U 67b7eb22-3ebb-4c21-8b01-8ff545f10d8d "$NEWIMG" "$TREE" >>"$LOG" 2>&1; then
+    say "  mkfs.erofs OK: $(stat -c%s "$NEWIMG") B"
+  elif mkfs.erofs "$NEWIMG" "$TREE" >>"$LOG" 2>&1; then
+    say "  mkfs.erofs (bez opcji, awaryjnie) OK: $(stat -c%s "$NEWIMG") B"
+  else
+    say "FATAL: mkfs.erofs padl na wlasciwym drzewie - patrz $LOG"
+    exit 6
   fi
   # upewnij sie, ze NIE ma AVB footera (nie chcielibyssmy miec 2 niezgodnych opisow)
   sz=$(stat -c%s "$NEWIMG")
@@ -204,8 +226,13 @@ case "$PROD" in
 esac
 
 echo "== 1. kopia zapasowa obecnej vbmeta (to jest Twoj rollback AVB)"
-fb fetch vbmeta_a vbmeta_obecna_a.img 2>/dev/null && echo "  zapisano vbmeta_obecna_a.img" \
-  || echo "  fetch nie udany - rollback = 3 pliki Lenovo z Dysku (ID w diagnostics/drive-inventory.tsv)"
+# Oba sloty, nie tylko a: przy current-slot=b urzadzenie weryfikuje vbmeta_b, a 25-liniowy
+# flash.sh z biegu 35897100768egral/wgrywal tylko vbmeta_a -> stajacy device bez komunikatu.
+for sfx in a b; do
+  fb fetch "vbmeta_$sfx" "vbmeta_obecna_$sfx.img" 2>/dev/null \
+    && echo "  zapisano vbmeta_obecna_$sfx.img" \
+    || echo "  fetch vbmeta_$sfx nie udany - rollback = 3 pliki Lenovo z Dysku (diagnostics/drive-inventory.tsv)"
+done
 
 echo "== 2. tryb fastbootd (potrzebny do partycji w super)"
 USER=$(fb getvar is-userspace 2>&1 | tr -d $'\r' | sed -n 's/^is-userspace: *//p')
@@ -239,7 +266,7 @@ echo "  framework inny niz poprzedni -> bez wipe /data typowa reakcja to boot lo
 read -r -p "  Usunac /data (usuwa wszystko z tableta)? [t/N] " a
 case "$a" in
   t|T|tak|TAK) fb erase userdata && echo "  userdata wykasowane";;
-  *) echo "  bez wipe - jesli urzadzenie wejdzie w petle, wróc tu i wykonaj erase userdata";;
+  *) echo "  bez wipe - jesli urzadzenie wejdzie w petle, wrc tu i wykonaj erase userdata";;
 esac
 
 echo "== 5. reboot"
@@ -261,5 +288,11 @@ FLASH
 chmod +x "$OUT/flash.sh"
 ( cd "$OUT" && sha256sum $(ls | grep -v SHA256SUMS) > SHA256SUMS.txt 2>/dev/null ) || true
 sed 's/^/  /' "$OUT/SHA256SUMS.txt" 2>/dev/null | tee -a "$LOG"
+# Sumy NA KONCU: BUILD_LOG.txt jest dopisywany rownolegle, wiec policzone wczesniej
+# SHA256SUMS.txt dawalo BUILD_LOG.txt: FAILED przy sha256sum -c (zaobserwowane w tym biegu).
 du -sh "$OUT" | sed 's/^/  rozmiar OUT: /' | tee -a "$LOG"
 [ -n "$NEWIMG" ] && say "=== BUDOWA ZAKONCZONA: $NEWIMG + $VB ===" || say "=== TRYB TESTOWY: vbmeta + MISMATCH + flash.sh (bez obrazu EROFS) ==="
+# BUILD_LOG.txt jest wykluczony swiadomie: jest dopisywany takze PO tym kroku (kady
+# say), wiec jego suma nigdy nie bylaby stabilna - to nie blad, to wlasciwosc logu.
+( cd "$OUT" && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt ! -name BUILD_LOG.txt -printf '%P\n' | sort | xargs -r sha256sum > SHA256SUMS.txt ) || true
+say "  SHA256SUMS.txt (na koncu): $(wc -l < "$OUT/SHA256SUMS.txt") pozycji"

@@ -17,6 +17,7 @@ Zasady, ktore tu siedza (wszystkie wyprowadzone z pomiarow, nie z opisow):
 """
 import os
 import re
+import struct
 import sys
 import glob
 import shutil
@@ -78,6 +79,56 @@ def scan(src):
     return out
 
 
+
+def coverage(path):
+    """(liczba_kodow, czy_lacina, czy_CJK) z cmap. None jesli plik nie jest sfnt.
+
+    Po co: w HyperOS 4 w product/fonts obok pelnego MiSansVF.ttf (20 MB, 29 572
+    kodow, 20 976 CJK) leza 'LatinVF' (1 337 kodow, CJK=0) i 'MiSerif.ttf'
+    (14 kodow - zakladka demo). Generator sortowal po nazwie i wybral LatinVF
+    jako sans-serif, a MiSerif jako serif: UI bez chińskich glifow w rodzinie
+    podstawowej. Pomiar cmap jest rozstrzygajacy, nazwa nie (2026-09-23)."""
+    try:
+        d = open(path, 'rb').read()
+    except OSError:
+        return None
+    if d[:4] not in (b'\x00\x01\x00\x00', b'OTTO', b'true', b'ttcf'):
+        return None
+    try:
+        n, = struct.unpack_from('>H', d, 4)
+        off_cmap = None
+        for i in range(n):
+            tag = d[12 + i * 16:16 + i * 16]
+            o, _ = struct.unpack_from('>II', d, 20 + i * 16)
+            if tag == b'cmap':
+                off_cmap = o
+        if off_cmap is None:
+            return (0, False, False)
+        rc, = struct.unpack_from('>H', d, off_cmap + 2)
+        cps = set()
+        for i in range(rc):
+            _, _, so = struct.unpack_from('>HHI', d, off_cmap + 4 + i * 8)
+            fmt, = struct.unpack_from('>H', d, off_cmap + so)
+            if fmt == 4:
+                seg2, = struct.unpack_from('>H', d, off_cmap + so + 6)
+                sc = seg2 // 2
+                ends = [struct.unpack_from('>H', d, off_cmap + so + 14 + j * 2)[0] for j in range(sc)]
+                starts = [struct.unpack_from('>H', d, off_cmap + so + 16 + seg2 + j * 2)[0] for j in range(sc)]
+                for a, b in zip(starts, ends):
+                    if b > a:
+                        cps.update(range(a, min(b, 0xFFFF) + 1))
+            elif fmt == 12:
+                ng, = struct.unpack_from('>I', d, off_cmap + so + 12)
+                for j in range(ng):
+                    a, b, _ = struct.unpack_from('>III', d, off_cmap + so + 16 + j * 12)
+                    cps.update(range(a, min(b, 0x10FFFF) + 1))
+        lat = any(0x41 <= c <= 0x7A for c in cps)
+        cjk = any(0x4E00 <= c <= 0x9FFF for c in cps)
+        return (len(cps), lat, cjk)
+    except (struct.error, IndexError):
+        return None
+
+
 def build(src, out, family='MiSans', primary='', maxf=48):
     cand = scan(src)
     print(f"  plikow ze sygnatura fontu: {len(cand)} (katalog: {src})")
@@ -96,9 +147,13 @@ def build(src, out, family='MiSans', primary='', maxf=48):
         script = any(k.lower() in n.lower() for k in SCRIPTY)
         latin = ('Latin' in n) or ('Roman' in n)
         plain = bool(re.search(r'(Regular|Medium|Semibold|Bold|Light|Thin|Book)', n, re.I))
-        return (1 if script and not latin else 0, 0 if latin else 1, 0 if plain else 1,
+        cv = coverage(c[0]) or (0, False, False)
+        # 'pelny font' = ma i lacine, i CJK, i >= 5000 kodow. To jest glowne kryterium
+        # sans-serif, a nie napis 'Latin' w nazwie (patrz docstring coverage()).
+        pelny = 0 if (cv[1] and cv[2] and cv[0] >= 5000) else 1
+        return (1 if script and not latin else 0, pelny, 0 if plain else 1,
                  {400: 0, 500: 1, 600: 2, 700: 3, 300: 4, 100: 5, 900: 6}.get(wt(n), 7),
-                 0 if not isitalic(n) else 1, n)
+                 0 if not isitalic(n) else 1, -cv[0], n)
     fam_pool.sort(key=rank)
     if primary:
         pp = [c for c in fam_pool if c[1] == primary]
@@ -119,11 +174,25 @@ def build(src, out, family='MiSans', primary='', maxf=48):
         return None
 
     prim4 = pick(pool, 400) or pool[0]
+    cv4 = coverage(prim4[0])
+    if cv4 and cv4[0] < 2000:
+        print(f'  AWARIA: sans-serif mialby byc {prim4[1]} z {cv4[0]} kodami - szukam pelniejszego')
+        lepszy = [c for c in pool if (coverage(c[0]) or (0,))[0] >= 5000]
+        if lepszy:
+            prim4 = lepszy[0]
+            print(f'  naprawione: sans-serif = {prim4[1]} ({coverage(prim4[0])[0]} kodow)')
     prim4i = pick(pool, 400, True)
     prim7 = pick(pool, 700)
     mono = next((c for c in cand if has(c[1], 'CutiveMono', 'DroidSansMono', 'RobotoMono',
                                        'JetBrains', 'monospace')), prim4)
-    serif = next((c for c in cand if 'serif' in c[1].lower() and not has(c[1], 'sans')), prim4)
+    def godny(c, min_kodow=400):
+        cv = coverage(c[0])
+        return cv is None or cv[0] >= min_kodow
+    serif = next((c for c in cand if 'serif' in c[1].lower() and not has(c[1], 'sans')
+                  and godny(c)), None)
+    if serif is None:
+        print('  UWAGA: serif pominiety - zadny kandydat nie ma godziwego pokrycia cmap'
+              ' (MiSerif.ttf w HyperOS to 14 kodow, nie rodzina) - zostaje font systemowy')
     main = {'sans-serif': [c for c in (prim4, prim4i, prim7) if c],
             'serif': [c for c in (serif,) if c and c[0] != prim4[0]],
             'monospace': [c for c in (mono,) if c and c[0] != prim4[0]]}

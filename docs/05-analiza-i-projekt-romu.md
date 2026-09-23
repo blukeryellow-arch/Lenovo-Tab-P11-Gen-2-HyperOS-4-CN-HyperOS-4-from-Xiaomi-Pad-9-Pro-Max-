@@ -54,6 +54,18 @@ Drugi pomiar, najważniejszy dla oceny ryzyka: `tools/vintf_diff.py` na najniżs
 dostępnej macierzy (`202404`, level 6) zwraca **84 pozycje HAL, w tym 0 z flagą
 `optional`** (`grep -c '<optional>'` = 0 we wszystkich pięciu plikach). Struktura:
 **0 HIDL / 83 AIDL**. Vendor epoki A12 nie ma tych interfejsów w ogóle (AIDL-owe
+
+**Korekta liczb po naprawie samego narzędzia** (2026-09-23): na całym zestawie sześciu
+plików `vintf_diff.py` zwraca **400 pozycji obowiązkowych**, nie 412 — wczesniej liczył
+też `device.xml`/`manifest.xml` jako wymagania, bo filtrował po nazwie pliku zamiast po
+korzeniu dokumentu; dodatkowo `optional` było liczono jako `False and opt`, więc każde
+oznaczenie w pliku ignorowano. Naprawione.
+
+Test zwierciadlany (bez niego nie ufałbym własnemu narzędziu): macierz level 5 wygenerowana
+przez `make_level_matrix.py` i *zmiękczona pod konkretny manifest vendor* vs ten sam manifest
+daje **0 braków obowiązkowych (“VINTF SPOJNE”)**; ta sama miękka macierz vs vendor źródła
+daje 4 braki, a wersja strict vs vendor źródła 53 braki i vs symulowany vendor A12 70 braków.
+Czyli: generowanie otwiera bramkę `init` dokładnie wtedy, kiedy twierdzę, że ją otwiera.
 `audio.core`, `health`, `power`, `thermal`, `dumpstate`, `gatekeeper` weszły później).
 Czyli otwarcie bramki init nie jest tożsame z bootem do pulpitu.
 
@@ -115,11 +127,59 @@ policzyłem po złożeniu części).
    `*/etc/permissions`, a `product/app|priv-app` zostały wyrzucone (apk HyperOS bez usług
    MIUI nie wstaną, a budżet transferu to 2 GB/push).
 
-## 5.6 Stan biegu (żeby kolejne zdanie nie powtarzało logów CI)
+## 5.6 Stan biegów (żeby kolejne zdanie nie powtarzało logów CI)
 
-Bieg zbiorczy `35894152349`: cztery obrazy HyperOS w trybie `do_unpack: 1` z allowlistą,
-`max_total: 1 900 000 000`, kolejność male→duże. Po jego zamknięciu: `tools/pull_spool.sh all`
-→ `parts/`, weryfikacja md5 względem inwentarza, `make_private` ×4 i kontrola
-`list_permissions`. Bieg ROM-u (`rom_build: 1` na `system.img`) startuje **po** nim —
-dwa biegi na jednej gałęzi `transfer-spool` rywalizowałyby o force-push i jeden by
-zgubił drzewo zakresów.
+Zamknięte: `35894152349` (4 obrazy, allowlistą, `max_total: 1 900 000 000`),
+`35896026438` (padł: brak `simg2img`, nazwy z Drive puste, straż miejsca odcinała `product`),
+`35897100768` (**dane zebrane**: `product` 134 808 062 B, `rom-kit.tar.gz` 1 425 601 570 B,
+`rom-docs` 30 452 B, `odm` 6317 B, `system` 72 809 115 B — te dwie ostatnie tylko jako
+wpis w manifeście, patrz niżej). Protokół po każdym biegu: `tools/ingest_run.sh` (albo
+ręcznie `git archive` ze spoolu) → weryfikacja sum → `bash tools/pull_spool.sh wipe` →
+`make_private` + kontrola `list_permissions`.
+
+Dwa biegi na tej samej gałęzi `transfer-spool` rywalizują o force-push, więc ROM-start jest
+po dowiezieniu assetów, nigdy równolegle.
+
+## 5.7 Co zmierzyłem na zbudowanym ROM-ie (nie na opisie skryptu)
+
+Obraz `system_hyperos4_p11g2.img`: **1 376 899 072 B**, sygnatura EROFS `0xe0f5e1e2` pod
+offsetem 1024, suma sha256 zgodna z tą, którą zapisał runner (`sha256sum -c` w kieszeni kitu:
+pozycje `system_hyperos4_p11g2.img`, `vbmeta_hyperos4_p11g2.img`, `flash.sh`, `MISMATCH.md` = `OK`, a `BUILD_LOG.txt` = `FAILED` z powodu usterki nr 1 poniżej). Sonda flag w `tools/build_rom_on_runner.sh` odrzuciła `-O fragment…`
+(`mkfs.erofs 1.9.4-g1c230a48` nie zna tej opcji) i zeszła na wariant bez kompresji — dzięki
+temu pliki w obrazie da się odnaleźć w surowych bajtach:
+
+- marker `wygenerowane przez tools/make_level_matrix.py`: **3 wystąpienia**,
+- atrybuty `level="4"`, `level="5"`, `level="6"`: po **1** każdemu → wstrzyknięte macierze
+  faktycznie weszły do partycji, a nie tylko do katalogu tymczasowego budowania.
+
+Cały blok bajtów pojedynczej macierzy nie leży w obrazie ciągiem (EROFS upakował małe pliki
+we fragmenty wymieszane z innymi) — dlatego dowód opieram na markerze i atrybutach, a nie na
+szukaniu kontenera pliku.
+
+`vbmeta_hyperos4_p11g2.img` (4096 B) odczytana `avbtool info_image`: `Algorithm: SHA256_RSA2048`,
+**`Flags: 3`** (verification + hashtree wyłączone), key `cdbb77177f731920bbe0a0f94f84d9038ae0617d`
+= dokładnie ten klucz, którym podpisana jest fabryczna vbmeta TB350FU, oraz prop
+`com.android.build.system.fingerprint = hyperos4.p11g2.experiment`. To jest minimalny zestaw
+potrzebny, żeby fastboot przyjął obraz bez `verity`.
+
+Dwa błędy warsztatu znalezione dopiero na prawdziwym kicie (i naprawione):
+
+1. `SHA256SUMS.txt` był liczony **przed** dopisaniem ostatnich linii do `BUILD_LOG.txt`, więc
+   `sha256sum -c` na nim krzyczał. Sumy są teraz liczone na końcu, a `BUILD_LOG.txt` jest z nich
+   **świadomie wyłączony** (log urasta, dopóki żyje krok budowania) — to nie błąd weryfikacji, tylko właściwość logu.
+2. Kit zawierał `system_tree/` (1,3 GB rozpakowanego źródła) obok właściwego obrazu, bo
+   `tar czf … -C rom .` nie miał `--exclude`. Paczka miała 1,43 GB zamiast ~0,9 GB i zużywała
+   limit 2 GB/push na bezwartościowy ciężar.
+
+Pojawił się też niecodzienny drobiazg: **kit zamroził starszy `flash.sh`**. Bieg `35897100768`
+startował z `fcf056d`, a wersja z rozpoznaniem slotów i fastbootd weszła w `52f06bd` — czyli
+**po** starcie. W efekcie `SHA256SUMS.runner.txt` opisuje plik 25-liniowy, który wgrawał
+`vbmeta` tylko na slot `a`. Przy `current-slot: b` to flashowanie jest „udane", a urządzenie nie
+wstaje, bo weryfikuje `vbmeta_b`. W `dist/rom-kit/` leży zregenerowana wersja (84 linie) z
+backupem i flashem **obu** slotów, a sekwencję sprawdziłem na atrapie `fastboot`
+(`dist/rom-kit/README.sumy.md`) — nie na urządzeniu. Lekcja dla kanału: kit jest zamrożony w
+momencie startu biegu, więc każdy commit narzędziowy po starcie wymaga nowego biegu, nie
+„dopisania" do paczki.
+
+Nie zweryfikowane (uczciwie): bootalność na urządzeniu. Nic z powyższego nie dowodzi, że
+tablet wstanie — dowodzi tylko, że to, co skrypt obiecuje włożyć do partycji, tam jest.

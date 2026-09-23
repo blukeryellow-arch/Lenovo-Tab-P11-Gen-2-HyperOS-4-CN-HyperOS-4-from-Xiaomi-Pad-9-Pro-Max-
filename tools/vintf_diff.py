@@ -43,7 +43,7 @@ def norm_fqname(name, ver, fq=None):
     return f"{name}@{ver}" if name and ver else (name or '?')
 
 
-def collect_halset(path, tag='hal'):
+def collect_halset(path, tag='hal', kinds=None):
     """{klucz: {'optional': bool, 'versions': [...]}} dla katalogu lub pliku."""
     files = []
     if os.path.isdir(path):
@@ -54,15 +54,15 @@ def collect_halset(path, tag='hal'):
     out = {}
     used = []
     for f in sorted(set(files)):
-        base = os.path.basename(f)
-        if tag == 'hal' and 'compatibility_matrix' not in base and base != 'manifest.xml' \
-                and 'manifest' not in base:
-            continue
         try:
             root = ET.parse(f).getroot()
-        except ET.ParseError:
+        except (ET.ParseError, OSError):
             continue
-        except OSError:
+        # Klasyfikacja PO KORZENIU, nie po nazwie pliku. Poprzednia wersja filtrowala
+        # po basename i gubila /vendor/etc/vintf/manifest/*.xml, gdzie MTK/Xiaomi trzymaja
+        # POJEDYNCZY serwis w pliku (android.hardware.audio.service-aidl.xml - 'manifest'
+        # w nazwie NIE wystepuje) -> vendor wydawal sie pusty, a diff krzyczal o 70 brakach.
+        if kinds and root.tag not in kinds:
             continue
         used.append(f)
         for h in root.iter(tag):
@@ -81,7 +81,12 @@ def collect_halset(path, tag='hal'):
                 keys = {name}
             for k in keys:
                 prev = out.get(k)
-                out[k] = {'optional': (prev['optional'] if prev else False) and opt,
+                # (prev['optional'] if prev else True): pierwszy raz widziany klucz bierze
+                # wlasciwa flaga. Wczesniej bylo tu 'False and opt', wiec KAZDA pozycja
+                # wychodzila jako obowiazkowa - 'optional' w pliku nie mial zadnego
+                # znaczenia (odkryte 2026-09-23 przy tescie C: 71 <optional> w pliku,
+                # a diff wypluwal 'opcjonalnych 0').
+                out[k] = {'optional': opt if prev is None else (prev['optional'] and opt),
                           'src': os.path.basename(f),
                           'names': sorted(set((prev or {}).get('names', [])) | {name})}
     return out, used
@@ -97,7 +102,7 @@ def main():
 
     if not a.matrix:
         print("podaj --matrix (katalog z compatibility_matrix*.xml)"); return 3
-    req, rfiles = collect_halset(a.matrix, 'hal')
+    req, rfiles = collect_halset(a.matrix, 'hal', kinds=('compatibility-matrix',))
     if not req:
         print(f"w {a.matrix} nie ma HAL-i do odczytania"); return 3
     mand = {k: v for k, v in req.items() if not v['optional']}
@@ -117,13 +122,16 @@ def main():
         print(f"  ... razem {len(mand)}")
         return 0
 
-    got, gfiles = collect_halset(a.manifest, 'hal')
+    got, gfiles = collect_halset(a.manifest, 'hal', kinds=('manifest',))
     if not got:
         print(f"W {a.manifest} nie znaleziono manifestu vendora (za malo plikow? adb root?)")
         return 3
     gnames = {k.split('@')[0] for k in got} | set(got)
     missing = sorted(k for k in mand if k not in got and k.split('@')[0] not in gnames)
     print(f"\nMANIFEST VENDORA: {len(gfiles)} plik(6), pozycji {len(got)}")
+    print("  (dopasowanie po NAZWIE interfejsu; wersje i instancje 'default/a2dp/...' tu nie sa")
+    print("   sprawdzane - to jest pomiar 'czy vendor w ogole deklaruje ten HAL', nie zgodnosc")
+    print("   min-vers; pelna zgodnosc liczy build-time VintfObject na AOSP)")
     print(f"BRAKI obowiazkowych: {len(missing)}")
     for k in missing[:60]:
         print(f"  - {k}")

@@ -455,7 +455,9 @@ jobs:
               # (a) dokumentacja + skrypty: male, sciagam NATYCHMIAST
               tar czf rom-docs.tar.gz -C rom MISMATCH.md flash.sh SHA256SUMS.txt BUILD_LOG.txt 2>/dev/null || true
               # (b) pelny kit (obrazy): duzy, idzie na spool jako kawalki
-              tar czf rom-kit.tar.gz -C rom . 2>/dev/null || true
+              # 'system_tree' to 1,3 GB rozpakowanego ZRODLA - nie jest do flashowania,
+              # a wczesniej wchodzil do paczki (kit mial 1,43 GB zamiast ~0,9 GB).
+              tar czf rom-kit.tar.gz -C rom --exclude=./system_tree . 2>/dev/null || true
               for f in rom-docs rom-kit; do
                 [ -f "$f.tar.gz" ] || continue
                 echo "  paczka $f.tar.gz: $(stat -c%s "$f.tar.gz") B"

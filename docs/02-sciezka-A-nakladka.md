@@ -136,19 +136,54 @@ Lenovo/GSI. Czyli **skopiowanie `product/overlay/*.apk` HyperOS na ten tablet sk
 odrzuceniem nakładek** — nie komunikatem błędu, tylko brakiem zmiany wyglądu. Stąd w playbooku
 `--debug-key` (przepodpisanie własnym kluczem), a nie „wgrać i mieć spokój".
 
-## Etap 4c — to, co działa bez podpisu: fonty
+**Dopomiar z 2026-09-23 na `product` (bieg `35897100768`, 134 808 062 B assetów, sha256
+`a53ff508…` zgodny z runnerem i z sumą Dysku):** w `product/overlay` jest **67 plików APK w 12
+katalogach** (80 MB), z czego **54 mają klucz MIUI `c9009d01ebf9…`**, a **13 inny**. Czyli reguła
+z tabeli wyżej dotyczy także `product`, nie tylko `vendor_mystical` — i dotyczy 4/5 nakładek.
+Te 13 spoza klucza MIUI to jedyne, które da się rozważyć bez przepisywania czegokolwiek; reszta
+wymaga własnego podpisu. Nie jest to wniosek z dokumentacji Xiaomi, tylko policzenie plików.
+
+### Etap 4c — to, co działa bez podpisu: fonty
 
 Fonty to pliki, nie pakiety APK, więc żadnego wymuszenia podpisu nie przechodzą. Zbudowałem
 generator modułu na podstawie realnych plików źródłowych:
 
 ```bash
-# 1) po ściągnięciu paczki assetów z 'product' (tools/pull_spool.sh all):
-tar xzf images/<product-assets>.tar.gz -C /tmp/prod ./product/fonts ./fonts
+# 1) ściągnięta paczka assetów 'product' (134 808 062 B, sha256 a53ff508…):
+tar xzf images/drive-1IjQ…-assets.tar.gz -C staging/product ./fonts ./overlay ./etc/permissions
 # 2) moduł:
-tools/make_font_module.sh --fonts /tmp/prod/fonts --out /tmp/mod --family MiSans
+tools/make_font_module.sh --fonts staging/product/fonts --out modules-build/hyperos4_fonts_p11g2 --family MiSans
 # 3) ZIP dla Magiska (walidowany: module.prop w korzeniu + CRC):
-tools/pack_module.sh /tmp/mod /tmp/hyperos4_fonts_p11g2.zip
+tools/pack_module.sh modules-build/hyperos4_fonts_p11g2 hyperos4_fonts_p11g2.zip
 ```
+
+**Wykonane 2026-09-23 na prawdziwych bajtach, nie na próbce:** `product/fonts` to **63 pliki,
+87 940 740 B**, w tym **28 plików `MiSans*`**. Pierwszy przebieg generatora wybrał `sans-serif`
+na podstawie **nazwy** i dostał `MiSansLatinVF.ttf` + `serif` = `MiSerif.ttf`. Rozłożyłem to
+parserem `cmap` w `tools/fontgen.py` (funkcja `coverage()`, liczby z plików):
+
+| plik | kodów | łacina | CJK (U+4E00–9FFF) | wniosek |
+|---|---|---|---|---|
+| `MiSansVF.ttf` (20 093 424 B) | 29 572 | tak | **20 976** | prawdziwa rodzina → to ma być `sans-serif` |
+| `MiSansLatinVF.ttf` (481 220 B) | 1 337 | tak | **0** | podzbiór łaciński, nie nadaje się na jedyny font UI CN |
+| `MiSerif.ttf` (303 844 B) | **14** | nie | 0 | zakładka/demo, nie rodzina |
+| `MiSerifSCVF.ttf` / `TCVF` | 208 / 209 | tak | 128 / 129 | za małe na `serif` całego systemu |
+| `MiSansJapaneseVF.ttf` | 13 873 | tak | 10 767 | słusznie poza `sans-serif` (ma swoją rodzinę) |
+
+Generator ma teraz bramki: kandydat na `sans-serif` musi mieć łacinę **i** CJK, priorytet idzie od
+pokrycia a nie od nazwy, a `serif` jest **pominięty z komunikatem**, jeżeli żaden plik nie ma
+≥ 400 kodów — bo wstawienie fontu 14-glifowego psuje tekst bardziej niż zostawienie fontu
+systemowego. Stan po naprawie: **19 referencji w `fonts.xml`, 25 plików, 44 MB, 0 błędów**,
+`sans-serif` → `MiSansVF.ttf`, 17 rodzin `lang=` (ar/bn/bo/gu/hi/ja/ko/km/lo/my/or/ru/th/ta/te/ti…).
+ZIP: **32 wpisy, 29 015 567 B**, sha256 `62b688a890fd1ef8…`, w `dist/modules/hyperos4_fonts_p11g2.zip`.
+`make_font_module.sh` odrzucił 44 pliki bez rozpoznanego skryptu (logo-fonty typu
+`Coca-ColaCareFontKaiTi.TTF`, `BebasNeue-Mono.otf`) — nie wchodzą do `fonts.xml`, więc nie
+zagradzają ścieżki dobierania glifów.
+
+Dlaczego moduł, a nie podmiana `system/fonts`: w źródle `./system/fonts/MiSans*` to **dowiązania symboliczne do `/product/fonts/…`** (21 linków), więc sam `product` niesie rodzinę. Zostawiając
+fonty w `product` przez Magisk nie ruszamy partycji, która ma hashtree w `vbmeta` źródła
+(2 748 350 464 B), a `fonts.xml` i tak trzeba generować, bo oryginalny wskazuje
+`/data/system/fonts/theme_webview/…` — ścieżkę, której na tablecie nie ma.
 
 Trzy rzeczy, które ten generator naprawia względem „skopiuj pliki":
 

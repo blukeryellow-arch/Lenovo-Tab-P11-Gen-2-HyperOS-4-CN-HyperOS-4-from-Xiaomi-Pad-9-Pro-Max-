@@ -11,7 +11,9 @@
 # odzykana z historii z identycznym sha256).
 set -uo pipefail
 B=${SPOOL_BRANCH:-transfer-spool}
-REPO=$(git remote get-url origin)
+# 'git fetch <url>' pytal o haslo, bo przy jawnym URL nie idzie przez helpera
+# remote'a (zmierzone 2026-09-23: could not read Username). Nazwa remote'a dziala.
+REPO=${SPOOL_REMOTE:-origin}
 P=${PARTS_DIR:-parts}
 case "${1:-all}" in
   pull)

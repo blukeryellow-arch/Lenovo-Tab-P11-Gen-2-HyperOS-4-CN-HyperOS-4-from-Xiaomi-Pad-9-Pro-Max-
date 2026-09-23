@@ -64,6 +64,13 @@ def read_manifests(part_files):
                 name, size, sh = c[1], int(c[2]), c[3]
                 m = re.search(r'\.part\.(\d+)$', name)
                 if not m:
+                    # Paczka <= 90 MB NIE jest dzielona (unpack_on_runner pisze wtedy
+                    # 'part\t<ojciec>'), wiec 'nazwa bez .part.NNN' to nie smieci - to
+                    # caly plik. Wczesniej 'continue' zgłaszalo 'brakuje 1 z 1' dla
+                    # system/odm, choc plik lezal obok (sprawdzone 2026-09-23).
+                    pp = os.path.join(parts[base].get('_dir', os.path.dirname(mp)), name)
+                    if os.path.isfile(pp):
+                        parts[base][0] = (pp, size, sh)
                     continue
                 base = cur
                 d = parts[base].get('_dir', os.path.dirname(mp))

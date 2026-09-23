@@ -215,7 +215,11 @@ $(cd "$tree" && find . -xdev -maxdepth 4 -type f -name 'public.libraries.txt' 2>
   # limit GitHuba to 100 MB NA BLOB (zmierzone 2026-09-22): tarball rodzic musial
   # zniknac PRZED 'git add -f transfer/', ale po splicie i po MANIFESCIE - wczesniejsza
   # ata kasowala go przed splitem, przez co 'split' nie miel czego dzielic (0 czesci).
-  rm -f "$pkg"
+  # Usuwac rodzica WYLACZNIE gdy powstaly czesci. Przy paczce <= MAX nie ma .part.*,
+  # a MANIFEST wskazuj wlasnie na rodzica - wczesniejsze bezwarunkowe rm kasowalo plik
+  # przed "git add", wiec small-tary (system 72 MB, odm 6 KB) nigdy nie trafiy na spool
+  # i skadanie dawalo „brakuje 1 z 1 czastek" (zmierzone 2026-09-23, bieg 35897100768).
+  if [ "$n" -gt 0 ]; then rm -f "$pkg"; else log "    rodzic zostaje w transfer/ (n=0, <= MAX)"; fi
 
   # ten sam manifest co w trybie 'raw:' - dzieki temu tools/assemble_raw_parts.py sklada
   # obie sciezki (rozpakowana paczke i surowy obraz) jednym kodem, bez drugiego parsera
