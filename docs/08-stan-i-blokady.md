@@ -82,7 +82,7 @@ który widzi runner, bo oba katalogi wydania mają na czystym checkoutcie tyle s
 Z tą różnicą, że ciemna strona jest moja: **`--real` (96 PASS) wymaga drzew donora w `/tmp`
 i `~/romtools/avb`, a te nie są w gicie i nie odtwarzają się same** — `system.img` (920 MB) i
 `product.img` wariantu `-full` (150 MB) przekraczają limit GitHuba. Dlatego po reboocie mam prawo
-napisać „71/0", a nie „79/0". `sha256sum -c` na czystym checkoutcie wychodzi
+napisać „88/0", a nie „96/0". `sha256sum -c` na czystym checkoutcie wychodzi
 7/8 (lekki) i 6/8 (`-full`), a każde `FAILED open or read` to właśnie ten brakujący duży obraz —
 nie niezgodność; lokalnie po odtworzeniu obrazów (24 IX) oba katalogi mają 8/8. Skrypty generowane
 (`flash-all.sh` 8 776 w lekkim i 6 749 w `-full`, `rollback.sh` 1 152, `device-probe.sh` 6 533)
@@ -93,7 +93,7 @@ przechodzą `bash -n` i mają rozmiary zgodne z kontraktami README.
 ```
 tools/build_comp_libs.sh /tmp/comp-build            # zlib + lz4 (wymaga sieci na tarball)
 tools/build_erofs_local.sh /tmp/erofs-c             # mkfs/fsck/dump, selfcheck na 3 binarkach
-tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 96 PASS / 0 FAIL z drzewami sesji (bez --real: 71)
+tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 96 PASS / 0 FAIL z drzewami sesji (bez --real: 88)
 ```
 
 Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (patrz `.gitignore`):
