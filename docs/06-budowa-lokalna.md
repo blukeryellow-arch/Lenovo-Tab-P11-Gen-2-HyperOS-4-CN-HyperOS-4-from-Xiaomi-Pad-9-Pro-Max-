@@ -1044,3 +1044,49 @@ kolejność poleceń jest taka, jak wyżej, i że domyślna ścieżka nie dotyka
 prawdziwym urządzeniu jedyny sensowny przebieg to: `device-probe.sh` → kopia pięciu obrazów
 stockowych → `flash-all.sh` ze zgodą → `logcat -b all` po starcie. Awaryjnie: BROM/DA
 MediaTeka, nie EDL.
+
+## 6.35 Cztery sekcje w jedno popołudnie: „ładunek, którego nikt nie odpalał"
+
+Schemat powtórzył się cztery razy z rzędu (F2 rano, F3/V/W/X po południu), więc to już nie
+przypadek, tylko metoda: przejrzyj katalogi wydania i zapytaj o KAŻDY plik — „która sekcja to
+wykonała?". Wszystko, czego odpowiedź brzmi „żadna", jest ładunkiem, który jedzie do urządzenia
+na słowo honoru generatora.
+
+- **F3 — `rollback.sh`**: jedyny skrypt wydania nigdy nie wykonany. 21 linii, a w nich
+  samolokalizacja, pętla slotów a/b i heredoc z ostrzeżeniem „to NIE przywraca partycji
+  product ani system" — czyli dokładnie to, co użytkownik odpala w panice, gdy coś poszło
+  źle. Testowany na kopiach po nazwie względnej (lekcja F2) z jawnie sterowanym stanem
+  `vbmeta_stock_*.img`, bo atrapa fastboot plików nie tworzy.
+- **V — wnętrze `vbmeta`**: J sumował plik całościowo, ale strategia wydania siedzi w polach
+  nagłówka (`flags=3`, testkey AOSP wg docs/03 §A.1). avbtool znika z `/tmp` przy każdym
+  restarcie sandboxa, więc V parsuje nagłówek ręcznie. Pułapka, na którą wszedłem przy
+  pisaniu: `public_key_offset` jest względny wobec bloku AUX (plik = nagłówek 256 B + auth +
+  aux), nie wobec początku pliku — pierwsza wersja czytała „klucz" z bajtów nagłówka. Ta sama
+  względność dotyczy hash/signature (wobec AUTH) i deskryptorów (wobec AUX); dokładnie tak
+  robi to libavb.
+- **W — `release-manifest.tsv`**: dokument, który czyta człowiek, miał kolumnę sha256 i
+  wiersze skryptów nieporównane z plikami (J brał rozmiary tylko dla `.img`). Nieobecność
+  >100 MiB tolerowana jak w J, ale nawet nieobecny plik musi mieć zgodną sumę w manifeście
+  i w `SHA256SUMS.txt` — dwa dokumenty nie mogą rozjeżdżać się o plik, którego nie widzą.
+- **X — `dist/modules` i `dist/rom-kit`**: katalogi z wyjątkami w `.gitignore`, więc żyją
+  w gicie, ale poza zasięgiem suity. Moduł Magisk (druga ścieżka flashowania) dostał kontrolę
+  trzech kopii sumy (plik, sidecar `.sha256`, `SHA256SUMS.txt`), struktury i CRC całego zipa;
+  rom-kit — `bash -n` i sumy gita 1:1. Najważniejsza asercja X jest negatywna: rom-kit niesie
+  **donorski** vbmeta (`3506d20e…`), wydanie **testkey** (`9cf2e7e4…`) — to świadoma decyzja
+  z docs/03, a kontrola istnieje po to, żeby nikt nie „naprawił" rozjazdu kopią jednego pliku
+  na drugi.
+
+Druga lekcja popołudnia, większa niż wszystkie cztery sekcje razem: **dokument opisujący
+procedurę odzysku też jest ładunkiem** — dopóki nie został wykonany słowo w słowo, jest
+hipotezą. Receptura odbudowy obrazów z `transfer-spool` (docs/08) wyglądała na kompletną,
+a przy pierwszym sprawdzeniu na czystym klonie miała błąd: `git archive origin/transfer-spool`
+pada, bo ten ref nie istnieje lokalnie po czystym klonie (poprawnie: `git fetch origin
+transfer-spool` + `git archive FETCH_HEAD`). Replay dosłowny — blok kodu wycięty z docs/08
+i wykonany bez zmian — trwał 189 s i przeszedł rc=0. Od teraz receptura w docs ma prawo
+istnieć tylko w wersji, która była tak wykonana.
+
+Co to NIE jest: licznik 126/134 nie jest celem samym w sobie. Cztery sekcje dodały 38 kontroli,
+ale ich wartość to cztery pytania, które przestały wisieć: „czy rollback flashuje dokładnie to,
+co zrobił flash-all?", „czy vbmeta na pewno ma wyłączone weryfikacje?", „czy manifest mówi
+prawdę?", „czy moduł i rom-kit są tym, czym mówią ich sumy?". Kolejne sekcje tego typu mają
+powstawać tylko po znalezieniu następnego pliku bez świadka — nie na zapas.
