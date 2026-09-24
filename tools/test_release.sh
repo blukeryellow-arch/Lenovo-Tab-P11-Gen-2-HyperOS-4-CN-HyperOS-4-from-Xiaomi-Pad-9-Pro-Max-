@@ -187,6 +187,62 @@ if grep -q 'delete-logical-partition product_a' "$WORK/fb.log" && grep -q 'delet
    && ! grep -q 'flash product' "$WORK/fb.log"; then
   ok "RS3: kolejnosc delete product_a/b + resize system_a/b, product nie flashowany"
 else bad "RS3: zla sekwencja resize (patrz $WORK/fb.log)"; fi
+# --------------------- F2: flash-all.sh z katalogow WYDANIA (ladunek, nie generator)
+echo "== F2     flash-all.sh z katalogow wydania: polityka na pliku, ktory odpalasz"
+# E-H/RS testuja WYGENEROWANY skrypt z wydania testowego, a Ty odpalasz kopie z katalogu
+# wydania - wiec F2 powtarza scenariusze na tej kopii (CWD=$REL, ta sama atrapa i sumy).
+# Wariant -full jest ZAMROZONY sprzed ery RESIZE_SUPER (6 749 B - jego README tak mowi),
+# dostaje wiec tylko scenariusze niezalezne od polityki resize (E/F/RS1); RS2/RS3 obowiazuja
+# kopie lekka, ktora jest polecana do flashowania.
+runfb2() { # runfb2 <script> <nazwa> <oczek_rc> <oczek_flashy> [ZMIENNE...]
+  local script=$1 name=$2 want=$3 flashes=$4; shift 4
+  local envs=(); local kv
+  for kv in "$@"; do envs+=("$kv"); done
+  : > "$WORK/fb.log"
+  local out rc
+  # Skrypt jest samolokalizujacy (cd "$(dirname "$0")"), wiec kopie odpalamy PO NAZWIE
+  # WZGLEDNEJ z $REL - inaczej wroci do prawdziwego katalogu wydania zamiast testowego
+  # (na to wpadla pierwsza wersja F2: przechodzila, gdy obrazy lezaly obok, i padala
+  # po ich zniknieciu - testowala sasiedztwo pliku, nie skrypt).
+  cp "$script" "$REL/f2copy.sh"
+  out=$(cd "$REL" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" "${envs[@]}" bash f2copy.sh 2>&1); rc=$?
+  local got; got=$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")
+  if [ "$rc" = "$want" ] && [ "$got" = "$flashes" ]; then
+    ok "$name (rc=$rc, flashby=$got)"
+  else
+    bad "$name: rc=$rc flashby=$got, oczekiwano rc=$want flashby=$flashes"
+    printf '%s\n' "$out" | grep -E 'ZMALE|PRZERWANE|ZGODA|odmowa|ok ' | head -3 | sed 's/^/        |/'
+  fi
+}
+f2=0
+for cop in "dist/release/HyperOS4_P11Gen2/flash-all.sh|LEKKI|FULLSET" \
+           "dist/release/HyperOS4_P11Gen2-full/flash-all.sh|-full|MINSET"; do
+  IFS='|' read -r cpath cname cset <<< "$cop"
+  CP=$ROOT/$cpath
+  if [ ! -f "$CP" ]; then bad "F2: brak $cpath"; continue; fi
+  runfb2 "$CP" "F2[$cname]: sloty obszerne -> 6 flashy" 0 6 $sz_v $sz_pr $sz_sy; f2=$((f2+1))
+  runfb2 "$CP" "F2[$cname]: system 900 MB na slocie 768 MB -> abort" 1 0 $sz_v $sz_pr FB_SIZE_SYSTEM_A=0x30000000 FB_SIZE_SYSTEM_B=0x30000000; f2=$((f2+1))
+  runfb2 "$CP" "F2[$cname]: domyslnie zero resize (RS1)" 0 6 $sz_v $sz_pr $sz_sy; f2=$((f2+1))
+  if [ "$cset" = FULLSET ]; then
+    runfb2 "$CP" "F2[$cname]: RESIZE_SUPER bez zgody -> odmowa, 0 flashy" 1 0 $sz_v $sz_pr $sz_sy RESIZE_SUPER=1; f2=$((f2+1))
+    runfb2 "$CP" "F2[$cname]: pelna zgoda -> 4 flashy (bez product)" 0 4 $sz_v $sz_pr $sz_sy RESIZE_SUPER=1 I_ACCEPT_DATA_LOSS=yes; f2=$((f2+1))
+    if grep -q 'delete-logical-partition product_a' "$WORK/fb.log" && grep -q 'resize-logical-partition system_a' "$WORK/fb.log" \
+       && ! grep -q 'flash product' "$WORK/fb.log"; then
+      ok "F2[$cname]: sekwencja resize na kopii: delete product + resize system, product nie flashowany"; f2=$((f2+1))
+    else bad "F2[$cname]: zla sekwencja resize na kopii (patrz $WORK/fb.log)"; f2=$((f2+1)); fi
+  fi
+done
+# Negatyw: kopia z 'exit 9' po shebangu nie moze dawac GO - gdyby F2 w ogole nie odpalal
+# pliku z wydania, kazda kopia wyszlaby zielono (klasa martwej kontroli z §6.20).
+sed '1a exit 9 # negatyw F2' "$ROOT/dist/release/HyperOS4_P11Gen2/flash-all.sh" > $REL/f2sab.sh
+sab=0
+(cd "$REL" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" bash f2sab.sh >/dev/null 2>&1) || sab=$?
+f2=$((f2+1))
+if [ "$sab" != 0 ]; then ok "negatyw F2: zepsuta kopia flash-all nie daje GO (rc=$sab)"
+else bad "negatyw F2: zepsuta kopia przeszla scenariusz GO - kontrola ladunku jest martwa"; fi
+if [ $f2 -ge 8 ]; then ok "przeanalizowane scenariusze flash-all z wydan: $f2"; else
+  bad "tylko $f2 scenariuszy flash-all z wydan - petla padla w polowie"; fi
+
 # ---------------------------------------------------------------- K: higiena tekstu
 echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
 # Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt
