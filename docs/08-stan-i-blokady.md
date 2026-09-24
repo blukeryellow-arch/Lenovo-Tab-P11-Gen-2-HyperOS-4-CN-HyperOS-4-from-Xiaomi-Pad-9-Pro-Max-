@@ -37,16 +37,30 @@ boota jest gorszym podejrzanym, więc jeśli coś nie wstanie, zacznij od lekkie
 
 ## Zablokowane po stronie narzędzi (nie kodu)
 
-1. **~~`GH_TOKEN` wygasł~~ — naprawione 24 IX ~00:50 UTC.** Pushy poszły, gałąź
-   `arena/01a0ca42-…` stoi na `d84c3cc`, a bieg `release-selftest` **35927660767 ma 15/15
-   kroków success**. To pierwszy bieg w historii, w którym „success" znaczy, że
+1. **`GH_TOKEN` działa i nie działa — raz na kilka minut.** Naprawione 24 IX ~00:50 UTC
+   (pushy poszły), ale ~02:30 UTC `gh api` zwracało `401 Bad credentials`, a `git ls-remote`
+   „could not read Username", więc **wyniku biegu dla `059b850` nie znam** i nie podaję go.
+   Co wiem z pewnych odczytów: gałąź jest na remote (`1a8adf8..059b850` potwierdzone przez sam
+   `git push`), `release-selftest` na `d84c3cc` = **35927660767, 15/15 kroków success**, a
+   `build-hyperos-look` na `b4934a4` = **35927919967 success / 35927918927 failure**. Ten
+   failure nie jest czerwonym testem: to mój zepsuty `build.yml` (patrz §6.28), zero jobów,
+   nic nie było sprawdzane — i dokładnie dla tego istnieje sekcja R.
+   To pierwszy bieg w historii, w którym „success" znaczy, że
    `tools/test_release.sh` **wyszedł zerem**: poprzednie (w tym chwalone 13/13 z `35918777924`)
    liczyły status `tee`, więc suita mogła failować do woli — `docs/06` §6.27. Sekcje K–N, P i Q
    widziały runnera dopiero teraz, realnie.
 2. **~~`codeload.github.com` zwracał 404~~ — minęło.** 24 IX ~01:55 UTC oba tarballe
    (`madler/zlib` v1.3.1, `erofs/erofs-utils` master) odpowiadają `HTTP/2 200`. Cache
    `/tmp/erofs-c` nadal jest najszybszą ścieżką, ale odbudowa od zera znowu jest możliwa.
-3. **Logi Actions pozostają nieczytelne z tej piaskownicy**: `gh run view --log` zwraca pusty
+3. **Sandbox bywa przywracany ze snapshotu w trakcie pracy.** 24 IX ~03:38 UTC `git rev-parse HEAD`
+   nagle zwracał `5b03aea` (korzeń `main`), a `reflog` miał jeden wpis: `clone: from https://github.com/…`.
+   Cała praca była na dysku jako pliki **nieśledzone** (reset --hard je nadpisuje bez ostrzeżenia), a
+   na remote sięgała do `059b850`. Procedura, która przeszła: `tar --exclude=.git -cf /tmp/kopia.tar .`
+   → `git fetch` + `git reset --hard FETCH_HEAD` → porównanie dwóch interesujących plików z kopią →
+   przywrócenie ich z kopii. Dlatego commit `0ec000d` (docs/07 + docs/08) istnieje podwójnie: raz
+   zgubiony przez re-clone, raz odzyskany.
+
+4. **Logi Actions pozostają nieczytelne z tej piaskownicy**: `gh run view --log` zwraca pusty
    wynik, a `gh run download` na artefakt `weryfikacja-log` 3 razy dostał EOF od
    `blob.core.windows.net`. Widoczne są więc statusy kroków i adnotacje (`::error::`/`::notice::`),
    nie treść logu — i o tym trzeba pamiętać, czytając moje „CI zielone".
@@ -56,7 +70,7 @@ boota jest gorszym podejrzanym, więc jeśli coś nie wstanie, zacznij od lekkie
 ```
 tools/build_comp_libs.sh /tmp/comp-build            # zlib + lz4 (wymaga sieci na tarball)
 tools/build_erofs_local.sh /tmp/erofs-c             # mkfs/fsck/dump, selfcheck na 3 binarkach
-tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 45 PASS, 0 FAIL
+tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 46 PASS, 0 FAIL (bez --real: 38)
 ```
 
 Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (patrz `.gitignore`):

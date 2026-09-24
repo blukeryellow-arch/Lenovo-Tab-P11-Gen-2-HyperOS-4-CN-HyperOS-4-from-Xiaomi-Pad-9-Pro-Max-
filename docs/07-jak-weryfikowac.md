@@ -132,8 +132,8 @@ mkfs.erofs (moja budowa) -> fsck.erofs (pakiet Ubuntu) --extract -> porownanie p
 dump.erofs -s <obraz>   # superblock
 ```
 
-Status: **bieg `release-selftest` 35927660767 (24 IX 2026, ubuntu-latest) — 15/15 kroków
-success**, w tym ekstrakcja obrazu zbudowanego moim `mkfs.erofs` narzędziem z pakietu Ubuntu
+Status: **bieg `release-selftest` 35927660767 (24 IX 2026, ubuntu-latest, `d84c3cc`) — 15/15
+kroków success**; bieg na `059b850` jest poza moim zasięgiem wzroku, bo API odpowiedziało 401, w tym ekstrakcja obrazu zbudowanego moim `mkfs.erofs` narzędziem z pakietu Ubuntu
 i porównanie per plik. Od tego commita krok suity liczy `rc=${PIPESTATUS[0]}`, więc zieleń znaczy
 naprawdę „`test_release.sh` wyszedł zerem". Biegi wcześniejsze — w tym wielokrotnie przeze mnie
 cytowane 13/13 z `35918777924` — patrzyły na status `tee`, czyli na nic; `docs/06` §6.27. Wymaga to `sudo add-apt-repository -y universe`: pierwsza
