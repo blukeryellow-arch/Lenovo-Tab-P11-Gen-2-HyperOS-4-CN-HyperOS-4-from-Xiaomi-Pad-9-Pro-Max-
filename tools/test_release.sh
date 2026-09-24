@@ -654,6 +654,48 @@ else bad "S11 builder NADPISAL plik uzytkownika, mimo ze ten mial level"; fi
 if grep -q 'vintf_macierz.*JEST w drzewie' "$TS/out3/build-info.txt"; then ok "S12 build-info mowi 'JEST w drzewie', nie 'WYGENEROWANY'"
 else bad "S12 build-info opisuje stan, ktorego nie bylo"; fi
 
+# -------------------------------------------------- T: twierdzenia README vs build-info
+# Wymusila to zycie: README lekkiego wydania przez dwa dni obiekiwal „dobudowane macierze
+# VINTF 4/5/6", a build-info.txt tego buildu nie mial nawet klucza `vintf_macierz` (obrazy
+# powstaly przed aaa5919). Zdanie w dokumencie nie ma zadnej sily dowodowej, jezeli nic nie
+# pila do pliku, ktro ten stan opisuje. Kontrolka jest dwukierunkowa: claim bez dowodu FAILuje
+# i dowod bez claimu FAILuje (zeby nie zamienic klamstwa w milczenie).
+echo "== T      README wydania nie moze obiecywac macierzy, ktorych build-info nie potwierdza"
+TC=0; TF=0
+for d in "$ROOT"/dist/release/HyperOS4_P11Gen2*; do
+  [ -d "$d" ] || continue
+  b=$(basename "$d"); TC=$((TC+1))
+  rd="$d/README.md"; bi="$d/build-info.txt"
+  [ -f "$rd" ] && [ -f "$bi" ] || { note "$b: brak README lub build-info - nic nie sprawdzam"; continue; }
+  if python3 - "$rd" "$bi" "$b" <<'PYT'
+import re, sys
+rd, bi, b = sys.argv[1], sys.argv[2], sys.argv[3]
+txt = open(rd, encoding='utf-8').read()
+info = open(bi, encoding='utf-8').read()
+m = re.search(r'^vintf_macierz[^\n]*$', info, re.M)
+dowod = bool(m) and ('BRAK' not in m.group(0))
+# claim = zdanie, ktore MOWI, ze macierz JEST w obrazie (a nie ze jej nie ma)
+claim = False
+for zd in re.split(r'(?<=[.!?])\s+', txt):
+    if re.search(r'macierz|vintf', zd, re.I) and re.search(r'dobudowan|zawiera|trafi[łl]|wpi[ęe]t', zd, re.I) \
+       and not re.search(r'nie (zawiera|ma)|bez |sprzed flagi|NIE zawiera'
+                         r'|wcze[sś]niejsz|poprzedni|by[łl]o przepisane|nieaktualn|przesta[łl]', zd, re.I):
+        claim = True; print(f"    claim: {zd.strip()[:96]}")
+if claim and not dowod:
+    print(f"  {b}: README twierdzi, ze macierz jest w obrazie, a build-info nie ma 'vintf_macierz' z dowodem")
+    sys.exit(1)
+if dowod and not claim:
+    print(f"  {b}: build-info mowi, ze macierz byla dokladana, a README tego nie opisuje (milczenie = stary tekst?)")
+    sys.exit(1)
+print(f"  {b}: claim={claim} dowod={dowod} - zgodne")
+sys.exit(0)
+PYT
+  then ok "$b: twierdzenia o VINTF zgodne z build-info"
+  else bad "$b: README i build-info opisuja dwa rozne swiaty"; TF=$((TF+1)); fi
+done
+if [ "$TC" -eq 0 ]; then bad "zaden katalog wydania nie zostal przeanalizowany - kontrolka jest martwa"; TF=$((TF+1)); fi
+[ "$TF" -eq 0 ] && ok "sekcja T: przeanalizowane katalogi: $TC"
+
 echo; echo "=== podsumowanie: $pass PASS, $fail FAIL ==="
 [ $fail -eq 0 ] || echo "UWAGA: ktorys test padl — nie wydawaj zmiany w tools/, ktora to wywolala."
 exit $([ $fail -eq 0 ] && echo 0 || echo 1)

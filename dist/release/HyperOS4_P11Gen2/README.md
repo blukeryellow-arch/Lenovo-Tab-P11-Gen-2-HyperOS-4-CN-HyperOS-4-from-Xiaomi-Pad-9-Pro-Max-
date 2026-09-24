@@ -3,9 +3,12 @@
 Zbudowany i zweryfikowany **lokalnie** (bez chmury buildowej), narzędziami zbudowanymi
 w tym samym sandboksie. Historia decyzji i wszystkie pomiary: `docs/06-budowa-lokalna.md`.
 
-**Format obrazów: EROFS + `lz4`.** To nie kosmetyka — bez kompresji `system` miał
-1 376 899 072 B, a źródłowy obraz HyperOS ma 937 791 488 B, bo HyperOS pakuje lz4.
-Mój `lz4` daje 920 047 616 B (+3,2 % wobec źródła, −29,7 % wobec wersji bez kompresji).
+**Format obrazów: EROFS + `lz4hc,9`.** To nie kosmetyka — bez kompresji `system` miał
+1 376 899 072 B, plain `lz4` daje 967 503 872 B, a `lz4hc,9` 920 047 616 B (źródło HyperOS:
+937 791 488 B, czyli +3,2 % nad źródłem i −33,2 % wobec wersji bez kompresji). Kernel nie
+potrzebuje na to `EROFS_FS_LZ4HC`: `lz4hc` jest tylko wolniejszym pakowaniem, strumień jest
+zwykłym lz4, a `EROFS_FS_LZ4=y` go czyta. Poprzedni akapit podpisywał tę liczbę jako „`lz4`" —
+była z `lz4hc,9`; liczby się nie zmieniły, myląca była etykieta.
 
 ## Warianty
 
@@ -125,9 +128,12 @@ $FSCK --extract=/tmp/tree/system_src system.img    # uwaga: --extract tworzy
 #    sciezki wzgledem korzenia partycji; katalog 'system_tree' nazywa sie tak samo
 #    jak w buildzie CI, wiec nie uzywaj 'tar --strip-components=2' (docs/06 §6.12)
 
-# 2) macierze VINTF poziomu 4/5/6, ktorych w zrodle nie ma (bez nich init TB350FU moze padnac)
-for L in 4 5 6; do python3 tools/make_level_matrix.py --from-dir /tmp/tree/system_src/system/etc/vintf \
-      --level $L --out /tmp/tree/system_src/system/etc/vintf/compatibility_matrix.$L.xml; done
+# 2) macierze VINTF: NIE recznie do drzewa. Od aaa5919 robi to builder jedna flaga:
+#      --vintf-level 5
+# doklada plik TYLKO jezeli go w drzewie nie ma, weryfikuje 1:1 w ZBUDOWANYM obrazie
+# (fsck --extract, nie 'plik istnieje') i sprzata drzewo po weryfikacji. Reczne
+# 'make_level_matrix.py --out .../etc/vintf/...' podmienia cudze drzewo donorow i
+# pozostawia w nim ślad - patrz docs/06 §6.29.
 
 # 3) /product: fonty (+ opcjonalnie RRO) i dopelnienie sciezek, ktorych szuka system
 $FSCK --extract=/tmp/tree/product --path=fonts  product.img
@@ -180,11 +186,18 @@ w bajty. Dlatego rozmiary zostały te same, a sha256 się zmieniły. docs/06 §6
 
 ## Czym ten obraz różni się od źródła HyperOS (bez owijania)
 
-1. **dobudowane macierze VINTF 4/5/6** (`compatibility_matrix.{4,5,6}.xml`) — w źródle ich nie
-   ma, bo HyperOS celuje w poziom 7/8; przy `target_fcm_version` = 5/6 init nie dostałby
-   w ogóle macierzy. Razem z nimi do partycji trafiły 3 pliki `*.komentarz.txt` (400 B, notatki
-   generatora) — świadomie zostawione, bo dokumentują pochodzenie plików; usunięcie ich
-   zmienia sha256 obrazu.
+1. **NIC w `etc/vintf` — i to jest stan, który trzeba znać przed flashem.** Ten zestaw został
+   zbudowany PRZED tym, jak `tools/make_release.sh` dostał flagę `--vintf-level`. Nie ma w sobie
+   `compatibility_matrix.5.xml`, bo `build-info.txt` tego buildu nie ma klucza `vintf_macierz`, a
+   jedyna partycja, która powstała tu lokalnie, jest w 100 % odwzorowaniem drzewa z wykluczeniami
+   z tegoż pliku. (Punkt ten brzmiał kiedyś inaczej — patrz `docs/06 §6.30`; tam jest opis, skad
+   wziel sie przeniesiony ze sciezki runnerowej `tools/build_rom_on_runner.sh` claim.) **Bez macierzy na `target_fcm_version` = 5 init TB350FU pada z
+   `Failed to initialize VINTF Object` jeszcze przed zygote, więc ten `system.img` nie jest do
+   flashowania na urządzeniu z Androidem 12L.** Przebudowa z `--vintf-level 5` wymaga drzewa
+   donora; jak je odzyskać — `docs/08`, sekcja „Odzysk drzewa donora".
+1. **pliki `*.komentarz.txt` są WYKLUCZONE**, nie zostawione: `build-info.txt` tego buildu ma
+   `wykluczenia_mkfs  --exclude-regex=\.komentarz\.txt$`. Notatki generatora zostają w drzewie,
+   do obrazu nie wchodzą — stąd obraz jest o 4 096 B mniejszy niż drzewo by wskazywało.
 2. **`vbmeta` bez nadbitek AVB w obrazach** — `avbtool` 1.3.0 nie ma `fec`, więc
    `add_hashtree_footer` jest niemożliwe; stąd `Flags: 3` zamiast „zielonego" bootowania.
 3. **`/product` jest mój, nie Xiaomi** — tylko fonty (+ RRO w wariancie `-full`). Pełny

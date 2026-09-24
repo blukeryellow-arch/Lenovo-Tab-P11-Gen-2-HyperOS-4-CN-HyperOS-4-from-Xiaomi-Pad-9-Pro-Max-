@@ -1,5 +1,12 @@
 # Wariant `-full`: /product z fontami **i 67 nakladkami RRO** HyperOS
 
+> **Stan 24 IX — przeczytaj zanim wyciągniesz fastboot.** `system_hyperos4_p11g2.img` 920 047 616 B
+> jest w tym katalogu tym samym plikiem co w wariancie lekkim i **nie zawiera**
+> `etc/vintf/compatibility_matrix.5.xml` (build sprzed flagi `--vintf-level`). Na TB350FU z
+> `target_fcm_version` = 5 init padnie z `Failed to initialize VINTF Object` przed zygote.
+> Uzasadnienie i dowody: `../HyperOS4_P11Gen2/README.md`, sekcja „Czym ten obraz różni się od źródła",
+> oraz `docs/06 §6.29`. Sam `product.img` z tego katalogu jest OK — problem dotyczy tylko `/system`.
+
 Ten katalog rożni się od `../HyperOS4_P11Gen2` **jedynie plikiem `product_hyperos4_p11g2.img`**
 (150 560 768 B zamiast 75 198 464 B): dokładam 67 nakladek RRO (m.in. `AospFrameworkResOverlay`,
 `SettingsRroCommonOverlay` 42 MB, `DevicesOverlay` 12 MB, `MiuiSecurityCoreOverlay` 13 MB) plus

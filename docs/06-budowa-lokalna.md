@@ -794,3 +794,50 @@ gdyby generator był kopią źródła, test i tak by to złapał.
 Sekcja S (13 kontroli) liczy przebieg na syntetycznym drzewie i zrywa z nawysem „rc=0 znaczy
 dobrze": cała ścieżka to `make_release` → `fsck.erofs --extract` → czytanie pliku z rozpakowanego
 obrazu. Basela suite po dodaniu S: **51 PASS / 0 FAIL** (było 38).
+
+## 6.30 README wydania przez dwa dni opisywało cudzy build — i czego to uczy o testach dokumentacji
+
+Znaleziono 24 IX przy przygotowywaniu przebudowy, NIE dzięki testowi. Stan faktyczny jest w
+`dist/release/HyperOS4_P11Gen2/build-info.txt`; porównanie z tym, co twierdził README:
+
+| klucz w `build-info.txt` | wartość | co z tego wynika dla README |
+|---|---|---|
+| `kompresja` | `lz4hc,9` | te same bajty były podpisane słowem „`lz4`" — liczby prawdziwe, etykieta myląca |
+| `wykluczenia_mkfs` | `--exclude-regex=\.komentarz\.txt$` | README pisał, że 3 pliki `*.komentarz.txt` „świadomie zostały" w partycji; zostały wykluczone |
+| `vintf_macierz` | **klucza nie ma** | README punktem 1 obiecywało „dobudowane macierze VINTF 4/5/6" |
+
+Trzeci wiersz jest najgroźniejszy, bo to nie kwestia stylistyki. Zdanie zostało przeniesione ze
+ścieżki runnerowej: `tools/build_rom_on_runner.sh` realnie dokłada macierze i jego efektem jest
+`dist/rom-kit/`. Ten sam opis trafił do katalogu, którego obrazy nigdy przez tę ścieżkę nie
+przeszły. Skutek dla urządzenia byłby taki, że ktoś wgra `system.img` 920 047 616 B, ufając temu,
+co czyta, i dostanie `Failed to initialize VINTF Object` w `init` — stop przed zygote, bez żadnej
+winy sprzętu.
+
+**Lekcja dotyczy testów, nie README.** Kontrolka `N` pilnuje sum, `Q` rozmiarów — obie patrzą w
+liczby. Nic nie pilnowało, czy zdanie w README nie obiecuje zawartości, której w obrazie nie ma.
+Stąd sekcja `T` w `tools/test_release.sh`: dla każdego katalogu wydania porównuje zdania trafione
+kluczami `macierz|vintf` oraz `dobudowan|zawiera|trafił|wpięt` ze stanem klucza `vintf_macierz` w
+`build-info.txt`. Jest dwukierunkowa celowo: claim bez dowodu FAILuje, ale i dowód bez claimu
+FAILuje. Bez tego drugiego kierunku naprawa kłamstwa wyglądałaby najprościej na świecie — ktoś
+usuwa zdanie z README i kontrolka milczy razem z prawdą.
+
+Dwie rzeczy wyszły przy wstawianiu `T`:
+
+1. **Pierwszy przebieg uderzył we mnie.** `T` FAILowało na NOWYM README, na zdaniu
+   „Wcześniejsza wersja tego punktu obiecywała «dobudowane macierze 4/5/6»". To nie był false
+   positive do wygłuszenia: dokument wydania, który ktoś czyta przed flashem, nie powinien zawierać
+   historii błędów. Historia poszła tutaj, w README został jeden fakt: tego nie ma w tym obrazie.
+   Testu nie rozmiękczałem.
+2. **Trzeba odróżnić czas przeszły**, bo inaczej każda wzmianka historyczna w README byłaby
+   claimem: doszły `wcześniejsz|poprzedni|było przepisane|nieaktualn|przestał`. To zawężenie, nie
+   furtka — świadczy o nim test negatywny poniżej.
+
+Test negatywny, dowodzący, że `T` nie jest dekoracją: `git checkout HEAD -- README.md` (stary
+tekst) → `52 PASS / 1 FAIL`, z wydrukowanym zdaniem-błędem w linii `claim:`; przywrócenie nowego →
+`54 PASS / 0 FAIL`. Notuję oba numerami, bo `tail -N` nie jest asercją.
+
+Czego `T` NIE dowodzi: nie zagląda do bajtów. Realnego `system.img` wydania nie ma w gicie
+(>100 MB), więc kontrolka opiera się na `build-info.txt`, czyli na deklaracji parametrów budowy.
+Jedyna kontrola na bajtach to `fsck.erofs --extract` i `grep` po rozpakowanym obrazie — po to jest
+`S2` w tej samej suicie, tyle że na atrapie. Dla wydania realnego wykonuje się to ręcznie i przepis
+jest w README wariantu lekkiego.

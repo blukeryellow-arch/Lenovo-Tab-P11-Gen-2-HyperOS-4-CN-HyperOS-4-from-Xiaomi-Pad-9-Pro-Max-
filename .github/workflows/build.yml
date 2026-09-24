@@ -44,6 +44,14 @@ on:
         description: '1 = wyciagnij rowniez drzewo partycji i build.prop (wolniejsze, duze obrazy)'
         required: false
         default: '0'
+      spool_raw:
+        description: '1 = odloz SUROWE obrazy partycji na galaz transfer-spool, zeby agent zlozyl je u siebie'
+        required: false
+        default: '0'
+      spool_parts:
+        description: "ktore partycje na spool (spacja rozdzielone). Zostaw 'system': product 6,4 GB zjada zapas dysku runnera"
+        required: false
+        default: 'system'
 
 permissions:
   contents: read
@@ -135,6 +143,11 @@ jobs:
     name: Rozpakuj obrazy zrodlowe (HF -> runner)
     if: github.event_name == 'workflow_dispatch' && inputs.hf_repo != ''
     runs-on: ubuntu-latest
+    # 'contents: write' jest TU POTRZEBNE: bez tego push_spool_branch.sh dostaje 403 i
+    # job konczy sie na artefakcie, ktorego i tak nie da sie sciagnac z piaskownicy
+    # (gh run download -> EOF z blob.core.windows.net, trzy proby 23-24 IX).
+    permissions:
+      contents: write
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -211,6 +224,44 @@ jobs:
             printf '%-28s %10s  ' "$(basename "$img")" "$(du -h "$img" | cut -f1)"
             file -b "$img" 2>/dev/null | cut -c1-40
           done
+
+      - name: Kawalki surowe na galaz transfer-spool
+        # Dotad ten job konczyl sie na actions/upload-artifact. Z tej piaskownicy 'gh run
+        # download' nie dziala (EOF z blob.core.windows.net), wiec artefakt jest dla agenta
+        # nieosiagalny - a bez surowego obrazu nie da sie przebudowac WYDANIA lokalnie
+        # (drzewa w /tmp przepadaja przy restarcie sandboxa, docs/08). Jedyna funkcjonujaca
+        # trasa duzych plikow to repo: kawalki <=100 MB na jeziorna galaz transfer-spool,
+        # agent sklada je tools/assemble_raw_parts.py i porownuje z md5 serwera Google.
+        #
+        # UWAGA o kolejnosci: raw_parts_on_runner.sh kasuje plik wejsciowy po zapakowaniu
+        # (zeby 11,9 GB nie lezalo naraz - runner ma ~13-14 GB po odzysku). Dlatego ten
+        # krok jest OSTATNI, po wszystkim, co czyta unpacked/*.img.
+        if: ${{ inputs.spool_raw == '1' }}
+        env:
+          SPOOL_PARTS: ${{ inputs.spool_parts }}
+        run: |
+          set -uo pipefail
+          mkdir -p transfer
+          parts="${SPOOL_PARTS:-system}"
+          echo "== start spoolu: $parts"
+          df -h . | tail -1 | sed 's/^/  wolne: /'
+          for p in $parts; do
+            f="unpacked/$p.img"
+            if [ ! -f "$f" ]; then echo "  pomijam $p (brak $f)"; continue; fi
+            echo "== $p: $(stat -c%s "$f") B"
+            if bash tools/raw_parts_on_runner.sh "$f" transfer 0 0 2>&1 | sed "s/^/  [$p] /"; then
+              :
+            else
+              echo "::error::pakowanie $p padlo - kawalki moga byc uciete; NIE skladaj tego"
+            fi
+          done
+          if [ -n "$(ls -A transfer 2>/dev/null)" ]; then
+            wc -l < transfer/MANIFEST.tsv 2>/dev/null | sed 's/^/  linii manifestu: /'
+            bash tools/push_spool_branch.sh transfer transfer-spool
+            echo "  odlozone: $(du -sh transfer | cut -f1)"
+          else
+            echo "::warning::transfer pusty - nie ma czego skladac"
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()

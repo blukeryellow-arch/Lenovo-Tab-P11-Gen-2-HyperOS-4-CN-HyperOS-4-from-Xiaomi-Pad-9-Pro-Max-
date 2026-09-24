@@ -98,10 +98,49 @@ Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (pa
 po reboocie zostaje sam kod narzędzi, a odtworzenie drzewa `product` to `tools/enrich_product.sh`
 + ekstrakcja z plików źródłowych ROM-u (inicjatywa: `diagnostics/drive-inventory.tsv`).
 
-## Dług wobec CI
+## Dług wobec CI — zamknięty 24 IX
 
-Sekcje K–P powstały już po ostatnim biegu CI. Na atrapie przechodzą lokalnie, ale
-`P` używa `bash`-owych atrybutów i `mktemp`, a `N`/`K` skanu `docs/` — na Ubuntu w Actions nie
-winny się różnić, jednak dopóki run tego nie powtórzy, twierdzenie „testy przechodzą" znaczy
-„przechodzą u mnie". Zdanie „wszystko przechodzi" pozostaje prawdziwe tylko dla tego sandboxa, dopuki
-CI nie powtórzy go na `df32841`.
+Poprzednie zdanie („CI nie powtórzy tego na `df32841`") zestarzało się: `aaa5919` (sekcje A–S)
+przeszedł na runnerze — `release-selftest` = `success`, a w nim krok `suite wydania (selftest,
+determinizm, testy negatywne, bramka rozmiaru)` = `success`. To już coś znaczy, bo od `d843cc`
+krok bierze `PIPESTATUS[0]`, a nie status `tee` (patrz §głuchota w `docs/08` wyżej i `docs/06`).
+
+Pozostaje dług inny i trzeba go nazywać po imieniu: **`--real` nadal nie przebiegł naprawdę**,
+bo nie ma drzew donorów. „51 PASS" to liczba z atrap syntetycznych. Sekcje, które dotykają
+prawdziwych obrazów (Q/R i pary rozmiarów w `docs/07`), są zielone, ale `make_release.sh --real`
+w obecnych warunkach po prostu nie ma z czego liczyć.
+
+## Odzysk drzewa donora: dwie drogi, obie czekają na kliknięcie po stronie użytkownika
+
+Drzewa w `/tmp` przepadły przy reboocie sandboxa, a bez nich nie da się przebudować wydania z
+`--vintf-level 5`. Pobrać ich tutejszymi narzędziami się NIE DA — to zmierzone, nie odgadywane:
+
+| droga | co ją zamyka | dowód |
+|---|---|---|
+| konektor `download_file` | twardy limit 104 857 600 B/plik, liczony PRZED pobraniem | `system.img` 937 791 488 B → `invalid_request` (24 IX) |
+| to samo przez URL | schema konektora wymusza `return_download_url=false`, a i tak URL serwuje cały plik | sondy 22 IX, zapisane w komentarzu `.github/workflows/build.yml` przed jobem `drive-probe` |
+| `range_header`, `acknowledge_abuse` | range jest doklejalny do URL-a (czyli znowu całość), limit odpala się wcześniej | j.w. |
+| anonimowy `curl` na runnerze | pliki na Dysku są prywatne: `drive.usercontent` i `drive.google.com/uc` dają redirect na `accounts.google.com/v3/signin` | `reports/drive-probe-35953363350.md` — cztery sondy, zero bajtów |
+| HuggingFace wprost do sandboxa | brak trasy na 443 (`SSL_ERROR_SYSCALL`) | 24 IX, `curl -sSI https://huggingface.co` |
+| artefakt GitHuba (`gh run download`) | `EOF` z `blob.core.windows.net` | trzy próby 23–24 IX |
+
+Co wystarczy, żeby to odblokować — wystarczy JEDNA z dwóch:
+
+1. **Udostępnienie linkiem (najtaniej).** Na Dysku: „Każdy, kto ma link → Reader" dla pliku
+   `system.img` (`1Pu6RU00SsbFiXiGlx6IpG14714jaZThN`). `drive-probe.request` jest już ustawiony na
+   ten jeden ID z `raw: 1, rom_build: 0, do_unpack: 0`. Wtedy ja commituję cokolwiek z
+   `[drive-probe]` w tytule (dispatch jest poza zasięgiem tokena integracji — 403), runner ściąga
+   937 MB, kroi na kawałki ≤100 MB i pcha na `transfer-spool`; ja składam
+   `tools/assemble_raw_parts.py`, porównuję md5 ze
+   sumą serwera Google (`e8248a9a9a1f393750a20e2d9b6e91cd`) i buduję wydanie od początku do końca u
+   siebie, z weryfikacją `--vintf-level 5` na ROZPAKOWANYM obrazie.
+2. **Kliknięcie „Run workflow" (bez zmian na Dysku).** `build-hyperos-look` → `Run workflow` →
+   `hf_repo` = repo, z którego obrazy brał już job `unpack-source` (opis wejścia podaje przykład
+   `BBB1239/Lenovo-Tab-P11-Gen-2-HyperOS-4`), `source_file` = `super.img` albo `payload.bin`,
+   `partitions` = `system`, `spool_raw` = `1`. Od 24 IX ten job ma `permissions: contents: write` i
+   krok „Kawalki surowe na galaz transfer-spool" — wcześniej kończył się artefaktem, którego agent i
+   tak nie widzi. Wymaga sekretu `HF_TOKEN` w ustawieniach repo.
+
+Czego NIE robić (sprawdzone, nie powtarzać): `spool_parts` zostawić na `system` — `product.img` ma
+6 445 187 072 B, a runner po odzysku ma ~13–14 GB; pakowanie dwóch takich obrazów naraz to ten sam
+`gzip: stdout: No space left on device`, który zabił bieg `35894152349` (`docs/06 §6.19`).
