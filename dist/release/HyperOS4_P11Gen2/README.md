@@ -18,8 +18,11 @@ była z `lz4hc,9`; liczby się nie zmieniły, myląca była etykieta.
 | `HyperOS4_P11G2` (ten katalog) | `fonts/` (28 plików MiSans VF w 13 wariantach, Arimo, SourceHanSansCN) | **75 198 464 B** | domyślny: minimalny surface zmiany |
 | `HyperOS4_P11G2-full` | fonty **+ 67 nakładek RRO** (HyperOS-owy wygląd; `SettingsRroCommonOverlay` itd.) — jedyne miejsce, gdzie te RRO sie powoduja | **150 560 768 B** | jeśli ma być „HyperOS Look", nie tylko fonty |
 
-`system` i `vbmeta` są w obu wariantach **tym samym plikiem** (identyczne sha256 — budowane
-z tego samego drzewa i tego samego UUID).
+`vbmeta` jest w obu wariantach **tym samym plikiem** (identyczne sha256, ten sam klucz testowy).
+`system` — od 24 IX **różni się świadomie**: ten katalog ma poprawiony build
+(4836dcd4c8d5f6c0…, macierz poziomu 5, wariant miękki), a `-full` zostawił kaskadę 23 IX
+(cf0b889d45a6bb4f…) jako ślad historyczny — patrz sekcja „Czym ten obraz różni się od źródła"
+i `docs/06` §6.33.
 
 ## Skład wydania
 
@@ -33,7 +36,7 @@ z tego samego drzewa i tego samego UUID).
 | `rollback.sh` | 1 152 | przywraca vbmeta z kopii wykonanej przed flashem |
 | `release-manifest.tsv` | 671 | `plik ⇥ bajty ⇥ sha256 ⇥ uwaga` |
 | `SHA256SUMS.txt` | — | liczony na końcu; `sha256sum -c` = 8/8 OK. **`*.md` jest poza sumami** — README to dokumentacja, nie ładunek: inaczej redakcja zdania „unieważnia" wydanie (złapane przez `tools/test_release.sh`) |
-| `build-info.txt` | 388 | kompresja, UUID, wersja `mkfs.erofs`, ścieżki drzew |
+| `build-info.txt` | 591 | kompresja, UUID, wersja `mkfs.erofs`, ścieżki drzew, flagi VINTF |
 | `mkfs.log`, `fsck.log`, `system-verify.log` | — | surowe logi budowy i obu sprawdzeń |
 
 ## Jak sprawdzic, ze to, co masz, to to, co zbudowalem
@@ -47,7 +50,7 @@ drzewie syntetycznym, sprawdza determinizm (dwa budowania = ten sam bajt), **psu
 sprawdza, czy weryfikator to widzi (test negatywny — bez niego „wszystkie pliki OK" może
 znaczyć „nikt nie sprawdził, czy check cokolwiek sprawdza"), podmienia cel symlinka, odpala
 `flash-all.sh` na atrapie `fastboot` w pięciu scenariuszach (za mały slot → zero flashów)
-i na końcu weryfikuje 1:1 **ten** katalog. 24 kontrole (z `--real`: 32), zero wymagań sieciowych.
+i na końcu weryfikuje 1:1 **ten** katalog. 71 kontroli (z `--real`: 79), zero wymagań sieciowych.
 
 ## Poziomy dowodu — co sprawdza który test
 
@@ -122,7 +125,7 @@ bajty), `--force-uid/gid=0` (bez tego właściciel wchodzi z drzewa — patrz se
 i `--exclude-regex` (pliki-notatki generatora). To jest też powód, dla którego `make_release.sh`
 ma je wpisane, a nie zostawia do recznego pilnowania.
 
-## Odtworzyenie bit w bit (bez CI, z plików na Dysku)
+## Odtworzenie bit w bit (bez CI, z plików na Dysku)
 
 Kanał git nie pomieści 967 MB, więc `system_hyperos4_p11g2.img` jest do zbudowania.
 Potrzebujesz tylko `gcc`, `make`, `curl`, `python3` i pięciu obrazów z Dysku
@@ -276,7 +279,7 @@ Dalej, w tej kolejności — każda pozycja jest o jeden krok dalej od cegły:
    że sam tak miałem w trzech dokumentach do 23 IX 2026). Tej ścieżki NIE testowałem tutaj:
    wymaga drugiego komputera i kabla w trybie bootromu, więc traktuj ją jako kierunek, nie
    instrukcję.
-5. **NIE robij `fastboot erase userdata`.** Nie daje nic, czego krok 1–4 nie da, a kasuje dane.
+5. **NIE rób `fastboot erase userdata`.** Nie daje nic, czego krok 1–4 nie da, a kasuje dane.
 
 Jeśli po kroku 1 tablet wstaje na stock, to znaczy, że `product`/`system` wróciły z Twojej
 kopii albo że w ogóle ich nie ruszałeś — w drugim przypadku to wciąż mój obraz, tylko bez

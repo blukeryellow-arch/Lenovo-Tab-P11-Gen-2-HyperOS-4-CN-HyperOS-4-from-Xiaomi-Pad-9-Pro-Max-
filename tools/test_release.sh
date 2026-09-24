@@ -522,7 +522,8 @@ for d,txt in texts.items():
         # negatywny 'sklam proze w lekkim' przeszedl na zielono. Kontrola, ktora tak
         # wybacza, nie istnieje (23 IX 2026).
         prose=re.sub(r'<!--.*?-->','',txt,flags=re.S)
-        if name in prose and pretty not in prose:
+        # granice cyfr: podciag "591" w numerze commita aaa5919 nie jest liczba 591 (24 IX)
+        if name in prose and not re.search(r"(?<!\d)"+re.escape(pretty)+r"(?!\d)", prose):
             bad.append(f"{d}: {name} = {val} B jest w kontrakcie, ale nie ma tej liczby w PROZIE"
                        f" tego README — akapity zostaly z poprzednia liczba (blok swiezy, tekst klamie)")
     # ten sam rozmiar i ta sama suma musza byc w docs/07 (tabelka 'stan wydania') - tam blok
