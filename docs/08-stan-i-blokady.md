@@ -239,9 +239,9 @@ Dwa szczególy, które kosztowaly najwiecej namyslu przy rekonstrukcji receptury
   `etc/` donora (`build.prop`, `permissions/`, `sysconfig/`, `vintf/`) — passwd/group pochodza
   z lekkiego obrazu, nie z tara donora.
 
-## Maraton 24 IX (popołudnie): od trzech brakujących obrazów do 128/0
+## Maraton 24 IX (popołudnie): od trzech brakujących obrazów do 137/0
 
-Godziny ~15:55–17:30: (1) odbudowa trzech nieśledzonych obrazów z `transfer-spool` **bajt w bajt**
+Godziny ~15:55–17:45: (1) odbudowa trzech nieśledzonych obrazów z `transfer-spool` **bajt w bajt**
 (4/4 hashe — sekcja wyżej), (2) utwardzenie receptury trzema poprawkami znalezionymi dopiero przy
 sprawdzaniu na czystym klonie (`git fetch origin transfer-spool` przed `git archive FETCH_HEAD`;
 składanie assetów product donora przez `assemble_raw_parts.py`, nie `cat`; dokładna linijka
@@ -257,7 +257,7 @@ pliku wykonany bez zmian: 189 s, rc=0, (4) trzy nowe sekcje suity w schemacie F2
 | X | `dist/modules` + `dist/rom-kit` — pozostałe ładunki w gicie, których suita nie dotykała: modul Magisk (trzy kopie sumy, struktura, CRC), rom-kit (`bash -n`, sumy gita 1:1), świadoma różnica vbmeta donor `3506d20e…` vs wydanie testkey `9cf2e7e4…`, oraz **wykonanie `rom-kit/flash.sh`**: bez `system.img` (stan z czystego gita) → czysta odmowa; z oboma → 4 flashy + 2 kopie `fetch`, bez `erase userdata`; z bootloadera → `reboot fastboot` + kontynuacja | 9 |
 
 Liczniki suity: **88/96 → 129/137**. CI zielone dla `4e3452e` (F2), `9437ffa` (F3), `33ecec0` (V)
-i `d4cebe2` (W) — oba workflow; sekcja W przeszła na runnerze z trzema nieobecnymi obrazami
+i `d4cebe2` (W), `d55ef27` (X), `f67b560` (Xb) — oba workflow; sekcja W przeszła na runnerze z trzema nieobecnymi obrazami
 (absent-skip + zgodność manifest↔SHA256SUMS dla nieobecnych — dokładnie po to jest ta gałąź
 kontroli). Lekcja dnia numer jeden: dokument, który
 opisuje procedurę odzysku, sam jest ładunkiem — dopóki nie został wykonany słowo w słowo, jest
