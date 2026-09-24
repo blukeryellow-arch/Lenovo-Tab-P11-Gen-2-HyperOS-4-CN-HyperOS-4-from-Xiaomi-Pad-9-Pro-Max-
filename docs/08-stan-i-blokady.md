@@ -162,7 +162,10 @@ Po odbudowie: `sha256sum -c` = 8/8 w obu katalogach, suita `--real` z drzewami =
 0 FAIL**. Całość zmierzona dwukrotnie: pierwsza odbudowa (z rekonstrukcją receptury z pomiarów)
 trwała ~15 minut; **replay dosłowny** — blok kodu poniżej wycięty z TEGO pliku i wykonany bez
 zmian po wyczyszczeniu ścieżek — trwał **189 s** i zakończył się rc=0: oba tarballe ZGODNE
-z runnerem, oba buildy, 16/16 sum, 96 PASS / 0 FAIL. Toolchain od zera to dodatkowe ~45 s;
+z runnerem, oba buildy, 16/16 sum, 96 PASS / 0 FAIL. **Powtórzony po dodaniu F3/V/W/X**
+(finalne HEAD dnia, ten sam blok kodu dosłownie): 212 s, rc=0, **134 PASS / 0 FAIL** — czyli
+receptura dalej wykonuje się słowo w słowo, a jej oczekiwane wyjście rośnie razem z suitą.
+Toolchain od zera to dodatkowe ~45 s;
 na ciepłym `/tmp` skrypty same się skracają (»już zbudowane«, »już pobrane«), więc recepturę
 można bezpiecznie odpalać ponownie.
 
