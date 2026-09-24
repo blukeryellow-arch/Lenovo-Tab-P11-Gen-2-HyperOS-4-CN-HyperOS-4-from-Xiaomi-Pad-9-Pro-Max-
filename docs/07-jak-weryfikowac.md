@@ -81,10 +81,10 @@ adb shell 'ls -lZ /system/bin/su /product/bin 2>/dev/null; restorecon -RFv /prod
 bash tools/test_release.sh --erofs-dir <katalog z mkfs/fsck>
 ```
 
-Oczekiwane: `=== podsumowanie: 88 PASS, 0 FAIL ===`, a z `--real` (z drzewami podanymi w
+Oczekiwane: `=== podsumowanie: 101 PASS, 0 FAIL ===`, a z `--real` (z drzewami podanymi w
 `PRODTREE`, `PRODTREE_FULL`, `SYSTREE`, `SYSTREE_FULL` — `SYSTREE_FULL` = drzewo donora z trzema
 plikami runnera, bo `-full` trzeba porównywać z drzewem, z którego powstał):
-`=== podsumowanie: 96 PASS, 0 FAIL ===`.
+`=== podsumowanie: 109 PASS, 0 FAIL ===`.
 
 Sekcje: A selftest buildera · B determinizm (dwa `mkfs.erofs` na tym samym drzewie = **identyczny
 plik**, `cmp` bez różnic) · C **test negatywny** weryfikatora (drzewo ma plik, którego nie ma w
@@ -96,7 +96,11 @@ mniejszym) · N README-y nie mogą obiecywać rozmiaru mniejszego niż build (pa
 `ROZMIARY-KONTRAKT`) · P granica `<` vs `<=` w bramce · P2 ładunek: `device-probe.sh` **z katalogów wydania** na tych
 samych atrapach (GO/NO-GO po obu wariantach + negatyw: zepsuta kopia nie daje GO) · F2 `flash-all.sh`
 **z katalogów wydania** (E/F/RS1 po obu; RS2/RS3 + sekwencja resize tylko na lekkim — `-full` jest
-zamrożony sprzed ery `RESIZE_SUPER`; plus negatyw) · Q kontrakt rozmiarów: każdy plik wydania
+zamrożony sprzed ery `RESIZE_SUPER`; plus negatyw) · F3 `rollback.sh` **z katalogów wydania** —
+jedyny skrypt wydania, którego wcześniej żadna sekcja nie odpalała (bash -n; bez `vbmeta_stock_*`
+→ 0 flashów i komunikat „brak" dla obu slotów; tylko slot a → 1 flash z własnym plikiem; oba → 2;
+heredoc „NIE przywraca partycji product ani system" drukowany; samolokalizacja z cudzego cwd;
+negatyw: zepsuta kopia nie flashuje) · Q kontrakt rozmiarów: każdy plik wydania
 musi być **nazwany w prozie** `$OUT/README.md` ze swoją liczbą bajtów (spacja co 3 cyfry i granice
 cyfr — „591" w numerze commita `aaa5919` się nie liczy); plus ta sama liczba i suma w wierszach
 `docs/07` oraz spójność liczby kolumn w tabelach markdown.

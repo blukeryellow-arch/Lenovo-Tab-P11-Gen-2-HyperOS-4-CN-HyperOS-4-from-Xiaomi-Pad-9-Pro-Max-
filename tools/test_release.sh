@@ -243,6 +243,83 @@ else bad "negatyw F2: zepsuta kopia przeszla scenariusz GO - kontrola ladunku je
 if [ $f2 -ge 8 ]; then ok "przeanalizowane scenariusze flash-all z wydan: $f2"; else
   bad "tylko $f2 scenariuszy flash-all z wydan - petla padla w polowie"; fi
 
+# --------------------- F3: rollback.sh z katalogow WYDANIA (ladunek, nie generator)
+echo "== F3     rollback.sh z katalogow wydania: odkrecanie vbmeta na atrapie"
+# Jedyny skrypt wydania, ktorego NIGDY nie odpalala zadna sekcja: E-H/RS biora
+# flash-all, F2 jego kopie, P2 device-probe. A rollback.sh ma realna logike:
+# samolokalizacja (dirname $0), petla slotow a/b, flashowanie vbmeta_stock_* i
+# heredoc z ostrzezeniem, ze NIE przywraca product ani system. Kopie odpalane
+# PO NAZWIE WZGLEDNEJ z $REL (ta sama lekcja co F2) i z jawnie sterowanym
+# stanem vbmeta_stock_*.img (atrapa fastboot plikow nie tworzy, wiec stan
+# miedzy scenariuszami trzeba ustawiac recznie).
+f3=0
+for cop in "dist/release/HyperOS4_P11Gen2/rollback.sh|LEKKI" \
+           "dist/release/HyperOS4_P11Gen2-full/rollback.sh|-full"; do
+  IFS='|' read -r cpath cname <<< "$cop"
+  CP=$ROOT/$cpath
+  if [ ! -f "$CP" ]; then bad "F3: brak $cpath"; continue; fi
+  bash -n "$CP" && ok "F3[$cname]: bash -n czysty" || bad "F3[$cname]: bash -n zglasza blad skladni"
+  f3=$((f3+1))
+  cp "$CP" "$REL/f3copy.sh"
+  # scenariusz 1: brak kopii -> 0 flashow, komunikat 'brak' dla obu slotow, rc=0
+  rm -f "$REL"/vbmeta_stock_*.img
+  : > "$WORK/fb.log"
+  out=$(cd "$REL" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" bash f3copy.sh 2>&1); rc=$?
+  got=$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")
+  if [ "$rc" = 0 ] && [ "$got" = 0 ] && printf '%s' "$out" | grep -q 'brak vbmeta_stock_a.img' \
+     && printf '%s' "$out" | grep -q 'brak vbmeta_stock_b.img'; then
+    ok "F3[$cname]: bez kopii -> 0 flashow, 'brak' dla a i b, rc=0"
+  else bad "F3[$cname]: bez kopii: rc=$rc flashby=$got, oczekiwano 0/0 + komunikaty braku"; fi
+  f3=$((f3+1))
+  # scenariusz 2: tylko slot a -> 1 flash vbmeta_a, 'brak' dla b
+  : > "$REL/vbmeta_stock_a.img"
+  : > "$WORK/fb.log"
+  out=$(cd "$REL" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" bash f3copy.sh 2>&1); rc=$?
+  got=$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")
+  if [ "$rc" = 0 ] && [ "$got" = 1 ] && grep -q '^FASTBOOT: flash vbmeta_a vbmeta_stock_a.img$' "$WORK/fb.log" \
+     && printf '%s' "$out" | grep -q 'brak vbmeta_stock_b.img'; then
+    ok "F3[$cname]: tylko slot a -> 1 flash vbmeta_a z wlasciwym plikiem"
+  else bad "F3[$cname]: tylko slot a: rc=$rc flashby=$got (patrz $WORK/fb.log)"; fi
+  f3=$((f3+1))
+  # scenariusz 3: oba sloty -> dokladnie 2 flashy, kazdy z wlasnym plikiem
+  : > "$REL/vbmeta_stock_b.img"
+  : > "$WORK/fb.log"
+  out=$(cd "$REL" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" bash f3copy.sh 2>&1); rc=$?
+  got=$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")
+  if [ "$rc" = 0 ] && [ "$got" = 2 ] && grep -q '^FASTBOOT: flash vbmeta_a vbmeta_stock_a.img$' "$WORK/fb.log" \
+     && grep -q '^FASTBOOT: flash vbmeta_b vbmeta_stock_b.img$' "$WORK/fb.log"; then
+    ok "F3[$cname]: oba sloty -> 2 flashy (vbmeta_a + vbmeta_b, wlasne pliki)"
+  else bad "F3[$cname]: oba sloty: rc=$rc flashby=$got (patrz $WORK/fb.log)"; fi
+  f3=$((f3+1))
+  # scenariusz 4: heredoc z ostrzezeniem o zakresie - to najwazniejsza linia dla czlowieka
+  if printf '%s' "$out" | grep -q 'NIE przywraca partycji product ani system'; then
+    ok "F3[$cname]: ostrzezenie 'NIE przywraca product ani system' drukowane"
+  else bad "F3[$cname]: brak ostrzezenia o zakresie rollbacku w wyjsciu"; fi
+  f3=$((f3+1))
+done
+# samolokalizacja: odpalony z cudzego cwd (katalog glowny sandboxa) ma czytac kopie
+# z WLASNEGO katalogu - gdyby czytal cwd, dostalby 0 flashow przy istniejacej kopii
+rm -f "$REL"/vbmeta_stock_*.img
+: > "$REL/vbmeta_stock_a.img"
+: > "$WORK/fb.log"
+out=$(cd / && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" bash "$REL/f3copy.sh" 2>&1); rc=$?
+got=$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")
+if [ "$rc" = 0 ] && [ "$got" = 1 ]; then
+  ok "F3: samolokalizacja - z cudzego cwd czyta kopie z wlasnego katalogu (1 flash)"
+else bad "F3: samolokalizacja: rc=$rc flashby=$got - skrypt czyta cwd zamiast dirname \$0"; fi
+f3=$((f3+1))
+# negatyw (klasa martwej kontroli z 6.20): zepsuta kopia nie moze nic flashowac
+sed '1a exit 9 # negatyw F3' "$ROOT/dist/release/HyperOS4_P11Gen2/rollback.sh" > "$REL/f3sab.sh"
+: > "$WORK/fb.log"
+sab=0
+(cd "$REL" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" bash f3sab.sh >/dev/null 2>&1) || sab=$?
+f3=$((f3+1))
+if [ "$sab" != 0 ] && ! grep -q '^FASTBOOT: flash ' "$WORK/fb.log"; then
+  ok "negatyw F3: zepsuta kopia nie flashuje (rc=$sab, 0 polecen)"
+else bad "negatyw F3: zepsuta kopia przeszla albo flashowala - kontrola martwa"; fi
+if [ $f3 -ge 12 ]; then ok "przeanalizowane scenariusze rollback z wydan: $f3"; else
+  bad "tylko $f3 scenariuszy rollback - petla padla w polowie"; fi
+
 # ---------------------------------------------------------------- K: higiena tekstu
 echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
 # Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt

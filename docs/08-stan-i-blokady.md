@@ -73,19 +73,21 @@ Po re-clone sandboxa (`/tmp` pusty, `~/romtools` skasowane) łańcuch narzędzi 
 ```
 tools/build_comp_libs.sh /tmp/comp-build      # 11 s, od zera, bez cache: libz.a 150 244 B + liblz4.a 277 634 B
 tools/build_erofs_local.sh /tmp/erofs-c       # ~30 s: mkfs 588 376 B, fsck 580 496 B, dump 571 776 B
-tools/test_release.sh --erofs-dir /tmp/erofs-c        # 88 PASS / 0 FAIL (z sekcja F2)
+tools/test_release.sh --erofs-dir /tmp/erofs-c        # 101 PASS / 0 FAIL (z sekcjami F2/F3)
 ```
 
 To przebieg **niezależny od wszystkiego, co miałem wczoraj**: identyczne liczniki, jakich wymaga
 sekcja Q (16 pozycji kontraktu, `absent-skip 3`, wiersze `docs/07` 2/2) — czyli dokładnie ten kształt,
 który widzi runner, bo oba katalogi wydania mają na czystym checkoutcie tyle samo plików co u mnie.
-Z tą różnicą, że ciemna strona jest moja: **`--real` (96 PASS) wymaga drzew donora w `/tmp`
+Z tą różnicą, że ciemna strona jest moja: **`--real` (109 PASS) wymaga drzew donora w `/tmp`
 i `~/romtools/avb`, a te nie są w gicie i nie odtwarzają się same** — `system.img` (920 MB) i
 `product.img` wariantu `-full` (150 MB) przekraczają limit GitHuba. Dlatego po reboocie mam prawo
 napisać „88/0", a nie „96/0". **Aktualizacja 24 IX ~14:00 UTC: to prawo przestało być potrzebne.**
 Drugie mrugnięcie snapshotu zabrało właśnie te trzy nieśledzone obrazy, a odbudowa z
 `transfer-spool` odtworzyła je **bajt w bajt** w kwadrans (receptura: sekcja na końcu pliku).
-`--real` jest odtwarzalny w pełni: 96 PASS / 0 FAIL potwierdzone po odbudowie. `sha256sum -c`
+`--real` jest odtwarzalny w pełni: pełne PASS potwierdzone po odbudowie (96/0 w chwili odbudowy;
+109/0 po dodaniu sekcji F3 jeszcze tego samego dnia — liczby historyczne niżej dotyczą suity
+sprzed F3). `sha256sum -c`
 na czystym checkoutcie wychodzi
 7/8 (lekki) i 6/8 (`-full`), a każde `FAILED open or read` to właśnie ten brakujący duży obraz —
 nie niezgodność; lokalnie po odtworzeniu obrazów (24 IX) oba katalogi mają 8/8. Skrypty generowane
@@ -97,7 +99,7 @@ przechodzą `bash -n` i mają rozmiary zgodne z kontraktami README.
 ```
 tools/build_comp_libs.sh /tmp/comp-build            # zlib + lz4 (wymaga sieci na tarball)
 tools/build_erofs_local.sh /tmp/erofs-c             # mkfs/fsck/dump, selfcheck na 3 binarkach
-tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 96 PASS / 0 FAIL z drzewami sesji (bez --real: 88)
+tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 109 PASS / 0 FAIL z drzewami sesji (bez --real: 101)
 ```
 
 Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (patrz `.gitignore`):
@@ -220,7 +222,7 @@ cp /tmp/rebuild-full/{system,product}_hyperos4_p11g2.img dist/release/HyperOS4_P
 (cd dist/release/HyperOS4_P11Gen2-full && sha256sum -c SHA256SUMS.txt)   # 8/8
 SYSTREE=/tmp/tree2/system_tree SYSTREE_FULL=/tmp/donor/system_tree \
 PRODTREE=/tmp/tree-product PRODTREE_FULL=/tmp/tree-full \
-    tools/test_release.sh --erofs-dir /tmp/erofs-c --real               # 96 PASS / 0 FAIL
+    tools/test_release.sh --erofs-dir /tmp/erofs-c --real               # 109 PASS / 0 FAIL (replay 24 IX ~14:10 dal 96/0 - sprzed F3)
 ```
 
 Dwa szczególy, które kosztowaly najwiecej namyslu przy rekonstrukcji receptury:
