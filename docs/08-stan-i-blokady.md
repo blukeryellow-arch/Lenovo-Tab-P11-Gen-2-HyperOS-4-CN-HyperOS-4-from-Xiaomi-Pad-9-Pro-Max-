@@ -73,13 +73,13 @@ Po re-clone sandboxa (`/tmp` pusty, `~/romtools` skasowane) łańcuch narzędzi 
 ```
 tools/build_comp_libs.sh /tmp/comp-build      # 11 s, od zera, bez cache: libz.a 150 244 B + liblz4.a 277 634 B
 tools/build_erofs_local.sh /tmp/erofs-c       # ~30 s: mkfs 588 376 B, fsck 580 496 B, dump 571 776 B
-tools/test_release.sh --erofs-dir /tmp/erofs-c        # 71 PASS / 0 FAIL
+tools/test_release.sh --erofs-dir /tmp/erofs-c        # 88 PASS / 0 FAIL (z sekcja F2)
 ```
 
 To przebieg **niezależny od wszystkiego, co miałem wczoraj**: identyczne liczniki, jakich wymaga
 sekcja Q (16 pozycji kontraktu, `absent-skip 3`, wiersze `docs/07` 2/2) — czyli dokładnie ten kształt,
 który widzi runner, bo oba katalogi wydania mają na czystym checkoutcie tyle samo plików co u mnie.
-Z tą różnicą, że ciemna strona jest moja: **`--real` (79 PASS) wymaga drzew donora w `/tmp`
+Z tą różnicą, że ciemna strona jest moja: **`--real` (96 PASS) wymaga drzew donora w `/tmp`
 i `~/romtools/avb`, a te nie są w gicie i nie odtwarzają się same** — `system.img` (920 MB) i
 `product.img` wariantu `-full` (150 MB) przekraczają limit GitHuba. Dlatego po reboocie mam prawo
 napisać „71/0", a nie „79/0". `sha256sum -c` na czystym checkoutcie wychodzi
@@ -93,7 +93,7 @@ przechodzą `bash -n` i mają rozmiary zgodne z kontraktami README.
 ```
 tools/build_comp_libs.sh /tmp/comp-build            # zlib + lz4 (wymaga sieci na tarball)
 tools/build_erofs_local.sh /tmp/erofs-c             # mkfs/fsck/dump, selfcheck na 3 binarkach
-tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 79 PASS / 0 FAIL z drzewami sesji (bez --real: 71)
+tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 96 PASS / 0 FAIL z drzewami sesji (bez --real: 71)
 ```
 
 Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (patrz `.gitignore`):

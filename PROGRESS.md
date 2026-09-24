@@ -4,6 +4,12 @@ Tryb: agent pracuje samodzielnie, bez pytań. Ten plik jest aktualizowany po kaz
 etapie; `run` = id biegu GitHub Actions, `sha256` = weryfikacja co do bajta.
 Start bloku: 2026-09-23 ~16:55 (Europe/Warsaw), limit czasowy 3h.
 
+**To jest HISTORIA bloku 3h z 23 IX — plik zamrożony po jego zamknięciu** (zdanie
+o aktualizowaniu „po każdym etapie" dotyczy tamtego bloku). Wiersze „DO ZROBIENIA"
+odnosiły się do jego chwili; większość zamknęły późniejsze etapy (`dist/rom-kit/`,
+`dist/modules/`, przebiegi workflowów, suity). Bieżący stan i blokady: `docs/08-stan-i-blokady.md`;
+umowy testów: `docs/07-jak-weryfikowac.md` (88 kontroli atrap / 96 z `--real`).
+
 | # | etap | status | dowod / czas |
 |--:|---|---|---|
 | 1 | kanaal transferowy (runner + kawalki <=90 MB) | GOTOWE (poprz. tura) | bieg 17 `35823024969`, sha256 `afb1e37bc86b` |
