@@ -109,7 +109,7 @@ przetestować czegokolwiek, więc jest warta zbudowania; ale nazywam ją po imie
 dostarcza, dostają `<optional>true</optional>` — init panikuje wyłącznie na braku
 pozycji **obowiązkowej**, więc to jest jedyne półotwarcie, jakie istnieje bez wymiany
 vendora. Jeżeli mam `/vendor/etc/vintf` z urządzenia (ściągany przez
-`scripts/collect_device_state.sh`), `optional` dostają **tylko realne braki** —
+`diagnostics/collect_device_state.sh`), `optional` dostają **tylko realne braki** —
 dopasowanie po nazwie interfejsu (AIDL `<interface><name>…`) lub po `name` (HIDL).
 Test na fałszywym vendorze z 2 HAL-ami: zostaje 1 pozycja obowiązkowa (druga nie
 występuje w tej macierzy) — czyli mielenie bez potrzeby nie zachodzi.

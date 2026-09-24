@@ -307,9 +307,10 @@ etc/group:   system:x:1000:
 
 Dorzucone do obu wariantów. Efekt, którego nie oczekiwałem: **rozmiar obrazu ani drgnął**
 (77 619 200 B i 153 391 104 B), bo 58 B weszło w bloki, które i tak były wolne; zmieniło się
-tylko sha256 (`16afbc35…` i `b28e1c0e…`; obie kwity sa juz nieaktualne po korekcie DAC
-z §6.19: `298ada60…` i `b4bb8064…`). Weryfikacja 1:1 wyszła 67/67 i 147/147, więc pliki
-są w partycji, nie tylko w drzewie — sprawdzone `fsck.erofs --extract --path=etc`.
+tylko sha256. Żadne z tamtych „kwitów" nie jest już aktualne — sumy przepisały później korekta
+DAC (§6.19) i przejście na `lz4hc,9` (§6.23), a żywy rejestr kwot trzyma `docs/07`, nie ta
+sekcja. Weryfikacja 1:1 wyszła 67/67 i 147/147, więc pliki są w partycji, nie tylko w drzewie —
+sprawdzone `fsck.erofs --extract --path=etc`.
 
 **`etc/vintf/manifest.xml` pomijam świadomie** i to jest decyzja cenniejsza niż samo dodanie.
 Brak pliku jest dla `VintfObject` stanem normalnym (partycja bez manifestu = zero nowych
@@ -976,13 +977,24 @@ vbmeta          4 096 B  9cf2e7e4…         (identyczny; Flags: 3)
 `--real` na tym samym drzewie: **67 PASS / 0 FAIL** — pierwszy taki przebieg w projekcie (wcześniej
 `--real` dało 46 PASS, bo drzewa musiały istnieć). Sekcja J sprawdziła 8 sum w wariancie lekkim
 (wszystkie obecne) i 6 w `-full` (2 obrazy >100 MB nieobecne w checkoutcie — taka jest cena limitu
-GitHuba, i teraz test to mówi zamiast klęczeć).
+GitHuba, i teraz test to mówi zamiast klęczeć). Po odtworzeniu obrazów `-full` ten sam przebieg
+daje **79 PASS / 0 FAIL** — wszystkie cztery obrazy sprawdzone 1:1 i 8+8 sum; wymaga to
+`SYSTREE_FULL` = drzewo donora, bo `-full` trzeba porównywać z drzewem, z którego powstał.
 
-**Wariant `-full` nie został przebudowany i to jest decyzja, nie usterka.** Jego `product.img`
-(150 560 768 B) powstawał jako kuracja z `staging/product/overlay` — 147 wpisów 1:1. Z danych, które
-mam, wyszłoby 174 (donor `etc` + `fonts` + `overlay` z osobnego tara assetów). Nie zgaduję zestawu
-plików, żeby udawać to samo wydanie; w README `-full` stoi to wprost, razem z ostrzeżeniem, że jego
-`system.img` to build 23 IX (84 obowiązkowe → bramka zamknięta), a dobry obraz jest u sąsiada.
+**Wariant `-full` też jest odtworzony — i to bez zgadywania.** Jego `product.img`
+(150 560 768 B) powstawał jako kuracja z `staging/product/overlay` — 147 wpisów 1:1. Z tara
+assetów wychodziło 174 wpisy (154 pliki + 18 katalogi + `passwd`/`group`), a różnica to cały
+`etc` poza tymi dwoma plikami: `build.prop`, `permissions/` (12 plików), `sysconfig/` (10) i
+`vintf/` — razem 27 wpisów. Zestaw miał cztery niezależne przesłanki przed budową: tabela §6.9
+(„fonty + 67 RRO" = 144 wpisy przed `passwd`/`group`, 147 po), liczba RRO w §6.16 i w
+`diagnostics/rro-crosstab-product.tsv` (67 apk) oraz komentarz w `enrich_product.sh`
+(„`etc/permissions` świadomie poza listą"). Rozstrzygnął jednak hash-orakul: przebudowa z drzewa
+`fonty + overlay + passwd + group` dała `da17ffcd20c0ab4e…` — **bajt w bajt** wydany obraz, a
+przebieg z drzewem donora (z trzema plikami runnera) odtworzył `system` `cf0b889d45a6bb4f…` i
+`vbmeta` `9cf2e7e4…`. Odtwarzalność tym razem nie posłużyła do przechwałek, tylko do
+rozstrzygnięcia pytania, na które sama dokumentacja odpowiedzi nie miała. Ostrzeżenie z README
+`-full` pozostaje aktualne: jego `system` to build 23 IX (84 obowiązkowe → bramka zamknięta),
+a dobry obraz jest u sąsiada.
 
 **Dwa testy, które tego pilnują** (obok opisanej wyżej sekcji T):
 - sekcja J porównuje teraz „drzewo vs obraz" **z** wykluczeniem pliku dodanego przez buildera — i

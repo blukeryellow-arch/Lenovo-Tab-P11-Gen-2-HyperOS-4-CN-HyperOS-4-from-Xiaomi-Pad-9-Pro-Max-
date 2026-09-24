@@ -72,26 +72,27 @@ Po re-clone sandboxa (`/tmp` pusty, `~/romtools` skasowane) łańcuch narzędzi 
 ```
 tools/build_comp_libs.sh /tmp/comp-build      # 11 s, od zera, bez cache: libz.a 150 244 B + liblz4.a 277 634 B
 tools/build_erofs_local.sh /tmp/erofs-c       # ~30 s: mkfs 588 376 B, fsck 580 496 B, dump 571 776 B
-tools/test_release.sh --erofs-dir /tmp/erofs-c        # 38 PASS / 0 FAIL
+tools/test_release.sh --erofs-dir /tmp/erofs-c        # 71 PASS / 0 FAIL
 ```
 
 To przebieg **niezależny od wszystkiego, co miałem wczoraj**: identyczne liczniki, jakich wymaga
 sekcja Q (16 pozycji kontraktu, `absent-skip 3`, wiersze `docs/07` 2/2) — czyli dokładnie ten kształt,
 który widzi runner, bo oba katalogi wydania mają na czystym checkoutcie tyle samo plików co u mnie.
-Z tą różnicą, że ciemna strona jest moja: **`--real` (46 PASS) wymaga drzew syntetycznych w `/tmp`
+Z tą różnicą, że ciemna strona jest moja: **`--real` (79 PASS) wymaga drzew donora w `/tmp`
 i `~/romtools/avb`, a te nie są w gicie i nie odtwarzają się same** — `system.img` (920 MB) i
 `product.img` wariantu `-full` (150 MB) przekraczają limit GitHuba. Dlatego po reboocie mam prawo
-napisać „38/0", a nie „46/0". `sha256sum -c` na tym, co mimo wszystko jest w repo, wychodzi
+napisać „71/0", a nie „79/0". `sha256sum -c` na czystym checkoutcie wychodzi
 7/8 (lekki) i 6/8 (`-full`), a każde `FAILED open or read` to właśnie ten brakujący duży obraz —
-nie niezgodność. Trzy skrypty generowane (`flash-all.sh 6 749`, `rollback.sh 1 152`,
-`device-probe.sh 6 533`) przechodzą `bash -n` i mają rozmiary zgodne z kontraktem README.
+nie niezgodność; lokalnie po odtworzeniu obrazów (24 IX) oba katalogi mają 8/8. Skrypty generowane
+(`flash-all.sh` 8 776 w lekkim i 6 749 w `-full`, `rollback.sh` 1 152, `device-probe.sh` 6 533)
+przechodzą `bash -n` i mają rozmiary zgodne z kontraktami README.
 
 ## Jak odtworzyć środowisko po reboocie sandboxa
 
 ```
 tools/build_comp_libs.sh /tmp/comp-build            # zlib + lz4 (wymaga sieci na tarball)
 tools/build_erofs_local.sh /tmp/erofs-c             # mkfs/fsck/dump, selfcheck na 3 binarkach
-tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 46 PASS, 0 FAIL (bez --real: 38)
+tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 79 PASS / 0 FAIL z drzewami sesji (bez --real: 71)
 ```
 
 Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (patrz `.gitignore`):
@@ -105,10 +106,9 @@ przeszedł na runnerze — `release-selftest` = `success`, a w nim krok `suite w
 determinizm, testy negatywne, bramka rozmiaru)` = `success`. To już coś znaczy, bo od `d843cc`
 krok bierze `PIPESTATUS[0]`, a nie status `tee` (patrz §głuchota w `docs/08` wyżej i `docs/06`).
 
-Pozostaje dług inny i trzeba go nazywać po imieniu: **`--real` nadal nie przebiegł naprawdę**,
-bo nie ma drzew donorów. „51 PASS" to liczba z atrap syntetycznych. Sekcje, które dotykają
-prawdziwych obrazów (Q/R i pary rozmiarów w `docs/07`), są zielone, ale `make_release.sh --real`
-w obecnych warunkach po prostu nie ma z czego liczyć.
+Drugi dług też zamknięty 24 IX: **`--real` przebiegł na odzyskanych drzewach donora** — 67 PASS /
+0 FAIL po przebudowie lekkiego, a po odtworzeniu obrazów `-full` (hash-orakul `da17ffcd…`,
+`cf0b889d…`) ten sam przebieg daje 79 PASS / 0 FAIL z czterema obrazami sprawdzonymi 1:1.
 
 ## Odzysk drzewa donora — ROZWIĄZANE 24 IX, odpowiedź leżała w repo
 

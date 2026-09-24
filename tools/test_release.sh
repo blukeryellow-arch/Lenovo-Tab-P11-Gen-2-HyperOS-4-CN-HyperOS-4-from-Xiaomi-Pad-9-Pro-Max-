@@ -314,13 +314,20 @@ if [ $REAL -eq 1 ]; then
       # drzewo ZALEZY OD WARIANTU - 'product' w -full ma overlay, lekkie drzewo nie;
       # pierwsza wersja testu podstawiala /tmp/tree-product do obu i 'DODATKOWE' wpisy
       # z -full wygladaly jak usterka wydania, a byly usterka testu (2026-09-23)
+      # Drzewo ZALEZY OD WARIANTU takze dla system: -full to build 23 IX z drzewa, ktore
+      # MIalo trzy macierze runnera (donor), a lekki jest z drzewa po ich usunieciu + jedna
+      # wygenerowana. Porownywanie obu z jednego SYSTREE pokazywaloby w -full trzy macierze
+      # jako 'DODATKOWE' - usterke testu, nie wydania (dokladnie klasa z 2026-09-23).
+      # Dla -full podaj SYSTREE_FULL=<drzewo z macierzami runnera>.
       case "$b" in
-        *-full) pt=${PRODTREE_FULL:-/tmp/tree-full};;
-        *)      pt=${PRODTREE:-/tmp/tree-product};;
+        *-full) pt=${PRODTREE_FULL:-/tmp/tree-full}
+                st=${SYSTREE_FULL:-${SYSTREE:-/tmp/sys-tree2/system_tree}};;
+        *)      pt=${PRODTREE:-/tmp/tree-product}
+                st=${SYSTREE:-/tmp/sys-tree2/system_tree};;
       esac
       case $img in
         product_hyperos4_p11g2.img) tree=$pt;;
-        *)                          tree=${SYSTREE:-/tmp/sys-tree2/system_tree};;
+        *)                          tree=$st;;
       esac
       if ! [ -d "$tree" ]; then note "$b/$img: brak drzewa $tree - pomijam (nie mam czego porownywac)"; continue; fi
       if [ "$img" = system_hyperos4_p11g2.img ]; then

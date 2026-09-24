@@ -67,6 +67,24 @@ sh_run 'cat /system/etc/vintf/compatibility_matrix.xml 2>/dev/null | head -40'
 sh_run 'getprop | grep -E "graphics|hwc|camera.provider" | head -20'
 
 echo
+echo "-- /vendor/etc/vintf: surowe pliki (adb pull, do --vintf-vendor-manifest) --"
+VOUT="${OUT%.txt}-vendor-vintf"
+rm -rf "$VOUT"; mkdir -p "$VOUT"
+if adb pull /vendor/etc/vintf/. "$VOUT" >/dev/null 2>&1 && [ "$(find "$VOUT" -type f | wc -l)" -gt 0 ]; then
+  n=$(find "$VOUT" -type f | wc -l)
+  echo "  pobrano $n plikow do $VOUT"
+  echo "  (manifest.xml i katalog manifest/ - make_level_matrix czyta katalog rekurencyjnie)"
+  echo "  uzycie: tools/make_release.sh ... --vintf-optional-missing --vintf-vendor-manifest '$VOUT'"
+  echo "  wtedy 'optional' dostana WYLACZNIE pozycje, ktorych ten vendor nie ma,"
+  echo "  zamiast oznaczania NA SZEROKO."
+  echo "  pobrano $n plikow /vendor/etc/vintf -> $VOUT (do --vintf-vendor-manifest)" >> "$OUT"
+else
+  echo "  NIE pobrano (adb nie dziala albo sciezki nie ma) - bez tego pliku rebuild"
+  echo "  oznacza optional NA SZEROKO, czyli bez rozrozniania realnych brakow."
+  echo "  NIE pobrano /vendor/etc/vintf (brak adb lub sciezki)" >> "$OUT"
+fi
+
+echo
 echo "-- dostepnosc narzedzi na urzadzeniu --"
 sh_run 'for c in lpdump dmctl magisk ksud su; do printf "%s: " "$c"; command -v $c || echo brak; done'
 sh_run 'magisk -v 2>/dev/null; magisk -V 2>/dev/null'

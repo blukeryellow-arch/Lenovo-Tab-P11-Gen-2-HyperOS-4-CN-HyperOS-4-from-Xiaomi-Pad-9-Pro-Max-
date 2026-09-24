@@ -1,22 +1,24 @@
 # Wariant `-full`: /product z fontami **i 67 nakladkami RRO** HyperOS
 
-> **Stan 24 IX — przeczytaj, zanim wyciągniesz fastboot.** `system_hyperos4_p11g2.img` 920 047 616 B
-> leży tu ten sam co w wariancie lekkim *był*, ale **nie został przebudowany** i to jest różnica,
-> którą trzeba znać: w tym katalogu nadal stoi build z 23 IX, w którym drzewo nosiło trzy pliki
-> `etc/vintf/compatibility_matrix.{4,5,6}.xml` (każdy cięty od poprzedniego, a `optional` zapisany
-> jako element, którego libvintf nie czyta). Skutek mierzony na rozpakowanym obrazie: 84 pozycje i
-> **84 obowiązkowe** — czyli bramka `init` pozostaje zamknięta. Poprawiony obraz (84 pozycje,
-> **0 obowiązkowych**, 19 197 B w jednym pliku, sha256 `4836dcd4c8d5f6c0…`, 920 039 424 B) jest
-> w `../HyperOS4_P11Gen2/`. Dlaczego nie przebudowałem `product` tutaj: drzewo `/product` tego
-> wariantu było kuracją z `staging/product/overlay` (147 wpisów), a z danych, które mam, wyszłoby
-> 174 — nie chcę zgadywać zestawu plików i udawać, że to to samo wydanie.
-> Dowody i liczby: `docs/06 §6.32`, `§6.33`; sam plik `product.img` (150 560 768 B, sha256
-> `da17ffcd20c0ab4e…`) jest nietknięty i nadal zweryfikowany 1:1 z tym, co opisuje manifest.
+> **Stan 24 IX — przeczytaj, zanim wyciągniesz fastboot.** Oba obrazy tego katalogu są
+> **odtworzone 24 IX bajt w bajt** (hash-orakul: sumy poniżej zgadzają się z wydanymi co do
+> bajta), ale `system_hyperos4_p11g2.img` 920 047 616 B pozostaje buildem z 23 IX, w którym
+> drzewo nosiło trzy pliki `etc/vintf/compatibility_matrix.{4,5,6}.xml` (każdy cięty od
+> poprzedniego, a `optional` zapisany jako element, którego libvintf nie czyta). Skutek mierzony
+> na rozpakowanym obrazie: 84 pozycje i **84 obowiązkowe** — czyli bramka `init` pozostaje
+> zamknięta. Poprawiony obraz (84 pozycje, **0 obowiązkowych**, 19 197 B w jednym pliku, sha256
+> `4836dcd4c8d5f6c0…`, 920 039 424 B) jest w `../HyperOS4_P11Gen2/` — do bootowania wybierz ten.
+> Zestaw plików `product` rozstrzygnięty, nie zgadnięty: kuracja ze `staging/product/overlay` to
+> 63 fonty + 67 RRO + `etc/passwd` + `etc/group` (147 wpisów), bez reszty `etc` z tara assetów.
+> Dowody i liczby: `docs/06 §6.32`, `§6.33`.
 
-Ten katalog rożni się od `../HyperOS4_P11Gen2` **jedynie plikiem `product_hyperos4_p11g2.img`**
+Różnica wobec `../HyperOS4_P11Gen2` to plik `product_hyperos4_p11g2.img`
 (150 560 768 B zamiast 75 198 464 B): dokładam 67 nakladek RRO (m.in. `AospFrameworkResOverlay`,
 `SettingsRroCommonOverlay` 42 MB, `DevicesOverlay` 12 MB, `MiuiSecurityCoreOverlay` 13 MB) plus
 drzewo katalogow z `staging/product/overlay`, bo to one daja „HyperOS Look", a nie same fonty.
+Drugi plik inny niż u sąsiada to `system_hyperos4_p11g2.img` (tu kaskada z 23 IX, u sąsiada
+poprawiony build 24 IX), a `flash-all.sh` (6 749 B) pochodzi z chwili wydania tej partii i
+**nie ma** ścieżki `RESIZE_SUPER` — do flashowania służy wariant lekki.
 
 `system_hyperos4_p11g2.img` (920 047 616 B) i `vbmeta_hyperos4_p11g2.img` (4 096 B) sa **tymi
 samymi bajtami** co w wariancie lekkim — te same sha256, ten sam UUID, ta sama budowa:
@@ -54,8 +56,9 @@ juz zajetych — podczas gdy przy `lz4` zdejmowaly dokladnie jeden blok (4 096 B
 wciiaz jest w `make_release`. Znaczy to tylko, ze rozmiaru obrazu nie przewidywac z liczby
 bajtow wykluczanych plikow.
 
-Stan wariantu (po przebudowie z 2026-09-23): 132 pliki, w tym `etc/passwd` i `etc/group`
-oraz `etc/vintf/` **swiadomie bez** `manifest.xml` — patrz docs/06 §6.15. Weryfikacja
+Stan wariantu (odtworzenie z 2026-09-24, skład rozstrzygnięty hash-orakulem): 132 pliki —
+63 fonty, 67 RRO, `etc/passwd` i `etc/group`; katalogu `etc/vintf/` tu **nie ma**, a
+`etc/vintf/manifest.xml` pominięty świadomie — patrz docs/06 §6.15. Weryfikacja
 obrazu 1:1: **147/147** wpisów, `product.img` = 150 560 768 B, sha256 `da17ffcd20c0ab4e…`.
 
 Czego **nie** ma tu, a ma pełny `product.img` Xiaomi (6,4 GB): `pangu/`, `bin/`,
