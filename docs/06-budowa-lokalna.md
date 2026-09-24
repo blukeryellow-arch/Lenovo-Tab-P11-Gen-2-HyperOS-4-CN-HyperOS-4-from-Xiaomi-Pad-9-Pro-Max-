@@ -841,3 +841,29 @@ Czego `T` NIE dowodzi: nie zagląda do bajtów. Realnego `system.img` wydania ni
 Jedyna kontrola na bajtach to `fsck.erofs --extract` i `grep` po rozpakowanym obrazie — po to jest
 `S2` w tej samej suicie, tyle że na atrapie. Dla wydania realnego wykonuje się to ręcznie i przepis
 jest w README wariantu lekkiego.
+
+## 6.31 Przebieg, którego nie umiem odtworzyć — i co to zmieniło w suicie
+
+24 IX, tuż po dopisaniu §6.30: `bash tools/test_release.sh --erofs-dir /tmp/erofs-c 2>&1 | tail -3`
+zwróciło `53 PASS / 1 FAIL`. Nazwy tej kontroli nie widziałem, bo `tail -3` utnął ją razem z
+resztą, a ja i tak zrobiłem `git add -A && git commit` w tej samej linii — czyli wpuściłem commit
+przy czerwonym wyniku i dowiedziałem się o tym dopiero, kiedy zacząłem szukać przyczyny.
+
+Co wiadomo na pewno:
+- powtórzenie identycznego polecenia na identycznym drzewie daje `54 PASS / 0 FAIL` — pięć
+  kolejnych przebiegów; ten jeden się nie powtórzył ani razu;
+- stan plików w tamtym momencie to §6.30 w wersji, ktorej juz nie ma (nadpisałem ją minutę
+  później, nie commitując), wiec odtworzenie jest niemożliwe nie z lenistwa, tylko z braku
+  materialu;
+- zadna kontrolka nie czyta `docs/06` (K liczy pismo za pomoca `lint_pismo.py`, N patrzy w
+  README, Q w `docs/07`) — wiec jezeli to §6.30 wywolal tamten FAIL, to moglo to byc tylko
+  `K`/`lint_pismo.py`, ktory skanuje calosc repo.
+
+Nie zgaduje dalej, tylko usuwam klase bledu: `bad()` dopisuje teraz kazdy FAIL do
+`$WORK/PADDLE.txt`, a podsumowanie wypisuje te linie pod licznikiem — „--- co padlo (te same
+linie, ktorych nie utnie zadne tail)". Mechanizm sprawdzony tak jak wszystko inne: swiadomie
+fałszywe zdanie w README wydania → `52 PASS / 1 FAIL` z widoczna nazwa „README i build-info
+opisuja dwa rozne swiaty" przy `tail -4`; po usunieciu zdania → `54 PASS / 0 FAIL`.
+
+Wniosek do zapamietania jest mniej komfortowy niz zwykle: `tail` przy uruchamianiu suity to nie
+jest skrot, to kasowanie dowodow. Jezeli wynik ma byc jednozdaniowy, niech go poda sama suita.

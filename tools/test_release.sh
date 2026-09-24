@@ -31,11 +31,16 @@ while [ $# -gt 0 ]; do
   esac
 done
 WORK=$(mktemp -d /tmp/reltest.XXXXXX)
+# PADDLE = lista FAIL-i w pliku, nie tylko w strumieniu. Powod jest moj: 24 IX odpalilem
+# suite jako '... | tail -3', zobaczylem '53 PASS / 1 FAIL' i commitnalem, a nazwy tej
+# kontroli nigdy nie widzialem - bo byla dwa ekrany wyzej, wycieta przez mnie samego.
+# Licznik nie wystarczy: podsumowanie musi samo wymusic, co padlo.
+PADDLE=$WORK/PADDLE.txt; : > "$PADDLE"
 trap '[ $KEEP -eq 1 ] || rm -rf "$WORK"' EXIT
 MK="$EROFS_DIR/mkfs.erofs"; FS="$EROFS_DIR/fsck.erofs"; DUMP="$EROFS_DIR/dump.erofs"
 pass=0; fail=0
 ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$*"; pass=$((pass+1)); }
-bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$*"; fail=$((fail+1)); }
+bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$*"; fail=$((fail+1)); printf '%s\n' "$*" >> "$PADDLE"; }
 note() { printf '        %s\n' "$*"; }
 t() { # t <nazwa> <oczekiwane rc> <komenda...>
   local name=$1 want=$2; shift 2
@@ -697,5 +702,9 @@ if [ "$TC" -eq 0 ]; then bad "zaden katalog wydania nie zostal przeanalizowany -
 [ "$TF" -eq 0 ] && ok "sekcja T: przeanalizowane katalogi: $TC"
 
 echo; echo "=== podsumowanie: $pass PASS, $fail FAIL ==="
+if [ -s "$PADDLE" ]; then
+  echo "--- co padlo (te same linie, ktorych nie utnie zadne tail) ---"
+  sed 's/^/  /' "$PADDLE"
+fi
 [ $fail -eq 0 ] || echo "UWAGA: ktorys test padl — nie wydawaj zmiany w tools/, ktora to wywolala."
 exit $([ $fail -eq 0 ] && echo 0 || echo 1)
