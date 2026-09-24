@@ -855,15 +855,15 @@ Co wiadomo na pewno:
 - stan plików w tamtym momencie to §6.30 w wersji, ktorej juz nie ma (nadpisałem ją minutę
   później, nie commitując), wiec odtworzenie jest niemożliwe nie z lenistwa, tylko z braku
   materialu;
-- zadna kontrolka nie czyta `docs/06` (K liczy pismo za pomoca `lint_pismo.py`, N patrzy w
+- zadna kontrolka nie czyta `docs/06` (K liczy pismo za pomocą `lint_pismo.py`, N patrzy w
   README, Q w `docs/07`) — wiec jezeli to §6.30 wywolal tamten FAIL, to moglo to byc tylko
-  `K`/`lint_pismo.py`, ktory skanuje calosc repo.
+  `K`/`lint_pismo.py`, ktory skanuje całość repo.
 
 Nie zgaduje dalej, tylko usuwam klase bledu: `bad()` dopisuje teraz kazdy FAIL do
-`$WORK/PADDLE.txt`, a podsumowanie wypisuje te linie pod licznikiem — „--- co padlo (te same
-linie, ktorych nie utnie zadne tail)". Mechanizm sprawdzony tak jak wszystko inne: swiadomie
+`$WORK/PADDLE.txt`, a podsumowanie wypisuje te linie pod licznikiem — „--- co padło (te same
+linie, których nie utnie żadne tail)". Mechanizm sprawdzony tak jak wszystko inne: swiadomie
 fałszywe zdanie w README wydania → `52 PASS / 1 FAIL` z widoczna nazwa „README i build-info
-opisuja dwa rozne swiaty" przy `tail -4`; po usunieciu zdania → `54 PASS / 0 FAIL`.
+opisuja dwa rozne swiaty" przy `tail -4`; po usunięciu zdania → `54 PASS / 0 FAIL`.
 
-Wniosek do zapamietania jest mniej komfortowy niz zwykle: `tail` przy uruchamianiu suity to nie
-jest skrot, to kasowanie dowodow. Jezeli wynik ma byc jednozdaniowy, niech go poda sama suita.
+Wniosek do zapamietania jest mniej komfortowy niż zwykle: `tail` przy uruchamianiu suity to nie
+jest skrot, to kasowanie dowodow. Jeżeli wynik ma być jednozdaniowy, niech go poda sama suita.
