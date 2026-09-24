@@ -67,6 +67,14 @@ też `device.xml`/`manifest.xml` jako wymagania, bo filtrował po nazwie pliku z
 korzeniu dokumentu; dodatkowo `optional` było liczono jako `False and opt`, więc każde
 oznaczenie w pliku ignorowano. Naprawione.
 
+**Korekta z 24 IX 2026 (po tej turze).** Poniższy test zwierciadlany dowodził *filtrowania HAL-i*
+i niczego więcej. Nie sprawdzał, czy element `<level>` w wygenerowanym pliku równa się żądanemu
+poziomowi — a generator nadpisywał tylko atrybut, więc plik `compatibility_matrix.5.xml` miał w
+środku `<level>6</level>`. Test był zielony na narzędziu, które dla `init` nie otwiera niczego.
+Dziś: `make_release.sh --vintf-level` (dokłada plik do budowanego obrazu, sprząta z drzewa),
+asercja w samym generatorze (`rc=4` przy rozjeździe levelu) i sekcja S w teście wydania, która
+czyta plik z **rozpakowanego** obrazu — `docs/06` §6.29.
+
 Test zwierciadlany (bez niego nie ufałbym własnemu narzędziu): macierz level 5 wygenerowana
 przez `make_level_matrix.py` i *zmiękczona pod konkretny manifest vendor* vs ten sam manifest
 daje **0 braków obowiązkowych (“VINTF SPOJNE”)**; ta sama miękka macierz vs vendor źródła

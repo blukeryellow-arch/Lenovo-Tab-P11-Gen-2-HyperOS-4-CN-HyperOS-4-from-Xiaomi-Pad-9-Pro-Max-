@@ -15,6 +15,7 @@
 set -uo pipefail
 
 SELFTEST=0; TREE=''; SYSIMG=''; OUT=''; UUIDIMG=67b7eb22-3ebb-4c21-8b01-8ff545f10d8d
+VINTF_LEVEL=''; VINTF_STATE=''; VINTF_ADDED=''; VPREF=''; VL=''
 EROFS_DIR=${EROFS_DIR:-}; AVB=${AVB:-}; KEY=${KEY:-}
 COMP=lz4hc,9; SYSTREE=''  # DOMYSLNIE od 23 IX 2026: lz4hc,9 zamiast lz4. Zmierzone na tym
 # samym drzewie system: 920 047 616 B vs 967 503 872 B (-45,3 MiB, -4,9 %) przy IDENTYCZNYCH
@@ -50,6 +51,7 @@ while [ $# -gt 0 ]; do
     --key) KEY=$2; shift 2;;
     --compress) COMP=$2; shift 2;;
     --system-tree) SYSTREE=$2; shift 2;;
+    --vintf-level) VINTF_LEVEL=$2; shift 2;;
     --exclude-regex) EXCLUDE_FLAGS="$EXCLUDE_FLAGS --exclude-regex=$2"; shift 2;;
     --keep-host-owner) KEEP_OWNER=1; shift;;
     --owner) OWNER_UID=${2%%:*}; OWNER_GID=${2##*:}; shift 2;;
@@ -242,6 +244,33 @@ SYS_IN=0
     # a nie dostawany z CI. Drzewo musi MIEC puste punkty montowania (product/, system_ext/,
     # vendor/...) - bez nich init nie ma gdzie zamontowac partycji i tablet nie wstanie,
     # a obraz i tak wyjdzie 'poprawny'. stad parity-krok w testach.
+    # --- bramka VINTF (docs/05 §5.1) -------------------------------------------------
+    # init dobiera compatibility_matrix.<N>.xml wg target_fcm_version z /vendor vendora.
+    # HyperOS 4 (A17, sdk 37) ma pliki TYLKO dla 6/7/8 (+ .202404/.202504/.202604), a
+    # TB350FU (A12L, first_api_level=31) zgloszi level 5 -> pliku nie ma -> init staje na
+    # 'Failed to initialize VINTF' WCEŚNIEJ niz zygote. To sciana PLIKOWA, nie magiczna:
+    # --vintf-level 5 doklada wygenerowana macierz do drzewa na czas budowy obrazu i sprzata
+    # ja po wszystkim, zeby drzewo uzytkownika zostalo takie, jak je zastano (te sama zasada
+    # co --exclude-regex: w cudzym katalogu nie zostawiamy nic, nawet pliku korzystnego).
+    VDIR=$(find "$SYSTREE" -maxdepth 4 -type d -path '*etc/vintf' 2>/dev/null | head -1)
+    VL="${VINTF_LEVEL:-5}"
+    VINTF_STATE="pomineta (w drzewie nie ma katalogu etc/vintf - nie mam czego dopisywac)"
+    if [ -n "$VDIR" ]; then
+      VPREF=${VDIR#"$SYSTREE"/}; VPREF=${VPREF#system/}
+      MAT="$VDIR/compatibility_matrix.$VL.xml"
+      if [ -f "$MAT" ]; then
+        VINTF_STATE="level $VL: plik JEST w drzewie ($(stat -c%s "$MAT") B), nie dotkniety"
+      elif [ -n "$VINTF_LEVEL" ]; then
+        python3 "$HERE/make_level_matrix.py" --from-dir "$VDIR" --level "$VL" --out "$MAT" > "$OUT/vintf-matrix.log" 2>&1 \
+          || { tail -4 "$OUT/vintf-matrix.log" | sed 's/^/      /'; die "make_level_matrix.py nie wyplul pliku dla levelu $VL (log: $OUT/vintf-matrix.log)"; }
+        VINTF_ADDED="$MAT"
+        VINTF_STATE="level $VL: WYGENEROWANY i dokladany do /$VPREF/ na czas budowy ($(stat -c%s "$MAT") B, sha256 $(sha256sum "$MAT" | cut -c1-16)...) - po budowie usuniety z drzewa"
+      else
+        VINTF_STATE="BRAK: drzewo nie ma compatibility_matrix.$VL.xml, a --vintf-level nie podano -> boot stanie na 'Failed to initialize VINTF' (docs/05 §5.1)"
+        say "      i to jest sciana do zdjecia jednym plikiem: --vintf-level 5"
+      fi
+      say "  VINTF: $VINTF_STATE"
+    fi
     say "  system.img BUDOWANY z drzewa $SYSTREE (kompresja: $COMP)"
     ( cd "$(dirname "$SYSTREE")" && timeout 1800 "$MK" -T 0 -U "$UUIDIMG" $ZFLAG $EXCLUDE_FLAGS $ID_FLAGS \
         "$OUT/system_hyperos4_p11g2.img" "$(basename "$SYSTREE")" >> "$OUT/mkfs.log" 2>&1 ) \
@@ -262,6 +291,14 @@ SYS_IN=0
         tail -8 "$OUT/system-verify.log" | sed 's/^/    /'
         die "system.img NIE przechodzi weryfikacji 1:1 - NIE wydaję takiego obrazu"
       fi
+    fi
+    # Sprzatanie DO weryfikacji 1:1, nie przed nia: verify_image.sh porownuje obraz z drzewem,
+    # a dokladany plik jest wtedy w obu miejscach. Usuniecie przed verify daloby falszywa
+    # niezgodnosc 'plik jest w obrazie, nie ma go w drzewie' - kolejnosc tych dwoch krokow
+    # jest czescia te kontroli, nie kwestia estetyki (24 IX 2026).
+    if [ -n "$VINTF_ADDED" ] && [ -f "$VINTF_ADDED" ]; then
+      rm -f "$VINTF_ADDED"
+      say "  VINTF: dokladany plik usuniety z drzewa ($VPREF/compatibility_matrix.$VL.xml); w obrazie zostal"
     fi
   elif [ -n "$SYSIMG" ] && [ -f "$SYSIMG" ]; then
   cp "$SYSIMG" "$OUT/system_hyperos4_p11g2.img"; SYS_IN=1
@@ -448,6 +485,7 @@ printf 'plik\tbajty\tsha256\tuwaga\n' >> "$OUT/release-manifest.tsv"
   printf 'mkfs\t%s\n' "$("$MK" --help 2>&1 | head -1)"
   printf 'drzewo_product\t%s\n' "$TREE"
   [ -n "$SYSTREE" ] && printf 'drzewo_system\t%s\n' "$SYSTREE"
+  printf 'vintf_macierz\t%s\n' "${VINTF_STATE:-nie dotyczy (nie budowano systemu z drzewa)}"
   [ -n "$SYSIMG" ] && printf 'system_z_pliku\t%s\n' "$SYSIMG"
   :
 } > "$OUT/build-info.txt"

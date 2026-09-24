@@ -751,3 +751,46 @@ w kolumnie 0` — i cały przebieg jest czerwony. Po przywróceniu: 46 PASS / 0 
 Drobna, ale dla mnie ważna obserwacja: `pip install pyyaml` domyślnie odmawia (PEP 668, „externally
 managed"). Odmowa instalacji to nie to samo co brak biblioteki w sensie logicznym — kontrola musi
 działać w obu światach, a jej wynik musi mówić, w którym właśnie działa.
+
+## 6.29 `--vintf-level`: bramka init zamknięta plikiem, a nie wyrokiem — i dlaczego wcześniej była otwierana na pokaz
+
+`tools/make_level_matrix.py` istniał od wczoraj, `docs/05` chwalił się testem zwierciadlanym,
+a `tools/make_release.sh` **nigdy go nie wywoływał**. Cała ścieżka „dokładamy macierz level 5 do
+systemu" żyła więc w narzędziu, którego nikt nie odpalał przy budowie wydania: wypuszczony
+`system.img` nie zawierał `etc/vintf/compatibility_matrix.5.xml` i w ogóle nie mógł się uruchomić
+(`init`: `Failed to initialize VINTF`, czyli stop przed `zygote`).
+
+Od dziś `make_release.sh --system-tree ... --vintf-level 5`:
+
+* szuka `etc/vintf` w drzewie (`find -maxdepth 4 -type d -path '*etc/vintf'`, bez zgadywania, czy
+  drzewo ma prefiks `system/` — layouty z `fsck.erofs --extract` różnią się między źródłami);
+* jeśli pliku dla zadanego poziomu **nie ma** — generuje go, buduje obraz, weryfikuje obraz 1:1
+  z drzewem (z plikiem w obu miejscach!) i **dopiero potem** usuwa plik z drzewa wejściowego.
+  Kolejność jest częścią kontroli: usunięcie przed `verify_image.sh` dałoby fałszywą niezgodność
+  „plik jest w obrazie, nie ma go w drzewie";
+* jeśli plik **jest** w drzewie — nie dotyka go (S11 pilnuje, że sha pliku użytkownika jest
+  identyczna przed i po budowie);
+* jeśli flagi nie ma — nic nie dokłada, ale `build-info.txt` dostaje `vintf_macierz  BRAK: ...`
+  z nazwaniem tego bramką do zdjęcia, a nie „pominięte", bo „pominięte" brzmi jak decyzja.
+
+Stan trafia do `build-info.txt`, więc da się po fakcie rozstrzygnąć, co było w obrazie, bez
+rozpakowywania go przez autora.
+
+**Błąd, który znalazł się tylko dzięki testowi od końca do końca.** Generator ustawiał
+`new.set('level', str(want))`, czyli *atrybut*, a element `<level>` był przepisywany ze źródła i
+nigdy nadpisywany. Plik `compatibility_matrix.5.xml` zawierał `<level>6</level>`. Nazwa mówiła
+jedno, treść drugie — a `VintfObject` czyta treść. Poprawione w `build()` (nadpisuje element,
+wstawia go gdy brak), a sam generator ma asercję na koniec: parsuje zapisany plik i wychodzi
+`rc=4`, jeśli `<level>` nie równa się żądanemu poziomowi.
+
+**Druga nauczka, o niebo brzydsza.** Pierwsze uruchomienie sekcji S dało `FAIL` na teście „plik
+zgubił HAL-e". Kod był poprawny; mój wzorzec to `grep -qE 'name>.thermal'`, napisany pod
+jednoliniowy XML, a `ET.indent` zapisuje `<name>thermal</name>` w osobnej linii — czyli *zero*
+znaków między `name>` a `thermal`, a wzorzec wymagał jednego. Asercja, która nie opisuje
+dokładnie tego, co produkuje narzędzie, generuje błędy tam, gdzie ich nie ma. Naprawione na
+`<name>thermal</name>`, a przy okazji dodane `S4b`: HAL z `min-level="7"` musi **zniknąć**, więc
+gdyby generator był kopią źródła, test i tak by to złapał.
+
+Sekcja S (13 kontroli) liczy przebieg na syntetycznym drzewie i zrywa z nawysem „rc=0 znaczy
+dobrze": cała ścieżka to `make_release` → `fsck.erofs --extract` → czytanie pliku z rozpakowanego
+obrazu. Basela suite po dodaniu S: **51 PASS / 0 FAIL** (było 38).

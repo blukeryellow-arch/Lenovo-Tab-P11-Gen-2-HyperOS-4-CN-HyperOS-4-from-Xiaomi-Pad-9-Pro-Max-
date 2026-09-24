@@ -84,6 +84,17 @@ def build(root, want_level):
         new.append(c)
     for h in kept:
         new.append(h)
+    # <level> to JEDYNE pole, ktore czyta init (VintfObject); atrybut 'level' jest dla naszych
+    # narzedzi. 24 IX 2026 pierwszy test od konca do konca (wstrzyknij -> zbuduj -> rozpakuj)
+    # pokazal, ze element byl kopiowany ze ZRODLA i nigdy nie nadpisywany: plik o nazwie
+    # compatibility_matrix.5.xml mial w srodku '<level>6</level>', czyli bramka byla 'otwarta'
+    # tylko w nazwie. Taki plik init moze odrzucic albo - gorzej - przyjac i dobrac nie ta
+    # macierz co trzeba, a wtedy komunikat o VINTF zniknie bez zadnej poprawy.
+    lev = new.find('level')
+    if lev is None:
+        lev = ET.Element('level')
+        new.insert(0, lev)
+    lev.text = str(want_level)
     return new, kept, dropped
 
 
@@ -220,7 +231,16 @@ def main():
     # sanity: plik musi byc parsowalny i miec tyle hal-i co zatrzymalismy
     chk = ET.parse(a.out).getroot()
     n = len(chk.findall('hal'))
-    print(f"  weryfikacja: przparsowane, HAL-i w pliku = {n} (oczekiwane {len(kept)}) -> "
+    # level odczytany z PARSED pliku (nie z tego, co chcielismy zapisac) - to jest asercja,
+    # ze nazwa pliku i jego tresc mowia to samo. Bez niej plik compatibility_matrix.5.xml
+    # z <level>6</level> w srodku przeszedlby dalej jako sukces (24 IX 2026).
+    _lev = chk.find('level')
+    _lv = (_lev.text or '').strip() if _lev is not None else 'BRAK'
+    if _lv != str(a.level):
+        print(f"  FATAL: plik deklaruje <level>{_lv}</level>, a zadano {a.level}")
+        print("         taka macierz nie otwiera bramki init - ona ja zasloni jeszcze dokladniej")
+        return 4
+    print(f"  weryfikacja: level w pliku = {_lv} (zadany {a.level}), HAL-i w pliku = {n} (oczekiwane {len(kept)}) -> "
           + ("OK" if n == len(kept) else "BLAD"))
     return 0 if n == len(kept) else 1
 

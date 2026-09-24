@@ -606,6 +606,54 @@ if bad:
 PYR
 then ok "workflowy parsowalne, bloki run spojne (sekcja R)"; else bad "pliki workflow sa uszkodzone - patrz R"; fi
 
+echo "== S      bramka VINTF w budowie: --vintf-level doklada plik do OBRAZU i sprzata z drzewa"
+# Bez tej sekcji 'dokladamy macierz' pozostaloby zdaniem, ktoremu nikt nie ufa. 24 IX 2026 wyszlo,
+# ze generator nadpisuje ATRYBUT level, a init czyta ELEMENT <level> - plik o nazwie
+# compatibility_matrix.5.xml mial w srodku '<level>6</level>'. Taki blad przezywa rc=0 i 'plik
+# istnieje'; zabija go dopiero porownanie z tym, co NAPRAWDZE lezy w rozpakowanym obrazie.
+TS=$WORK/S; mkdir -p "$TS/tree/etc/vintf" "$TS/tree/product" "$TS/tree/vendor" "$TS/tree/system_ext" "$TS/tree/odm" "$TS/tree/fonts"
+printf 'x\n' > "$TS/tree/fonts/a.ttf"
+cat > "$TS/tree/etc/vintf/compatibility_matrix.202404.xml" <<'XMLS'
+<compatibility-matrix version="7.0" type="framework">
+  <level>6</level>
+  <hal format="aidl" optional="false"><name>audio.core</name><version>2</version><max-level>7</max-level></hal>
+  <hal format="aidl" optional="true"><name>thermal</name><version>2</version><max-level>8</max-level></hal>
+  <hal format="aidl" optional="false"><name>stylelater</name><min-level>7</min-level></hal>
+</compatibility-matrix>
+XMLS
+t "S1  budowa z --vintf-level 5" 0 bash "$HERE/make_release.sh" --product-tree "$TS/tree" --system-tree "$TS/tree" --vintf-level 5 --erofs-dir "$EROFS_DIR" --allow-no-vbmeta --out "$TS/out"
+mkdir -p "$TS/x"; timeout 300 "$FS" --extract="$TS/x" "$TS/out/system_hyperos4_p11g2.img" >/dev/null 2>&1
+M5="$TS/x/etc/vintf/compatibility_matrix.5.xml"
+if [ -f "$M5" ]; then
+  ok "S2  w rozpakowanym system.img jest etc/vintf/compatibility_matrix.5.xml"
+  if grep -q '<level>5</level>' "$M5"; then ok "S3  plik deklaruje <level>5</level>, nie odziedziczone po zrodle 6"
+  else bad "S3  <level> w dokladanym pliku nie rowna sie zadanemu poziomowi - to zasloni bramke init zamiast ja otworzyc"; fi
+  if grep -qE '<name>thermal</name>' "$M5" && grep -qE '<name>audio.core</name>' "$M5"; then ok "S4  HAL-e z max-level 7/8 zostaly (obnizamy poziom vendora, nie uslugi)"
+  else bad "S4  wygenerowana macierz zgubila HAL-e, ktore powinny w niej zostac"; fi
+  # i drugi koniec: gdyby generator byl po prostu 'cp', ten HAL by zostal - a nie powinien
+  if grep -qE '<name>stylelater</name>' "$M5"; then bad "S4b generator NIE odcial HAL-a z min-level 7 (plik jest kopia zrodla, nie macierzy level 5)"
+  else ok "S4b  HAL z min-level 7 odciety (ciałem faktycznie filtruje, nie kopiuje)"; fi
+else bad "S2  w obrazie NIE MA dokladanej macierzy, a builder ją zapowiedzial w logu"; fi
+if [ ! -e "$TS/tree/etc/vintf/compatibility_matrix.5.xml" ]; then ok "S5  drzewo wejsciowe posprzatane (plik tylko w obrazie)"
+else bad "S5  builder zostawil wygenerowany plik w drzewie uzytkownika"; fi
+if grep -q 'vintf_macierz.*WYGENEROWANY' "$TS/out/build-info.txt"; then ok "S6  build-info.txt opisuje dokladanie (stan da sie poznac po fakcie)"
+else bad "S6  build-info.txt milczy o macierzy - kto to dostarczy, nie wiedzial, co bylo w srodku"; fi
+t "S7  budowa BEZ --vintf-level" 0 bash "$HERE/make_release.sh" --product-tree "$TS/tree" --system-tree "$TS/tree" --erofs-dir "$EROFS_DIR" --allow-no-vbmeta --out "$TS/out2"
+mkdir -p "$TS/x2"; timeout 300 "$FS" --extract="$TS/x2" "$TS/out2/system_hyperos4_p11g2.img" >/dev/null 2>&1
+if [ ! -e "$TS/x2/etc/vintf/compatibility_matrix.5.xml" ]; then ok "S8  bez flagi nic nie dokladamy (brak domyslnej 'poprawki' cudzego obrazu)"
+else bad "S8  dokladamy plik mimo braku flagi - build przestaje byc odtwarzalny z podanych argumentow"; fi
+if grep -q 'vintf_macierz.*BRAK' "$TS/out2/build-info.txt"; then ok "S9  build-info nazywa to BRAKIEM bramki, nie 'pominietym'"
+else bad "S9  build-info nie ostrzega o braku macierzy - ktos to wgra i dostanie bootloop bez wskazowki"; fi
+cp "$M5" "$TS/tree/etc/vintf/compatibility_matrix.5.xml" 2>/dev/null
+printf '<!-- znacznik: ten plik jest moj, nie buildera -->\n' >> "$TS/tree/etc/vintf/compatibility_matrix.5.xml"
+SZP=$(sha256sum "$TS/tree/etc/vintf/compatibility_matrix.5.xml" | cut -c1-16)
+t "S10 budowa z drzewem, ktore MA wlasna macierz" 0 bash "$HERE/make_release.sh" --product-tree "$TS/tree" --system-tree "$TS/tree" --vintf-level 5 --erofs-dir "$EROFS_DIR" --allow-no-vbmeta --out "$TS/out3"
+SZO=$(sha256sum "$TS/tree/etc/vintf/compatibility_matrix.5.xml" | cut -c1-16)
+if [ "$SZP" = "$SZO" ]; then ok "S11 istniejacy plik w drzewie nienaruszony (sha $SZP przed i po)"
+else bad "S11 builder NADPISAL plik uzytkownika, mimo ze ten mial level"; fi
+if grep -q 'vintf_macierz.*JEST w drzewie' "$TS/out3/build-info.txt"; then ok "S12 build-info mowi 'JEST w drzewie', nie 'WYGENEROWANY'"
+else bad "S12 build-info opisuje stan, ktorego nie bylo"; fi
+
 echo; echo "=== podsumowanie: $pass PASS, $fail FAIL ==="
 [ $fail -eq 0 ] || echo "UWAGA: ktorys test padl — nie wydawaj zmiany w tools/, ktora to wywolala."
 exit $([ $fail -eq 0 ] && echo 0 || echo 1)
