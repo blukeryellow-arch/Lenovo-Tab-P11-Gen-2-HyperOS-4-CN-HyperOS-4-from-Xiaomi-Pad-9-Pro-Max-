@@ -110,37 +110,29 @@ bo nie ma drzew donorów. „51 PASS" to liczba z atrap syntetycznych. Sekcje, k
 prawdziwych obrazów (Q/R i pary rozmiarów w `docs/07`), są zielone, ale `make_release.sh --real`
 w obecnych warunkach po prostu nie ma z czego liczyć.
 
-## Odzysk drzewa donora: dwie drogi, obie czekają na kliknięcie po stronie użytkownika
+## Odzysk drzewa donora — ROZWIĄZANE 24 IX, odpowiedź leżała w repo
 
-Drzewa w `/tmp` przepadły przy reboocie sandboxa, a bez nich nie da się przebudować wydania z
-`--vintf-level 5`. Pobrać ich tutejszymi narzędziami się NIE DA — to zmierzone, nie odgadywane:
+Pierwsza wersja tej sekcji (dopisana kilka godzin wcześniej) mówiła, że drogi do pliku są
+zamknięte i że potrzebuję kliknięcia po stronie użytkownika: publiczny link na Dysku albo dispatch
+workflowu z HuggingFace. **Nie było takiej potrzeby** — i to jest główna lekcja tej sekcji, a nie
+lista adresów.
 
-| droga | co ją zamyka | dowód |
-|---|---|---|
-| konektor `download_file` | twardy limit 104 857 600 B/plik, liczony PRZED pobraniem | `system.img` 937 791 488 B → `invalid_request` (24 IX) |
-| to samo przez URL | schema konektora wymusza `return_download_url=false`, a i tak URL serwuje cały plik | sondy 22 IX, zapisane w komentarzu `.github/workflows/build.yml` przed jobem `drive-probe` |
-| `range_header`, `acknowledge_abuse` | range jest doklejalny do URL-a (czyli znowu całość), limit odpala się wcześniej | j.w. |
-| anonimowy `curl` na runnerze | pliki na Dysku są prywatne: `drive.usercontent` i `drive.google.com/uc` dają redirect na `accounts.google.com/v3/signin` | `reports/drive-probe-35953363350.md` — cztery sondy, zero bajtów |
-| HuggingFace wprost do sandboxa | brak trasy na 443 (`SSL_ERROR_SYSCALL`) | 24 IX, `curl -sSI https://huggingface.co` |
-| artefakt GitHuba (`gh run download`) | `EOF` z `blob.core.windows.net` | trzy próby 23–24 IX |
+Wszystkie szyni drogi z tamtej tabeli były prawdziwe i pozostają prawdziwe (limit konektora
+104 857 600 B/plik; `return_download_url` zablokowany w schemacie; prywatne pliki na Dysku dają
+redirect na `accounts.google.com/v3/signin` dla anonimowego curla; sandbox nie ma wyjścia na
+`huggingface.co` (`SSL_ERROR_SYSCALL`); `gh run download` kończy się EOF-em z `blob.core.windows.net`).
+Zabrakło kroku zero: **sprawdzić, czy te bajty już nie leżą w repo.** Leżały.
 
-Co wystarczy, żeby to odblokować — wystarczy JEDNA z dwóch:
+`origin/transfer-spool` — gałąź, którą dla tego projektu wymyślono właśnie po to, żeby duży ładunek
+nie musiał przechodzić przez sandbox — trzymała kawałki `rom-kit.tar.gz` z biegu `35897100768`
+(16 × 94 371 840 B). `tools/assemble_raw_parts.py` złożył je z pełną weryfikacją
+(`ZGODNY z runnerem`, suma rodzica), a w środku było `system_tree` w całości: 4568 wpisów,
+1,3 GB — czyli dokładnie drzewo donora, którego szukałem. To samo dla assetów `/product` donora
+(134 808 062 B w dwóch kawałkach).
 
-1. **Udostępnienie linkiem (najtaniej).** Na Dysku: „Każdy, kto ma link → Reader" dla pliku
-   `system.img` (`1Pu6RU00SsbFiXiGlx6IpG14714jaZThN`). `drive-probe.request` jest już ustawiony na
-   ten jeden ID z `raw: 1, rom_build: 0, do_unpack: 0`. Wtedy ja commituję cokolwiek z
-   `[drive-probe]` w tytule (dispatch jest poza zasięgiem tokena integracji — 403), runner ściąga
-   937 MB, kroi na kawałki ≤100 MB i pcha na `transfer-spool`; ja składam
-   `tools/assemble_raw_parts.py`, porównuję md5 ze
-   sumą serwera Google (`e8248a9a9a1f393750a20e2d9b6e91cd`) i buduję wydanie od początku do końca u
-   siebie, z weryfikacją `--vintf-level 5` na ROZPAKOWANYM obrazie.
-2. **Kliknięcie „Run workflow" (bez zmian na Dysku).** `build-hyperos-look` → `Run workflow` →
-   `hf_repo` = repo, z którego obrazy brał już job `unpack-source` (opis wejścia podaje przykład
-   `BBB1239/Lenovo-Tab-P11-Gen-2-HyperOS-4`), `source_file` = `super.img` albo `payload.bin`,
-   `partitions` = `system`, `spool_raw` = `1`. Od 24 IX ten job ma `permissions: contents: write` i
-   krok „Kawalki surowe na galaz transfer-spool" — wcześniej kończył się artefaktem, którego agent i
-   tak nie widzi. Wymaga sekretu `HF_TOKEN` w ustawieniach repo.
-
-Czego NIE robić (sprawdzone, nie powtarzać): `spool_parts` zostawić na `system` — `product.img` ma
-6 445 187 072 B, a runner po odzysku ma ~13–14 GB; pakowanie dwóch takich obrazów naraz to ten sam
-`gzip: stdout: No space left on device`, który zabił bieg `35894152349` (`docs/06 §6.19`).
+Co z tego wynika dla przyszłych sesji:
+1. Zanim poprosisz użytkownika o cokolwiek, sprawdź gałęzie `transfer-spool` i `reports/` w tym
+   samym repo. GitHub jest jedyną siecią, którą sandbox ma na pewno.
+2. `git archive origin/transfer-spool` daje zawartość bez zmieniania gałęzi roboczej.
+3. Jeśli plik ma w `MANIFEST.tsv`/`RAW_MANIFEST.tsv` sumy — weryfikuj je składając; to nie jest
+   formalność, bo dziś właśnie te sumy pozwoliły uznać drzewo za kompletne.

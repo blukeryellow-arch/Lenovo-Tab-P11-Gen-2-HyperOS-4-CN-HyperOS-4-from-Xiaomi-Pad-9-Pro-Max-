@@ -771,6 +771,43 @@ else bad "S11 builder NADPISAL plik uzytkownika, mimo ze ten mial level"; fi
 if grep -q 'vintf_macierz.*JEST w drzewie' "$TS/out3/build-info.txt"; then ok "S12 build-info mowi 'JEST w drzewie', nie 'WYGENEROWANY'"
 else bad "S12 build-info opisuje stan, ktorego nie bylo"; fi
 
+# --- format z prawdziwego donora (S16-S18) ------------------------------------
+# 24 IX: dziewiec plikow FCM z drzewa donora nosi poziom WYLACZNIE w atrybucie
+# (compatibility_matrix.202404.xml: <compatibility-matrix version="9.0" type="framework"
+# level="202404">). Zrodlo <level>6</level> powyzej bylo moim fixturem, nie formatem AOSP -
+# stad dwie kontrole ponizej, zeby fikcja nie wrocila jako 'dowod'.
+mkdir -p "$TS/f2"
+cat > "$TS/f2/compatibility_matrix.202404.xml" <<'XMLF'
+<compatibility-matrix version="9.0" type="framework" level="202404">
+  <hal format="aidl" optional="false"><name>audio.core</name><version>2</version><max-level>7</max-level></hal>
+  <hal format="aidl" optional="false"><name>gatekeeper</name><version>1</version><max-level>8</max-level></hal>
+</compatibility-matrix>
+XMLF
+t "S16 generator na zrodle w formacie donora (atrybut, bez elementu)" 0 python3 "$HERE/make_level_matrix.py" --from-dir "$TS/f2" --level 5 --out "$TS/f2/compatibility_matrix.5.xml"
+if python3 - "$TS/f2/compatibility_matrix.5.xml" <<'PYF'
+import sys, xml.etree.ElementTree as ET
+r = ET.parse(sys.argv[1]).getroot()
+att = (r.get('level') or '').strip()
+el = r.find('level')
+if att != '5':
+    print(f"    atrybut level={att!r}, a powinno '5'"); sys.exit(1)
+if el is not None:
+    print("    SKRYPT WYMYSLIL element <level>, ktorego zrodlo donora nie mialo - konstrukt spoza formatu")
+    sys.exit(1)
+print("    atrybut level='5', elementu nie wymyslono (zgodne z formatem donora)")
+PYF
+then ok "S16 generator lustrza format zrodla: atrybut tak, wymyslony element nie"
+else bad "S16 generator dopisal element <level> przy zrodle bez elementu - to jest ten sam blad co z optional"; fi
+
+SZ1=$(sha256sum "$TS/f2/compatibility_matrix.5.xml" | cut -d' ' -f1)
+O2=$(python3 "$HERE/make_level_matrix.py" --from-dir "$TS/f2" --level 5 --out "$TS/f2/compatibility_matrix.5.xml" 2>&1)
+SZ2=$(sha256sum "$TS/f2/compatibility_matrix.5.xml" | cut -d' ' -f1)
+if echo "$O2" | grep -q 'pominietych plikow.*1'; then ok "S17 drugi przebieg rozpoznaje wlasny plik i go omija (brak kaskady jak 23 IX)"
+else bad "S17 generator nie rozpoznal wlasnego wyjscia - przy petli 'for lv in 4 5 6' zrodlem staje sie plik z poprzedniego przebiegu"; fi
+if [ "$SZ1" = "$SZ2" ]; then ok "S18 powtorzenie tego samego wyjscia daje te same bajty ($SZ1)"
+else bad "S18 generator nie jest odtwarzalny: $SZ1 vs $SZ2"; fi
+
+
 # -------------------------------------------------- T: twierdzenia README vs build-info
 # Wymusila to zycie: README lekkiego wydania przez dwa dni obiekiwal „dobudowane macierze
 # VINTF 4/5/6", a build-info.txt tego buildu nie mial nawet klucza `vintf_macierz` (obrazy
