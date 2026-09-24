@@ -522,10 +522,14 @@ for d,txt in texts.items():
         # negatywny 'sklam proze w lekkim' przeszedl na zielono. Kontrola, ktora tak
         # wybacza, nie istnieje (23 IX 2026).
         prose=re.sub(r'<!--.*?-->','',txt,flags=re.S)
-        # granice cyfr: podciag "591" w numerze commita aaa5919 nie jest liczba 591 (24 IX)
-        if name in prose and not re.search(r"(?<!\d)"+re.escape(pretty)+r"(?!\d)", prose):
-            bad.append(f"{d}: {name} = {val} B jest w kontrakcie, ale nie ma tej liczby w PROZIE"
-                       f" tego README — akapity zostaly z poprzednia liczba (blok swiezy, tekst klamie)")
+        # W prozie ma byc nazwa I liczba (granice cyfr: "591" w numerze commita aaa5919 to
+        # nie liczba 591). Nie tylko zgodnosc, ale OBECNOSC - bo obietnica z bloku kontraktu
+        # mowi 'znika z prozy -> FAIL', a pierwsza wersja lapala tylko klamstwo, nie wyciecie
+        # calego wiersza (24 IX 2026).
+        if not (name in prose and re.search(r"(?<!\d)"+re.escape(pretty)+r"(?!\d)", prose)):
+            bad.append(f"{d}: {name} = {val} B musi byc w prozie tego README z liczba "
+                       f"{pretty} - brak nazwy albo liczby (wiersz wyciety albo tekst z "
+                       f"poprzednia liczba)")
     # ten sam rozmiar i ta sama suma musza byc w docs/07 (tabelka 'stan wydania') - tam blok
     # README nie siega, a to wlasnie ten dokument czyta ktos, kto liczy, czy sie miesci.
     # docs/07: tabelka 'stan wydania' — WIERSZAMI, nie 'czy gdziekolwiek w pliku'. Rozroznienie

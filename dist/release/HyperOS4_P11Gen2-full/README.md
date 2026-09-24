@@ -20,8 +20,9 @@ Drugi plik inny niż u sąsiada to `system_hyperos4_p11g2.img` (tu kaskada z 23 
 poprawiony build 24 IX), a `flash-all.sh` (6 749 B) pochodzi z chwili wydania tej partii i
 **nie ma** ścieżki `RESIZE_SUPER` — do flashowania służy wariant lekki.
 
-`system_hyperos4_p11g2.img` (920 047 616 B) i `vbmeta_hyperos4_p11g2.img` (4 096 B) sa **tymi
-samymi bajtami** co w wariancie lekkim — te same sha256, ten sam UUID, ta sama budowa:
+`vbmeta_hyperos4_p11g2.img` (4 096 B) sa **tymi samymi bajtami** co w wariancie lekkim
+(ten sam sha256). `system_hyperos4_p11g2.img` (920 047 616 B) byl taki sam do 24 IX — od
+przebudowy VINTF u sąsiada sa to rozne pliki (patrz blok „Stan 24 IX" wyzej):
 
 ```
 product  da17ffcd20c0ab4e…   (150 560 768 B, 147/147 wpisow 1:1)
@@ -32,7 +33,8 @@ vbmeta   9cf2e7e4e165687a…   (Flags: 3, rollback_index 0)
 Instrukcja (w tym **krok 0**: `bash device-probe.sh --release .`, ktory mowi GO/NO-GO na
 podstawie odczytan z tabletu), wymagania kernela (`CONFIG_EROFS_FS_LZ4`), bramka rozmiaru
 partycji i przepis odtworzenia bit w bit: **`../HyperOS4_P11Gen2/README.md`**. Ten katalog tez
-zawiera `device-probe.sh` (6 533 B) i ma 8 pozycji w `SHA256SUMS.txt` (`sha256sum -c` = 8/8 OK).
+zawiera `device-probe.sh` (6 533 B), `rollback.sh` (1 152 B), `release-manifest.tsv` (672 B)
+i `build-info.txt` (385 B), i ma 8 pozycji w `SHA256SUMS.txt` (`sha256sum -c` = 8/8 OK).
 
 ## Wlasciciel plikow w partii
 
