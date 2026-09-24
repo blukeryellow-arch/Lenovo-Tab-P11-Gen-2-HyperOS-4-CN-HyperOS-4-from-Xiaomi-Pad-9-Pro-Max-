@@ -81,10 +81,10 @@ adb shell 'ls -lZ /system/bin/su /product/bin 2>/dev/null; restorecon -RFv /prod
 bash tools/test_release.sh --erofs-dir <katalog z mkfs/fsck>
 ```
 
-Oczekiwane: `=== podsumowanie: 120 PASS, 0 FAIL ===`, a z `--real` (z drzewami podanymi w
+Oczekiwane: `=== podsumowanie: 126 PASS, 0 FAIL ===`, a z `--real` (z drzewami podanymi w
 `PRODTREE`, `PRODTREE_FULL`, `SYSTREE`, `SYSTREE_FULL` — `SYSTREE_FULL` = drzewo donora z trzema
 plikami runnera, bo `-full` trzeba porównywać z drzewem, z którego powstał):
-`=== podsumowanie: 128 PASS, 0 FAIL ===`.
+`=== podsumowanie: 134 PASS, 0 FAIL ===`.
 
 Sekcje: A selftest buildera · B determinizm (dwa `mkfs.erofs` na tym samym drzewie = **identyczny
 plik**, `cmp` bez różnic) · C **test negatywny** weryfikatora (drzewo ma plik, którego nie ma w
@@ -109,7 +109,12 @@ AUX, nie początku pliku), identyczność vbmeta w obu wydaniach · W **`release
 plikami** — każdy wiersz (także skrypty, nie tylko `.img`): istnienie, bajty, sha256; nieobecność
 tolerowana wyłącznie dla plików >100 MiB (limit GitHuba, ta sama umowa co J), a nawet dla
 nieobecnych manifest musi zgadzać się sha256 z `SHA256SUMS.txt`; negatyw: atrapki 1-bajtowe +
-brak małego pliku muszą dać FAIL · Q kontrakt rozmiarów: każdy plik wydania
+brak małego pliku muszą dać FAIL · X **`dist/modules` + `dist/rom-kit`** — pozostałe ładunki w gicie, których żadna
+sekcja nie dotykała (modul Magisk: trzy kopie sumy — plik, sidecar `.sha256`, `SHA256SUMS.txt` —
+struktura `module.prop`/`customize.sh`/`uninstall.sh`/`system/product/fonts/*.ttf` + CRC `testzip`;
+rom-kit: `bash -n` flash.sh, `SHA256SUMS.git.txt` 1:1, oraz **świadoma różnica** vbmeta: rom-kit
+niesie donorski `3506d20e…`, wydanie testkey `9cf2e7e4…` — pilnuje, żeby ktoś nie „naprawił"
+różnicy kopięją) · Q kontrakt rozmiarów: każdy plik wydania
 musi być **nazwany w prozie** `$OUT/README.md` ze swoją liczbą bajtów (spacja co 3 cyfry i granice
 cyfr — „591" w numerze commita `aaa5919` się nie liczy); plus ta sama liczba i suma w wierszach
 `docs/07` oraz spójność liczby kolumn w tabelach markdown.

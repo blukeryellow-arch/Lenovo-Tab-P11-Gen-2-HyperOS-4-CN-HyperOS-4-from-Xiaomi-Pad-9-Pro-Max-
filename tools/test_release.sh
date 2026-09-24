@@ -451,6 +451,78 @@ else
   else bad "negatyw W: rc=1, ale nie widac obu klas bledow (patrz wyzej)"; fi
 fi
 
+# --------------------- X: dist/modules i dist/rom-kit - pozostale ladunki w gicie
+echo "== X      dist/modules (modul Magisk) i dist/rom-kit: sumy, struktura, swiadome roznice"
+# Te katalogi zyja w gicie (wyjatki w .gitignore), ale zadna sekcja ich nie dotykala:
+# J-F3/V/W patrz wylacznie na dist/release. A modul fontow to DRUGA sciezka
+# flashowania (README: 95-99% bootu), a rom-kit niesie donorski vbmeta (3506d20e…)
+# SWIADOMIE inny niz wydaniowy testkey (9cf2e7e4…) - rozjazd, ktory wyglada jak
+# blad, a jest decyzja z docs/03 (MISMATCH.md). Kontrola pilnuje, zebys go nie
+# 'naprawil' kopjujac jeden plik na drugi.
+X=0
+ZP=$ROOT/dist/modules/hyperos4_fonts_p11g2.zip
+if [ -f "$ZP" ]; then
+  zsha=$(sha256sum "$ZP" | awk '{print $1}')
+  zside=$(awk '{print $1}' "$ROOT/dist/modules/hyperos4_fonts_p11g2.zip.sha256" 2>/dev/null)
+  zsum=$(awk '$2=="hyperos4_fonts_p11g2.zip" {print $1}' "$ROOT/dist/modules/SHA256SUMS.txt" 2>/dev/null)
+  if [ -n "$zsha" ] && [ "$zsha" = "$zside" ] && [ "$zsha" = "$zsum" ]; then
+    ok "X: modul - plik, sidecar .sha256 i SHA256SUMS.txt maja te sama sume (${zsha:0:16})"
+  else bad "X: modul - trzy kopie sumy sie rozjezdzaja (plik=$zsha sidecar=$zside sums=$zsum)"; fi
+  X=$((X+1))
+  if out=$(python3 - "$ZP" <<'PYX'
+import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+names = set(z.namelist())
+zle = []
+for k in ('module.prop', 'customize.sh', 'uninstall.sh', 'system/etc/fonts.xml', 'README-module.txt'):
+    if k not in names: zle.append(f"brak {k}")
+ttf = [n for n in names if n.startswith('system/product/fonts/') and n.endswith('.ttf')]
+if len(ttf) < 15:
+    zle.append(f"za malo fontow w system/product/fonts: {len(ttf)} (donorskie PLIKI, nie symlinki - patrz module.prop)")
+mp = z.read('module.prop').decode()
+for key in ('id=hyperos4_fonts_p11g2', 'versionCode='):
+    if key not in mp: zle.append(f"module.prop bez '{key}'")
+if z.testzip() is not None: zle.append("zip ma uszkodzone CRC (testzip)")
+if zle: print('\n'.join(zle)); sys.exit(1)
+print(f"{len(names)} wpisow, {len(ttf)} fontow ttf, CRC OK")
+PYX
+  ); then ok "X: struktura modulu Magisk: $out"; else bad "X: struktura modulu niezgodna z umowa"; printf '%s\n' "$out" | sed 's/^/        |/'; fi
+  X=$((X+1))
+else bad "X: brak $ZP"; X=$((X+1))
+fi
+RK=$ROOT/dist/rom-kit
+if [ -d "$RK" ]; then
+  if bash -n "$RK/flash.sh"; then ok "X: rom-kit/flash.sh bash -n czysty"; else bad "X: rom-kit/flash.sh blad skladni"; fi
+  X=$((X+1))
+  if out=$(python3 - "$RK" <<'PYX'
+import os, sys, hashlib
+d = sys.argv[1]
+zle = []
+for ln in open(os.path.join(d, 'SHA256SUMS.git.txt'), encoding='utf-8'):
+    parts = ln.split()
+    if len(parts) != 2: continue
+    h, name = parts
+    fp = os.path.join(d, name)
+    if not os.path.isfile(fp):
+        zle.append(f"{name}: suma z pliku gita bez pliku na dysku"); continue
+    got = hashlib.sha256(open(fp, 'rb').read()).hexdigest()
+    if got != h: zle.append(f"{name}: git mowi {h[:16]}, plik daje {got[:16]}")
+if zle: print('\n'.join(zle)); sys.exit(1)
+print("SHA256SUMS.git.txt 1:1 z plikami (runner.txt opisuje strone runnera - system.img 1.4 GB nie zyje w gicie)")
+PYX
+  ); then ok "X: rom-kit: $out"; else bad "X: rom-kit - sumy gita nie potwierdzaja sie na plikach"; printf '%s\n' "$out" | sed 's/^/        |/'; fi
+  X=$((X+1))
+  rkv="$RK/vbmeta_hyperos4_p11g2.img"; rlv="$ROOT/dist/release/HyperOS4_P11Gen2/vbmeta_hyperos4_p11g2.img"
+  rksha=$(sha256sum "$rkv" 2>/dev/null | awk '{print $1}')
+  if [ "${rksha:0:8}" = "3506d20e" ] && [ -f "$rlv" ] && ! cmp -s "$rkv" "$rlv"; then
+    ok "X: rom-kit niesie donorski vbmeta (3506d20e…), wydanie testkey (9cf2e7e4…) - roznica SWIADOMA (docs/03, MISMATCH.md)"
+  else bad "X: uklad vbmeta rom-kit vs wydanie sie zmienil (rom-kit=${rksha:0:8}) - to NIE jest do naprawienia kopiem, patrz MISMATCH.md"; fi
+  X=$((X+1))
+else bad "X: brak katalogu $RK"; X=$((X+1))
+fi
+if [ $X -ge 5 ]; then ok "przeanalizowane pozycje modules/rom-kit: $X"; else
+  bad "tylko $X pozycji modules/rom-kit - kontrola padla w polowie"; fi
+
 # ---------------------------------------------------------------- K: higiena tekstu
 echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
 # Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt
