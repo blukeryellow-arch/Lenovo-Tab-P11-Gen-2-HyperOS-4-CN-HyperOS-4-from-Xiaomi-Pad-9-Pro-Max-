@@ -1045,7 +1045,7 @@ prawdziwym urządzeniu jedyny sensowny przebieg to: `device-probe.sh` → kopia 
 stockowych → `flash-all.sh` ze zgodą → `logcat -b all` po starcie. Awaryjnie: BROM/DA
 MediaTeka, nie EDL.
 
-## 6.35 Cztery sekcje w jedno popołudnie: „ładunek, którego nikt nie odpalał"
+## 6.35 Pięć sekcji w jedno popołudnie: „ładunek, którego nikt nie odpalał"
 
 Schemat powtórzył się cztery razy z rzędu (F2 rano, F3/V/W/X po południu), więc to już nie
 przypadek, tylko metoda: przejrzyj katalogi wydania i zapytaj o KAŻDY plik — „która sekcja to
@@ -1074,9 +1074,17 @@ na słowo honoru generatora.
   rom-kit — `bash -n` i sumy gita 1:1. Najważniejsza asercja X jest negatywna: rom-kit niesie
   **donorski** vbmeta (`3506d20e…`), wydanie **testkey** (`9cf2e7e4…`) — to świadoma decyzja
   z docs/03, a kontrola istnieje po to, żeby nikt nie „naprawił" rozjazdu kopią jednego pliku
-  na drugi.
+  na drugi. X dokłada też **wykonanie** `rom-kit/flash.sh` (w tym odmowę na czystym checkoucie
+  gita, gdzie 1,37 GB `system.img` donora nie istnieje — czyli dokładnie to, co zobaczy
+  użytkownik po sklonowaniu repo).
+- **Y — `assemble_raw_parts.py`**: narzędzie, od którego wisi cała receptura odzysku, wykonywane
+  dotąd tylko w replayach sesyjnych na prawdziwych danych, których CI nie ma. Fixture
+  syntetyczny (2 cząstki 64+36 KB + manifest `# RAW v1`) sprawdza semantykę rc z docstringa:
+  uszkodzona cząstka środkowa łapana per-part sha **przed** sklejaniem, niekompletny zakres =
+  odmowa złożenia połowy, brak manifestu = rc 2, a cząstki-sieroty bez wpisu w manifeście są
+  adoptowane i składane (droga wydeptana przez bieg 35892866524, który zgubił manifesty).
 
-Druga lekcja popołudnia, większa niż wszystkie cztery sekcje razem: **dokument opisujący
+Druga lekcja popołudnia, większa niż wszystkie pięć sekcji razem: **dokument opisujący
 procedurę odzysku też jest ładunkiem** — dopóki nie został wykonany słowo w słowo, jest
 hipotezą. Receptura odbudowy obrazów z `transfer-spool` (docs/08) wyglądała na kompletną,
 a przy pierwszym sprawdzeniu na czystym klonie miała błąd: `git archive origin/transfer-spool`
@@ -1085,7 +1093,7 @@ transfer-spool` + `git archive FETCH_HEAD`). Replay dosłowny — blok kodu wyci
 i wykonany bez zmian — trwał 189 s i przeszedł rc=0. Od teraz receptura w docs ma prawo
 istnieć tylko w wersji, która była tak wykonana.
 
-Co to NIE jest: licznik 126/134 nie jest celem samym w sobie. Cztery sekcje dodały 38 kontroli,
+Co to NIE jest: licznik 135/143 nie jest celem samym w sobie. Pięć sekcji dodało 47 kontroli,
 ale ich wartość to cztery pytania, które przestały wisieć: „czy rollback flashuje dokładnie to,
 co zrobił flash-all?", „czy vbmeta na pewno ma wyłączone weryfikacje?", „czy manifest mówi
 prawdę?", „czy moduł i rom-kit są tym, czym mówią ich sumy?". Kolejne sekcje tego typu mają
