@@ -1,4 +1,4 @@
-# Stan pracy i rzeczy zablokowane (23 IX 2026, ~22:00 UTC)
+# Stan pracy i rzeczy zablokowane (23–24 IX 2026)
 
 Notatka dla kontynuacji — skrót tego, co jest zmierzone, a co tylko napisane.
 

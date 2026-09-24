@@ -3,6 +3,9 @@
 Ostatnia faza: bieg CI `35897100768` (marker `fcf056d`), kanał Google Drive → GitHub → gałąź
 `transfer-spool`. Data: 2026-09-23, godz. ~18:10 UTC.
 
+Uwaga z 24 IX: katalogu `images/` już nie ma (reset sandboxa) — bajty da się odzyskać
+z `origin/transfer-spool` przez `tools/assemble_raw_parts.py`, opis w `docs/08` §8.6.
+
 ## Co realnie leży w workspace
 
 | paczka | bajty | sha256 (runner) | weryfikacja |
