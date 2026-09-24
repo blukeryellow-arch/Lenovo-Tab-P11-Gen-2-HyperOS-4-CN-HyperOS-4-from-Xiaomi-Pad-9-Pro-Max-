@@ -1,27 +1,8 @@
-# drive-probe.request - wykaz plikow do przemieszczenia przez runner + opcje biegu.
-# KROK 'Wczytaj zapytanie' bierze PIERWSZE POLE każdej linii i szuka golego ID
-# (regex ^[A-Za-z0-9_-]{20,}$) - wiec ID musza byc W LASNE, bez 'nazwa.img:'.
-#
-# Bieg 2026-09-24 (po aaa5919): potrzebny JEDEN plik, surowy, bez rozpakowywania i bez
-# budowania ROM-u na runnerze. Powód: przebudowa WYDANIA lokalnego z --vintf-level 5 wymaga
-# drzewa donora, a drzewa w /tmp przepadly przy restarcie sandboxa (docs/08). Skladam je u
-# siebie z kawalkow i buduję u siebie — wtedy 'system.img' jest liczony przeze mnie od
-# poczatku do konca (mkfs + verify 1:1 + rozpakowanie w celu sprawdzenia macierzy), a nie
-# dostany z CI.
-#
-# Swiadomie WYLACZONE:
-#   product.img 6 445 187 072 B - przy 'raw: 1' daloby 6,4 GB kawalkow na runnerze (~13 GB
-#     wolnego po odzysku) i 6,4 GB pusha do brancha; to jest ten sam ENOSPC, ktory zabil bieg
-#     35894152349. Nie powtarzam. Lekcje zostawiam w docs/06 §6.19.
-#   odm.img - zbędny w tym biegu.
-#   rom_build / do_unpack - zero: nic nie pakujemy ani nie budujemy na runnerze, potrzebne sa
-#     WYLACZNIE bajty obrazu.
-#
-# Oczekiwana suma po zlozeniu (md5 serwera Google, z diagnostics/drive-inventory.tsv):
-#   e8248a9a9a1f393750a20e2d9b6e91cd   937 791 488 B
-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN
+# Noc 24/25 IX: donorski system_ext.img (HyperOS 4 z Xiaomi Pad 9 Pro Max) na wariant coherent.
+# Plik: 632 840 192 B, md5 serwera Google = f879747f3f7ebb5eb026eddeb02f8d13 (drive-inventory.tsv).
+# Cel: raw na transfer-spool (konektor agenta tnie na 100 MB); agent sklada i weryfikuje md5.
+13e-okLFNX3m7feTp8AlYoGME2rKFFitr
+do_unpack: 0
 raw: 1
 rom_build: 0
-do_unpack: 0
 max_total: 1900000000
-# (marker startu biegu: ponizsza linia nie zmienia opcji, tylko tytul commitu)
