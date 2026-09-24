@@ -81,10 +81,10 @@ adb shell 'ls -lZ /system/bin/su /product/bin 2>/dev/null; restorecon -RFv /prod
 bash tools/test_release.sh --erofs-dir <katalog z mkfs/fsck>
 ```
 
-Oczekiwane: `=== podsumowanie: 129 PASS, 0 FAIL ===`, a z `--real` (z drzewami podanymi w
+Oczekiwane: `=== podsumowanie: 135 PASS, 0 FAIL ===`, a z `--real` (z drzewami podanymi w
 `PRODTREE`, `PRODTREE_FULL`, `SYSTREE`, `SYSTREE_FULL` — `SYSTREE_FULL` = drzewo donora z trzema
 plikami runnera, bo `-full` trzeba porównywać z drzewem, z którego powstał):
-`=== podsumowanie: 137 PASS, 0 FAIL ===`.
+`=== podsumowanie: 143 PASS, 0 FAIL ===`.
 
 Sekcje: A selftest buildera · B determinizm (dwa `mkfs.erofs` na tym samym drzewie = **identyczny
 plik**, `cmp` bez różnic) · C **test negatywny** weryfikatora (drzewo ma plik, którego nie ma w
@@ -117,6 +117,12 @@ niesie donorski `3506d20e…`, wydanie testkey `9cf2e7e4…` — pilnuje, żeby 
 różnicy kopią; **`rom-kit/flash.sh` wykonany** na atrapie: bez `system.img` (stan z czystego gita)
 → czysta odmowa rc=1; z oboma obrazami → 4 flashy (vbmeta a/b + system a/b) + 2 kopie `fetch`,
 bez `erase userdata`; z bootloadera → `reboot fastboot` i kontynuacja z ostrzeżeniem) ·
+Y **`assemble_raw_parts.py` na syntetycznych cząstkach** — narzędzie, od którego wisi cała
+receptura odzysku, do tej pory wykonywane tylko w replayach sesyjnych: fixture 2 cząstki (64+36 KB)
++ manifest `# RAW v1`; rc 0 (złożenie bajt w bajt + `--expect-sha256`), rc 1 (uszkodzona cząstka
+środkowa łapana per-part sha **przed** sklejeniem), rc 3 (brak cząstki = niekompletny zakres, nie
+składamy połowy), rc 2 (katalog bez manifestu), sieroty (cząstki bez wpisu w manifeście składane
+i weryfikowane po inwentarzu — droga z biegu 35892866524) ·
 Q kontrakt rozmiarów: każdy plik wydania
 musi być **nazwany w prozie** `$OUT/README.md` ze swoją liczbą bajtów (spacja co 3 cyfry i granice
 cyfr — „591" w numerze commita `aaa5919` się nie liczy); plus ta sama liczba i suma w wierszach

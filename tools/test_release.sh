@@ -559,6 +559,50 @@ fi
 if [ $X -ge 8 ]; then ok "przeanalizowane pozycje modules/rom-kit (z wykonaniem flash.sh): $X"; else
   bad "tylko $X pozycji modules/rom-kit - kontrola padla w polowie"; fi
 
+# --------------------- Y: assemble_raw_parts.py na syntetycznych czastkach
+echo "== Y      assemble_raw_parts: rc 0/1/2/3 na fixture (narzedzie odzysku pod CI)"
+# Od tego narzedzia wisi cala receptura odzysku obrazow (docs/08, sekcja 'Odbudowa'),
+# a w suicie nie mialo ani jednej kontroli - bylo wykonywane tylko w replayach
+# sesyjnych na prawdziwych danych. Fixture syntetyczny: 2 czastki (64+36 KB) ze
+# znanymi sumami + manifest w formacie '# RAW v1' (format zgledzony z read_manifests,
+# nie odgadniety). Semantyka rc z docstringa: 0=zgodny, 1=rozbieznosc, 2=brak
+# manifestu, 3=niekompletny zakres.
+YA=$WORK/asm; rm -rf "$YA"; mkdir -p "$YA/parts"
+{ head -c 65536 /dev/urandom; head -c 36864 /dev/urandom; } > "$YA/src.bin"
+dd if="$YA/src.bin" of="$YA/parts/testblob.bin.part.0000" bs=1024 count=64 status=none
+dd if="$YA/src.bin" of="$YA/parts/testblob.bin.part.0001" bs=1024 skip=64 count=36 status=none
+YSHA=$(sha256sum "$YA/src.bin" | awk '{print $1}')
+Z0=$(stat -c%s "$YA/parts/testblob.bin.part.0000"); S0=$(sha256sum "$YA/parts/testblob.bin.part.0000" | awk '{print $1}')
+Z1=$(stat -c%s "$YA/parts/testblob.bin.part.0001"); S1=$(sha256sum "$YA/parts/testblob.bin.part.0001" | awk '{print $1}')
+printf '# RAW v1\ttestblob.bin\t102400\t%s\t2\t0\t0\npart\ttestblob.bin.part.0000\t%s\t%s\npart\ttestblob.bin.part.0001\t%s\t%s\n' \
+  "$YSHA" "$Z0" "$S0" "$Z1" "$S1" > "$YA/parts/RAW_MANIFEST-synthetic.tsv"
+t "Y: zlozenie 2 czastek wg manifestu -> rc 0" 0 python3 "$HERE/assemble_raw_parts.py" \
+  --parts "$YA/parts" --out "$YA/out.bin" --expect-sha256 "$YSHA"
+if cmp -s "$YA/src.bin" "$YA/out.bin"; then ok "Y: zlozony plik to bajt w bajt zrodlo (102400 B)";
+else bad "Y: zlozony plik rozni sie od zrodla"; fi
+# uszkodzona czastka srodkowa (sha per-part musi ja zlapac ZIMIEM sklejania)
+rm -rf "$YA/bad"; cp -r "$YA/parts" "$YA/bad"
+printf 'X' | dd of="$YA/bad/testblob.bin.part.0001" bs=1 seek=2048 conv=notrunc status=none
+t "Y: uszkodona czastka srodkowa -> rc 1 (sha per-part)" 1 python3 "$HERE/assemble_raw_parts.py" \
+  --parts "$YA/bad" --out "$YA/bad.bin"
+# brakujaca czastka (niekompletny zakres) - nie skladamy polowy obrazu
+rm -rf "$YA/gap"; cp -r "$YA/parts" "$YA/gap"; rm -f "$YA/gap/testblob.bin.part.0001"
+t "Y: brak czastki .0001 -> rc 3 (niekompletny zakres)" 3 python3 "$HERE/assemble_raw_parts.py" \
+  --parts "$YA/gap" --out "$YA/gap.bin"
+# katalog bez manifestu -> rc 2
+rm -rf "$YA/noman"; mkdir -p "$YA/noman"; cp "$YA/parts/testblob.bin.part.0000" "$YA/noman/"
+t "Y: katalog bez RAW_MANIFEST -> rc 2" 2 python3 "$HERE/assemble_raw_parts.py" \
+  --parts "$YA/noman" --out "$YA/noman.bin"
+# sieroty: czastki bez wpisu w manifecie tez sa skladane (bieg 35892866524 zgubil
+# manifesty - danych nie odrzucamy, weryfikacja po inwentarzu Dysku)
+cp "$YA/parts/testblob.bin.part.0000" "$YA/parts/testorph.bin.part.0000"
+out=$(python3 "$HERE/assemble_raw_parts.py" --parts "$YA/parts" --out "$YA/testorph.bin" 2>&1); yrc=$?
+if [ "$yrc" = 0 ] && printf '%s' "$out" | grep -q 'brak opisu w manifescie' \
+   && cmp -s "$YA/parts/testblob.bin.part.0000" "$YA/testorph.bin"; then
+  ok "Y: czastki-sieroty skladane mimo braku wpisu (rc 0, bajty 1:1)"
+else bad "Y: sieroty: rc=$yrc (oczekiwano 0 + adopcja)"; printf '%s\n' "$out" | sed 's/^/        |/'; fi
+rm -f "$YA/parts/testorph.bin.part.0000"
+
 # ---------------------------------------------------------------- K: higiena tekstu
 echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
 # Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt

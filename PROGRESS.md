@@ -8,7 +8,7 @@ Start bloku: 2026-09-23 ~16:55 (Europe/Warsaw), limit czasowy 3h.
 o aktualizowaniu „po każdym etapie" dotyczy tamtego bloku). Wiersze „DO ZROBIENIA"
 odnosiły się do jego chwili; większość zamknęły późniejsze etapy (`dist/rom-kit/`,
 `dist/modules/`, przebiegi workflowów, suity). Bieżący stan i blokady: `docs/08-stan-i-blokady.md`;
-umowy testów: `docs/07-jak-weryfikowac.md` (129 kontroli atrap / 137 z `--real`).
+umowy testów: `docs/07-jak-weryfikowac.md` (135 kontroli atrap / 143 z `--real`).
 
 | # | etap | status | dowod / czas |
 |--:|---|---|---|

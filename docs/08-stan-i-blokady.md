@@ -73,21 +73,21 @@ Po re-clone sandboxa (`/tmp` pusty, `~/romtools` skasowane) łańcuch narzędzi 
 ```
 tools/build_comp_libs.sh /tmp/comp-build      # 11 s, od zera, bez cache: libz.a 150 244 B + liblz4.a 277 634 B
 tools/build_erofs_local.sh /tmp/erofs-c       # ~30 s: mkfs 588 376 B, fsck 580 496 B, dump 571 776 B
-tools/test_release.sh --erofs-dir /tmp/erofs-c        # 129 PASS / 0 FAIL (z sekcjami F2/F3/V/W/X)
+tools/test_release.sh --erofs-dir /tmp/erofs-c        # 135 PASS / 0 FAIL (z sekcjami F2/F3/V/W/X/Y)
 ```
 
 To przebieg **niezależny od wszystkiego, co miałem wczoraj**: identyczne liczniki, jakich wymaga
 sekcja Q (16 pozycji kontraktu, `absent-skip 3`, wiersze `docs/07` 2/2) — czyli dokładnie ten kształt,
 który widzi runner, bo oba katalogi wydania mają na czystym checkoutcie tyle samo plików co u mnie.
-Z tą różnicą, że ciemna strona jest moja: **`--real` (137 PASS) wymaga drzew donora w `/tmp`
+Z tą różnicą, że ciemna strona jest moja: **`--real` (143 PASS) wymaga drzew donora w `/tmp`
 i `~/romtools/avb`, a te nie są w gicie i nie odtwarzają się same** — `system.img` (920 MB) i
 `product.img` wariantu `-full` (150 MB) przekraczają limit GitHuba. Dlatego po reboocie mam prawo
 napisać „88/0", a nie „96/0". **Aktualizacja 24 IX ~14:00 UTC: to prawo przestało być potrzebne.**
 Drugie mrugnięcie snapshotu zabrało właśnie te trzy nieśledzone obrazy, a odbudowa z
 `transfer-spool` odtworzyła je **bajt w bajt** w kwadrans (receptura: sekcja na końcu pliku).
 `--real` jest odtwarzalny w pełni: pełne PASS potwierdzone po odbudowie (96/0 w chwili odbudowy;
-137/0 po dodaniu sekcji F3, V, W i X jeszcze tego samego dnia — liczby historyczne niżej dotyczą
-suity sprzed F3/V/W/X). `sha256sum -c`
+143/0 po dodaniu sekcji F3, V, W, X i Y jeszcze tego samego dnia — liczby historyczne niżej
+dotyczą suity sprzed F3/V/W/X/Y). `sha256sum -c`
 na czystym checkoutcie wychodzi
 7/8 (lekki) i 6/8 (`-full`), a każde `FAILED open or read` to właśnie ten brakujący duży obraz —
 nie niezgodność; lokalnie po odtworzeniu obrazów (24 IX) oba katalogi mają 8/8. Skrypty generowane
@@ -99,7 +99,7 @@ przechodzą `bash -n` i mają rozmiary zgodne z kontraktami README.
 ```
 tools/build_comp_libs.sh /tmp/comp-build            # zlib + lz4 (wymaga sieci na tarball)
 tools/build_erofs_local.sh /tmp/erofs-c             # mkfs/fsck/dump, selfcheck na 3 binarkach
-tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 137 PASS / 0 FAIL z drzewami sesji (bez --real: 129)
+tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 143 PASS / 0 FAIL z drzewami sesji (bez --real: 135)
 ```
 
 Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (patrz `.gitignore`):
@@ -225,7 +225,7 @@ cp /tmp/rebuild-full/{system,product}_hyperos4_p11g2.img dist/release/HyperOS4_P
 (cd dist/release/HyperOS4_P11Gen2-full && sha256sum -c SHA256SUMS.txt)   # 8/8
 SYSTREE=/tmp/tree2/system_tree SYSTREE_FULL=/tmp/donor/system_tree \
 PRODTREE=/tmp/tree-product PRODTREE_FULL=/tmp/tree-full \
-    tools/test_release.sh --erofs-dir /tmp/erofs-c --real               # 137 PASS / 0 FAIL (replay 24 IX ~14:10 dal 96/0 - sprzed F3/V/W/X)
+    tools/test_release.sh --erofs-dir /tmp/erofs-c --real               # 143 PASS / 0 FAIL (replay 24 IX ~14:10 dal 96/0 - sprzed F3/V/W/X/Y)
 ```
 
 Dwa szczególy, które kosztowaly najwiecej namyslu przy rekonstrukcji receptury:
@@ -239,7 +239,7 @@ Dwa szczególy, które kosztowaly najwiecej namyslu przy rekonstrukcji receptury
   `etc/` donora (`build.prop`, `permissions/`, `sysconfig/`, `vintf/`) — passwd/group pochodza
   z lekkiego obrazu, nie z tara donora.
 
-## Maraton 24 IX (popołudnie): od trzech brakujących obrazów do 137/0
+## Maraton 24 IX (popołudnie): od trzech brakujących obrazów do 143/0
 
 Godziny ~15:55–17:45: (1) odbudowa trzech nieśledzonych obrazów z `transfer-spool` **bajt w bajt**
 (4/4 hashe — sekcja wyżej), (2) utwardzenie receptury trzema poprawkami znalezionymi dopiero przy
@@ -255,9 +255,11 @@ pliku wykonany bez zmian: 189 s, rc=0, (4) trzy nowe sekcje suity w schemacie F2
 | V | wnętrze `vbmeta` — `flags=3`, testkey AOSP (sha1 `cdbb7717…` wg docs/03 §A.1), parsowane bez avbtoola; pułapka: offsety klucza względne wobec bloku AUX, nie początku pliku | 16 |
 | W | `release-manifest.tsv` 1:1 — kolumna sha256 i wiersze skryptów nie były porównywane z plikami; zgodność manifest↔`SHA256SUMS` także dla plików nieobecnych (>100 MiB); negatyw z dwiema klasami błędu | 3 |
 | X | `dist/modules` + `dist/rom-kit` — pozostałe ładunki w gicie, których suita nie dotykała: modul Magisk (trzy kopie sumy, struktura, CRC), rom-kit (`bash -n`, sumy gita 1:1), świadoma różnica vbmeta donor `3506d20e…` vs wydanie testkey `9cf2e7e4…`, oraz **wykonanie `rom-kit/flash.sh`**: bez `system.img` (stan z czystego gita) → czysta odmowa; z oboma → 4 flashy + 2 kopie `fetch`, bez `erase userdata`; z bootloadera → `reboot fastboot` + kontynuacja | 9 |
+| Y | `assemble_raw_parts.py` na syntetycznych cząstkach — narzędzie, od którego wisi receptura odzysku, do tej pory tylko w replayach sesyjnych: rc 0/1/2/3 + adopcja sierot (bieg 35892866524) | 6 |
 
-Liczniki suity: **88/96 → 129/137**. CI zielone dla `4e3452e` (F2), `9437ffa` (F3), `33ecec0` (V)
-i `d4cebe2` (W), `d55ef27` (X), `f67b560` (Xb) — oba workflow; sekcja W przeszła na runnerze z trzema nieobecnymi obrazami
+Liczniki suity: **88/96 → 135/143**. CI zielone dla `4e3452e` (F2), `9437ffa` (F3), `33ecec0` (V)
+i `d4cebe2` (W), `d55ef27` (X), `f67b560` (Xb) — oba workflow (Y czeka na odwilż tokena GH: push
+wstrzymany, commit lokalny); sekcja W przeszła na runnerze z trzema nieobecnymi obrazami
 (absent-skip + zgodność manifest↔SHA256SUMS dla nieobecnych — dokładnie po to jest ta gałąź
 kontroli). Lekcja dnia numer jeden: dokument, który
 opisuje procedurę odzysku, sam jest ładunkiem — dopóki nie został wykonany słowo w słowo, jest
