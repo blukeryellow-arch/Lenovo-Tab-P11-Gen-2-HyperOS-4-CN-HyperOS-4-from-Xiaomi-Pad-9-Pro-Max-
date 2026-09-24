@@ -65,6 +65,27 @@ boota jest gorszym podejrzanym, więc jeśli coś nie wstanie, zacznij od lekkie
    `blob.core.windows.net`. Widoczne są więc statusy kroków i adnotacje (`::error::`/`::notice::`),
    nie treść logu — i o tym trzeba pamiętać, czytając moje „CI zielone".
 
+## Odtwarzanie środowiska jest tanie — `--real` już nie (zmierzone 24 IX 03:41 UTC)
+
+Po re-clone sandboxa (`/tmp` pusty, `~/romtools` skasowane) łańcuch narzędzi wraca w minutę:
+
+```
+tools/build_comp_libs.sh /tmp/comp-build      # 11 s, od zera, bez cache: libz.a 150 244 B + liblz4.a 277 634 B
+tools/build_erofs_local.sh /tmp/erofs-c       # ~30 s: mkfs 588 376 B, fsck 580 496 B, dump 571 776 B
+tools/test_release.sh --erofs-dir /tmp/erofs-c        # 38 PASS / 0 FAIL
+```
+
+To przebieg **niezależny od wszystkiego, co miałem wczoraj**: identyczne liczniki, jakich wymaga
+sekcja Q (16 pozycji kontraktu, `absent-skip 3`, wiersze `docs/07` 2/2) — czyli dokładnie ten kształt,
+który widzi runner, bo oba katalogi wydania mają na czystym checkoutcie tyle samo plików co u mnie.
+Z tą różnicą, że ciemna strona jest moja: **`--real` (46 PASS) wymaga drzew syntetycznych w `/tmp`
+i `~/romtools/avb`, a te nie są w gicie i nie odtwarzają się same** — `system.img` (920 MB) i
+`product.img` wariantu `-full` (150 MB) przekraczają limit GitHuba. Dlatego po reboocie mam prawo
+napisać „38/0", a nie „46/0". `sha256sum -c` na tym, co mimo wszystko jest w repo, wychodzi
+7/8 (lekki) i 6/8 (`-full`), a każde `FAILED open or read` to właśnie ten brakujący duży obraz —
+nie niezgodność. Trzy skrypty generowane (`flash-all.sh 6 749`, `rollback.sh 1 152`,
+`device-probe.sh 6 533`) przechodzą `bash -n` i mają rozmiary zgodne z kontraktem README.
+
 ## Jak odtworzyć środowisko po reboocie sandboxa
 
 ```
