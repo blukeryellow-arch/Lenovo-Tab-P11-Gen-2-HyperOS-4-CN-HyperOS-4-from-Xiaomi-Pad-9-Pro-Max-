@@ -235,3 +235,26 @@ Dwa szczególy, które kosztowaly najwiecej namyslu przy rekonstrukcji receptury
   doklada `overlay/` (67 apk w 12 podkatalogach) z assetow donora, ale NIE doklada 24 plikow
   `etc/` donora (`build.prop`, `permissions/`, `sysconfig/`, `vintf/`) — passwd/group pochodza
   z lekkiego obrazu, nie z tara donora.
+
+## Maraton 24 IX (popołudnie): od trzech brakujących obrazów do 128/0
+
+Godziny ~15:55–17:30: (1) odbudowa trzech nieśledzonych obrazów z `transfer-spool` **bajt w bajt**
+(4/4 hashe — sekcja wyżej), (2) utwardzenie receptury trzema poprawkami znalezionymi dopiero przy
+sprawdzaniu na czystym klonie (`git fetch origin transfer-spool` przed `git archive FETCH_HEAD`;
+składanie assetów product donora przez `assemble_raw_parts.py`, nie `cat`; dokładna linijka
+`fsck.erofs --extract=` zamiast komentarza), (3) **replay dosłowny** — blok kodu wycięty z tego
+pliku wykonany bez zmian: 189 s, rc=0, (4) trzy nowe sekcje suity w schemacie F2/P2
+(„ładunek wydania, którego żadna sekcja nigdy nie odpalała"):
+
+| sekcja | co domknęła | kontroli |
+|---|---|---:|
+| F3 | `rollback.sh` — jedyny skrypt wydania nigdy nie wykonany: bash -n, sloty a/b, flash `vbmeta_stock_*`, heredoc „NIE przywraca product ani system", samolokalizacja z cudzego cwd, negatyw | 13 |
+| V | wnętrze `vbmeta` — `flags=3`, testkey AOSP (sha1 `cdbb7717…` wg docs/03 §A.1), parsowane bez avbtoola; pułapka: offsety klucza względne wobec bloku AUX, nie początku pliku | 16 |
+| W | `release-manifest.tsv` 1:1 — kolumna sha256 i wiersze skryptów nie były porównywane z plikami; zgodność manifest↔`SHA256SUMS` także dla plików nieobecnych (>100 MiB); negatyw z dwiema klasami błędu | 3 |
+
+Liczniki suity: **88/96 → 120/128**. CI zielone dla `4e3452e` (F2), `9437ffa` (F3), `33ecec0` (V)
+i `d4cebe2` (W) — oba workflow; sekcja W przeszła na runnerze z trzema nieobecnymi obrazami
+(absent-skip + zgodność manifest↔SHA256SUMS dla nieobecnych — dokładnie po to jest ta gałąź
+kontroli). Lekcja dnia numer jeden: dokument, który
+opisuje procedurę odzysku, sam jest ładunkiem — dopóki nie został wykonany słowo w słowo, jest
+hipotezą (a był w nim błąd: `git archive origin/transfer-spool` pada na czystym klonie).
