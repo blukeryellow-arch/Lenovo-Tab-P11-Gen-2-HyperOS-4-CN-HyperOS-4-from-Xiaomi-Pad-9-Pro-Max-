@@ -26,7 +26,7 @@ z tego samego drzewa i tego samego UUID).
 | plik | bajty | co to |
 |---|---|---|
 | `product_hyperos4_p11g2.img` | 75 198 464 | `/product` (EROFS+lz4): `fonts/` + `etc/passwd` + `etc/group`; zweryfikowany **67/67** wpisów 1:1 |
-| `system_hyperos4_p11g2.img` | 920 039 424 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowane macierze VINTF 4/5/6). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
+| `system_hyperos4_p11g2.img` | 920 039 424 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowana macierz VINTF poziomu 5, wariant miękki). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 563/4 563** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | `Flags: 3` (weryfikacja + verity wyłączone), `rollback_index 0`, SHA256_RSA2048, key `cdbb7717…` |
 | `flash-all.sh` | 8 776 | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
 | `device-probe.sh` | 6 533 | **krok 0 przed flashem**: czyta `fastboot getvar` + `adb shell` i drukuje GO / GO z zastrzeżeniami / NO-GO (fastbootd, rozmiary slotów, `CONFIG_EROFS_FS{,_LZ4}`). Tylko odczyty — nic nie zapisuje, nic nie mountuje |
@@ -145,23 +145,39 @@ $FSCK --extract=/tmp/tree/system_src system.img    # uwaga: --extract tworzy
 # 'make_level_matrix.py --out .../etc/vintf/...' podmienia cudze drzewo donorow i
 # pozostawia w nim ślad - patrz docs/06 §6.29.
 
-# 3) /product: fonty (+ opcjonalnie RRO) i dopelnienie sciezek, ktorych szuka system
-$FSCK --extract=/tmp/tree/product --path=fonts  product.img
-$FSCK --extract=/tmp/tree/product --path=overlay product.img     # tylko dla wariantu -full
-tools/enrich_product.sh --src product.img --tree /tmp/tree/product
+# 3) /product: fonty (+ opcjonalnie RRO) - dokladnie kuracja z wydania (docs/06 §6.33)
+#    --path=KATALOG wyciaga ZAWARTOSC katalogu do celu (z podkatalogami), wiec cel musi
+#    byc samym katalogiem docelowym - inaczej pliki wyladuja poziom wyzej (§6.14)
+mkdir -p /tmp/tree/product/fonts
+$FSCK --extract=/tmp/tree/product/fonts --path=fonts product.img
+mkdir -p /tmp/tree/product/overlay
+$FSCK --extract=/tmp/tree/product/overlay --path=overlay product.img   # tylko dla wariantu -full
+mkdir -p /tmp/tree/product/etc
+printf 'system:x:1000:1000:system:/none:/bin/false\n' > /tmp/tree/product/etc/passwd
+printf 'system:x:1000:\n' > /tmp/tree/product/etc/group
+#    (tresc z gory wiadoma; bez tych dwoch plikow wychodzi 64 wpisy zamiast 67 - §6.15)
+# NIE uruchamiaj przy odtwarzaniu bajt-w-bajt 'tools/enrich_product.sh' - dociaga on z
+#    prawdziwego product.img m.in. etc/sysconfig, etc/selinux/, fonts_customization.xml,
+#    a te swiadomie NIE weszly do wydania (§6.15). enrich sluzy do budowy BOGATSZEJ niz
+#    wydanie, nie do odtwarzania wydania.
 
 # 4) budowa + weryfikacja (fsck + 1:1 na kazdym wpisie) + vbmeta + instalator
 tools/make_release.sh --product-tree /tmp/tree/product --system-tree /tmp/tree/system_src \
   --compress lz4hc,9 --exclude-regex '\.komentarz\.txt$' \
+  --vintf-level 5 --vintf-optional-missing \
   --avb <avbtool.py> --key <testkey_rsa2048.pem> --erofs-dir /tmp/erofs --out /tmp/release
 #   --exclude-regex wylacza z PARTYCJI pliki-notatki generatora (*.komentarz.txt, 3 x ~400 B);
 #   drzewo zostaje z notatkami, obraz jest o 4 096 B czystszy i bez nich w /system/etc/vintf
 
 # 5) dowod, ze to TO SAMO
 sha256sum /tmp/release/product_hyperos4_p11g2.img   # a961bec46085883d6d9c…
-sha256sum /tmp/release/system_hyperos4_p11g2.img     # cf0b889d45a6bb4f6af3…
+sha256sum /tmp/release/system_hyperos4_p11g2.img     # 4836dcd4c8d5f6c0… (wariant miekki NA SZEROKO;
+#    bez --vintf-optional-missing dostaniesz wariant strict z 84 obowiazkowymi - inny sha i zla bramka)
 sha256sum /tmp/release/vbmeta_hyperos4_p11g2.img     # 9cf2e7e4e165687abe78…
-# wariant -full: product da17ffcd20c0ab4e8d0d… (150 560 768 B; system i vbmeta jak wyzej)
+# wariant -full: product da17ffcd20c0ab4e8d0d… (150 560 768 B, z overlay w drzewie), vbmeta jak
+#    wyzej; uwaga: system WYDANIA -full to kaskada 23 IX cf0b889d45a6bb4f… (920 047 616 B) z drzewa
+#    kitu CI (3 pliki runnera) - ten przepis zbuduje zamiast niego ten sam system co wyzej, co jest
+#    ZALECANE (kaskada ma 84 obowiazkowe pozycje i zamknieta bramke init)
 ```
 
 `make_release.sh --selftest` przechodzi ten łańcuch na drzewie syntetycznym, więc narzędzia
