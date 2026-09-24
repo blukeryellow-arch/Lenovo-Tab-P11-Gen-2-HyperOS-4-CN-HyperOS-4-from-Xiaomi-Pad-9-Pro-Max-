@@ -165,7 +165,12 @@ zmian po wyczyszczeniu ścieżek — trwał **189 s** i zakończył się rc=0: o
 z runnerem, oba buildy, 16/16 sum, 96 PASS / 0 FAIL. **Powtórzony po dodaniu F3/V/W/X**
 (finalne HEAD dnia, ten sam blok kodu dosłownie): 212 s, rc=0, **134 PASS / 0 FAIL** — czyli
 receptura dalej wykonuje się słowo w słowo, a jej oczekiwane wyjście rośnie razem z suitą.
-Toolchain od zera to dodatkowe ~45 s;
+**Trzeci raz 24 IX o ~18:17** — pomiar najcenniejszy: mrugnięcie snapshotu po raz trzeci zabrało
+WSZYSTKO (świeży klon na `5b03aea`, `/tmp` starte: spool, toolchain, drzewa, 3 nieśledzone
+obrazy). Odzysk: `git fetch` + `reset --hard` (cała treść była na remote — nic nie zginęło),
+potem ten sam blok receptury od zera — **5 min 09 s**, rc=0, oba tarballe ZGODNE, 16/16 sum,
+pełna suita `--real` **143 PASS / 0 FAIL**. Zimny start z gołego klonu do pełnego stanu
+roboczego to pięć minut; Toolchain od zera to dodatkowe ~45 s;
 na ciepłym `/tmp` skrypty same się skracają (»już zbudowane«, »już pobrane«), więc recepturę
 można bezpiecznie odpalać ponownie.
 
