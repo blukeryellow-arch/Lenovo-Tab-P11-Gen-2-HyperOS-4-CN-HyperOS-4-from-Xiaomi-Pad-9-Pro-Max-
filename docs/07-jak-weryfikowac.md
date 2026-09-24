@@ -81,10 +81,10 @@ adb shell 'ls -lZ /system/bin/su /product/bin 2>/dev/null; restorecon -RFv /prod
 bash tools/test_release.sh --erofs-dir <katalog z mkfs/fsck>
 ```
 
-Oczekiwane: `=== podsumowanie: 135 PASS, 0 FAIL ===`, a z `--real` (z drzewami podanymi w
+Oczekiwane: `=== podsumowanie: 153 PASS, 0 FAIL ===`, a z `--real` (z drzewami podanymi w
 `PRODTREE`, `PRODTREE_FULL`, `SYSTREE`, `SYSTREE_FULL` — `SYSTREE_FULL` = drzewo donora z trzema
 plikami runnera, bo `-full` trzeba porównywać z drzewem, z którego powstał):
-`=== podsumowanie: 143 PASS, 0 FAIL ===`.
+`=== podsumowanie: 161 PASS, 0 FAIL ===`.
 
 Sekcje: A selftest buildera · B determinizm (dwa `mkfs.erofs` na tym samym drzewie = **identyczny
 plik**, `cmp` bez różnic) · C **test negatywny** weryfikatora (drzewo ma plik, którego nie ma w
@@ -123,6 +123,13 @@ receptura odzysku, do tej pory wykonywane tylko w replayach sesyjnych: fixture 2
 środkowa łapana per-part sha **przed** sklejeniem), rc 3 (brak cząstki = niekompletny zakres, nie
 składamy połowy), rc 2 (katalog bez manifestu), sieroty (cząstki bez wpisu w manifeście składane
 i weryfikowane po inwentarzu — droga z biegu 35892866524) ·
+Z **wariant coherent** (`dist/coherent-release/`, celowo poza globem `dist/release/*` — jego
+flash-all ma inne liczniki flashy): bash -n ×3, sumy z kontraktem ROZMIARY-KONTRAKT (nieobecne
+tylko >100 MiB), manifest 1:1, flash-all na atrapie — sloty `system_ext_a/b` → 8 flashów;
+`system_ext` bez slotów → abort bez `I_ACCEPT_SYSTEM_EXT_ONEWAY=yes`, 7 flashów z zgodą (flash
+po przyrostku bez slotu); brak partycji → abort; bramka ZMALE z komunikatem; resize 6 flashów
+bez product; negatyw; rollback z ostrzeżeniem o system_ext; **triage** — `postflash_triage.sh`
+na syntetycznych logach (zdrowy boot → rc 0; crash SurfaceFlinger → rc 1 z nazwanym stoperem) ·
 Q kontrakt rozmiarów: każdy plik wydania
 musi być **nazwany w prozie** `$OUT/README.md` ze swoją liczbą bajtów (spacja co 3 cyfry i granice
 cyfr — „591" w numerze commita `aaa5919` się nie liczy); plus ta sama liczba i suma w wierszach

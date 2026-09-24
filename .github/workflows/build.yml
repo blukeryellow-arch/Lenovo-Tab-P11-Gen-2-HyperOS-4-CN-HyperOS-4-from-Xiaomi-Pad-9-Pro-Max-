@@ -555,17 +555,28 @@ jobs:
       - name: Wypchnij raport do repo
         # always(): przy timeout/cancel i tak chcemy to, co zdazylo sie zebrac -
         # bez tego przerwany run nie zostawia zadnego sladu (logow CI nie widac).
+        # FIX (noc 24/25 IX, bieg 36030150849): poprzedni krok (spool) robi 'git checkout
+        # --orphan', wiec HEAD w TYM kroku to juz galaz spoolu — push HEAD:arena dostawal
+        # non-fast-forward i raport nigdy nie dochodzil. Wrzucamy raport na DRZEWO
+        # $GITHUB_SHA (pliki przenosimy na bok, bo checkout usunalby je z dysku).
+        # transfer/ celowo NIE idzie na arene (zyla na transfer-spool) — wczesniejszy
+        # 'git add -f reports transfer' dokladal 632 MB czastek do historii areny.
         if: always()
         run: |
           set +e
           set -u
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mkdir -p reports transfer
+          mkdir -p reports
           [ -f reports/drive-probe-$GITHUB_RUN_ID.md ] || { ls -la reports/ | sed "s/^/  /"; echo "# pusty raport (krok glowny padl wczesniej)" > reports/drive-probe-$GITHUB_RUN_ID.md; }
-          git add -f reports transfer && git reset -q -- '*.tar.gz' '*.zip' || true
+          RS=$(mktemp -d)
+          cp -a reports "$RS"/ 2>/dev/null || true
+          git checkout -q -B reporttmp "$GITHUB_SHA" 2>/dev/null || git checkout -q "$GITHUB_SHA"
+          rm -rf reports
+          cp -a "$RS"/reports .
+          git add -f reports
           echo "### do commita:"; git status --porcelain | head -20
           if git diff --cached --quiet; then echo "brak zmian"; else
-            git commit -q -m "drive-probe: raport + kawalki (run ${{ github.run_id }})"
+            git commit -q -m "drive-probe: raport (run ${{ github.run_id }})"
             git push -q origin "HEAD:${{ github.ref_name }}" && echo "raport na ${{ github.ref_name }}"
           fi

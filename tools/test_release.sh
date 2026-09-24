@@ -603,6 +603,166 @@ if [ "$yrc" = 0 ] && printf '%s' "$out" | grep -q 'brak opisu w manifescie' \
 else bad "Y: sieroty: rc=$yrc (oczekiwano 0 + adopcja)"; printf '%s\n' "$out" | sed 's/^/        |/'; fi
 rm -f "$YA/parts/testorph.bin.part.0000"
 
+# --------------------- Z: wariant coherent (dist/coherent-release) + triage
+echo "== Z      wariant coherent: struktura, sumy, flash-all (system_ext!), triage"
+# Trzeci wariant (noc 24/25 IX, docs/09) zyje POZA globem dist/release/* celowo:
+# jego flash-all ma inne licznik flashy (dodaje system_ext), wiec sekcje
+# F2/W/T nie moga go brac po prostu do petli. Z jest jego dedykowanym
+# pakietem: to samo co J+W+F2+F3, ale z lokalna semantyka wariantu.
+ZD=$ROOT/dist/coherent-release/HyperOS4_P11Gen2-coherent
+Z=0
+if [ -d "$ZD" ]; then
+  for s in flash-all.sh rollback.sh device-probe.sh; do
+    if bash -n "$ZD/$s"; then ok "Z: bash -n $s czysty"; else bad "Z: $s blad skladni"; fi
+    Z=$((Z+1))
+  done
+  # sumy: obecne pliki musza sie zgadzac; nieobecne tolerowane WYLACZNIE >100 MiB
+  # z kontraktu ROZMIARY-KONTRAKT w README (ta sama umowa co J — na runnerze
+  # system/system_ext nie zyja w gicie)
+  if python3 - "$ZD" <<'PYZ'
+import os, re, sys, hashlib
+d = sys.argv[1]
+lim = 100*1024*1024
+readme = open(os.path.join(d,'README.md'), encoding='utf-8').read()
+blk = re.search(r'<!--\s*ROZMIARY-KONTRAKT([^>]*)-->', readme)
+roz = dict((m.group(1), int(m.group(2))) for m in re.finditer(r'([\w.-]+)=(\d+)', blk.group(1))) if blk else {}
+bad = []
+if 'system_ext_hyperos4_p11g2.img' not in roz:
+    bad.append('README bez rozmiaru system_ext w ROZMIARY-KONTRAKT')
+for ln in open(os.path.join(d,'SHA256SUMS.txt'), encoding='utf-8'):
+    p = ln.split()
+    if len(p) != 2: continue
+    h, name = p
+    fp = os.path.join(d, name)
+    if os.path.isfile(fp):
+        if hashlib.sha256(open(fp,'rb').read()).hexdigest() != h:
+            bad.append(f'{name}: suma nie zgadza sie')
+    else:
+        if name not in roz or roz[name] <= lim:
+            bad.append(f'{name}: nieobecny, a kontrakt nie tlumaczy (>100 MiB wymagane)')
+if bad: print('\n'.join(bad)); sys.exit(1)
+print('sumy: zgodne (nieobecne tylko >100 MiB, zgodnie z kontraktem)')
+PYZ
+  then ok "Z: SHA256SUMS + ROZMIARY-KONTRAKT spojne"; else bad "Z: sumy/kontrakt wariantu coherent niespojne"; fi
+  Z=$((Z+1))
+  # manifest W-style: kazdy wiersz = plik, bajty, sha256 (nieobecne: sha zgodna z SHA256SUMS)
+  if python3 - "$ZD" <<'PYZ'
+import os, sys, hashlib
+d = sys.argv[1]
+lim = 100*1024*1024
+sums = {}
+for ln in open(os.path.join(d,'SHA256SUMS.txt'), encoding='utf-8'):
+    p = ln.split()
+    if len(p) == 2: sums[p[1]] = p[0]
+bad = []; rows = 0
+for ln in open(os.path.join(d,'release-manifest.tsv'), encoding='utf-8'):
+    p = ln.rstrip('\n').split('\t')
+    if not p or p[0] in ('plik','') or p[0].startswith('#'): continue
+    rows += 1
+    name, want_sz, want_sha = p[0], p[1], (p[2] if len(p) > 2 else '')
+    fp = os.path.join(d, name)
+    if os.path.isfile(fp):
+        got = os.path.getsize(fp)
+        if str(got) != want_sz: bad.append(f'{name}: bajty {want_sz} vs {got}')
+        h = hashlib.sha256(open(fp,'rb').read()).hexdigest()
+        if want_sha and h != want_sha: bad.append(f'{name}: sha manifestu != plik')
+    else:
+        if int(want_sz) <= lim: bad.append(f'{name}: brak pliku ponizej limitu')
+        if want_sha and name in sums and sums[name] != want_sha:
+            bad.append(f'{name}: manifest vs SHA256SUMS rozjazd dla nieobecnego')
+if rows < 7: bad.append(f'za malo wierszy manifestu: {rows}')
+if bad: print('\n'.join(bad)); sys.exit(1)
+print(f'{rows} wierszy manifestu 1:1')
+PYZ
+  then ok "Z: release-manifest.tsv 1:1 (z tolerancja nieobecnych >100 MiB)"; else bad "Z: manifest coherent nie oddaje plikow"; fi
+  Z=$((Z+1))
+  # flash-all na atrapie: atrapki 1-bajtowe NIE przechodza bramki sum, wiec
+  # staging = kopie skryptow + pliki rzedowe o prawidlowych sumach LOKALNYCH
+  ZR=$WORK/zrel; rm -rf "$ZR"; mkdir -p "$ZR"
+  cp "$ZD/flash-all.sh" "$ZD/rollback.sh" "$ZR/"
+  : > "$ZR/vbmeta_hyperos4_p11g2.img"
+  truncate -s 900M "$ZR/system_hyperos4_p11g2.img" 2>/dev/null || dd if=/dev/zero of="$ZR/system_hyperos4_p11g2.img" bs=1M count=900 status=none
+  truncate -s 600M "$ZR/system_ext_hyperos4_p11g2.img" 2>/dev/null || true
+  truncate -s 72M "$ZR/product_hyperos4_p11g2.img" 2>/dev/null || true
+  (cd "$ZR" && sha256sum vbmeta_hyperos4_p11g2.img system_hyperos4_p11g2.img system_ext_hyperos4_p11g2.img product_hyperos4_p11g2.img > SHA256SUMS.txt)
+  szext="FB_SIZE_SYSTEM_EXT_A=0x100000000 FB_SIZE_SYSTEM_EXT_B=0x100000000"
+  runz() { # runz <nazwa> <oczek_rc> <oczek_flashy> [ZMIENNE...]
+    local name=$1 want=$2 flashes=$3; shift 3
+    local envs=(); local kv
+    for kv in "$@"; do envs+=("$kv"); done
+    : > "$WORK/fb.log"
+    local out rc
+    cp "$ZR/flash-all.sh" "$ZR/zcopy.sh"
+    out=$(cd "$ZR" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" "${envs[@]}" bash zcopy.sh < /dev/null 2>&1); rc=$?
+    local got; got=$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")
+    if [ "$rc" = "$want" ] && [ "$got" = "$flashes" ]; then
+      ok "$name (rc=$rc, flashby=$got)"
+    else
+      bad "$name: rc=$rc flashby=$got, oczekiwano rc=$want flashby=$flashes"
+      printf '%s\n' "$out" | grep -E 'ZMALE|PRZERWANE|BRAK|jednokierunkow|nie zna' | head -3 | sed 's/^/        |/'
+    fi
+    Z=$((Z+1))
+  }
+  runz "Z: sloty obszerne (z system_ext a/b) -> 8 flashow" 0 8 $sz_v $sz_pr $sz_sy $szext
+  runz "Z: system_ext BEZ slotow, bez zgody ONEWAY -> abort" 1 0 $sz_v $sz_pr $sz_sy FB_SIZE_SYSTEM_EXT=0x100000000
+  runz "Z: system_ext bez slotow Z zgoda -> 7 flashow (1x system_ext)" 0 7 $sz_v $sz_pr $sz_sy FB_SIZE_SYSTEM_EXT=0x100000000 I_ACCEPT_SYSTEM_EXT_ONEWAY=yes
+  if grep -q '^FASTBOOT: flash system_ext system_ext_hyperos4_p11g2.img$' "$WORK/fb.log"; then
+    ok "Z: jednokierunkowy flash po przyrostku bez slota (system_ext, nie _a)"
+  else bad "Z: brak flasha system_ext bez przyrostka w logu"; fi
+  Z=$((Z+1))
+  runz "Z: brak system_ext w ogole -> abort (coherent niemozliwy)" 1 0 $sz_v $sz_pr $sz_sy
+  # ten scenariusz musi abortowac PRZEZ ZMALE (rozmiar systemu), nie przez przydzial system_ext -
+  # sprawdzamy komunikat, zeby falszywy abort nie minal sie z oczekiwanym
+  : > "$WORK/fb.log"
+  zout=$(cd "$ZR" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" $sz_v $sz_pr $szext \
+    FB_SIZE_SYSTEM_A=0x30000000 FB_SIZE_SYSTEM_B=0x30000000 bash zcopy.sh < /dev/null 2>&1); zrc=$?
+  if [ "$zrc" = 1 ] && [ "$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")" = 0 ] && printf '%s' "$zout" | grep -q 'ZMALE'; then
+    ok "Z: system 900 MB na slocie 768 MB -> abort z ZMALE (0 flashow)"
+  else bad "Z: abort bez zgody resize nie wyszedl przez bramke rozmiaru (rc=$zrc)"; fi
+  Z=$((Z+1))
+  runz "Z: resize z pelna zgoda -> 6 flashow (bez product)" 0 6 $sz_v $sz_pr $szext FB_SIZE_SYSTEM_A=0x30000000 FB_SIZE_SYSTEM_B=0x30000000 RESIZE_SUPER=1 I_ACCEPT_DATA_LOSS=yes
+  if grep -q 'delete-logical-partition product_a' "$WORK/fb.log" && grep -q 'resize-logical-partition system_a' "$WORK/fb.log" \
+     && ! grep -q 'flash product' "$WORK/fb.log"; then
+    ok "Z: sekwencja resize: delete product + resize system, product nie flashowany"
+  else bad "Z: zla sekwencja resize w wariancie coherent"; fi
+  Z=$((Z+1))
+  # negatyw (klasa 6.20)
+  sed '1a exit 9 # negatyw Z' "$ZD/flash-all.sh" > "$ZR/zsab.sh"
+  : > "$WORK/fb.log"; zsab=0
+  (cd "$ZR" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" bash zsab.sh >/dev/null 2>&1) || zsab=$?
+  if [ "$zsab" != 0 ] && ! grep -q '^FASTBOOT: flash ' "$WORK/fb.log"; then
+    ok "negatyw Z: zepsuta kopia flash-all coherent nie flashuje (rc=$zsab)"
+  else bad "negatyw Z: zepsuta kopia przeszla - kontrola martwa"; fi
+  Z=$((Z+1))
+  # rollback v2: bez kopii vbmeta -> 0 flashow + dopisek o system_ext
+  rm -f "$ZR"/vbmeta_stock_*.img; : > "$WORK/fb.log"
+  zout=$(cd "$ZR" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" bash rollback.sh 2>&1); zrc=$?
+  zgot=$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")
+  if [ "$zrc" = 0 ] && [ "$zgot" = 0 ] && printf '%s' "$zout" | grep -q 'system_ext'; then
+    ok "Z: rollback coherent bez kopii -> 0 flashow, ostrzezenie o system_ext wydrukowane"
+  else bad "Z: rollback coherent: rc=$zrc flashby=$zgot"; fi
+  Z=$((Z+1))
+else
+  bad "Z: brak katalogu $ZD"; Z=$((Z+1))
+fi
+# triage po flashu (tools/postflash_triage.sh) na dwoch syntetycznych logach
+if [ -x "$HERE/postflash_triage.sh" ] || [ -f "$HERE/postflash_triage.sh" ]; then
+  ZT=$WORK/ztri; rm -rf "$ZT"; mkdir -p "$ZT"
+  printf 'I/ActivityManager: Displayed com.android.systemui/.SystemUI\nI/sys.boot_completed: 1\n%.0s' {1..250} > "$ZT/ok.log"
+  printf '%.0sE/unused: padding line for length\n' {1..250} > "$ZT/pad.log"
+  { cat "$ZT/pad.log"; echo 'F/libc: Fatal signal 11 (SIGSEGV) in surfaceflinger'; echo 'E/SurfaceFlinger: composer getService failed'; } > "$ZT/sf.log"
+  if bash "$HERE/postflash_triage.sh" "$ZT/ok.log" >/dev/null 2>&1; then
+    ok "Z: triage - zdrowy boot -> rc 0"
+  else bad "Z: triage: zdrowy log dal rc != 0"; fi
+  Z=$((Z+1))
+  if out=$(bash "$HERE/postflash_triage.sh" "$ZT/sf.log" 2>&1); [ $? -eq 1 ] && printf '%s' "$out" | grep -q SURFACEFLINGER; then
+    ok "Z: triage - crash SF -> rc 1 z nazwanym stoperem (SurfaceFlinger)"
+  else bad "Z: triage: log z crashem SF nie zostal nazwany"; fi
+  Z=$((Z+1))
+else bad "Z: brak tools/postflash_triage.sh"; Z=$((Z+1)); fi
+if [ $Z -ge 14 ]; then ok "przeanalizowane pozycje wariantu coherent+triage: $Z"; else
+  bad "tylko $Z pozycji coherent - kontrola padla w polowie"; fi
+
 # ---------------------------------------------------------------- K: higiena tekstu
 echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
 # Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt

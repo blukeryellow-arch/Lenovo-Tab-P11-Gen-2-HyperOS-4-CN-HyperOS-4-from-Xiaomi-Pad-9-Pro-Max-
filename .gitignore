@@ -39,3 +39,7 @@ dist/release/HyperOS4_P11Gen2/system_hyperos4_p11g2.img
 !dist/release/HyperOS4_P11Gen2-full/vbmeta_hyperos4_p11g2.img
 dist/release/**/*.log
 tmp/
+
+# wariant coherent (noc 24/25 IX): product + vbmeta w gicie; system/system_ext (>100 MB) poza
+!dist/coherent-release/HyperOS4_P11Gen2-coherent/product_hyperos4_p11g2.img
+!dist/coherent-release/HyperOS4_P11Gen2-coherent/vbmeta_hyperos4_p11g2.img
