@@ -258,8 +258,9 @@ pliku wykonany bez zmian: 189 s, rc=0, (4) trzy nowe sekcje suity w schemacie F2
 | Y | `assemble_raw_parts.py` na syntetycznych cząstkach — narzędzie, od którego wisi receptura odzysku, do tej pory tylko w replayach sesyjnych: rc 0/1/2/3 + adopcja sierot (bieg 35892866524) | 6 |
 
 Liczniki suity: **88/96 → 135/143**. CI zielone dla `4e3452e` (F2), `9437ffa` (F3), `33ecec0` (V)
-i `d4cebe2` (W), `d55ef27` (X), `f67b560` (Xb) — oba workflow (Y czeka na odwilż tokena GH: push
-wstrzymany, commit lokalny); sekcja W przeszła na runnerze z trzema nieobecnymi obrazami
+i `d4cebe2` (W), `d55ef27` (X), `f67b560` (Xb) — oba workflow; Y (`fb51263`..`fa24354`) dojechała
+na remote o 18:09, gdy token GH odżył po ~80 min przerwy (commity czekały lokalnie — drzewo
+czyste, nic nie przepadło); sekcja W przeszła na runnerze z trzema nieobecnymi obrazami
 (absent-skip + zgodność manifest↔SHA256SUMS dla nieobecnych — dokładnie po to jest ta gałąź
 kontroli). Lekcja dnia numer jeden: dokument, który
 opisuje procedurę odzysku, sam jest ładunkiem — dopóki nie został wykonany słowo w słowo, jest
