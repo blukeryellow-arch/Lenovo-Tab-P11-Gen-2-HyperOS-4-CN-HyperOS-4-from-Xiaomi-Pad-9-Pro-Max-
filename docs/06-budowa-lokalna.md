@@ -993,3 +993,39 @@ plików, żeby udawać to samo wydanie; w README `-full` stoi to wprost, razem z
   GitHub.
 
 Wniosek do kieszeni: „klucza nie ma w metadanych" jest przesłanką do pomiaru, nie do wyroku.
+
+## 6.34 Resize `super` — świadoma zgoda zamiast „nawet na request"
+
+Dotąd `flash-all.sh` odpowiadał na brak miejsca w slocie tekstem „powiększanie super rusza `/data`
+i jest nieodwracalne, więc tego nie robię — nawet na request". Ta polityka **zostaje domyślna**;
+zmieniło się tylko to, że istnieje świadoma ścieżka obok niej. Powód: bez niej cała reszta
+roboty (VINTF, wariant miękki) leży przed bramką, której nie da się otworzyć — obraz 920 MB na
+slocie 768 MB.
+
+Ścieżka, którą sprawdziłem na atrapie i której wygląd jest zamrożony testami RS1–RS3:
+
+```
+RESIZE_SUPER=1 I_ACCEPT_DATA_LOSS=yes ./flash-all.sh
+  -> delete-logical-partition product_a
+  -> delete-logical-partition product_b
+  -> resize-logical-partition system_a <rozmiar obrazu zaokraglony do 4 MiB + 64 MiB>
+  -> resize-logical-partition system_b <to samo>
+  -> flash vbmeta_a/b + system_a/b (product POMINIETY - partycji juz nie ma)
+```
+
+Dlaczego tak, a nie inaczej:
+- `delete-logical-partition product_*` to sztuczka, którą wymagały GSI na tym sprzęcie
+  (opisana w `docs/05`, źródło: reddit/androidtablets) — uwalnia miejsce w `super`;
+- `product` w tym wydaniu to w wariancie lekkim same fonty, a fonty Xiaomi są i tak w
+  `/system/fonts`; tracisz więc najwyżej nakładki RRO z wariantu `-full`, a ten i tak
+  pozostaje buildem 23 IX;
+- nowy rozmiar slotu liczę z pliku (4 MiB w górę + 64 MiB zapasu), nie z liczby z dokumentu —
+  bo liczba z dokumentu zmienia się z każdą przebudową;
+- bez frazy `I_ACCEPT_DATA_LOSS=yes` skrypt odmawia **przed** jakimkolwiek `fastboot` poza
+  odczytami — sprawdzone w RS2 jako test negatywny (zero polecen w logu atrapy).
+
+Co to NIE jest: to nie jest zgoda na zrobienie tego kiedykolwiek za czytnika. Testy mówią, że
+kolejność poleceń jest taka, jak wyżej, i że domyślna ścieżka nie dotyka układu partycji. Na
+prawdziwym urządzeniu jedyny sensowny przebieg to: `device-probe.sh` → kopia pięciu obrazów
+stockowych → `flash-all.sh` ze zgodą → `logcat -b all` po starcie. Awaryjnie: BROM/DA
+MediaTeka, nie EDL.

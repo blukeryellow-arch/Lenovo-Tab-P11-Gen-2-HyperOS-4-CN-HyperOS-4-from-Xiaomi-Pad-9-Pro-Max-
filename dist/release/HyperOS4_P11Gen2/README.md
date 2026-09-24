@@ -28,7 +28,7 @@ z tego samego drzewa i tego samego UUID).
 | `product_hyperos4_p11g2.img` | 75 198 464 | `/product` (EROFS+lz4): `fonts/` + `etc/passwd` + `etc/group`; zweryfikowany **67/67** wpisów 1:1 |
 | `system_hyperos4_p11g2.img` | 920 039 424 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowane macierze VINTF 4/5/6). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | `Flags: 3` (weryfikacja + verity wyłączone), `rollback_index 0`, SHA256_RSA2048, key `cdbb7717…` |
-| `flash-all.sh` | 6 749 | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
+| `flash-all.sh` | 8 776 | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
 | `device-probe.sh` | 6 533 | **krok 0 przed flashem**: czyta `fastboot getvar` + `adb shell` i drukuje GO / GO z zastrzeżeniami / NO-GO (fastbootd, rozmiary slotów, `CONFIG_EROFS_FS{,_LZ4}`). Tylko odczyty — nic nie zapisuje, nic nie mountuje |
 | `rollback.sh` | 1 152 | przywraca vbmeta z kopii wykonanej przed flashem |
 | `release-manifest.tsv` | 671 | `plik ⇥ bajty ⇥ sha256 ⇥ uwaga` |
@@ -65,6 +65,15 @@ bash device-probe.sh --release .   # KROK 0: tylko odczyty
 sha256sum -c SHA256SUMS.txt      # musi byc OK dla kazdej pozycji (system zobaczysz dopiero po ściągnięciu)
 bash flash-all.sh                # bootloader odblokowany; tablet w fastbootd (adb reboot fastboot)
 ```
+
+`flash-all.sh` ma też przełącznik, którego **domyślnie nie ma i nie będzie włączony z automatu**:
+`RESIZE_SUPER=1 I_ACCEPT_DATA_LOSS=yes ./flash-all.sh` — jedyna droga, żeby obraz 920 MB wszedł
+na slot 768 MB. Robi wtedy `delete-logical-partition product_a/b` (tej samej sztuczki wymagały
+GSI na tym sprzęcie) i `resize-logical-partition system_a/b`, a `product` nie jest flashowany —
+czyli tracisz nakładki RRO z `/product` (fonty zostają, bo są w `/system/fonts`). Bez frazy
+`I_ACCEPT_DATA_LOSS=yes` skrypt odmawia i nie dotyka urządzenia. To rusza `/data` i jest
+nieodwracalne, więc decyzja należy do Ciebie; pilnują tego testy RS1–RS3 w `tools/test_release.sh`
+(RS2 sprawdza, że sama prośba bez zgody nie wydaje żadnego polecenia).
 
 `flash-all.sh` sam robi rzeczy, których zwykle się nie robi:
 - nie rusza niczego, jeśli sumy nie zgadzają się **albo** tablet nie jest w fastbootd;
@@ -269,7 +278,7 @@ Braki HAL-i, których vendor `mt6789` nie ma (audio AIDL, health, power, thermal
 §5.1), nie znikają przez obniżenie ich do `optional`: to usuwa blokadę startu, nie dodaje
 implementacji.
 
-<!-- ROZMIARY-KONTRAKT build-info.txt=591 device-probe.sh=6533 flash-all.sh=6749 product_hyperos4_p11g2.img=75198464 release-manifest.tsv=671 rollback.sh=1152 system_hyperos4_p11g2.img=920039424 vbmeta_hyperos4_p11g2.img=4096 -->
+<!-- ROZMIARY-KONTRAKT build-info.txt=591 device-probe.sh=6533 flash-all.sh=8776 product_hyperos4_p11g2.img=75198464 release-manifest.tsv=671 rollback.sh=1152 system_hyperos4_p11g2.img=920039424 vbmeta_hyperos4_p11g2.img=4096 -->
 <!-- tools/test_release.sh, sekcja Q, wywala FAIL jesli ktora kolwiek z tych liczb przestanie
      zgadzac sie z plikiem. Dzieki temu 'odswiezanie dokumentacji' nie moze zostawic przedawnionego
      rozmiaru (23 IX 2026: podmiana sum pomiedzy wariantami wlasnie to zrobila i nikt by nie

@@ -169,6 +169,24 @@ runfb "F: system 900 MB na slocie 768 MB -> abort" 1 0 $sz_v $sz_pr FB_SIZE_SYST
 runfb "G: product 4 KB przy obrazie product" 1 0 FB_SIZE_VBMETA_A=0x1000000 FB_SIZE_VBMETA_B=0x1000000 FB_SIZE_PRODUCT_A=0x1000 FB_SIZE_PRODUCT_B=0x1000 $sz_sy
 runfb "H: fastboot nie zna partition-size -> ostrzezenie + kontynuacja" 0 6 FB_USERSPACE=yes
 runfb "I: brak fastbootd (is-userspace:no) -> zero flashow" 1 0 $sz_v $sz_pr $sz_sy FB_USERSPACE=no
+# --- resize super (RS1-RS3): polityka domyslna + swiadoma zgoda ------------------
+# 'nawet na request' zostaje prawda dla sciezki domyslnej; RS2 sprawdza, ze sama prosba
+# bez frazy zgody nie dotyka urzadzenia, a RS3 ze pelna zgoda robi dokladnie delete
+# product_a/b + resize system_a/b i NIE flashuje product (docs/06 §6.34).
+runfb "RS1: domyslnie zero resize (polityka 'nawet na request' zostaje)" 0 6 $sz_v $sz_pr $sz_sy
+if grep -qE 'delete-logical-partition|resize-logical-partition' "$WORK/fb.log"; then
+  bad "RS1: w logu atrapy jest resize, ktory nikt nie zamowil"
+else ok "RS1: log bez delete/resize przy braku flag"; fi
+runfb "RS2: RESIZE_SUPER=1 bez I_ACCEPT_DATA_LOSS -> odmowa, zero flashow" 1 0 $sz_v $sz_pr $sz_sy RESIZE_SUPER=1
+if grep -qE 'delete-logical-partition|resize-logical-partition' "$WORK/fb.log"; then
+  bad "RS2: odmowa, a atrapa i tak dostala polecenia resize"
+else ok "RS2: odmowa nie dotknela urzadzenia"; fi
+runfb "RS3: resize z pelna zgoda -> 4 flashy (bez product)" 0 4 $sz_v $sz_pr $sz_sy RESIZE_SUPER=1 I_ACCEPT_DATA_LOSS=yes
+if grep -q 'delete-logical-partition product_a' "$WORK/fb.log" && grep -q 'delete-logical-partition product_b' "$WORK/fb.log" \
+   && grep -q 'resize-logical-partition system_a' "$WORK/fb.log" && grep -q 'resize-logical-partition system_b' "$WORK/fb.log" \
+   && ! grep -q 'flash product' "$WORK/fb.log"; then
+  ok "RS3: kolejnosc delete product_a/b + resize system_a/b, product nie flashowany"
+else bad "RS3: zla sekwencja resize (patrz $WORK/fb.log)"; fi
 # ---------------------------------------------------------------- K: higiena tekstu
 echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
 # Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt
