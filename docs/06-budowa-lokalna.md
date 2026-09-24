@@ -83,7 +83,7 @@ wersja kopiowała sobie nazwę katalogu docelowego jako nazwę pliku (efekt: `et
 | wywołanie | zachowanie (fsck.erofs 1.8.2, test A/B/C) |
 |---|---|
 | `--path=<plik> --extract=<katalog>` | **rc=1, nic nie wyciąga** |
-| `--path=<katalog> --extract=<katalog>` | wyciąga **zawartość** katalogu, spłaszczoną |
+| `--path=<katalog> --extract=<katalog>` | wyciąga **zawartość** katalogu do celu — bez prefiksu `katalog/`, ale z podkatalogami w środku (pomierzone na `overlay`: 12 katalogów zostaje katalogami) |
 | bez `--path` | cały FS z ścieżkami (za drogie dla 6,4 GB) |
 
 Stąd: wyciągamy katalog nadrzędny i kopiujemy liść. Test na syntetycznym EROFS: 5/11 ścieżek
@@ -260,8 +260,9 @@ obraz jest ich pozbawiony.
 Efekt pomierzony: `system` 967 507 968 → **967 503 872 B** (−4 096 B, dokładnie jeden blok),
 liczba wpisów w weryfikacji 4 568 → **4 565** (pliki 3 895 → 3 892), a `verify_image.sh`
 dostaje te same wykluczenia (`--exclude`), żeby nie krzyczeć „brak w obrazie" na tym, co
-celowo wylatuje. Dowód, a nie obietnica: `fsck.erofs --extract --path=system/etc/vintf` na
-wydanym obrazie zwraca 11 plików i zero `komentarz`.
+celowo wylatuje. Dowód, a nie obietnica: `fsck.erofs --extract --path=system/etc/vintf`
+na obrazie z tamtej budowy zwraca 11 plików i zero `komentarz` (dziś wariant lekki trzyma
+tam 6 plików).
 
 Lekcja przy okazji: `mkfs.erofs -C <rozmiar>` (większe pcluster) pozwala dobijać rozmiar
 jeszcze niżej, ale grandes pclusters wymagają `EROFS_FEATURE_INCOMPAT_BIG_PCLUSTER` w kernelu —
@@ -500,9 +501,9 @@ else:
     print(f"  (przeanalizowane sumy w dokumentach wydania: {total_seen})")
 ```
 
-Reguła, którą z tego zostawiam: **każda kontrola w tym projekta ma wydrukowac, ile elementow
+Reguła, którą z tego zostawiam: **każda kontrola w tym projekcie ma wydrukowac, ile elementow
 przejrzala** (`67 wpisów`, `2738 plikow skompresowanych`, `przeanalizowane sumy: 7`). Zero albo
-brak takiej liczby to wynik podejrzaney, nie sukces. Wersja testowa tej zasady: kontrola musi
+brak takiej liczby to wynik podejrzany, nie sukces. Wersja testowa tej zasady: kontrola musi
 przechodzic **po wmieszaniu błędu** — i to jest jedyny sposób, żeby odróżnić „sprawdzone" od
 „nic nie było do sprawdzenia". `tools/test_release.sh` robi to dla weryfikatora (C, L, M3)
 i teraz także dla samej siebie (test negatywny N: wbitie `deadbeef…` daje FAIL, usuniecie — 0).
@@ -538,7 +539,7 @@ Czyli `odtworzenie bit w bit` nie jest tu haslem, tylko poleceniem do wpisania:
 
 ```
 mkfs.erofs -T 0 -U 67b7eb22-3ebb-4c21-8b01-8ff545f10d8d -zlz4 \\
-           --force-uid=0 --force-gid=0 --exclude-regex '\\.komentarz\\.txt$' \\
+           --force-uid=0 --force-gid=0 --exclude-regex '\.komentarz\.txt$' \
            out.img <drzewo-product>
 ```
 
@@ -812,7 +813,8 @@ Trzeci wiersz jest najgroźniejszy, bo to nie kwestia stylistyki. Zdanie został
 `dist/rom-kit/`. Ten sam opis trafił do katalogu, którego obrazy nigdy przez tę ścieżkę nie
 przeszły. Skutek dla urządzenia byłby taki, że ktoś wgra `system.img` 920 047 616 B, ufając temu,
 co czyta, i dostanie `Failed to initialize VINTF Object` w `init` — stop przed zygote, bez żadnej
-winy sprzętu.
+winy sprzętu. (Prognoza z rana 24 IX: §6.33 pokazał, że w tym obrazie trzy pliki jednak były —
+usterką była kaskada i forma `optional`, nie brak.)
 
 **Lekcja dotyczy testów, nie README.** Kontrolka `N` pilnuje sum, `Q` rozmiarów — obie patrzą w
 liczby. Nic nie pilnowało, czy zdanie w README nie obiecuje zawartości, której w obrazie nie ma.
@@ -894,7 +896,7 @@ Co z tego wynika dla naszej ścieżki:
    przyrząd pomiarowy zgadzały się ze sobą — i oba mijały się z init.
 3. Stąd wczorajszy wniosek w `docs/05 §5.1` („miękka macierz vs manifest vendor:
    **0 braków obowiązkowych, VINTF SPOJNE**") był pomiarowo pusty: zera wzięły się z tego,
-   że_diff patrzył w pole, które generator podmazał, a nie w pole, które czyta system.
+   że `vintf_diff` patrzył w pole, które generator podmazał, a nie w pole, które czyta system.
    Liczby strict (53 braki vs vendor źródła, 70 vs symulowany vendor A12) zostają — one
    nie zależą od `optional`.
 4. Dotyczy to też `dist/rom-kit/`: ten zestaw budował `tools/build_rom_on_runner.sh`, który
