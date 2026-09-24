@@ -518,9 +518,45 @@ PYX
     ok "X: rom-kit niesie donorski vbmeta (3506d20e…), wydanie testkey (9cf2e7e4…) - roznica SWIADOMA (docs/03, MISMATCH.md)"
   else bad "X: uklad vbmeta rom-kit vs wydanie sie zmienil (rom-kit=${rksha:0:8}) - to NIE jest do naprawienia kopiem, patrz MISMATCH.md"; fi
   X=$((X+1))
+  # --- X.b: flash.sh z rom-kitu WYKONANY na atrapie (dotad tylko bash -n w X.a)
+  # UWAGA: to skrypt runnera z 23 IX - celowo BEZ bramki rozmiaru partycji (ta bramka
+  # narosla w wydaniowym flash-all.sh i to jego testuja E-H/RS/F2). Tu dokumentujemy
+  # zachowanie jak jest: odmowa przy braku obrazu, 4 flashy + 2 kopie fetch przy obu.
+  # Interaktywny read (wipe /data) karmimy /dev/null - read dostaje EOF, wybiera sie
+  # 'bez wipe', wiec erase userdata NIE moze pojawic sie w logu.
+  RF=$WORK/rk; rm -rf "$RF"; mkdir -p "$RF"
+  cp "$RK/flash.sh" "$RF/rfcopy.sh"       # nazwa wzgledna - skrypt jest samolokalizujacy (lekcja F2)
+  cp "$RK/vbmeta_hyperos4_p11g2.img" "$RF/"
+  : > "$WORK/fb.log"
+  out=$(cd "$RF" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" bash rfcopy.sh < /dev/null 2>&1); rc=$?
+  got=$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")
+  if [ "$rc" = 1 ] && [ "$got" = 0 ] && printf '%s' "$out" | grep -q 'brak system_hyperos4_p11g2.img'; then
+    ok "X: rom-kit/flash.sh bez system.img (stan z czystego gita) -> rc=1, 0 flashow, wyjasnienie"
+  else bad "X: rom-kit/flash.sh bez system.img: rc=$rc flashby=$got (mial odmowic czysto)"; fi
+  X=$((X+1))
+  truncate -s 1M "$RF/system_hyperos4_p11g2.img"
+  : > "$WORK/fb.log"
+  out=$(cd "$RF" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" bash rfcopy.sh < /dev/null 2>&1); rc=$?
+  got=$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")
+  fch=$(grep -c '^FASTBOOT: fetch ' "$WORK/fb.log")
+  if [ "$rc" = 0 ] && [ "$got" = 4 ] && [ "$fch" = 2 ] \
+     && grep -q '^FASTBOOT: flash vbmeta_a vbmeta_hyperos4_p11g2.img$' "$WORK/fb.log" \
+     && grep -q '^FASTBOOT: flash system_a system_hyperos4_p11g2.img$' "$WORK/fb.log" \
+     && ! grep -q 'erase userdata' "$WORK/fb.log"; then
+    ok "X: rom-kit/flash.sh z oboma obrazami -> 4 flashy (vbmeta a/b + system a/b), 2 kopie fetch, bez erase"
+  else bad "X: rom-kit/flash.sh pelny scenariusz: rc=$rc flashby=$got fetch=$fch"; fi
+  X=$((X+1))
+  : > "$WORK/fb.log"
+  out=$(cd "$RF" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/fb.log" FB_USERSPACE=no bash rfcopy.sh < /dev/null 2>&1); rc=$?
+  got=$(grep -c '^FASTBOOT: flash ' "$WORK/fb.log")
+  if [ "$rc" = 0 ] && [ "$got" = 4 ] && grep -q '^FASTBOOT: reboot fastboot' "$WORK/fb.log" \
+     && printf '%s' "$out" | grep -q 'FASTBOOTD'; then
+    ok "X: rom-kit/flash.sh z bootloadera -> reboot fastboot + kontynuacja (4 flashy, ostrzezenie wydrukowane)"
+  else bad "X: rom-kit/flash.sh z bootloadera: rc=$rc flashby=$got (patrz $WORK/fb.log)"; fi
+  X=$((X+1))
 else bad "X: brak katalogu $RK"; X=$((X+1))
 fi
-if [ $X -ge 5 ]; then ok "przeanalizowane pozycje modules/rom-kit: $X"; else
+if [ $X -ge 8 ]; then ok "przeanalizowane pozycje modules/rom-kit (z wykonaniem flash.sh): $X"; else
   bad "tylko $X pozycji modules/rom-kit - kontrola padla w polowie"; fi
 
 # ---------------------------------------------------------------- K: higiena tekstu

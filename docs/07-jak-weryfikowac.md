@@ -81,10 +81,10 @@ adb shell 'ls -lZ /system/bin/su /product/bin 2>/dev/null; restorecon -RFv /prod
 bash tools/test_release.sh --erofs-dir <katalog z mkfs/fsck>
 ```
 
-Oczekiwane: `=== podsumowanie: 126 PASS, 0 FAIL ===`, a z `--real` (z drzewami podanymi w
+Oczekiwane: `=== podsumowanie: 129 PASS, 0 FAIL ===`, a z `--real` (z drzewami podanymi w
 `PRODTREE`, `PRODTREE_FULL`, `SYSTREE`, `SYSTREE_FULL` — `SYSTREE_FULL` = drzewo donora z trzema
 plikami runnera, bo `-full` trzeba porównywać z drzewem, z którego powstał):
-`=== podsumowanie: 134 PASS, 0 FAIL ===`.
+`=== podsumowanie: 137 PASS, 0 FAIL ===`.
 
 Sekcje: A selftest buildera · B determinizm (dwa `mkfs.erofs` na tym samym drzewie = **identyczny
 plik**, `cmp` bez różnic) · C **test negatywny** weryfikatora (drzewo ma plik, którego nie ma w
@@ -114,7 +114,10 @@ sekcja nie dotykała (modul Magisk: trzy kopie sumy — plik, sidecar `.sha256`,
 struktura `module.prop`/`customize.sh`/`uninstall.sh`/`system/product/fonts/*.ttf` + CRC `testzip`;
 rom-kit: `bash -n` flash.sh, `SHA256SUMS.git.txt` 1:1, oraz **świadoma różnica** vbmeta: rom-kit
 niesie donorski `3506d20e…`, wydanie testkey `9cf2e7e4…` — pilnuje, żeby ktoś nie „naprawił"
-różnicy kopięją) · Q kontrakt rozmiarów: każdy plik wydania
+różnicy kopią; **`rom-kit/flash.sh` wykonany** na atrapie: bez `system.img` (stan z czystego gita)
+→ czysta odmowa rc=1; z oboma obrazami → 4 flashy (vbmeta a/b + system a/b) + 2 kopie `fetch`,
+bez `erase userdata`; z bootloadera → `reboot fastboot` i kontynuacja z ostrzeżeniem) ·
+Q kontrakt rozmiarów: każdy plik wydania
 musi być **nazwany w prozie** `$OUT/README.md` ze swoją liczbą bajtów (spacja co 3 cyfry i granice
 cyfr — „591" w numerze commita `aaa5919` się nie liczy); plus ta sama liczba i suma w wierszach
 `docs/07` oraz spójność liczby kolumn w tabelach markdown.

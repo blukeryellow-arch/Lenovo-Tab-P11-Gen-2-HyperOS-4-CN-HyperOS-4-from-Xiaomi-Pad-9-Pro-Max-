@@ -50,7 +50,7 @@ drzewie syntetycznym, sprawdza determinizm (dwa budowania = ten sam bajt), **psu
 sprawdza, czy weryfikator to widzi (test negatywny — bez niego „wszystkie pliki OK" może
 znaczyć „nikt nie sprawdził, czy check cokolwiek sprawdza"), podmienia cel symlinka, odpala
 `flash-all.sh` na atrapie `fastboot` w pięciu scenariuszach (za mały slot → zero flashów)
-i na końcu weryfikuje 1:1 **ten** katalog. 126 kontroli (z `--real`: 134), zero wymagań sieciowych.
+i na końcu weryfikuje 1:1 **ten** katalog. 129 kontroli (z `--real`: 137), zero wymagań sieciowych.
 
 ## Poziomy dowodu — co sprawdza który test
 
