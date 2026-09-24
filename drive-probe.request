@@ -1,19 +1,27 @@
 # drive-probe.request - wykaz plikow do przemieszczenia przez runner + opcje biegu.
-# KROK 'Wczytaj zapytanie' bierze PIERWSZE POLE kadej linii i szuka golego ID
+# KROK 'Wczytaj zapytanie' bierze PIERWSZE POLE każdej linii i szuka golego ID
 # (regex ^[A-Za-z0-9_-]{20,}$) - wiec ID musza byc W LASNE, bez 'nazwa.img:'.
 #
-# Bieg 2026-09-23, po biegu 35894152349 (ten udowodnil mechanizmy, ale):
-#   a) 'product': allowlista nie trafil w drzewo po mount (prefiks nazwy partycji nie
-#      istnieje w korzeniu montowania) -> fallback 'pakuj calosc' -> ENOSPC przy 6,45 GB
-#      ("gzip: stdout: No space left on device") i UCIETA paczka w MANIFESCIE
-#   b) 'odm': paczka 2,57 GB > budzet 1,9 GB -> SKIP (po naprawie to ~dziesiatki MB)
-#   c) runner NIE miat erofs-utils z apt (fsck.erofs=NIE) -> build.yml buduje je ze zrodla
-# Stad ten bieg: system.img pod budowe ROM-u (rom_build) + product/odm pod assety sciezki A.
+# Bieg 2026-09-24 (po aaa5919): potrzebny JEDEN plik, surowy, bez rozpakowywania i bez
+# budowania ROM-u na runnerze. Powód: przebudowa WYDANIA lokalnego z --vintf-level 5 wymaga
+# drzewa donora, a drzewa w /tmp przepadly przy restarcie sandboxa (docs/08). Skladam je u
+# siebie z kawalkow i buduję u siebie — wtedy 'system.img' jest liczony przeze mnie od
+# poczatku do konca (mkfs + verify 1:1 + rozpakowanie w celu sprawdzenia macierzy), a nie
+# dostany z CI.
+#
+# Swiadomie WYLACZONE:
+#   product.img 6 445 187 072 B - przy 'raw: 1' daloby 6,4 GB kawalkow na runnerze (~13 GB
+#     wolnego po odzysku) i 6,4 GB pusha do brancha; to jest ten sam ENOSPC, ktory zabil bieg
+#     35894152349. Nie powtarzam. Lekcje zostawiam w docs/06 §6.19.
+#   odm.img - zbędny w tym biegu.
+#   rom_build / do_unpack - zero: nic nie pakujemy ani nie budujemy na runnerze, potrzebne sa
+#     WYLACZNIE bajty obrazu.
+#
+# Oczekiwana suma po zlozeniu (md5 serwera Google, z diagnostics/drive-inventory.tsv):
+#   e8248a9a9a1f393750a20e2d9b6e91cd   937 791 488 B
 1Pu6RU00SsbFiXiGlx6IpG14714jaZThN
-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1
-1rrK7z7PVCB5rQpgubGt6pDeJgh1_pcEl
-rom_build: 1
-do_unpack: 1
-raw: 0
+raw: 1
+rom_build: 0
+do_unpack: 0
 max_total: 1900000000
 # (marker startu biegu: ponizsza linia nie zmienia opcji, tylko tytul commitu)
