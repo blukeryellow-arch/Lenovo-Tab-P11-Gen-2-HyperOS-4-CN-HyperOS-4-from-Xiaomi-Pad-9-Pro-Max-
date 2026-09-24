@@ -852,16 +852,16 @@ przy czerwonym wyniku i dowiedziałem się o tym dopiero, kiedy zacząłem szuka
 Co wiadomo na pewno:
 - powtórzenie identycznego polecenia na identycznym drzewie daje `54 PASS / 0 FAIL` — pięć
   kolejnych przebiegów; ten jeden się nie powtórzył ani razu;
-- stan plików w tamtym momencie to §6.30 w wersji, ktorej juz nie ma (nadpisałem ją minutę
-  później, nie commitując), wiec odtworzenie jest niemożliwe nie z lenistwa, tylko z braku
-  materialu;
-- zadna kontrolka nie czyta `docs/06` (K liczy pismo za pomocą `lint_pismo.py`, N patrzy w
-  README, Q w `docs/07`) — wiec jezeli to §6.30 wywolal tamten FAIL, to moglo to byc tylko
-  `K`/`lint_pismo.py`, ktory skanuje całość repo.
+- stan plików w tamtym momencie to §6.30 w wersji, której już nie ma (nadpisałem ją minutę
+  później, nie commitując), więc odtworzenie jest niemożliwe nie z lenistwa, tylko z braku
+  materiału;
+- żadna kontrolka nie czyta `docs/06` (K liczy pismo za pomocą `lint_pismo.py`, N patrzy w
+  README, Q w `docs/07`) — więc jeżeli to §6.30 wywołał tamten FAIL, to mogło to być tylko
+  `K`/`lint_pismo.py`, który skanuje całość repo.
 
-Nie zgaduje dalej, tylko usuwam klase bledu: `bad()` dopisuje teraz kazdy FAIL do
+Nie zgaduję dalej, tylko usuwam klasę błędu: `bad()` dopisuje teraz każdy FAIL do
 `$WORK/PADDLE.txt`, a podsumowanie wypisuje te linie pod licznikiem — „--- co padło (te same
-linie, których nie utnie żadne tail)". Mechanizm sprawdzony tak jak wszystko inne: swiadomie
+linie, których nie utnie żadne tail)". Mechanizm sprawdzony tak jak wszystko inne: świadomie
 fałszywe zdanie w README wydania → `52 PASS / 1 FAIL` z widoczna nazwa „README i build-info
 opisuja dwa rozne swiaty" przy `tail -4`; po usunięciu zdania → `54 PASS / 0 FAIL`.
 
