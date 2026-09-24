@@ -16,6 +16,10 @@ set -uo pipefail
 
 SELFTEST=0; TREE=''; SYSIMG=''; OUT=''; UUIDIMG=67b7eb22-3ebb-4c21-8b01-8ff545f10d8d
 VINTF_LEVEL=''; VINTF_STATE=''; VINTF_ADDED=''; VPREF=''; VL=''
+# Wariant miekki bramki: --vintf-optional-missing oznacza brakujace pozycje jako optional
+# (tylko to otwiera gate init przy vendorze z innej epoki), a --vintf-vendor-manifest podaje
+# katalog z /vendor/etc/vintf urzadzenia, zeby oznaczac WYLACZNIE te, ktorych vendor nie ma.
+VINTF_SOFT=0; VINTF_VM=''
 EROFS_DIR=${EROFS_DIR:-}; AVB=${AVB:-}; KEY=${KEY:-}
 COMP=lz4hc,9; SYSTREE=''  # DOMYSLNIE od 23 IX 2026: lz4hc,9 zamiast lz4. Zmierzone na tym
 # samym drzewie system: 920 047 616 B vs 967 503 872 B (-45,3 MiB, -4,9 %) przy IDENTYCZNYCH
@@ -52,6 +56,8 @@ while [ $# -gt 0 ]; do
     --compress) COMP=$2; shift 2;;
     --system-tree) SYSTREE=$2; shift 2;;
     --vintf-level) VINTF_LEVEL=$2; shift 2;;
+    --vintf-optional-missing) VINTF_SOFT=1; shift;;
+    --vintf-vendor-manifest) VINTF_VM=$2; shift 2;;
     --exclude-regex) EXCLUDE_FLAGS="$EXCLUDE_FLAGS --exclude-regex=$2"; shift 2;;
     --keep-host-owner) KEEP_OWNER=1; shift;;
     --owner) OWNER_UID=${2%%:*}; OWNER_GID=${2##*:}; shift 2;;
@@ -261,10 +267,28 @@ SYS_IN=0
       if [ -f "$MAT" ]; then
         VINTF_STATE="level $VL: plik JEST w drzewie ($(stat -c%s "$MAT") B), nie dotkniety"
       elif [ -n "$VINTF_LEVEL" ]; then
-        python3 "$HERE/make_level_matrix.py" --from-dir "$VDIR" --level "$VL" --out "$MAT" > "$OUT/vintf-matrix.log" 2>&1 \
+        GM=(--from-dir "$VDIR" --level "$VL" --out "$MAT")
+        [ "$VINTF_SOFT" = 1 ] && GM+=(--optional-missing)
+        if [ -n "$VINTF_VM" ]; then
+          [ -d "$VINTF_VM" ] || die "--vintf-vendor-manifest wskazuje na nieistniejacy katalog: $VINTF_VM"
+          GM+=(--vendor-manifest "$VINTF_VM")
+        fi
+        # Miękki wariant BEZ manifestu urzadzenia to kłamstwo na szeroką skalę: oznaczamy
+        # optional KAZDA pozycje, zamiast tylko te, ktorych vendor naprawde nie ma. Da sie
+        # wystartowac, ale nie wolno tego wydac bez ostrzezenia - stad 'die' ponizej nie ma,
+        # za to jest linia w build-info i w logu, której nie da się przegapić.
+        if [ "$VINTF_SOFT" = 1 ] && [ -z "$VINTF_VM" ]; then
+          say "  UWAGA: --vintf-optional-missing bez --vintf-vendor-manifest = optional NA SZEROKO"
+          say "         (brak danych z urzadzenia; wymagania znikna nawet tam, gdzie vendor je spelnia)"
+        fi
+        python3 "$HERE/make_level_matrix.py" "${GM[@]}" > "$OUT/vintf-matrix.log" 2>&1 \
           || { tail -4 "$OUT/vintf-matrix.log" | sed 's/^/      /'; die "make_level_matrix.py nie wyplul pliku dla levelu $VL (log: $OUT/vintf-matrix.log)"; }
         VINTF_ADDED="$MAT"
-        VINTF_STATE="level $VL: WYGENEROWANY i dokladany do /$VPREF/ na czas budowy ($(stat -c%s "$MAT") B, sha256 $(sha256sum "$MAT" | cut -c1-16)...) - po budowie usuniety z drzewa"
+        VW="strict (wymagania vendora niezmiękczone - init może stać na brakujących HAL-ach)"
+        if [ "$VINTF_SOFT" = 1 ]; then
+          if [ -n "$VINTF_VM" ]; then VW="miękki, podstawa: manifest vendora $VINTF_VM"; else VW="miękki NA SZEROKO (brak --vintf-vendor-manifest)"; fi
+        fi
+        VINTF_STATE="level $VL: WYGENEROWANY i dokladany do /$VPREF/ na czas budowy ($(stat -c%s "$MAT") B, sha256 $(sha256sum "$MAT" | cut -c1-16)..., wariant: $VW) - po budowie usuniety z drzewa"
       else
         VINTF_STATE="BRAK: drzewo nie ma compatibility_matrix.$VL.xml, a --vintf-level nie podano -> boot stanie na 'Failed to initialize VINTF' (docs/05 §5.1)"
         say "      i to jest sciana do zdjecia jednym plikiem: --vintf-level 5"

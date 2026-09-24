@@ -28,6 +28,9 @@ import sys
 import xml.etree.ElementTree as ET
 
 
+ODSTEPSTWA = []
+
+
 def norm_fqname(name, ver, fq=None):
     """(nazwa, wersja) -> kanoniczny klucz porownania."""
     if fq:
@@ -69,7 +72,25 @@ def collect_halset(path, tag='hal', kinds=None):
             name = (h.findtext('name') or '').strip()
             if not name:
                 continue
-            opt = (h.findtext('optional') or '').strip().lower() in ('true', '1')
+            # 'optional' w FCM i w manifescie jest ATRYBUTEM <hal> - tak czyta go libvintf
+            # (LineageOS/android_system_libvintf parse_xml.cpp:528 odczyt, :520 zapis).
+            # Nieznane dzieci <hal> sa ignorowane. Poprzednia wersja tej kontrolki czytala
+            # element <optional> i dzieki temu zgadzała sie z wlasnym generatorem, ktory ten
+            # element zapisywal - obie myliły sie wzgledem init (24 IX, docs/06 §6.32).
+            _att = h.get('optional')
+            _el = h.find('optional')
+            _el_text = (_el.text or '').strip().lower() if _el is not None else None
+            if _att is None and _el is not None:
+                ODSTEPSTWA.append(f"{os.path.basename(f)}: {name} - 'optional' jest ELEMENTEM, nie atrybutem -> init tego nie widzi")
+                opt = False        # libvintf tego nie widzi -> pozycja zostaje obowiazkowa
+            elif _el_text is not None and _el_text != (_att or '').strip().lower():
+                # to jest symptom wlasnie naprawionego bledu generatora: plik z atrybutem
+                # optional='false' i jednoczesnym dzieckiem <optional>true</optional>.
+                # Taki plik jest sam sobie przecza - i to atrybut wygrywa.
+                ODSTEPSTWA.append(f"{os.path.basename(f)}: {name} - atrybut optional='{_att}' a dziecko <optional>{_el_text}</optional> (sprzeczne; libvintf bierze atrybut)")
+                opt = (_att or '').strip().lower() in ('true', '1')
+            else:
+                opt = (_att or '').strip().lower() in ('true', '1')
             vers = [v.text for v in h.findall('version') if v.text]
             fqs = [q.text for q in h.findall('fqname') if q.text]
             keys = set()
@@ -148,7 +169,7 @@ def main():
         print(f"w {a.matrix} nie ma HAL-i do odczytania"); return 3
     mand = {k: v for k, v in req.items() if not v['optional']}
     opt = {k: v for k, v in req.items() if v['optional']}
-    print(f"MACIERZ: {len(rfiles)} plik(6), pozycji HAL {len(req)} "
+    print(f"MACIERZ: {len(rfiles)} plików, pozycji HAL {len(req)} "
           f"(obowiazkowych {len(mand)}, opcjonalnych {len(opt)})")
     by_file = {}
     for k, v in req.items():
@@ -169,10 +190,18 @@ def main():
         return 3
     gnames = {k.split('@')[0] for k in got} | set(got)
     missing = sorted(k for k in mand if k not in got and k.split('@')[0] not in gnames)
-    print(f"\nMANIFEST VENDORA: {len(gfiles)} plik(6), pozycji {len(got)}")
+    print(f"\nMANIFEST VENDORA: {len(gfiles)} plików, pozycji {len(got)}")
     print("  (dopasowanie po NAZWIE interfejsu; wersje i instancje 'default/a2dp/...' tu nie sa")
     print("   sprawdzane - to jest pomiar 'czy vendor w ogole deklaruje ten HAL', nie zgodnosc")
     print("   min-vers; pelna zgodnosc liczy build-time VintfObject na AOSP)")
+    if ODSTEPSTWA:
+        print(f"\nODSTEPSTWA FORMATU ({len(ODSTEPSTWA)}): 'optional' nie jest (tylko) atrybutem <hal>.")
+        print("  libvintf czyta atrybut, wiec ponizsze liczby traktuja takie pozycje wg atrybutu -")
+        print("  zwykle oznacza to, ze zmiekczenie wogole nie nastapilo.")
+        for _w in ODSTEPSTWA[:6]:
+            print(f"  - {_w}")
+        if len(ODSTEPSTWA) > 6:
+            print(f"  ... i {len(ODSTEPSTWA)-6} dalej")
     print(f"BRAKI obowiazkowych: {len(missing)}")
     for k in missing[:60]:
         print(f"  - {k}")

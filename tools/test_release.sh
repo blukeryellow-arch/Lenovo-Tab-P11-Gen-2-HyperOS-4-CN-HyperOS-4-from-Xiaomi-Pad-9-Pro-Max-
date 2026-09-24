@@ -623,6 +623,7 @@ cat > "$TS/tree/etc/vintf/compatibility_matrix.202404.xml" <<'XMLS'
   <level>6</level>
   <hal format="aidl" optional="false"><name>audio.core</name><version>2</version><max-level>7</max-level></hal>
   <hal format="aidl" optional="true"><name>thermal</name><version>2</version><max-level>8</max-level></hal>
+  <hal format="aidl" optional="false"><name>gatekeeper</name><version>1</version><max-level>8</max-level></hal>
   <hal format="aidl" optional="false"><name>stylelater</name><min-level>7</min-level></hal>
 </compatibility-matrix>
 XMLS
@@ -631,8 +632,15 @@ mkdir -p "$TS/x"; timeout 300 "$FS" --extract="$TS/x" "$TS/out/system_hyperos4_p
 M5="$TS/x/etc/vintf/compatibility_matrix.5.xml"
 if [ -f "$M5" ]; then
   ok "S2  w rozpakowanym system.img jest etc/vintf/compatibility_matrix.5.xml"
-  if grep -q '<level>5</level>' "$M5"; then ok "S3  plik deklaruje <level>5</level>, nie odziedziczone po zrodle 6"
-  else bad "S3  <level> w dokladanym pliku nie rowna sie zadanemu poziomowi - to zasloni bramke init zamiast ja otworzyc"; fi
+  # poziom MUSI byc zgodny w OBU formach: mlodszy libvintf (/system) czyta element <level>,
+  # starszy (/vendor, A12) czyta atrybut level=. Ktos, kto sprawdzi tylko jedno, przeoczy polowe.
+  if grep -q '<level>5</level>' "$M5" && grep -qE '<compatibility-matrix[^>]*level="5"' "$M5"; then
+    ok "S3  plik deklaruje poziom 5 w elemencie I w atrybucie (nie odziedziczone po zrodle 6)"
+  elif ! grep -q '<level>5</level>' "$M5"; then
+    bad "S3  element <level> w dokladanym pliku nie rowna sie zadanemu poziomowi - to zasloni bramke init"
+  else
+    bad "S3  atrybut level= na <compatibility-matrix> nie mowi 5 - A12-owy libvintf patrzy wlasnie w niego"
+  fi
   if grep -qE '<name>thermal</name>' "$M5" && grep -qE '<name>audio.core</name>' "$M5"; then ok "S4  HAL-e z max-level 7/8 zostaly (obnizamy poziom vendora, nie uslugi)"
   else bad "S4  wygenerowana macierz zgubila HAL-e, ktore powinny w niej zostac"; fi
   # i drugi koniec: gdyby generator byl po prostu 'cp', ten HAL by zostal - a nie powinien
@@ -649,6 +657,61 @@ if [ ! -e "$TS/x2/etc/vintf/compatibility_matrix.5.xml" ]; then ok "S8  bez flag
 else bad "S8  dokladamy plik mimo braku flagi - build przestaje byc odtwarzalny z podanych argumentow"; fi
 if grep -q 'vintf_macierz.*BRAK' "$TS/out2/build-info.txt"; then ok "S9  build-info nazywa to BRAKIEM bramki, nie 'pominietym'"
 else bad "S9  build-info nie ostrzega o braku macierzy - ktos to wgra i dostanie bootloop bez wskazowki"; fi
+# --- wariant miekki bramki (S13/S14) -------------------------------------------
+# 24 IX wyszlo, ze '--optional-missing' dopisywal ELEMENT <optional>true</optional>, ktorego
+# libvintf nie zna (on czyta ATRYBUT <hal optional="..."> - parse_xml.cpp:528, a nieznane dzieci
+# <hal> sa ignorowane). Plik po takiej 'poprawce' wyglądał na zmiękczony i nie otwierał niczego.
+# Dlatego te dwie kontrole czytaja plik wyciągnięty z rozpakowanego obrazu i porównują atrybuty.
+mkdir -p "$TS/vvendor"
+cat > "$TS/vvendor/manifest.xml" <<'XMLV'
+<manifest version="1.0" type="device">
+  <hal format="aidl">
+    <name>audio.core</name>
+    <version>2</version>
+    <interface><name>IModule</name><instance>default</instance></interface>
+  </hal>
+</manifest>
+XMLV
+t "S13a budowa w wariancie miękkim NA SZEROKO" 0 bash "$HERE/make_release.sh" --product-tree "$TS/tree" --system-tree "$TS/tree" --vintf-level 5 --vintf-optional-missing --erofs-dir "$EROFS_DIR" --allow-no-vbmeta --out "$TS/out4"
+mkdir -p "$TS/x4"; timeout 300 "$FS" --extract="$TS/x4" "$TS/out4/system_hyperos4_p11g2.img" >/dev/null 2>&1
+if python3 - "$TS/x4/etc/vintf/compatibility_matrix.5.xml" <<'PYT'
+import sys, xml.etree.ElementTree as ET
+r = ET.parse(sys.argv[1]).getroot(); h = r.findall('hal')
+if len(h) < 2:
+    print(f"    w pliku tylko {len(h)} HAL-i - fixture sie rozjechal, kontrola nie ma sensu"); sys.exit(1)
+brak = [x.findtext('name') for x in h if x.get('optional') != 'true']
+dzieci = [x.findtext('name') for x in h if x.find('optional') is not None]
+if brak or dzieci:
+    print(f"    optional='true' brak dla: {brak}; child-element (ignorowany przez init): {dzieci}")
+    sys.exit(1)
+print(f"    wszystkie {len(h)} pozycji: atrybut optional=\"true\", zadnego dziecka <optional>")
+PYT
+then ok "S13 miękki wariant realnie zmiękcza plik w OBRAZIE (atrybut, nie element)"
+else bad "S13 'optional' nie jest atrybutem w rozpakowanym obrazie - init tego nie zobaczy i bramka zostaje zamknięta"; fi
+if grep -q 'wariant: miękki NA SZEROKO' "$TS/out4/build-info.txt"; then ok "S13b build-info nazywa wariant po imieniu (NA SZEROKO)"
+else bad "S13b build-info nie mówi, że optional oznaczono bez danych z urzadzenia - ktoś to weźmie za stan faktyczny"; fi
+
+t "S14a budowa miękka z manifestem vendora" 0 bash "$HERE/make_release.sh" --product-tree "$TS/tree" --system-tree "$TS/tree" --vintf-level 5 --vintf-optional-missing --vintf-vendor-manifest "$TS/vvendor" --erofs-dir "$EROFS_DIR" --allow-no-vbmeta --out "$TS/out5"
+mkdir -p "$TS/x5"; timeout 300 "$FS" --extract="$TS/x5" "$TS/out5/system_hyperos4_p11g2.img" >/dev/null 2>&1
+if python3 - "$TS/x5/etc/vintf/compatibility_matrix.5.xml" <<'PYV'
+import sys, xml.etree.ElementTree as ET
+r = ET.parse(sys.argv[1]).getroot()
+m = {(x.findtext('name') or '').strip(): (x.get('optional') or 'BRAK') for x in r.findall('hal')}
+zle = []
+# audio.core jest w manifescie vendora -> NIE wolno go zwalniac z wymagania
+if m.get('audio.core') != 'false': zle.append(f"audio.core={m.get('audio.core')} (powinno zostać 'false')")
+# gatekeepera vendor nie ma -> ma byc zwolniony
+if m.get('gatekeeper') != 'true':  zle.append(f"gatekeeper={m.get('gatekeeper')} (powinno być 'true')")
+if zle: print("    " + "; ".join(zle)); sys.exit(1)
+print(f"    odczytane optional: {m}")
+PYV
+then ok "S14 z manifestem vendora zwalnia TYLKO brakujace pozycje (audio.core zostaje wymagany)"
+else bad "S14 markowanie na podstawie manifestu vendora nie dziala - zmiękczanie bez potrzeby lub wymagania bez sensu"; fi
+if grep -q 'podstawa: manifest vendora' "$TS/out5/build-info.txt"; then ok "S14b build-info podaje podstawę zmiękczenia (manifest vendora)"
+else bad "S14b build-info nie mowi, na jakiej podstawie oznaczono optional"; fi
+if [ ! -e "$TS/tree/etc/vintf/compatibility_matrix.5.xml" ]; then ok "S15 drzewo posprzątane również po dwóch miękkich wariantach"
+else bad "S15 po mieszkich wariantach zostal plik w drzewie uzytkownika"; fi
+
 cp "$M5" "$TS/tree/etc/vintf/compatibility_matrix.5.xml" 2>/dev/null
 printf '<!-- znacznik: ten plik jest moj, nie buildera -->\n' >> "$TS/tree/etc/vintf/compatibility_matrix.5.xml"
 SZP=$(sha256sum "$TS/tree/etc/vintf/compatibility_matrix.5.xml" | cut -c1-16)

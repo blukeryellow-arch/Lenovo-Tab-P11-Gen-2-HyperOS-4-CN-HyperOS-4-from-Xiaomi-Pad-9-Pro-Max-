@@ -867,3 +867,62 @@ opisuja dwa rozne swiaty" przy `tail -4`; po usunięciu zdania → `54 PASS / 0 
 
 Wniosek do zapamietania jest mniej komfortowy niż zwykle: `tail` przy uruchamianiu suity to nie
 jest skrot, to kasowanie dowodow. Jeżeli wynik ma być jednozdaniowy, niech go poda sama suita.
+
+## 6.32 `optional` jest atrybutem: dlaczego wczorajszy „VINTF SPOJNE" nie znaczył nic
+
+Zmierzone 24 IX na źródle, nie na zgadywance. W formacie FCM i w manifeście urządzenia
+`optional` jest **atrybutem** elementu `<hal>`:
+
+```
+<hal format="aidl" optional="true">      <- tak czyta i pisze libvintf
+    <name>android.hardware.thermal</name>
+```
+
+Potwierdzenie w kodzie (`LineageOS/android_system_libvintf`, plik `parse_xml.cpp`):
+`MatrixHalConverter::mutateNode` zapisuje `appendAttr(root, "optional", ...)` (linia 520),
+a `buildObject` czyta `parseOptionalAttr(root, "optional", false, ...)` (linia 528).
+`parseChildren` przejmuje tylko znane dzieci (`<version>`, `<interface>`), więc **nieznany
+element `<optional>` jest po prostu ignorowany**.
+
+Co z tego wynika dla naszej ścieżki:
+
+1. `make_level_matrix.py --optional-missing` od początku dopisywał **element**
+   `<optional>true</optional>`, zostawiając atrybut `optional="false"`. Plik wyglądał na
+   zmiękczony i nie zmieniał niczego, co init miałoby zobaczyć.
+2. `vintf_diff.py` czytał `h.findtext('optional')`, czyli **ten sam element**. Generator i
+   przyrząd pomiarowy zgadzały się ze sobą — i oba mijały się z init.
+3. Stąd wczorajszy wniosek w `docs/05 §5.1` („miękka macierz vs manifest vendor:
+   **0 braków obowiązkowych, VINTF SPOJNE**") był pomiarowo pusty: zera wzięły się z tego,
+   że_diff patrzył w pole, które generator podmazał, a nie w pole, które czyta system.
+   Liczby strict (53 braki vs vendor źródła, 70 vs symulowany vendor A12) zostają — one
+   nie zależą od `optional`.
+4. Dotyczy to też `dist/rom-kit/`: ten zestaw budował `tools/build_rom_on_runner.sh`, który
+   wywołuje `--optional-missing`. Jego `MISMATCH.md` twierdzi, że bramka init została otwarta;
+   przy ówczesnym generatorze to zdanie nie ma oparcia. Przebudowa tym samym kodem (już
+   naprawionym) otworzy ją naprawdę — sam skrypt się nie zmienia, bo woła ten sam generator.
+
+Naprawa i jej dowody (nie „zaufałem", tylko policzone):
+
+- `mark_optional()` ustawia teraz atrybut i sprząta ewentualne dzieci; `main()` po zapisie
+  liczy pozycje z `optional="true"` i zwraca `rc=4`, jeśli liczba się nie zgadza;
+- `build()` pilnuje **obu** form poziomu (atrybut `level=` i element `<level>`), bo ten ROM ma
+  dwóch czytających: `init` z `/system` (libvintf frameworku A17) i narzędzia po stronie
+  `/vendor` (A12) — atrybut to jest dokładnie to, na co patrzy strona A12;
+- `vintf_diff.py` czyta atrybut, a rozjazd atrybut ↔ element zgłasza jako `ODSTEPSTWA FORMATU`;
+- demo na jednym fixture'u, dwie wersje tego samego pliku, ten sam manifest vendora:
+  forma-elementowa → `BRAKI obowiazkowych: 1`, `WYROK: INIT STANIE`; forma-atrybutowa →
+  `BRAKI obowiazkowych: 0`, `WYROK: VINTF SPOJNE`; przy pierwszym podejściu wypisane
+  `ODSTEPSTWA FORMATU (2)` z nazwami HAL-i;
+- w suicie: `S13` (miękki wariant NA SZEROKO daje atrybut w **rozpakowanym obrazie**),
+  `S13b` (build-info nazywa wariant), `S14` (z manifestem vendora zwalniane są tylko pozycje
+  naprawdę brakujące — `audio.core` zostaje `optional="false"`, `gatekeeper` dostaje `true`),
+  `S14b` (podstawa zmiękczenia w build-info), `S15` (drzewo posprzątane po miękkich wariantach),
+  a `S3` sprawdza obie formy poziomu. Razem `61 PASS / 0 FAIL`.
+
+Ostatnia rzecz, którą trzeba przy tym uczciwie nazwać: zmiękczanie przez `optional` to nie jest
+„naprawa zgodności", tylko **umowa z init**, że nie zatrzyma startu, dopóki framework nie
+zażąda usługi realnie. 20 brakujących HAL-i po stronie vendora nie znika — one się pojawią jako
+crashe `audioserver`/`healthd`/`gatekeeperd` po starcie. Natomiast wariant strict (bez
+`--optional-missing`) na A12 vendorze daje 53–70 pozycji wymaganych, a więc bramka zostaje
+zamknięta: to jest powód, dla którego `make_release.sh` ma oba tryby i zapisuje wybrany w
+`build-info.txt`.

@@ -84,8 +84,12 @@ def build(root, want_level):
         new.append(c)
     for h in kept:
         new.append(h)
-    # <level> to JEDYNE pole, ktore czyta init (VintfObject); atrybut 'level' jest dla naszych
-    # narzedzi. 24 IX 2026 pierwszy test od konca do konca (wstrzyknij -> zbuduj -> rozpakuj)
+    # POZIOM JEST W DWOJAKIEJ FORMIE i tak ma byc, bo ten ROM ma dwoch czytajacych: init z
+    # /system (libvintf w wersji frameworku, A17) oraz narzedzia po stronie /vendor (A12).
+    # A12-owy libvintf odczytuje poziom z ATRYBUTU <compatibility-matrix level="N">
+    # (LineageOS/android_system_libvintf, parse_xml.cpp:1094 'parseOptionalAttr(root, "level"'
+    # oraz :1032 'appendAttr'), a mlodsze pliki FCM nosza level takze jako element <level>.
+    # 24 IX 2026 pierwszy test od konca do konca (wstrzyknij -> zbuduj -> rozpakuj)
     # pokazal, ze element byl kopiowany ze ZRODLA i nigdy nie nadpisywany: plik o nazwie
     # compatibility_matrix.5.xml mial w srodku '<level>6</level>', czyli bramka byla 'otwarta'
     # tylko w nazwie. Taki plik init moze odrzucic albo - gorzej - przyjac i dobrac nie ta
@@ -99,6 +103,12 @@ def build(root, want_level):
 
 
 def mark_optional(root, vendor_manifest_dir=None):
+    # UWAGA z 24 IX: 'optional' w FCM jest ATRYBUTEM <hal>, nie elementem. Pierwsza wersja
+    # niniejszej funkcji dopisywala <optional>true</optional> jako dziecko i plik wygladal na
+    # zmiękczony, a nic nie otwierał - libvintf czyta <hal> przez parseOptionalAttr
+    # (LineageOS/android_system_libvintf, parse_xml.cpp:528), a nieznane dzieci <hal> sa
+    # po prostu ignorowane przez parseChildren. Zmierzono na pliku wyjsciowym, nie na domysle.
+    #
     # init panikuje TYLKO na brakujacych pozycjach OBOWIAZKOWYCH. Oznaczenie
     # 'optional' nie kamie co do istnienia HAL-i - mowi frameworkowi 'nie zatrzymuj
     # boot, jesli vendor tego nie ma'. Dlatego to jest jedyna bramka, ktora da sie
@@ -150,9 +160,8 @@ def mark_optional(root, vendor_manifest_dir=None):
             present = bool(keys & have)   # dopasowanie po nazwie interfejsu (AIDL) lub name (HIDL)
         if not present:
             for old in h.findall('optional'):
-                h.remove(old)
-            e = ET.SubElement(h, 'optional')
-            e.text = 'true'
+                h.remove(old)          # sprzata po starej, nieskutecznej wersji
+            h.set('optional', 'true')  # libvintf czyta ATRYBUT, nie element
             n_opt += 1
     return n_opt, (bool(vendor_manifest_dir) and len(have) or 0)
 
@@ -217,6 +226,17 @@ def main():
                 + f' dla poziomu {a.level}; NIE jest to plik AOSP -->\n'.encode())
         f.write(ET.tostring(new, encoding='utf-8', xml_declaration=False))
     print(f"  zapisano {a.out} ({os.path.getsize(a.out)} B)")
+    # 3) level MUSI byc zgodny w obu formach, bo na tym ROM-ie czyta go dwoch libvintf:
+    #    A17-owy z /system (element <level>) i A12-owy z /vendor (atrybut level=) - patrz docs/06 §6.32
+    chk0 = ET.parse(a.out).getroot()
+    if a.optional_missing:
+        _miek = sum(1 for hh in chk0.findall('hal') if hh.get('optional') == 'true')
+        if _miek != n_opt:
+            print(f"  FATAL: zaznaczylismy {n_opt} pozycji jako optional, a w pliku atrybut optional=\"true\" ma {_miek}")
+            print("         taki plik NIE otwiera bramki init - libvintf czyta atrybut, nie element")
+            return 4
+        print(f"  weryfikacja: optional=\"true\" w pliku ma {_miek}/{len(chk0.findall('hal'))} pozycji -> OK")
+
     if a.optional_missing:
         mp = os.path.splitext(a.out)[0] + '.komentarz.txt'
         with open(mp, 'w', encoding='utf-8') as f:
@@ -236,6 +256,11 @@ def main():
     # z <level>6</level> w srodku przeszedlby dalej jako sukces (24 IX 2026).
     _lev = chk.find('level')
     _lv = (_lev.text or '').strip() if _lev is not None else 'BRAK'
+    _at = (chk.get('level') or 'BRAK').strip()
+    if _at != str(a.level):
+        print(f"  FATAL: atrybut level=\"{_at}\" na <compatibility-matrix>, a zadano {a.level}")
+        print("         A12-owy libvintf (strona vendor tego ROM-u) czyta WŁAŚNIE ten atrybut")
+        return 4
     if _lv != str(a.level):
         print(f"  FATAL: plik deklaruje <level>{_lv}</level>, a zadano {a.level}")
         print("         taka macierz nie otwiera bramki init - ona ja zasloni jeszcze dokladniej")

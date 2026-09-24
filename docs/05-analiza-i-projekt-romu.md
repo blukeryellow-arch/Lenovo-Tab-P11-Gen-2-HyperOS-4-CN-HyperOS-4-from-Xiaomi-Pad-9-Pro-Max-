@@ -80,6 +80,11 @@ przez `make_level_matrix.py` i *zmiękczona pod konkretny manifest vendor* vs te
 daje **0 braków obowiązkowych (“VINTF SPOJNE”)**; ta sama miękka macierz vs vendor źródła
 daje 4 braki, a wersja strict vs vendor źródła 53 braki i vs symulowany vendor A12 70 braków.
 Czyli: generowanie otwiera bramkę `init` dokładnie wtedy, kiedy twierdzę, że ją otwiera.
+   **Ta ostatnia pewność była przedwczesna** — patrz `docs/06 §6.32`: zero braków liczono
+   narzędziem, które czytało to samo pole, które zapisywał generator (element `<optional>`),
+   a nie to, które czyta libvintf (atrybut). Po naprawie `make_level_matrix.py` i `vintf_diff.py`
+   ten sam eksperyment daje 0 dopiero wtedy, gdy zmiękczenie jest w atrybucie — i dopiero to
+   znaczy coś o `init`. Liczby strict (53 / 70) pozostają prawdziwe.
 `audio.core`, `health`, `power`, `thermal`, `dumpstate`, `gatekeeper` weszły później).
 Czyli otwarcie bramki init nie jest tożsame z bootem do pulpitu.
 
