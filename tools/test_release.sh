@@ -320,6 +320,58 @@ else bad "negatyw F3: zepsuta kopia przeszla albo flashowala - kontrola martwa";
 if [ $f3 -ge 12 ]; then ok "przeanalizowane scenariusze rollback z wydan: $f3"; else
   bad "tylko $f3 scenariuszy rollback - petla padla w polowie"; fi
 
+# --------------------- V: vbmeta z WYDAN - naglowek AVB bez avbtoola (ladunek)
+echo "== V      vbmeta z katalogow wydania: flags=3, testkey AOSP, wg umowy README/docs/03"
+# Cala strategia wydania opiera sie na wlasciwosciach NAGLOWKA vbmeta: flags=3 (weryfikacja
+# i verity wylaczone - bez tego donorowski system na kluczach Lenovo nie przejdzie AVB) i
+# kluczu testowym AOSP (docs/03 A.1: sha1 = cdbb7717…). Dotad zadna sekcja nie patrzyla do
+# srodka tego pliku - J sumuje go tylko calosciowo. avbtool (~/romtools/avb) znika razem z
+# /tmp przy kazdym restarcie sandboxa, wiec V parsuje naglowek wlasnorecznie.
+# Pulapka offsetow (ta sama roznice robi libavb): hash/signature sa wzgledne wobec bloku
+# AUTH, a public_key/descriptory wzgledne wobec bloku AUX (plik = header 256 B + auth + aux).
+# Czytanie public_key wzgledem pliku wychodzi smieciowym kluczem - zlapane empirycznie
+# przy pisaniu tej sekcji (pierwsza proba dawala sha1 z bajtow naglowka).
+V=0
+for d in "$ROOT"/dist/release/HyperOS4_P11Gen2 "$ROOT"/dist/release/HyperOS4_P11Gen2-full; do
+  b=$(basename "$d"); img="$d/vbmeta_hyperos4_p11g2.img"
+  if [ ! -f "$img" ]; then bad "V[$b]: brak vbmeta_hyperos4_p11g2.img"; continue; fi
+  python3 - "$img" "$b" <<'PYV' > "$WORK/vbmeta-fields.txt"
+import struct, sys, hashlib
+img, b = sys.argv[1], sys.argv[2]
+d = open(img, 'rb').read()
+def emit(st, desc): print(f"{st}|V[{b}]: {desc}")
+emit('OK' if d[0:4] == b'AVB0' else 'BAD', f"magic naglowka = {d[0:4]!r} (oczekiwane b'AVB0')")
+algo = struct.unpack('>I', d[28:32])[0]
+emit('OK' if algo == 1 else 'BAD', f"algorithm_type = {algo} (umowa README: 1 = SHA256_RSA2048)")
+rb = struct.unpack('>Q', d[112:120])[0]
+emit('OK' if rb == 0 else 'BAD', f"rollback_index = {rb} (umowa README: 0)")
+fl = struct.unpack('>I', d[120:124])[0]
+emit('OK' if fl == 3 else 'BAD', f"flags = {fl} (umowa: 3 = weryfikacja i verity WYLACZONE - bez tego AVB odrzuci donorowski system)")
+rs = d[128:176].split(b'\0')[0].decode('ascii', 'replace')
+emit('OK' if rs.startswith('avbtool') else 'BAD', f"release_string = '{rs}'")
+emit('OK' if len(d) == 4096 else 'BAD', f"rozmiar pliku = {len(d)} B (umowa README: 4 096)")
+auth = struct.unpack('>Q', d[12:20])[0]
+aux = 256 + auth
+pko, pks = struct.unpack('>QQ', d[64:80])
+key = d[aux+pko : aux+pko+pks]
+sh = hashlib.sha1(key).hexdigest()
+emit('OK' if sh == 'cdbb77177f731920bbe0a0f94f84d9038ae0617d' else 'BAD',
+     f"sha1 klucza publicznego (aux+{pko}, {pks} B) = {sh[:16]} (docs/03 A.1: cdbb7717… = AOSP testkey)")
+PYV
+  while IFS='|' read -r st desc; do
+    [ -z "${st:-}" ] && continue
+    if [ "$st" = OK ]; then ok "$desc"; else bad "$desc"; fi
+    V=$((V+1))
+  done < "$WORK/vbmeta-fields.txt"
+done
+if cmp -s "$ROOT/dist/release/HyperOS4_P11Gen2/vbmeta_hyperos4_p11g2.img" \
+          "$ROOT/dist/release/HyperOS4_P11Gen2-full/vbmeta_hyperos4_p11g2.img"; then
+  ok "V: vbmeta identyczny w obu wydaniach (README: 'w obu wariantach tym samym plikiem')"
+  V=$((V+1))
+else bad "V: vbmeta rozni sie miedzy wydaniem lekkim a -full (README umawia identycznosc)"; V=$((V+1)); fi
+if [ $V -ge 15 ]; then ok "przeanalizowane pola naglowka AVB vbmeta: $V"; else
+  bad "tylko $V pol naglowka AVB - petla padla w polowie"; fi
+
 # ---------------------------------------------------------------- K: higiena tekstu
 echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
 # Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt
