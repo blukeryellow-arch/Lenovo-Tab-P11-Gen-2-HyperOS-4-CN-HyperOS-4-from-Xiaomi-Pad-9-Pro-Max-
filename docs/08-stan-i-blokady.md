@@ -157,8 +157,12 @@ który przetrwał) odbudowały się **bajt w bajt**:
 | `-full` `product` | 150 560 768 | `da17ffcd…` | ZGODNY |
 
 Po odbudowie: `sha256sum -c` = 8/8 w obu katalogach, suita `--real` z drzewami = **96 PASS /
-0 FAIL**. Całość (składanie + drzewa + dwa buildy + suita) trwała ~15 minut przy żywym
-toolchainie; toolchain od zera to dodatkowe ~45 s.
+0 FAIL**. Całość zmierzona dwukrotnie: pierwsza odbudowa (z rekonstrukcją receptury z pomiarów)
+trwała ~15 minut; **replay dosłowny** — blok kodu poniżej wycięty z TEGO pliku i wykonany bez
+zmian po wyczyszczeniu ścieżek — trwał **189 s** i zakończył się rc=0: oba tarballe ZGODNE
+z runnerem, oba buildy, 16/16 sum, 96 PASS / 0 FAIL. Toolchain od zera to dodatkowe ~45 s;
+na ciepłym `/tmp` skrypty same się skracają (»już zbudowane«, »już pobrane«), więc recepturę
+można bezpiecznie odpalać ponownie.
 
 Receptura krok po kroku (ścieżki jak w sesji 24 IX):
 
@@ -167,22 +171,30 @@ Receptura krok po kroku (ścieżki jak w sesji 24 IX):
 tools/build_comp_libs.sh /tmp/comp-build
 tools/build_erofs_local.sh /tmp/erofs-c
 
-# 1) spool -> dwa tarballe (sumy weryfikuje skrypt, rc 0 = ZGODNY)
-git archive origin/transfer-spool | tar -x -C /tmp/spool
+# 1) spool -> dwa tarballe (sumy weryfikuje skrypt, rc 0 = ZGODNY z runnerem)
+mkdir -p /tmp/spool /tmp/romkit /tmp/ta-product
+git fetch origin transfer-spool                 # UWAGA: na czystym klonie ref origin/transfer-spool
+git archive FETCH_HEAD | tar -x -C /tmp/spool   # NIE istnieje - archive idzie po FETCH_HEAD
 tools/assemble_raw_parts.py --parts /tmp/spool/transfer --out /tmp/rom-kit.tar.gz \
     --expect-sha256 537eb4ea0c98f4b87bd1ccdb2e0ab502745dfd0820ef1deefb9d42e2a5b0923b
 tar -xzf /tmp/rom-kit.tar.gz -C /tmp/romkit          # w srodku m.in. system_tree (4568 wpisow)
-#    osobno: czesci assetow product donora -> /tmp/product-assets-donor.tar.gz (134 808 062 B,
-#    sha256 a53ff508…) -> rozpakowane do /tmp/ta-product (172 wpisy)
+tools/assemble_raw_parts.py --parts /tmp/spool/transfer \
+    --out /tmp/ta-product/drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz \
+    --expect-sha256 a53ff508fb4e9224350635fb87a5bc60e8829504b93f86a61e4ae1963c063ff6
+tar -xzf /tmp/ta-product/drive-*.tar.gz -C /tmp/ta-product   # 172 wpisy: etc/ fonts/ overlay/
+#    (oba --expect-sha256 to sumy z RAW_MANIFEST*.tsv / MANIFEST.tsv na spoolu - nie trzeba
+#     ich pamietac, sa w plikach; skrypt sam znajduje manifesty z sufiksem biegu)
 
 # 2) cztery drzewa (artrytmyka wpisow sprawdza sie przy kazdym kroku)
+mkdir -p /tmp/donor
 cp -al /tmp/romkit/system_tree /tmp/donor/            # FULL system: 4568 (obraz: -3 komentarze = 4565)
 mkdir /tmp/tree2 && cp -al /tmp/romkit/system_tree /tmp/tree2/
 rm -f /tmp/tree2/system_tree/system/etc/vintf/compatibility_matrix.{4,5,6}.{xml,komentarz.txt}
                                                       # LEKKI system: 4562 (build doklada macierz 5 -> 4563)
-cp -a /tmp/prod-lekki-extract /tmp/tree-product       # LEKKI product: 67 (etc/{passwd,group} + 63 fonty)
-                                                      #   /tmp/prod-lekki-extract = fsck.erofs --extract=
-                                                      #   z istniejacego lekkiego product (a961bec4…)
+mkdir -p /tmp/prod-lekki-extract                       # wyciag z LEKKIEGO product, ktory zyje w gicie
+/tmp/erofs-c/fsck.erofs --extract=/tmp/prod-lekki-extract \
+    dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img    # (flaga --extract=, nie --out)
+cp -a /tmp/prod-lekki-extract /tmp/tree-product        # LEKKI product: 67 (etc/{passwd,group} + 63 fonty)
 mkdir -p /tmp/tree-full/etc                          # FULL product: 147 (132 pliki + 15 katalogow)
 cp -a /tmp/ta-product/fonts /tmp/ta-product/overlay /tmp/tree-full/
 cp -a /tmp/prod-lekki-extract/etc/passwd /tmp/prod-lekki-extract/etc/group /tmp/tree-full/etc/
