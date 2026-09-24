@@ -372,6 +372,85 @@ else bad "V: vbmeta rozni sie miedzy wydaniem lekkim a -full (README umawia iden
 if [ $V -ge 15 ]; then ok "przeanalizowane pola naglowka AVB vbmeta: $V"; else
   bad "tylko $V pol naglowka AVB - petla padla w polowie"; fi
 
+# --------------------- W: release-manifest.tsv 1:1 z plikami (ladunek)
+echo "== W      release-manifest.tsv: kazdy wiersz = plik, bajty i sha256"
+# J sprawdza SHA256SUMS.txt (8 plikow) i rozmiary z manifestu TYLKO dla .img - ale
+# manifest ('plik | bajty | sha256 | uwaga') jest tym, co czyta czlowiek, a jego
+# kolumny sha256 i bajty dla skryptow nikt nie porownywal z plikami. W czyta KAZDY
+# wiersz: istnienie, bajty, sha256. Nieobecnosc tolerowana WYLACZNIE dla plikow
+# >100 MiB (limit GitHuba - ta sama umowa co w J), a nawet wtedy manifest musi
+# zgadzac sie sha256 z SHA256SUMS.txt (dwa dokumenty nie moga rozjezdzac sie o
+# plik, ktorego nie widza).
+wchk() { # wchk <katalog> -> rc 0 = kazdy wiersz manifestu 1:1
+  python3 - "$1" <<'PYW'
+import os, sys, hashlib
+d = sys.argv[1]
+lim = 100 * 1024 * 1024
+mp = os.path.join(d, 'release-manifest.tsv')
+if not os.path.isfile(mp):
+    print('brak release-manifest.tsv'); sys.exit(1)
+sums = {}
+sp = os.path.join(d, 'SHA256SUMS.txt')
+if os.path.isfile(sp):
+    for ln in open(sp, encoding='utf-8'):
+        parts = ln.split()
+        if len(parts) == 2:
+            sums[parts[1]] = parts[0]
+rows = 0; bad = []; pomin = []
+for ln in open(mp, encoding='utf-8'):
+    p = ln.rstrip('\n').split('\t')
+    if not p or p[0] in ('plik', '') or p[0].startswith('#'):
+        continue
+    rows += 1
+    name, want_sz = p[0], p[1]
+    want_sha = p[2] if len(p) > 2 else ''
+    fp = os.path.join(d, name)
+    if not os.path.isfile(fp):
+        try: sz = int(want_sz)
+        except ValueError: sz = 0
+        if sz > lim:
+            pomin.append(f"{name} ({sz} B - ponad limit GitHuba)")
+            if want_sha and name in sums and sums[name] != want_sha:
+                bad.append(f"{name}: nieobecny, ale manifest {want_sha[:16]} != SHA256SUMS {sums[name][:16]}")
+        else:
+            bad.append(f"{name}: wiersz bez pliku ({want_sz} B miesci sie w gicie)")
+        continue
+    got = os.path.getsize(fp)
+    if str(got) != want_sz:
+        bad.append(f"{name}: bajty {want_sz} w manifeście vs {got} w pliku")
+    if want_sha:
+        h = hashlib.sha256(open(fp, 'rb').read()).hexdigest()
+        if h != want_sha:
+            bad.append(f"{name}: sha256 manifestu {want_sha[:16]} vs plik {h[:16]}")
+if rows < 6:
+    bad.append(f"za malo wierszy: {rows} (oczekiwane >= 6)")
+for s in pomin:
+    print(f"  pominiety (nieobecny): {s}")
+if bad:
+    print('\n'.join(bad)); sys.exit(1)
+print(f"{rows} wierszy 1:1 (pominietych: {len(pomin)})")
+PYW
+}
+for d in "$ROOT"/dist/release/HyperOS4_P11Gen2 "$ROOT"/dist/release/HyperOS4_P11Gen2-full; do
+  b=$(basename "$d")
+  if out=$(wchk "$d"); then ok "W[$b]: $out"; else bad "W[$b]: manifest nie oddaje plikow"; printf '%s\n' "$out" | sed 's/^/        |/'; fi
+done
+# negatyw (klasa martwej kontroli z 6.20): atrapki 1-bajtowe zamiast plikow (rozjazd
+# bajtow+sum) oraz jeden brakujacy maly plik - oba rodzaje zledy musza wyjsc z wchk
+WS=$WORK/wsab; rm -rf "$WS"; mkdir -p "$WS"
+cp "$ROOT/dist/release/HyperOS4_P11Gen2/release-manifest.tsv" "$WS/"
+for f in $(awk -F'\t' 'NR>1 && $1 !~ /^#/ && $1 != "" {print $1}' "$WS/release-manifest.tsv"); do
+  printf 'x' > "$WS/$f"
+done
+rm -f "$WS/vbmeta_hyperos4_p11g2.img"
+if out=$(wchk "$WS"); then
+  bad "negatyw W: przeklamane rozmiary/sumy przeszly - kontrola martwa"
+else
+  if printf '%s\n' "$out" | grep -q 'bez pliku' && printf '%s\n' "$out" | grep -q 'bajty'; then
+    ok "negatyw W: zlapany brak maly (bez pliku) i rozjazd bajtow naraz"
+  else bad "negatyw W: rc=1, ale nie widac obu klas bledow (patrz wyzej)"; fi
+fi
+
 # ---------------------------------------------------------------- K: higiena tekstu
 echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
 # Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt
