@@ -477,6 +477,43 @@ SHA
   else bad "odmowa rozmiaru nie pokazuje liczb (samo 'NO-GO')"; fi
 fi
 
+# ------------------------------- P2: device_probe w katalogach WYDANIA (ladunek)
+echo "== P2     device-probe.sh z katalogow wydania: te same scenariusze na ladunku"
+# Sekcja P testuje tools/device_probe.sh, a Ty odpalasz kopie z katalogu wydania (krok 0
+# w README). Kopie maja swiadomie przepisany naglowek przy pakowaniu, a tools/ ma prawo
+# sie rozjechac w przyszlosci bez naruszania wydanych partii - wiec ladunek testujemy
+# FUNKCJONALNIE (te same atrapy), nie przez cmp z narzedziem.
+if [ ! -f "$PP/fb/fastboot" ]; then
+  bad "P2: atrapa z sekcji P nie istnieje - nie odpalam ladunku w ciemno"
+else
+  p2=0
+  for d in HyperOS4_P11Gen2 HyperOS4_P11Gen2-full; do
+    RPROBE=$ROOT/dist/release/$d/device-probe.sh
+    if [ ! -f "$RPROBE" ]; then bad "P2: brak $d/device-probe.sh"; continue; fi
+    for scen in "GO|0|" "NO-GO bez lz4|2|FAKE_LZ4=0"; do
+      IFS='|' read -r nm want envs <<< "$scen"
+      rc=0
+      env FASTBOOT=$PP/fb/fastboot ADB=$PP/adb/adb $envs \
+        bash "$RPROBE" --release $PP/rel --assume-booted > $PP/log 2>&1 || rc=$?
+      p2=$((p2+1))
+      if [ "$rc" = "$want" ]; then ok "$d/device-probe.sh: $nm (rc=$rc)"
+      else bad "$d/device-probe.sh: $nm rc=$rc zamiast $want; wypis: $(grep -E '^ +\\[(NE|UW)' $PP/log | head -2 | tr '\\n' ' ')"; fi
+    done
+  done
+  # Negatyw: kopia celowo zepsuta (exit 9 na wejsciu) nie moze przechodzic scenariusza GO.
+  # Gdyby sekcja w ogole nie odpalala pliku z wydania, kazda kopia wyszlaby zielono -
+  # dokladnie klasa martwej kontroli z §6.20. Tutaj sabotaz widac jako rc=9 zamiast 0.
+  sed '1a exit 9 # negatyw P2' "$ROOT/dist/release/HyperOS4_P11Gen2/device-probe.sh" > $PP/sab.sh
+  src=0
+  env FASTBOOT=$PP/fb/fastboot ADB=$PP/adb/adb \
+    bash $PP/sab.sh --release $PP/rel --assume-booted > $PP/log 2>&1 || src=$?
+  p2=$((p2+1))
+  if [ "$src" != 0 ]; then ok "negatyw P2: zepsuta kopia nie daje GO (rc=$src)"
+  else bad "negatyw P2: zepsuta kopia przeszla scenariusz GO - kontrola ladunku jest martwa"; fi
+  if [ $p2 -ge 5 ]; then ok "przeanalizowane scenariusze ladunku: $p2"; else
+    bad "tylko $p2 scenariuszy ladunku - petla padla w polowie"; fi
+fi
+
 # --------------------------------------------------- Q: kontrakt rozmirow w README
 echo "== Q      rozmiary w dokumentach wydania musza zgadzac sie z plikami (kontrakt)"
 # Sekcja N pilnuje, ze dokumenty cytują ISTNIEJACE sumy. To za malo: 23 IX 2026 automat
