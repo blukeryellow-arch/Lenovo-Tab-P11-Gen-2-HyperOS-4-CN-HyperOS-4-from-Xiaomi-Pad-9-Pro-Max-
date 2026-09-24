@@ -15,7 +15,8 @@ logi `mkfs.log` / `fsck.log` / `system-verify.log`.
 |---|---|---|---|
 | `product` lekki | 75 198 464 | `a961bec46085883d6d9c…` | ekstrakcja 1:1, 67/67 wpisów; DAC `0:0` |
 | `product` -full | 150 560 768 | `da17ffcd20c0ab4e8d0d…` | 147/147; DAC `0:0` |
-| `system` (oba) | 920 047 616 | `cf0b889d45a6bb4f6af3…` | 4 565/4 565 (3892 pliki + 409 symlinków + 264 katalogi) |
+| `system` lekki (przebudowa VINTF 24 IX) | 920 039 424 | `4836dcd4c8d5f6c0…` | 4 563/4 563 (3 890 plików + 409 symlinków + 264 katalogi) |
+| `system` -full (legacy 23 IX, kaskada) | 920 047 616 | `cf0b889d45a6bb4f6af3…` | 4 565/4 565 (3 892 pliki + 409 symlinków + 264 katalogi) |
 | `vbmeta` | 4 096 | `9cf2e7e4e165687a…` | `avbtool info_image`: Flags 3, rollback 0, SHA256_RSA2048, klucz testowy `cdbb7717…`, **jeden deskryptor: fingerprint** |
 
 Odtwarzalność: cztery niezależne kompilacje `mkfs.erofs` z tego samego kodu dają **identyczne
