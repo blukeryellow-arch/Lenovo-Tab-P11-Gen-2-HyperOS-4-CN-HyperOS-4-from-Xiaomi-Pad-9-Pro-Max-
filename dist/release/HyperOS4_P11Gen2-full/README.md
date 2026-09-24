@@ -1,11 +1,17 @@
 # Wariant `-full`: /product z fontami **i 67 nakladkami RRO** HyperOS
 
-> **Stan 24 IX — przeczytaj zanim wyciągniesz fastboot.** `system_hyperos4_p11g2.img` 920 047 616 B
-> jest w tym katalogu tym samym plikiem co w wariancie lekkim i **nie zawiera**
-> `etc/vintf/compatibility_matrix.5.xml` (build sprzed flagi `--vintf-level`). Na TB350FU z
-> `target_fcm_version` = 5 init padnie z `Failed to initialize VINTF Object` przed zygote.
-> Uzasadnienie i dowody: `../HyperOS4_P11Gen2/README.md`, sekcja „Czym ten obraz różni się od źródła",
-> oraz `docs/06 §6.29`. Sam `product.img` z tego katalogu jest OK — problem dotyczy tylko `/system`.
+> **Stan 24 IX — przeczytaj, zanim wyciągniesz fastboot.** `system_hyperos4_p11g2.img` 920 047 616 B
+> leży tu ten sam co w wariancie lekkim *był*, ale **nie został przebudowany** i to jest różnica,
+> którą trzeba znać: w tym katalogu nadal stoi build z 23 IX, w którym drzewo nosiło trzy pliki
+> `etc/vintf/compatibility_matrix.{4,5,6}.xml` (każdy cięty od poprzedniego, a `optional` zapisany
+> jako element, którego libvintf nie czyta). Skutek mierzony na rozpakowanym obrazie: 84 pozycje i
+> **84 obowiązkowe** — czyli bramka `init` pozostaje zamknięta. Poprawiony obraz (84 pozycje,
+> **0 obowiązkowych**, 19 197 B w jednym pliku, sha256 `4836dcd4c8d5f6c0…`, 920 039 424 B) jest
+> w `../HyperOS4_P11Gen2/`. Dlaczego nie przebudowałem `product` tutaj: drzewo `/product` tego
+> wariantu było kuracją z `staging/product/overlay` (147 wpisów), a z danych, które mam, wyszłoby
+> 174 — nie chcę zgadywać zestawu plików i udawać, że to to samo wydanie.
+> Dowody i liczby: `docs/06 §6.32`, `§6.33`; sam plik `product.img` (150 560 768 B, sha256
+> `da17ffcd20c0ab4e…`) jest nietknięty i nadal zweryfikowany 1:1 z tym, co opisuje manifest.
 
 Ten katalog rożni się od `../HyperOS4_P11Gen2` **jedynie plikiem `product_hyperos4_p11g2.img`**
 (150 560 768 B zamiast 75 198 464 B): dokładam 67 nakladek RRO (m.in. `AospFrameworkResOverlay`,

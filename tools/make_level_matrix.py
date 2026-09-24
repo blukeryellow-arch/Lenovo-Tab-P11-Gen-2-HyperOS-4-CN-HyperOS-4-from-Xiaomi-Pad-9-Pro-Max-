@@ -50,6 +50,26 @@ def level_of(fname):
     return int(m.group(2))
 
 
+MARKER = 'wygenerowane przez tools/make_level_matrix.py'
+
+
+def is_generated(path):
+    """Czy ten plik napisal NINIEJSZY skrypt (marker w pierwszej linii komentarza).
+
+    To nie jest kosmetyka. Runner 23 IX puszczal petle 'for lv in 4 5 6' na tym samym
+    katalogu, a wybor zrodla bral plik o NAJNIZSZYM poziomie w katalogu - wiec dla level 5
+    zrodlem zostal compatibility_matrix.4.xml, ktory skrypt utworzyl sekunde wczesniej.
+    Kazdy kolejny plik byl ciety z poprzedniego, nie z donora (zmierzone 24 IX na
+    system_tree z rom-kit: komentarz w .5.xml mowi 'zrodlo: compatibility_matrix.4.xml').
+    Suchy bieg nie jest wiec odtwarzalny ani porownywalny - stad odfiltrowujemy wlasne wyjcie.
+    """
+    try:
+        with open(path, encoding='utf-8', errors='replace') as f:
+            return MARKER in f.readline()
+    except OSError:
+        return False
+
+
 def load_matrix(path):
     try:
         return ET.parse(path).getroot()
@@ -84,22 +104,25 @@ def build(root, want_level):
         new.append(c)
     for h in kept:
         new.append(h)
-    # POZIOM JEST W DWOJAKIEJ FORMIE i tak ma byc, bo ten ROM ma dwoch czytajacych: init z
-    # /system (libvintf w wersji frameworku, A17) oraz narzedzia po stronie /vendor (A12).
-    # A12-owy libvintf odczytuje poziom z ATRYBUTU <compatibility-matrix level="N">
-    # (LineageOS/android_system_libvintf, parse_xml.cpp:1094 'parseOptionalAttr(root, "level"'
-    # oraz :1032 'appendAttr'), a mlodsze pliki FCM nosza level takze jako element <level>.
-    # 24 IX 2026 pierwszy test od konca do konca (wstrzyknij -> zbuduj -> rozpakuj)
-    # pokazal, ze element byl kopiowany ze ZRODLA i nigdy nie nadpisywany: plik o nazwie
-    # compatibility_matrix.5.xml mial w srodku '<level>6</level>', czyli bramka byla 'otwarta'
-    # tylko w nazwie. Taki plik init moze odrzucic albo - gorzej - przyjac i dobrac nie ta
-    # macierz co trzeba, a wtedy komunikat o VINTF zniknie bez zadnej poprawy.
+    # POZIOM: ATRYBUT ZAWSZE, ELEMENT TYLKO JEZELI MIAL GO ZRODLO.
+    # Zmierzone 24 IX na prawdziwych plikach donora (system/etc/vintf z rom-kit, biegu
+    # 35897100768): WSZYSTKIE dziewiec plikow - compatibility_matrix.{7,8,202404,202504,202604,
+    # device}.xml - nosza poziom WYLACZNIE w atrybucie (<compatibility-matrix version="9.0"
+    # type="framework" level="202404">), elementu <level> nie ma w zadnym z nich.
+    # Zgadza sie to z kodem: libvintf czyta 'parseOptionalAttr(root, "level", ...)'
+    # (LineageOS/android_system_libvintf, parse_xml.cpp:1094) i pisze 'appendAttr' (:1032).
+    #
+    # Wczorajszy 'fix' (wstawianie elementu <level>, gdy go brak) byl therefore nadgorliwy:
+    # oparl sie na moim wlasym fixturesie, ktory ten element zawieral, a nie na pliku AOSP.
+    # Nie Inventujemy konstruktu, ktorego format nie zna - inicjator moze go przyjac, moze
+    # zglosic, a my tracic kontrole nad tym, co faktycznie czyta init. Element nadpisujemy
+    # TYLKO wtedy, gdy zrodlo go mialo (wtedy jest rzecza zgodna z formatem tego zrodla).
+    # Atrybut ustawiamy zawsze - to on jest polem, na ktore patrzy czytajacy.
     lev = new.find('level')
-    if lev is None:
-        lev = ET.Element('level')
-        new.insert(0, lev)
-    lev.text = str(want_level)
-    return new, kept, dropped
+    had_el = lev is not None
+    if had_el:
+        lev.text = str(want_level)       # zrodlo mialo element - nadpisujemy, nie dublujemy
+    return new, kept, dropped, had_el
 
 
 def mark_optional(root, vendor_manifest_dir=None):
@@ -177,11 +200,17 @@ def main():
                     help='brakujace pozycje oznacz optional (otwiera bramke init)')
     a = ap.parse_args()
 
-    cands = []
+    cands, pominiete = [], 0
     for f in glob.glob(os.path.join(a.from_dir, 'compatibility_matrix.*.xml')):
         lv = level_of(os.path.basename(f))
-        if lv is not None:
-            cands.append((lv, f))
+        if lv is None:
+            continue
+        if is_generated(f):
+            pominiete += 1          # nasz wlasny produkt z poprzedniego przebiegu - nie tnij od niego
+            continue
+        cands.append((lv, f))
+    if pominiete:
+        print(f"  pominietych plikow (wygenerowanych wczesniej przez ten skrypt): {pominiete}")
     if not cands:
         print("w katalogu nie ma macierzy do odczytu"); return 3
     cands.sort()
@@ -193,7 +222,7 @@ def main():
     root = load_matrix(src)
     if root is None:
         return 3
-    new, kept, dropped = build(root, a.level)
+    new, kept, dropped, had_level_el = build(root, a.level)
 
     hidl = sum(1 for h in kept if h.get('format', 'hidl') == 'hidl')
     aidl = sum(1 for h in kept if h.get('format') == 'aidl')
@@ -259,13 +288,22 @@ def main():
     _at = (chk.get('level') or 'BRAK').strip()
     if _at != str(a.level):
         print(f"  FATAL: atrybut level=\"{_at}\" na <compatibility-matrix>, a zadano {a.level}")
-        print("         A12-owy libvintf (strona vendor tego ROM-u) czyta WŁAŚNIE ten atrybut")
+        print("         to JEDYNE pole, ktore czyta libvintf (parse_xml.cpp:1094) - bez niego")
+        print("         init dobierze inna macierz albo oglosi brak i bramka zostanie zamkniete")
         return 4
-    if _lv != str(a.level):
+    if had_level_el and _lv != str(a.level):
+        # element MA byc zgodny tylko wtedy, gdy mial go zdroj - inaczej nie wymyslamy pola,
+        # ktorego format donora nie zna (patrz komentarz przy build())
         print(f"  FATAL: plik deklaruje <level>{_lv}</level>, a zadano {a.level}")
         print("         taka macierz nie otwiera bramki init - ona ja zasloni jeszcze dokladniej")
         return 4
-    print(f"  weryfikacja: level w pliku = {_lv} (zadany {a.level}), HAL-i w pliku = {n} (oczekiwane {len(kept)}) -> "
+    if not had_level_el and _lev is not None:
+        print("  FATAL: w pliku jest element <level>, chociaz zdroj go nie mel - skrypt znow")
+        print("         wymysla pole zamiast lustrzac format")
+        return 4
+    print(f"  weryfikacja: level: atrybut={_at} element={_lv}"
+          f"{' (zrodlo nie mialo elementu - nie udajemy)' if not had_level_el else ''};"
+          f" HAL-i w pliku = {n} (oczekiwane {len(kept)}) -> "
           + ("OK" if n == len(kept) else "BLAD"))
     return 0 if n == len(kept) else 1
 

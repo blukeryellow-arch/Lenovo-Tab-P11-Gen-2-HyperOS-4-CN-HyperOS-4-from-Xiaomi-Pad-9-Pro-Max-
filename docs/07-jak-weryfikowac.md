@@ -5,13 +5,15 @@ Napisane dla kogoś, kto ma osiem plików z Dyska i nie ma mnie. Każdy poziom m
 Kolejność jest celowa: od najtańszego. Poziomu G nie da się pominąć — wszystko poniżej
 niego sprawdza *pliki*, nie *uruchamianie*.
 
-Wartości oczekiwane (wydanie po korekcie DAC z 23 IX 2026, uuid `67b7eb22-3ebb-4c21-8b01-8ff545f10d8d`, właściciel wpisów `0:0`):
+Wartości oczekiwane (wariant lekki po przebudowie VINTF z 24 IX 2026; `-full` wciąż na buildzie
+z 23 IX; uuid `67b7eb22-3ebb-4c21-8b01-8ff545f10d8d`, właściciel wpisów `0:0`):
 
 | artefakt | bajty | sha256 (prefiks) | wpisy 1:1 |
 |---|---|---|---|
 | `HyperOS4_P11Gen2/product` | 75 198 464 | `a961bec46085883d…` | 67/67 |
 | `HyperOS4_P11Gen2-full/product` | 150 560 768 | `da17ffcd20c0ab4e…` | 147/147 |
-| `system` (oba warianty) | 920 047 616 | `cf0b889d45a6bb4f…` | 4 565/4 565 |
+| `HyperOS4_P11Gen2/system` | 920 039 424 | `4836dcd4c8d5f6c0…` | 4 563/4 563 |
+| `HyperOS4_P11Gen2-full/system` (legacy 23 IX) | 920 047 616 | `cf0b889d45a6bb4f…` | 4 565/4 565 |
 | `vbmeta` (oba warianty) | 4 096 | `9cf2e7e4…` | — |
 
 ---
@@ -51,7 +53,9 @@ tools/verify_image.sh --img <product|system>.img --tree <drzewo> --fsck <fsck.er
 ```
 
 Oczekiwane dla producta lekkiego: `zrodlo: 67 wpisów (pliki 65, symlinki 0, katalogi 2)`,
-`ZGODNE: 67  rozbiezne: 0  brak z obrazu: 0  dodatkowe: 0`. Dla systemu: 4 565 (3 892 + 409 + 264)
+`ZGODNE: 67  rozbiezne: 0  brak z obrazu: 0  dodatkowe: 0`. Dla systemu lekkiego: 4 563
+(3 890 + 409 + 264) — trzy pliki VINTF z 23 IX zamienione na jeden; dla `system` w `-full`
+(legacy) nadal 4 565 (3 892 + 409 + 264)
 i `--exclude` **konieczne**, bo trzy pliki `.komentarz.txt` są wykluczone z obrazu świadomie.
 
 **Dowodzi:** każdy plik po sha256 **i po try** (`0o644` vs `0o600` to rozbieżność od

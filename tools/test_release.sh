@@ -306,14 +306,63 @@ if [ $REAL -eq 1 ]; then
       esac
       if ! [ -d "$tree" ]; then note "$b/$img: brak drzewa $tree - pomijam (nie mam czego porownywac)"; continue; fi
       if [ "$img" = system_hyperos4_p11g2.img ]; then
+        # Jezeli build-info mowi, ze builder DOLOZYL macierz (sciezka --vintf-level), to tego
+        # pliku nie ma w drzewie uzytkownika - zostal z niego sprzatnety po weryfikacji. Bez
+        # tego wykluczenia 'drzewo vs obraz' tlukloby na pliku, ktorego istnienie jest zamierzone
+        # (24 IX, pierwszy '--real' na odzyskanych drzewach). Swiadomie slabsze: to samo
+        # wykluczenie zaslepia rowniez macierze donorowe, wiec ich zgodnosci TU NIE dowodze -
+        # dowodzi ich builder w trakcie budowy (wtedy plik JEST w drzewie) oraz S2 na obrazie.
+        VEX=''
+        grep -q 'vintf_macierz.*WYGENEROWANY' "$d/build-info.txt" 2>/dev/null && VEX='compatibility_matrix\.[0-9]+\.xml$'
+        if [ -n "$VEX" ]; then
+          t "$b/$img weryfikacja 1:1 (komentarze + dolozona macierz poza drzewem)" 0 bash "$HERE/verify_image.sh" --img "$d/$img" --tree "$tree" \
+              --fsck "$FS" --exclude '\.komentarz\.txt$' --exclude "$VEX"
+          note "$b/$img: macierz dolozona poza drzewem - donorowych etc/vintf TU nie porownuje"
+        else
         t "$b/$img weryfikacja 1:1 (z wykluczeniami)" 0 bash "$HERE/verify_image.sh" --img "$d/$img" --tree "$tree" \
             --fsck "$FS" --exclude '\.komentarz\.txt$'
+        fi
       else
         t "$b/$img weryfikacja 1:1" 0 bash "$HERE/verify_image.sh" --img "$d/$img" --tree "$tree" --fsck "$FS"
       fi
     done
-    # suma kontrolna wydania musi sie zgadzac co do pliku (brak system.img = innny test, patrz wyzej)
-    t "$b: sha256sum -c SHA256SUMS.txt" 0 bash -c "cd '$d' && sha256sum -c SHA256SUMS.txt >/dev/null 2>&1"
+    # Sumy kontrolne: sprawdzam TE pliki, ktore sa w katalogu. Dwa obrazy >100 MB nie moga lezec
+    # w checkoutcie (limit GitHuba), a naiwne 'sha256sum -c' tluklo je jako blad - padal wiec
+    # test, nie wydanie (24 IX). Nieobecnosc tlumaczona jest WYLACZNIE rozmiarem z kontraktu;
+    # plik ponizej limitu, ktorego nie ma = wydanie niekompletne -> FAIL.
+    if python3 - "$d" <<'PYS'
+import os, re, subprocess, sys
+d = sys.argv[1]
+lim = 100 * 1024 * 1024
+readme = open(os.path.join(d, 'README.md'), encoding='utf-8').read()
+blk = re.search(r'<!--\s*ROZMIARY-KONTRAKT([^>]*)-->', readme)
+roz = dict((m.group(1), int(m.group(2))) for m in re.finditer(r'([\w.-]+)=(\d+)', blk.group(1))) if blk else {}
+zle = []; spraw = 0; pomin = []
+for ln in open(os.path.join(d, 'SHA256SUMS.txt'), encoding='utf-8'):
+    ln = ln.rstrip('\n')
+    if not ln.strip():
+        continue
+    h, _, name = ln.partition('  '); name = name.strip()
+    if not os.path.isfile(os.path.join(d, name)):
+        pomin.append(name)
+        if name in roz and roz[name] <= lim:
+            zle.append(f"{name}: nieobecny, a kontrakt mowi {roz[name]} B (miesci sie w gicie)")
+        continue
+    r = subprocess.run(['sha256sum', '-c', '--status'], cwd=d, input=f'{h}  {name}\n',
+                       capture_output=True, text=True)
+    spraw += 1
+    if r.returncode != 0:
+        zle.append(f"{name}: suma NIE zgadza sie z SHA256SUMS.txt")
+print(f"  sumy sprawdzone: {spraw}; nieobecne (powyzej limitu GitHuba): {len(pomin)}"
+      + (f" [{', '.join(pomin)}]" if pomin else ""))
+if not spraw:
+    zle.append("zadnego pliku nie sprawdzono - kontrola sum jest martwa, nie zielona")
+if zle:
+    print('\n'.join('  ' + z for z in zle)); sys.exit(1)
+sys.exit(0)
+PYS
+    then ok "$b: sumy zgadzaja sie dla wszystkich obecnych plikow"
+    else bad "$b: SHA256SUMS.txt nie potwierdza sie na plikach"; fi
     # manifest musi mowic te same rozmiary, co pliki na dysku (w Pythonie, nie w gniazdkach awk)
     if python3 - "$d" <<'PYPY'
 import os,sys

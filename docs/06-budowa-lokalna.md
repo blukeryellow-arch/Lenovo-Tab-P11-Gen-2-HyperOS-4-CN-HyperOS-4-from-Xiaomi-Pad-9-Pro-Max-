@@ -926,3 +926,70 @@ crashe `audioserver`/`healthd`/`gatekeeperd` po starcie. Natomiast wariant stric
 `--optional-missing`) na A12 vendorze daje 53–70 pozycji wymaganych, a więc bramka zostaje
 zamknięta: to jest powód, dla którego `make_release.sh` ma oba tryby i zapisuje wybrany w
 `build-info.txt`.
+
+## 6.33 Nie wnioskuj o zawartości obrazu z braku klucza w metadanych
+
+Ten rozdział jest o moim błędzie z 24 IX rano i o tym, co go znalazło — bo to drugie jest
+wartościowsze niż pierwsze.
+
+**Co zrobiłem.** Zauważyłem, że `build-info.txt` wydania nie ma klucza `vintf_macierz` (klucz
+dopiero powstał razem z flagą `--vintf-level`). Wniosek, który wydawał się oczywisty: „obraz nie
+zawiera macierzy, `init` padnie na braku pliku". Wpisałem to w oba README, sekcję T i odpisałem
+użytkownikowi. **Wniosek był fałszywy.**
+
+**Co mówią bajty.** Drzewo donora odzyskałem z gałęzi `transfer-spool` (rom-kit z biegu
+`35897100768` zawierał `system_tree` w całości — 4568 wpisów). Drzewo z trzema plikami wygenerowanymi
+23 IX przez `build_rom_on_runner.sh` wprawione z powrotem w `make_release.sh` dało `system.img`
+**bajt w bajt identyczny z wydanym**: 920 047 616 B, sha256
+`cf0b889d45a6bb4f6af3d7eeb349a5c453d95d871212b8e86defa8eb83a9ebf6`. Czyli wydany obraz **ma**
+`etc/vintf/compatibility_matrix.{4,5,6}.xml` — a cały mój poranny akapit o „braku pliku" był
+wnioskowaniem z braku klucza w metadanych. To jest dokładnie ta klasa błędu, którą w tym projekcie
+wyłapuję u innych: `build-info` opisuje przebieg, nie zawartość; o zawartości rozstrzyga
+`fsck.erofs --extract` i `grep` po rozpakowanym obrazie.
+
+**Pierwsza różnica wskazała prawdziwą usterkę.** Rebuild bez trzech plików wyszedł
+920 035 328 B = dokładnie 12 288 B mniej = 3 × 4096 B (trzy rekordy plików w EROFS). To był
+punkt, w którym powinienem zamiast „brak pliku" powiedzieć „rozmiar mówi, że tam są". Dalej już
+pomiar na rozpakowanych obrazach:
+
+| co jest w obrazie | atrybut `level` | pozycji | obowiązkowych wg libvintf | martwe dzieci `<optional>` |
+|---|---|---|---|---|
+| wydany 23 IX (3 pliki, kaskada) | 5 | 84 | **84** | 84 |
+| nowy `--vintf-level 5` (strict) | 5 | 84 | **84** | 0 |
+| nowy `+ --vintf-optional-missing` | 5 | 84 | **0** | 0 |
+
+Kaskada też jest z pomiaru: komentarz generatora w wydanym pliku mówi
+`zrodlo: compatibility_matrix.4.xml`, czyli level 5 był cięty z pliku, który skrypt utworzył
+sekundę wcześniej dla level 4, a ten z `202404` — trzy przebiegi w jednym katalogu, każdy z
+następstwa poprzedniego. `make_level_matrix.py` odfiltrowuje teraz własne wyjście po markerze
+pierwszej linii (`is_generated()`), co robi z niego narzędzie odtwarzalne.
+
+**Co zostało zbudowane (24 IX, na odzyskanym drzewie).** Wariant lekki przebudowany jest
+kompletnie i to on jest „tym dobrym" wydaniem:
+
+```
+system   920 039 424 B  4836dcd4c8d5f6c0…  (4 563/4 563; 84 pozycje, 0 obowiazkowych)
+product     75 198 464 B  a961bec46085883d…  (identyczny co poprzednio, potwierdzone sha256)
+vbmeta          4 096 B  9cf2e7e4…         (identyczny; Flags: 3)
+```
+
+`--real` na tym samym drzewie: **67 PASS / 0 FAIL** — pierwszy taki przebieg w projekcie (wcześniej
+`--real` dało 46 PASS, bo drzewa musiały istnieć). Sekcja J sprawdziła 8 sum w wariancie lekkim
+(wszystkie obecne) i 6 w `-full` (2 obrazy >100 MB nieobecne w checkoutcie — taka jest cena limitu
+GitHuba, i teraz test to mówi zamiast klęczeć).
+
+**Wariant `-full` nie został przebudowany i to jest decyzja, nie usterka.** Jego `product.img`
+(150 560 768 B) powstawał jako kuracja z `staging/product/overlay` — 147 wpisów 1:1. Z danych, które
+mam, wyszłoby 174 (donor `etc` + `fonts` + `overlay` z osobnego tara assetów). Nie zgaduję zestawu
+plików, żeby udawać to samo wydanie; w README `-full` stoi to wprost, razem z ostrzeżeniem, że jego
+`system.img` to build 23 IX (84 obowiązkowe → bramka zamknięta), a dobry obraz jest u sąsiada.
+
+**Dwa testy, które tego pilnują** (obok opisanej wyżej sekcji T):
+- sekcja J porównuje teraz „drzewo vs obraz" **z** wykluczeniem pliku dodanego przez buildera — i
+  mówi głośno, że to wykluczenie zaslepia też macierze donorowe, więc ich zgodności tam NIE
+  dowodzi (dowodzi jej builder w trakcie budowy, gdy plik jest w drzewie, oraz S2 na obrazie);
+- `sha256sum -c` liczy tylko pliki obecne i FAILuje na nieobecnym pliku, który **mieści się** w
+  limicie 100 MB — bo brak małego pliku to niekompletne wydanie, a brak 920 MB to po prostu
+  GitHub.
+
+Wniosek do kieszeni: „klucza nie ma w metadanych" jest przesłanką do pomiaru, nie do wyroku.

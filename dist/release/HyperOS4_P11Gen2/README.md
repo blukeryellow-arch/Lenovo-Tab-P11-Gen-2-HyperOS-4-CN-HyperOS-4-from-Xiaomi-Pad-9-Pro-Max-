@@ -4,7 +4,8 @@ Zbudowany i zweryfikowany **lokalnie** (bez chmury buildowej), narzędziami zbud
 w tym samym sandboksie. Historia decyzji i wszystkie pomiary: `docs/06-budowa-lokalna.md`.
 
 **Format obrazów: EROFS + `lz4hc,9`.** To nie kosmetyka — bez kompresji `system` miał
-1 376 899 072 B, plain `lz4` daje 967 503 872 B, a `lz4hc,9` 920 047 616 B (źródło HyperOS:
+1 376 899 072 B, plain `lz4` daje 967 503 872 B, a `lz4hc,9` 920 039 424 B (build z 23 IX miał
+920 047 616 B — dwa nadmiarowe pliki VINTF więcej; źródło HyperOS:
 937 791 488 B, czyli +3,2 % nad źródłem i −33,2 % wobec wersji bez kompresji). Kernel nie
 potrzebuje na to `EROFS_FS_LZ4HC`: `lz4hc` jest tylko wolniejszym pakowaniem, strumień jest
 zwykłym lz4, a `EROFS_FS_LZ4=y` go czyta. Poprzedni akapit podpisywał tę liczbę jako „`lz4`" —
@@ -25,7 +26,7 @@ z tego samego drzewa i tego samego UUID).
 | plik | bajty | co to |
 |---|---|---|
 | `product_hyperos4_p11g2.img` | 75 198 464 | `/product` (EROFS+lz4): `fonts/` + `etc/passwd` + `etc/group`; zweryfikowany **67/67** wpisów 1:1 |
-| `system_hyperos4_p11g2.img` | 920 047 616 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowane macierze VINTF 4/5/6). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
+| `system_hyperos4_p11g2.img` | 920 039 424 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowane macierze VINTF 4/5/6). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 565/4 565** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | `Flags: 3` (weryfikacja + verity wyłączone), `rollback_index 0`, SHA256_RSA2048, key `cdbb7717…` |
 | `flash-all.sh` | 6 749 | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
 | `device-probe.sh` | 6 533 | **krok 0 przed flashem**: czyta `fastboot getvar` + `adb shell` i drukuje GO / GO z zastrzeżeniami / NO-GO (fastbootd, rozmiary slotów, `CONFIG_EROFS_FS{,_LZ4}`). Tylko odczyty — nic nie zapisuje, nic nie mountuje |
@@ -79,7 +80,7 @@ bash flash-all.sh                # bootloader odblokowany; tablet w fastbootd (a
 Oba dają ten sam format na dysku (identyfikator `Z_EROFS_COMPRESSION_LZ4`, te same bity
 `sb_csum mtime` / `lz4_0padding`), więc kernel nie ma żadnego nowego zadania. Różnica jest
 wyłącznie w tym, jak mocno napina się kompresor przy budowie — i ile miejsca zostaje na
-partycji: 920 047 616 B zamiast 967 503 872 B, czyli **45,3 MiB zapasu** za 14 sekund extra.
+partycji: 920 039 424 B zamiast 967 503 872 B, czyli **45,3 MiB zapasu** za ~25 s extra.
 Przy wąskiej partycji `system` to jest dokładnie ten bufor, którego brak zabił próbę z GSIm.
 Pełne porównanie trzech wariantów: docs/06 §6.23.
 
@@ -186,15 +187,33 @@ w bajty. Dlatego rozmiary zostały te same, a sha256 się zmieniły. docs/06 §6
 
 ## Czym ten obraz różni się od źródła HyperOS (bez owijania)
 
-1. **NIC w `etc/vintf` — i to jest stan, który trzeba znać przed flashem.** Ten zestaw został
-   zbudowany PRZED tym, jak `tools/make_release.sh` dostał flagę `--vintf-level`. Nie ma w sobie
-   `compatibility_matrix.5.xml`, bo `build-info.txt` tego buildu nie ma klucza `vintf_macierz`, a
-   jedyna partycja, która powstała tu lokalnie, jest w 100 % odwzorowaniem drzewa z wykluczeniami
-   z tegoż pliku. (Punkt ten brzmiał kiedyś inaczej — patrz `docs/06 §6.30`; tam jest opis, skad
-   wziel sie przeniesiony ze sciezki runnerowej `tools/build_rom_on_runner.sh` claim.) **Bez macierzy na `target_fcm_version` = 5 init TB350FU pada z
-   `Failed to initialize VINTF Object` jeszcze przed zygote, więc ten `system.img` nie jest do
-   flashowania na urządzeniu z Androidem 12L.** Przebudowa z `--vintf-level 5` wymaga drzewa
-   donora; jak je odzyskać — `docs/08`, sekcja „Odzysk drzewa donora".
+1. **Ten `system.img` zawiera `etc/vintf/compatibility_matrix.5.xml`** — i od 24 IX jest on zrobiony
+   tak, żeby libvintf go faktycznie przeczytał. Stan, który mierzę na **rozpakowanym** obrazie (nie na
+   drzewie, nie na logu buildera): plik 19 197 B, atrybut `level="5"`, 84 pozycje, **0
+   obowiązkowych**, 0 martwych dzieci `<optional>`.
+   Co było wcześniej (23 IX, sha256 `cf0b889d45a6bb4f…`): w obrazie leżały **trzy** pliki —
+   `.4`, `.5`, `.6` — przy czym każdy był cięty od poprzedniego, a nie od donora (komentarz w
+   `.5.xml` mówi `zrodlo: compatibility_matrix.4.xml`), a `optional` był zapisany jako *element*
+   `<optional>true</optional>`. libvintf czyta ten parametr jako *atrybut*
+   (`LineageOS/android_system_libvintf`, `parse_xml.cpp:528`), więc po jego stronie wszystkie
+   **84 pozycje zostawały obowiązkowe** — plik był, poziom się zgadzał, a bramka i tak była
+   zamknięta. To jest różnica między „otworzyłem bramkę" a „dopisałem plik, którego nikt nie
+   czyta"; opis obu usterek: `docs/06 §6.32` i `§6.33`.
+   **Czego ten plik NIE załatwia:** zmiękczenie przez `optional` to jest umowa z `init`, że nie
+   zatrzyma startu, dopóki framework realnie nie zażąda usługi. ~70 interfejsów, których vendor
+   A12 nie deklaruje, nie znika — pojawią się jako crashe `audioserver`/`healthd`/`gatekeeperd`
+   po starcie. Dlatego to wydanie nadal jest eksperymentem, a nie „pewnym ROM-em".
+   Jak odtworzyć ten obraz:
+   ```
+   tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree \
+     --exclude-regex '\.komentarz\.txt$' --erofs-dir /tmp/erofs-c \
+     --avb ~/romtools/avb/avbtool.py --key ~/romtools/avb/test/data/testkey_rsa2048.pem \
+     --vintf-level 5 --vintf-optional-missing --out dist/release/HyperOS4_P11Gen2
+   ```
+   (`--vintf-optional-missing` bez `--vintf-vendor-manifest` = `optional` NA SZEROKO. Mając
+   `adb pull /vendor/etc/vintf` z tabletu, podaj `--vintf-vendor-manifest ten/katalog` — wtedy
+   zwalniane są tylko pozycje, których vendor naprawdę nie ma; pilnuje tego sekcja S14 w suicie.)
+
 1. **pliki `*.komentarz.txt` są WYKLUCZONE**, nie zostawione: `build-info.txt` tego buildu ma
    `wykluczenia_mkfs  --exclude-regex=\.komentarz\.txt$`. Notatki generatora zostają w drzewie,
    do obrazu nie wchodzą — stąd obraz jest o 4 096 B mniejszy niż drzewo by wskazywało.
@@ -250,7 +269,7 @@ Braki HAL-i, których vendor `mt6789` nie ma (audio AIDL, health, power, thermal
 §5.1), nie znikają przez obniżenie ich do `optional`: to usuwa blokadę startu, nie dodaje
 implementacji.
 
-<!-- ROZMIARY-KONTRAKT build-info.txt=388 device-probe.sh=6533 flash-all.sh=6749 product_hyperos4_p11g2.img=75198464 release-manifest.tsv=671 rollback.sh=1152 system_hyperos4_p11g2.img=920047616 vbmeta_hyperos4_p11g2.img=4096 -->
+<!-- ROZMIARY-KONTRAKT build-info.txt=591 device-probe.sh=6533 flash-all.sh=6749 product_hyperos4_p11g2.img=75198464 release-manifest.tsv=671 rollback.sh=1152 system_hyperos4_p11g2.img=920039424 vbmeta_hyperos4_p11g2.img=4096 -->
 <!-- tools/test_release.sh, sekcja Q, wywala FAIL jesli ktora kolwiek z tych liczb przestanie
      zgadzac sie z plikiem. Dzieki temu 'odswiezanie dokumentacji' nie moze zostawic przedawnionego
      rozmiaru (23 IX 2026: podmiana sum pomiedzy wariantami wlasnie to zrobila i nikt by nie
