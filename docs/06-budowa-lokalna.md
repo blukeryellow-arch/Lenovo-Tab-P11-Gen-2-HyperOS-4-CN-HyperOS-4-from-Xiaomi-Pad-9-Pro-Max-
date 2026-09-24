@@ -378,9 +378,10 @@ Filesystem total original file size:   1 376 005 374 B   (obraz: 967 503 872 B =
 
 To jest dowód o klasę mocniejszy niż test odczytu: `lz4_0padding` jest w **`incompatible`**
 features, więc kernel bez `CONFIG_EROFS_FS_LZ4` nie „pokaże błędu przy czytaniu pliku" — on
-**odmówi zamontowania** całego `/system`. I ta sama tabela pokazuje drugą stronę medalu:
-1828 z 3892 plików zostało nieskompresowanych (lz4 odrzuciło dane niepakowalne), więc obraz
-nigdy nie jest „w całości skompresowany" i porównywanie go z `gzip -9` nie ma sensu.
+**odmówi zamontowania** całego `/system`. I ta sama tabela pokazuje drugą stronę medalu: liczniki `compressed`/`uncompressed` obejmują
+**wszystkie inode'y** (2 738 + 1 828 = 4 566 = 4 565 wpisów + korzeń tamtego obrazu — katalogi
+i symlinki lądują w `uncompressed`, bo nie mają czego kompresować), więc obraz nigdy nie jest
+„w całości skompresowany" i porównywanie go z `gzip -9` nie ma sensu.
 Druga, przykra strona: `fsck.erofs` **bez** `--extract` sprawdza tylko metadane i dlatego zwraca
 rc=0 na obrazie, którego nie umie rozpakować. Ktokolwiek będzie kiedyś wnioskował o obsłudze
 kompresji z „`fsck` przeszedł" — nie przeszedł w tym sensie, co trzeba. Trzeba `--extract`

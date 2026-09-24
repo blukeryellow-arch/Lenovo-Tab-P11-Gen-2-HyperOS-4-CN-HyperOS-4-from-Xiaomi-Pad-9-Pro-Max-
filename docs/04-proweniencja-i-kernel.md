@@ -163,7 +163,7 @@ sha256 po powrocie: a35d4f30b48921e56b1ea6a499b7d88661f891fcf51a51b9aa6f7da83c76
 szacunek:  system_ext 633 MB -> 2.9 min | system.img 938 MB -> 4.2 min | 5 obrazow 11.9 GB -> ~54 min
 ```
 
-Kanál nie gubi bajtow (sha256 co do bajta), ale GitHub ma **wlasny limit 100 MiB na plik** — ten sam
+Kanał nie gubi bajtow (sha256 co do bajta), ale GitHub ma **wlasny limit 100 MiB na plik** — ten sam
 numerek, z tego samego powodu (koszt logistyki, nie techniki). Dla obrazow >100 MB potrzebny podzial:
 
 ```bash
@@ -332,7 +332,7 @@ Dwie wazne granice tego kanalu, zebym nie zostawil wrazenia, ze to dziura bezpla
    wlasciwym transferze to bez znaczenia (raz ~60 MB), jezeli bedzie przeszkadzac, wystarczy
    `git filter-repo --path transfer --invert-paths` po Twojej stronie i force-push.
 
-## 4.9 Rozpakowanie na runnerze i kawalki <=90 MB  kanale przetestowany koncow do konca
+## 4.9 Rozpakowanie na runnerze i kawalki <=90 MB - kanal przetestowany konca do konca
 
 Zmierzone 2026-09-23 na Twoich plikach, nie na sondach. Pekl: pobranie z Dysku przez
 runniera GitHub Actions -> `fs_probe` + `avbtool` -> rozpakowanie partycji -> `split -b 90m`

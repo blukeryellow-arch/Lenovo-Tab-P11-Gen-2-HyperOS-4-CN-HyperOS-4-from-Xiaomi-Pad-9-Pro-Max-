@@ -38,7 +38,7 @@ przypadkow + dwie kontrole formy wypowiedzi).
 cd <katalog wydania> && sha256sum -c SHA256SUMS.txt
 ```
 
-Oczekiwane: 7 linii `OK`, rc=0.
+Oczekiwane: 8 linii `OK`, rc=0.
 
 **Dowodzi:** że pliki są identyczne z tymi, które wyszły z `make_release.sh`.
 **NIE dowodzi:** że te pliki są *dobre* — sumy liczy ten, kto budował. Złe wydanie z dobrymi
@@ -94,12 +94,17 @@ K kontrola pisma · L `fsck.erofs` na zbudowanym obrazie (tylko `--real`) · M `
 zestawie pułapek (NO-GO przy braku `EROFS_FS_LZ4`, przy `system_a` 256 MB, przy slocie o bajt
 mniejszym) · N README-y nie mogą obiecywać rozmiaru mniejszego niż build (patrzy też na blok
 `ROZMIARY-KONTRAKT`) · P granica `<` vs `<=` w bramce · Q kontrakt rozmiarów: każdy plik wydania
-w `$OUT/README.md` musi mieć w nim tę samą liczbę bajtów co na dysku, a tam, gdzie README w ogóle
-o pliku mówi, liczba musi wrócić w prozie; plus spójność liczby kolumn w tabelach markdown.
+musi być **nazwany w prozie** `$OUT/README.md` ze swoją liczbą bajtów (spacja co 3 cyfry i granice
+cyfr — „591" w numerze commita `aaa5919` się nie liczy); plus ta sama liczba i suma w wierszach
+`docs/07` oraz spójność liczby kolumn w tabelach markdown.
 Licznik „przeanalizowane pozycje kontraktu: 16" jest asercją (`seen<16` = FAIL), nie opisem ·
 R pliki workflow: `yaml.safe_load` każdego `.github/workflows/*.yml`, brak poleceń powłoki w
 kolumnie 0 i próg `bloki run >= 8` (24 IX 2026 zepsuty `build.yml` dawal zero jobow, czyli ani
-jednego FAIL-a — patrz `docs/06` §6.28).
+jednego FAIL-a — patrz `docs/06` §6.28) · S ścieżka `--vintf-level`: plik macierzy czytany z
+**rozpakowanego obrazu** (atrybuty `level`/`optional`, warianty strict/miękki, `S14` z manifestem
+vendora, sprzątanie drzewa po budowie) · T twierdzenia README o VINTF porównane z `build-info.txt`
+(dwukierunkowo: claim bez dowodu i dowód bez claimu to FAIL) · RS ścieżka `RESIZE_SUPER` na atrapie
+`fastboot` (RS1–RS3; RS2: sama prośba bez `I_ACCEPT_DATA_LOSS=yes` nie wydaje żadnego polecenia).
 
 **Dowodzi:** że nie ma ukrytej losowości (timestampy, UUID, kolejność katalogowania), więc
 porównywanie sha256 między maszynami ma sens — i że kontroli B i D nie da się przejść przez ich
@@ -140,8 +145,9 @@ dump.erofs -s <obraz>   # superblock
 ```
 
 Status: **bieg `release-selftest` 35927660767 (24 IX 2026, ubuntu-latest, `d84c3cc`) — 15/15
-kroków success**; bieg na `059b850` jest poza moim zasięgiem wzroku, bo API odpowiedziało 401, w tym ekstrakcja obrazu zbudowanego moim `mkfs.erofs` narzędziem z pakietu Ubuntu
-i porównanie per plik. Od tego commita krok suity liczy `rc=${PIPESTATUS[0]}`, więc zieleń znaczy
+kroków success** (w tym ekstrakcja obrazu zbudowanego moim `mkfs.erofs` narzędziem z pakietu
+Ubuntu i porównanie per plik). Bieg na `059b850` jest poza moim zasięgiem wzroku, bo API
+odpowiedziało 401. Od tego commita krok suity liczy `rc=${PIPESTATUS[0]}`, więc zieleń znaczy
 naprawdę „`test_release.sh` wyszedł zerem". Biegi wcześniejsze — w tym wielokrotnie przeze mnie
 cytowane 13/13 z `35918777924` — patrzyły na status `tee`, czyli na nic; `docs/06` §6.27. Wymaga to `sudo add-apt-repository -y universe`: pierwsza
 wersja kroku instalowala z `>/dev/null 2>&1 || true`, pakiet nie wchodzil, a krok byl
@@ -150,7 +156,10 @@ mowi wszystko i ustawia `DISTRO_OK`, ktorego kroki sluchaja (brak pakietu = `::n
 i swiadome pominiecie, NIE FAIL wydania).
 
 Oczekiwane na `system.img`: `Filesystem incompatible features: lz4_0padding`,
-`Required upstream Linux kernel version: 5.4`, `compressed files: 2738`, `uncompressed: 1828`.
+`Required upstream Linux kernel version: 5.4`; wariant lekki: `Filesystem inode count: 4564`
+(4 563 wpisy + korzeń). Gdy `dump.erofs` wypisuje `compressed`/`uncompressed files`, to liczy
+**inode'y** razem z katalogami i symlinkami (pomiar 23 IX: 2738 + 1828 = 4 566) — nie porównuj
+tego do liczby samych plików.
 
 **Dowodzi:** że obrazu nie da się zmontować kernelowi bez `EROFS_FS_LZ4` — i to jest
 *pozytywny* wniosek: feature jest w `incompatible`, więc odmowa nastąpi przy **montowaniu**,

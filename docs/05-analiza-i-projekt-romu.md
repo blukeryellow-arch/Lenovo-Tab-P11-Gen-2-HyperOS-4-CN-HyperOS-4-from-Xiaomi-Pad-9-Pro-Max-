@@ -54,6 +54,7 @@ Drugi pomiar, najważniejszy dla oceny ryzyka: `tools/vintf_diff.py` na najniżs
 dostępnej macierzy (`202404`, level 6) zwraca **84 pozycje HAL, w tym 0 z flagą
 `optional`** (`grep -c '<optional>'` = 0 we wszystkich pięciu plikach). Struktura:
 **0 HIDL / 83 AIDL**. Vendor epoki A12 nie ma tych interfejsów w ogóle (AIDL-owe
+`audio.core`, `health`, `power`, `thermal`, `dumpstate`, `gatekeeper` weszły później).
 
 **Korekta liczb po naprawie samego narzędzia** (2026-09-23): na całym zestawie sześciu
 plików `vintf_diff.py` zwraca **400 pozycji** i ta liczba NIE jest tym, co widzi init —
@@ -62,10 +63,10 @@ patrz §6.6 w `docs/06`: to suma wszystkich poziomów macierzy, a `VintfObject` 
 0 obowiązkowych, 81 opcjonalnych**; przy level 8 bywałoby 88. Słowo „obowiązkowych" przy
 400 było błędem, który przez pewien czas ustawiał cały plan pracy na niewłaściwej półce.
 
-(oryginalny tekst zdania brzmiał: „…zwraca 400 pozycji obowiązkowych, nie 412 — wcześniej liczył")
-też `device.xml`/`manifest.xml` jako wymagania, bo filtrował po nazwie pliku zamiast po
-korzeniu dokumentu; dodatkowo `optional` było liczono jako `False and opt`, więc każde
-oznaczenie w pliku ignorowano. Naprawione.
+Wcześniej to samo narzędzie liczyło też `device.xml`/`manifest.xml` jako wymagania, bo filtrowało
+po nazwie pliku zamiast po korzeniu dokumentu, a `optional` zliczało jako `False and opt`, więc
+każde oznaczenie w pliku ignorowało. (Oryginalny tekst zdania brzmiał: „…zwraca 400 pozycji
+obowiązkowych, nie 412".) Naprawione.
 
 **Korekta z 24 IX 2026 (po tej turze).** Poniższy test zwierciadlany dowodził *filtrowania HAL-i*
 i niczego więcej. Nie sprawdzał, czy element `<level>` w wygenerowanym pliku równa się żądanemu
@@ -85,7 +86,6 @@ Czyli: generowanie otwiera bramkę `init` dokładnie wtedy, kiedy twierdzę, że
    a nie to, które czyta libvintf (atrybut). Po naprawie `make_level_matrix.py` i `vintf_diff.py`
    ten sam eksperyment daje 0 dopiero wtedy, gdy zmiękczenie jest w atrybucie — i dopiero to
    znaczy coś o `init`. Liczby strict (53 / 70) pozostają prawdziwe.
-`audio.core`, `health`, `power`, `thermal`, `dumpstate`, `gatekeeper` weszły później).
 Czyli otwarcie bramki init nie jest tożsame z bootem do pulpitu.
 
 ## 5.2 Co z tego wynika dla trzech możliwych ścieżek
@@ -97,7 +97,7 @@ Czyli otwarcie bramki init nie jest tożsame z bootem do pulpitu.
 | C | pełny swap 5 obrazami + oryginalny łańcuch AVB | **niemożliwe do podpisania** — patrz tabela w 5.1. Nie „trudne": opisy hashtree dotyczą innych bajtów |
 
 Ścieżka B' jest kompromisem wymuszonym pomiarem: zamienia „boot nie przechodzi bramki"
-na „bramka otwarta, ryzyko przesuwa się na serwis HAL-i". Bez niej nie da się even
+na „bramka otwarta, ryzyko przesuwa się na serwis HAL-i". Bez niej nie da się nawet
 przetestować czegokolwiek, więc jest warta zbudowania; ale nazywam ją po imieniu:
 **eksperyment**, nie „100 % flashable ROM" w sensie „pewny boot".
 
@@ -135,6 +135,8 @@ policzyłem po złożeniu części).
 
 1. Czy `system_a` targetu przyjmie 938 MB przebudowanego obrazu — partycja `system`
    w `getvar all` jeszcze nie jest zmierzona (do zrobienia przez `flash.sh`/`fastboot`).
+   (Odpowiedź z 24 IX: slot ma 768 MB, więc 920 MB potrzebuje `RESIZE_SUPER` — `docs/06`
+   §6.11 i §6.34.)
 2. Ile z 83 AIDL-ów vendor realnie ma — bez `/vendor/etc/vintf` z urządzenia pracuję na
    „szerokim" oznaczeniu `optional`, więc liczba crashujących usług jest nieznana.
 3. `/system/etc/fonts.xml` w źródle to symlink do `/data/system/fonts/theme_webview/fonts.xml`,

@@ -22,7 +22,7 @@ Warstwa, ktorej nie przenosimy: `.so`, `.jar` frameworka, `*.img`, sepolicy, fst
 diagnostics/collect_device_state.sh
 ```
 
-Z tego wyniklu potrzebuje konkretnie: `ro.board.platform` (potwierdzenie mt6789),
+Z tego wyniku potrzebuje konkretnie: `ro.board.platform` (potwierdzenie mt6789),
 `ro.build.version.release` + `ro.build.id`, `ro.boot.dynamic_partitions`,
 `ro.virtual_ab.enabled`, `ro.boot.slot_suffix`, liste z `/dev/block/by-name`
 i rozmiary, `lpdump` jesli jest, `ro.boot.verifiedbootstate`.
@@ -154,7 +154,7 @@ nie istnieje):
 | `providers.settings`, `server.telecom`, `bluetooth`, `phone`, `wifi.resources`, `networkstack`, `thememanager`, `managedprovisioning`, `cellbroadcast*` (AOSP) | 15 | 3 | istnieją na tablecie, czekają na podpis |
 
 Klucze „inne" to nie AOSP: wszystkie 13 mają `d45f076fe23a1a5b…`, czyli klucz
-`*__auto_generated_rro_vendor.apk` Xiaomi (`subject=O=Xiaomi, L=Beijing`).ZNACZENIE: **zero
+`*__auto_generated_rro_vendor.apk` Xiaomi (`subject=O=Xiaomi, L=Beijing`). ZNACZENIE: **zero
 z 67** nakładek podpisanych jest kluczem, który zna tablet Lenovo — więc „wgrać overlaye i
 mieć HyperOS-owy framework" nie istnieje jako ścieżka bez przepodpisania *każdej* z 26
 frameworkowych nakładek (`apksigner` na runnerze; JDK tam jest, lokalnie nie mam).
