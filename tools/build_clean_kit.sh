@@ -107,9 +107,12 @@ cp -f "$SYSEXT" "$OUTDIR/system_ext_hyperos4_p11g2.img"
 cp -f dist/release/HyperOS4_P11Gen2/system_hyperos4_p11g2.img "$OUTDIR/"
 cp -f dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img "$OUTDIR/"
 cp -f dist/release/HyperOS4_P11Gen2/vbmeta_hyperos4_p11g2.img "$OUTDIR/"
+# device-probe/flash-all/rollback cleana sa w gicie (krok 0 je przywraca) - NIE wolno
+# ich nadpisywac wersja coherent: clean ma wlasny naglowek flash-all (8177 B vs 7662 B).
+# Bug znaleziony 25 IX wieczorem po porownaniu md5 z Dyskiem (c40d7486 vs d669a070).
 cp -f dist/release/HyperOS4_P11Gen2/device-probe.sh "$OUTDIR/"
-cp -f dist/coherent-release/HyperOS4_P11Gen2-coherent/flash-all.sh "$OUTDIR/"
-cp -f dist/coherent-release/HyperOS4_P11Gen2-coherent/rollback.sh "$OUTDIR/"
+[ -f "$OUTDIR/flash-all.sh" ] || cp -f dist/coherent-release/HyperOS4_P11Gen2-coherent/flash-all.sh "$OUTDIR/"
+[ -f "$OUTDIR/rollback.sh" ] || cp -f dist/coherent-release/HyperOS4_P11Gen2-coherent/rollback.sh "$OUTDIR/"
 echo "--- $OUTDIR:"
 stat -c "%s %n" "$OUTDIR"/* | sort -k2
 

@@ -348,3 +348,18 @@ Dwie lekcje z tego przebiegu:
 Suite po odbudowie wszystkich wydaj (resety VM zabieraly nie sledgerowane obrazy
 duze; -full po odbudowie: absent-skip -> realne kontrole): **161 PASS / 0 FAIL**
 (--real, drzewa jak wyzej). Upload na Dysk Google: **WSTRZYMANY na sygnal usera**.
+
+## Dysk Google UKONCZONY (25 IX, ~19:40 UTC)
+
+Upload kitu CLEAN dokonczony po przerwaniu (rownolegla/przerwana sesja zdazyla wgrac
+male pliki + 16/16 czesci systemu + 2/11 system_ext i umarla o 19:09 UTC). Doliczono
+9 czesci system_ext + 2 product; **40/40 plikow w folderze `clean`, md5 kazdej czesci
+wg serwera Google = lokalnemu cieciu** (konwencja: 60 000 000 B, `.bin`, sklejanie
+`zloz.sh`/`zloz.bat`, sumy w `CZESCI-MD5.txt`, vbmeta jako `.b64`). Inwentarz ID:
+`diagnostics/drive-clean-kit.tsv`. przy okazji: **bug build_clean_kit.sh kroku 7**
+nadpisywal flash-all cleana wersja coherent (8177→7662 B) - naprawiony (copy tylko
+gdy brak); na Dysku zawsze byla wersja z commita (c40d7486…). Sprzatnieto: 5 folderow
+przerwanych prob + testowe pliki z kosza (bintest*/proba*/p0-test); pliki usera
+(SpinjitzuLegends_*, stary vbmeta.img) nietkniete. Stare foldery nocy (lekki/full/
+coherent) zniknely wczesniej (trwale, przez tamta sesje) - pelne wydania odbuduje
+receptura, na Dysku zostaje wariant CLEAN jako jedyny flashowalny komplet.
