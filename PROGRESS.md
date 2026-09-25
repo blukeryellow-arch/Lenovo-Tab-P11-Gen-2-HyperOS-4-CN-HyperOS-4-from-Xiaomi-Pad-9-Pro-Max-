@@ -1,3 +1,13 @@
+## Ostatni status
+
+**25 IX wieczor:** wariant **CLEAN** (coherent minus 7 pakietow diagnostycznych/
+telemetrii w system_ext; MSA/bloat w obrazach nie wystepuje z konstrukcji — product
+donora nigdy nie wgrywany). Kit `dist/clean-release/HyperOS4_P11Gen2-clean/`:
+system_ext 602 189 824 B (slot 744 968 192), verify 1:1, flash-all 5/5 na atrapie,
+SHA256SUMS 10/10. Builder: `tools/build_clean_kit.sh` (idempotentny). Suite --real:
+**161/0** (po odbudowie obrazow -full zniszczonych przez resety VM). Upload na Dysk:
+wstrzymany na sygnal usera („powiem ci kiedy"). Push gita: standardowy.
+
 # Licznik przebiegu — HyperOS 4 na Lenovo Tab P11 Gen 2 (TB350FU)
 
 Tryb: agent pracuje samodzielnie, bez pytań. Ten plik jest aktualizowany po kazdym

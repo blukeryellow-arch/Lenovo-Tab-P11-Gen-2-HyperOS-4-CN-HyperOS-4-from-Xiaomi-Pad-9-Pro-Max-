@@ -311,3 +311,40 @@ co wiadomo**: założenia („vendor 12L z Amazona") zastąpione pomiarem (vendo
 GSI boot, rozmiary partycji z hashtree AVB), a każda liczba w ocenie szans ma teraz źródło
 w bajtach (docs/09 §5). Kolejny ruch należy do tabletu: `device-probe.sh` → `flash-all.sh`
 (coherent) → `postflash_triage.sh` na logcacie.
+
+## Wariant CLEAN (25 IX, wieczor) — coherent minus diagnostyka/telemetria
+
+Zadanie usera: „usun MSA i bloatware, dostosuj propsy". Audyt drzew wykazal, ze
+MSA/GetApps/reklamy w obrazach tego projektu **nie wystepuja** (zycza w donorskim
+product, ktorego nie wgrywamy — nasz product to fonty + passwd). Prawdziwy debloat
+zaszedl w system_ext: usuniete 7 pakietow (EngineerMode 16 MB, DebugLoggerUI,
+MiSightService 9,4 MB, VsimCore, CameraMind 4,5 MB, PowerInsight, RtMiCloudSDK) —
+1910 -> 1867 wpisow. Framework (`miuix`, `miuisystem`, `MiuiSystemUI`, `Settings`)
+zostal NIE dotkniety: to fundament HyperOS 4, nie bloat (byly MIUI -> HyperOS to
+zmiana nazwy, nie usuniecie kodu — stąd paczki com.miui.* w srodku HyperOS 4).
+
+Propsy: fingerprint/rozdzielczosc/density **nie wymagaly zmian** — system_ext nie
+deklaruje feature fingerprint (tab nie ma czytnika), a `ro.sf.lcd_density` w obrazach
+nie istnieje (przyjdzie z vendora Lenovo). Niczego nie trzeba klamac.
+
+Budowa: `tools/build_clean_kit.sh` (idempotentny, przezywa resety sandboxa):
+spool -> donorski system_ext (md5 = suma Google) -> czyszczenie -> mkfs
+`-T 0 -U a11ce5a1-… -zlz4hc,9 --force-uid=0 --force-gid=0` -> **602 189 824 B**
+(slot 744 968 192 — zapas 142 MB) -> `verify_image.sh` **1:1** (1866 wpisow:
+1683 pliki + 21 symlinki + 162 katalogi, 0 rozbieznosci). Kit w
+`dist/clean-release/HyperOS4_P11Gen2-coherent… clean/`: system (identyczny z lekkim,
+sha `4836dcd4…`), system_ext CLEAN (sha `53dd7dfb…`), product, vbmeta, flash-all
+(5 scenariuszy na atrapie fastboot: sumy/rozmiary/jednokierunkowy zgody/reboot —
+wszystkie zielone), README z ROZMIARY-KONTRAKT, SHA256SUMS 10/10.
+
+Dwie lekcje z tego przebiegu:
+1. **ENOSPC zepsul weryfikacje 1:1** — fsck --extract padal po cichu przy pelnym
+   dysku (obraz zbudowany, ekstrakcja nie), a make_release zglosil to dopiero jako
+   „NIE przechodzi weryfikacji". Przy 98% zapełnienia najpierw sprawdzic df.
+2. **64-znakowe sumy przepisuje manifestem, nie reka** — moj reczny `--expect-sha256`
+   mial literowke niewidoczna w terminalu (plik == manifest == OK, a skrypt krzyczal
+   NIEZGODNY, bo porownywal z moja literowka): `EXP=$(awk … MANIFEST.tsv)` i po sprawie.
+
+Suite po odbudowie wszystkich wydaj (resety VM zabieraly nie sledgerowane obrazy
+duze; -full po odbudowie: absent-skip -> realne kontrole): **161 PASS / 0 FAIL**
+(--real, drzewa jak wyzej). Upload na Dysk Google: **WSTRZYMANY na sygnal usera**.

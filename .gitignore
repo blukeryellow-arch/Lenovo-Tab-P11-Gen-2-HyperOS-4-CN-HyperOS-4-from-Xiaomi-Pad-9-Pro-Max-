@@ -43,3 +43,7 @@ tmp/
 # wariant coherent (noc 24/25 IX): product + vbmeta w gicie; system/system_ext (>100 MB) poza
 !dist/coherent-release/HyperOS4_P11Gen2-coherent/product_hyperos4_p11g2.img
 !dist/coherent-release/HyperOS4_P11Gen2-coherent/vbmeta_hyperos4_p11g2.img
+
+# wariant CLEAN (25 IX wieczor): product + vbmeta w gicie; system/system_ext (>100 MB) poza
+!dist/clean-release/HyperOS4_P11Gen2-clean/product_hyperos4_p11g2.img
+!dist/clean-release/HyperOS4_P11Gen2-clean/vbmeta_hyperos4_p11g2.img
