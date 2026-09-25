@@ -34,7 +34,12 @@ git rm -r -q --cached . 2>/dev/null || true
 # POPRZEDNIEGO spoolu obok nowych plikow - 'tar --skip-old-files' nie rusza tego, co
 # wlasnie zapisal ten bieg, a 'git archive' nie prowdzi konfliktow z checkoutem.
 SPOOL_REMOTE=${SPOOL_REPO_URL:-origin}
-prev=$(git ls-remote "$SPOOL_REMOTE" "$SPOOL" 2>/dev/null | cut -f1)
+# FIX (noc 24/25 IX, bieg 36030150849): checkout w Actions jest PLYTKI (depth=1), wiec
+# SHA poprzedniego spoola z ls-remote nie istnieje lokalnie i 'git archive $prev' padal
+# po cichu (|| true) - jezioro bylo nadpisywane BEZ scalania i czastki z poprzednich
+# biegow ginely. Fetchujemy ten jeden commit, zanim zaczniemy cokolwiek archiwizowac.
+git fetch -q --depth=1 "$SPOOL_REMOTE" "$SPOOL" 2>/dev/null || true
+prev=$(git rev-parse FETCH_HEAD 2>/dev/null || git ls-remote "$SPOOL_REMOTE" "$SPOOL" 2>/dev/null | cut -f1)
 if [ -n "$prev" ]; then
   n0=$(find "$DST" -type f | wc -l)
   git archive "$prev" "$DST" 2>/dev/null | tar -x --skip-old-files -C . 2>/dev/null || true

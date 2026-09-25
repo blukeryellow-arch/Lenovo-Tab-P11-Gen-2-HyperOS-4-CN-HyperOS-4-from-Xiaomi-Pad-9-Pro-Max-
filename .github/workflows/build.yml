@@ -309,7 +309,10 @@ jobs:
           UNP="${{ inputs.do_unpack }}"
           if [ -f drive-probe.request ]; then
             if [ -z "$IDS" ]; then
-              IDS=$(tr -d '\r' < drive-probe.request | grep -Ev '^[[:space:]]*#' | awk '{print $1}' | grep -E '^[A-Za-z0-9_-]{20,}$' | paste -sd' ' -)
+              # FIX (noc 24/25 IX, bieg 36034656331): GH odpala kroki z 'bash -e', a pipefail
+          # na pliku samym z komentarzach daje rc=1 z grepa (zero wybranych linii) i krok
+          # pada. '|| true' w srodku $() neutralizuje - pusty wykaz id to legalny no-op.
+          IDS=$(tr -d '\r' < drive-probe.request | grep -Ev '^[[:space:]]*#' | awk '{print $1}' | grep -E '^[A-Za-z0-9_-]{20,}$' | paste -sd' ' - || true)
               echo "zapytanie z pliku drive-probe.request"
             fi
             [ -z "$UNP" ] && UNP=$(sed -n 's/^[[:space:]]*do_unpack:[[:space:]]*\([01]\).*/\1/p' drive-probe.request | head -1)

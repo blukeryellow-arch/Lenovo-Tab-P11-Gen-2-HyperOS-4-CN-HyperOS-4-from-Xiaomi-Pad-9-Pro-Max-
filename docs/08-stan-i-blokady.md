@@ -194,6 +194,12 @@ tools/assemble_raw_parts.py --parts /tmp/spool/transfer \
 tar -xzf /tmp/ta-product/drive-*.tar.gz -C /tmp/ta-product   # 172 wpisy: etc/ fonts/ overlay/
 #    (oba --expect-sha256 to sumy z RAW_MANIFEST*.tsv / MANIFEST.tsv na spoolu - nie trzeba
 #     ich pamietac, sa w plikach; skrypt sam znajduje manifesty z sufiksem biegu)
+#    Noc 24/25 IX: spool ma TEZ donorski system_ext (bieg 36030150849, 7 czesci):
+tools/assemble_raw_parts.py --parts /tmp/spool/transfer \
+    --out /tmp/donor/drive-13e-okLFNX3m7feTp8AlYoGME2rKFFitr.img \
+    --expect-sha256 7340a8367d3da8e4bdcf56a0f53dd7b77d87f81389d08b2a7e9e449fc02a5385
+test "$(md5sum /tmp/donor/drive-13e-*.img | awk '{print $1}')" = f879747f3f7ebb5eb026eddeb02f8d13 \
+    || { echo "system_ext: md5 != suma Google"; exit 1; }
 
 # 2) cztery drzewa (artrytmyka wpisow sprawdza sie przy kazdym kroku)
 mkdir -p /tmp/donor
@@ -224,10 +230,15 @@ tools/make_release.sh --product-tree /tmp/tree-full --system-tree /tmp/donor/sys
 # 4) kopiuje sie TYLKO brakujace obrazy (flash-all/vbmeta/README juz sa z gita)
 cp /tmp/rebuild-lekki/system_hyperos4_p11g2.img dist/release/HyperOS4_P11Gen2/
 cp /tmp/rebuild-full/{system,product}_hyperos4_p11g2.img dist/release/HyperOS4_P11Gen2-full/
+#    wariant coherent: system/product/vbmeta z gitowych wydaj + system_ext z powyzszego
+cp /tmp/donor/drive-13e-*.img dist/coherent-release/HyperOS4_P11Gen2-coherent/system_ext_hyperos4_p11g2.img
+cp dist/release/HyperOS4_P11Gen2/{system,product,vbmeta}_hyperos4_p11g2.img \
+   dist/coherent-release/HyperOS4_P11Gen2-coherent/
 
 # 5) dowod
 (cd dist/release/HyperOS4_P11Gen2 && sha256sum -c SHA256SUMS.txt)        # 8/8
 (cd dist/release/HyperOS4_P11Gen2-full && sha256sum -c SHA256SUMS.txt)   # 8/8
+(cd dist/coherent-release/HyperOS4_P11Gen2-coherent && sha256sum -c SHA256SUMS.txt)  # 9/9
 SYSTREE=/tmp/tree2/system_tree SYSTREE_FULL=/tmp/donor/system_tree \
 PRODTREE=/tmp/tree-product PRODTREE_FULL=/tmp/tree-full \
     tools/test_release.sh --erofs-dir /tmp/erofs-c --real               # 161 PASS / 0 FAIL (replay 24 IX ~14:10 dal 96/0 - sprzed F3/V/W/X/Y)
@@ -262,7 +273,8 @@ pliku wykonany bez zmian: 189 s, rc=0, (4) trzy nowe sekcje suity w schemacie F2
 | X | `dist/modules` + `dist/rom-kit` — pozostałe ładunki w gicie, których suita nie dotykała: modul Magisk (trzy kopie sumy, struktura, CRC), rom-kit (`bash -n`, sumy gita 1:1), świadoma różnica vbmeta donor `3506d20e…` vs wydanie testkey `9cf2e7e4…`, oraz **wykonanie `rom-kit/flash.sh`**: bez `system.img` (stan z czystego gita) → czysta odmowa; z oboma → 4 flashy + 2 kopie `fetch`, bez `erase userdata`; z bootloadera → `reboot fastboot` + kontynuacja | 9 |
 | Y | `assemble_raw_parts.py` na syntetycznych cząstkach — narzędzie, od którego wisi receptura odzysku, do tej pory tylko w replayach sesyjnych: rc 0/1/2/3 + adopcja sierot (bieg 35892866524) | 6 |
 
-Liczniki suity: **88/96 → 135/143**. CI zielone dla `4e3452e` (F2), `9437ffa` (F3), `33ecec0` (V)
+Liczniki suity: **88/96 → 129/137** (popołudnie, F3/V/W/X/Xb/Y) → **153/161** (noc, sekcja Z).
+CI zielone dla `4e3452e` (F2), `9437ffa` (F3), `33ecec0` (V)
 i `d4cebe2` (W), `d55ef27` (X), `f67b560` (Xb) — oba workflow; Y (`fb51263`..`fa24354`) dojechała
 na remote o 18:09, gdy token GH odżył po ~80 min przerwy (commity czekały lokalnie — drzewo
 czyste, nic nie przepadło); sekcja W przeszła na runnerze z trzema nieobecnymi obrazami
@@ -270,3 +282,32 @@ czyste, nic nie przepadło); sekcja W przeszła na runnerze z trzema nieobecnymi
 kontroli). Lekcja dnia numer jeden: dokument, który
 opisuje procedurę odzysku, sam jest ładunkiem — dopóki nie został wykonany słowo w słowo, jest
 hipotezą (a był w nim błąd: `git archive origin/transfer-spool` pada na czystym klonie).
+
+## Noc 24/25 IX: wariant coherent — ROZWIĄZANE, co się dało bez tabletu
+
+Godziny ~20:30–~20:00+: (1) **wywiad targetu** — z Dysku przez konektor pobrane `boot.img`,
+`vendor_boot.img`, `vbmeta.img` (md5 = sumy serwera Google; każde <100 MB); rozpakowane własnym
+dekoderem lz4-legacy + cpio (nie ma binaria `lz4` w sandboxie). Wynik (docs/09): MT6789,
+kernel 5.10.233 GKI android12, vendor **A12** (VNDK 31), stock **LGSIU A14**, boot = **Google GSI**
++ klucze GSI w fstab — urządzenie jest oficjalnym celem GSI, a stock sam trzyma system o dwie
+wersje nad vendor. (2) **donorski system_ext** (632 MB) — konektor tnie na 100 MB, więc bieg
+`drive-probe 36030150849` (publiczny link na czas pobrania, zamknięty natychmiast, uprawniona
+tylko owner — zweryfikowane) → 7 części na spool → `assemble_raw_parts.py` → **md5 Google
+zgadza się co do bajta**. (3) **wariant coherent** (`dist/coherent-release/`, sekcja Z suity,
+README z uczciwą tabelą szans) — system + donorski system_ext + lekki product + vbmeta. (4)
+**`tools/postflash_triage.sh`** — diagnoza po flashu z logcatu, listy podejrzanych znane z góry.
+
+Przy okazji naprawione w `build.yml` dwa utajone bugi, które wyszły dopiero przy no-op biegu:
+raport po `push_spool_branch` szedł z HEAD-a orphan spoolu (non-fast-forward, teraz z
+`GITHUB_SHA`), a krok „Wczytaj zapytanie" padał na `bash -e` + pipefail, gdy request to same
+komentarze (grep bez trafień = rc 1 — `|| true` w pipeline). Trzeci utajony bug: **runner
+nadpisuje jezioro transfer-spool bez scalania** (płytki checkout nie ma obiektów poprzedniego
+spoola — `git archive $prev` cicho pada) — tej nocy scalone ręcznie z sandboxa (`d7b8061`:
+rom-kit + product-assets + system_ext, 30 plików), do naprawy w `push_spool_branch.sh` przy
+kolejnym biegu.
+
+Lekcja nocy: „100% pewności bootu" nie istnieje bez urządzenia — ale istnieje **zmiana tego,
+co wiadomo**: założenia („vendor 12L z Amazona") zastąpione pomiarem (vendor A12/VNDK 31,
+GSI boot, rozmiary partycji z hashtree AVB), a każda liczba w ocenie szans ma teraz źródło
+w bajtach (docs/09 §5). Kolejny ruch należy do tabletu: `device-probe.sh` → `flash-all.sh`
+(coherent) → `postflash_triage.sh` na logcacie.
