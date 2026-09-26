@@ -367,11 +367,14 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -f reports/lenovo-super-*.md || true
-          if git diff --cached --quiet; then
+          report="reports/lenovo-super-${GITHUB_RUN_ID}.md"
+          if [ ! -f "$report" ]; then
             echo 'No audit report was produced; artifact upload carries diagnostics.'
             exit 0
           fi
+          git add -f "$report"
           git commit -m "Audit supplied TB350FU super image (run $GITHUB_RUN_ID)"
-          git pull --rebase origin "$GITHUB_REF_NAME"
+          # This job is the sole writer for the report of its own run. Avoid a
+          # pull/rebase after a diagnostic failure: it obscures the forensic
+          # report that must be retained for the next repair step.
           git push origin "HEAD:$GITHUB_REF_NAME"
