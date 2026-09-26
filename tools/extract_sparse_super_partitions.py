@@ -149,8 +149,18 @@ def main() -> int:
 
     lpmod = load_lpunpack(args.lpunpack)
     requested = set(args.partition or [])
-    with args.super_image.open("rb") as sparse_source:
-        virtual_super = SparseVirtualFile(sparse_source)
+    with args.super_image.open("rb") as source:
+        # Fastboot/SP Flash Tool packages may carry either an Android sparse
+        # super image or an already-expanded raw super image.  lpunpack's
+        # metadata reader works with both; only sparse input needs the virtual
+        # random-access adapter.
+        magic = source.read(4)
+        source.seek(0)
+        virtual_super = (
+            SparseVirtualFile(source)
+            if magic == struct.pack("<I", SPARSE_MAGIC)
+            else source
+        )
         unpacker = lpmod.LpUnpack(SUPER_IMAGE=str(args.super_image), OUTPUT_DIR=args.output_dir)
         unpacker._fd.close()
         unpacker._fd = virtual_super
@@ -168,7 +178,6 @@ def main() -> int:
         metadata.partitions = selected
         for partition in selected:
             unpacker._extract(partition, metadata)
-        virtual_super.close()
     return 0
 
 

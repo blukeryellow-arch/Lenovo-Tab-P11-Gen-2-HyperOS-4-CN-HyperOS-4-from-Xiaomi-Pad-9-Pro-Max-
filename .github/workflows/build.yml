@@ -7,6 +7,7 @@ on:
       - 'tools/drive_form_post.py'
       - 'tools/extract_sparse_super_partitions.py'
       - 'tools/inspect_lenovo_runtime.sh'
+      - 'tools/inspect_lenovo_super.sh'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -16,6 +17,7 @@ on:
       - 'tools/drive_form_post.py'
       - 'tools/extract_sparse_super_partitions.py'
       - 'tools/inspect_lenovo_runtime.sh'
+      - 'tools/inspect_lenovo_super.sh'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -277,5 +279,86 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add reports/lenovo-runtime-*.md
           git commit -m "Audit TB350FU Lenovo runtime (run $GITHUB_RUN_ID)"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+  inspect-lenovo-drive-super:
+    # The exact Lenovo stock super image was supplied by the user through a
+    # public Drive folder.  This is forensic input only; it is never used as a
+    # replacement HyperOS system image.
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[lenovo-drive-super]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Free runner space and install filesystem tools
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/hostedtoolcache/CodeQL \
+            /usr/share/swift /usr/local/graalvm /home/runner/.gradle/caches || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            erofs-utils android-sdk-libsparse-utils e2fsprogs file unzip binutils
+          command -v simg2img
+          command -v fsck.erofs
+          command -v debugfs
+          df -h .
+
+      - name: Download user-supplied TB350FU super image
+        env:
+          DRIVE_ID: 1J6RMoBpZPyDsD1M8zaxPTjn8zTw7grd4
+          EXPECTED_SIZE: '8298777076'
+          EXPECTED_MD5: adfad47a49c78f6b9ec1c740ea5399e2
+        run: |
+          set -euo pipefail
+          chmod +x tools/drive_form_post.py
+          mkdir -p input
+          out=input/TB350FU_S231044_260105_ROW.super.img
+          cookie=$(mktemp)
+          warning=$(mktemp)
+          trap 'rm -f "$cookie" "$warning"' EXIT
+          for url in \
+            "https://drive.usercontent.google.com/download?id=$DRIVE_ID&export=download&confirm=t&authuser=0" \
+            "https://drive.google.com/uc?export=download&confirm=t&id=$DRIVE_ID"; do
+            rm -f "$out"
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 \
+              --cookie "$cookie" --cookie-jar "$cookie" -o "$out" "$url" || continue
+            if [ "$(stat -c%s "$out")" = "$EXPECTED_SIZE" ]; then break; fi
+            mv "$out" "$warning"
+          done
+          if [ ! -f "$out" ] && [ -s "$warning" ]; then
+            python3 tools/drive_form_post.py --html "$warning" --jar "$cookie" \
+              --out "$out" --id "$DRIVE_ID" --log input/download.log
+          fi
+          test -f "$out"
+          test "$(stat -c%s "$out")" = "$EXPECTED_SIZE"
+          echo "$EXPECTED_MD5  $out" | md5sum -c -
+
+      - name: Inspect exact Lenovo framework and vendor runtime
+        run: |
+          set -euo pipefail
+          chmod +x tools/inspect_lenovo_super.sh
+          bash tools/inspect_lenovo_super.sh \
+            "reports/lenovo-super-${GITHUB_RUN_ID}.md" \
+            input/TB350FU_S231044_260105_ROW.super.img audit
+
+      - name: Publish selected framework archives for bytecode review
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: lenovo-stock-framework-${{ github.run_id }}
+          path: audit/selected-framework
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Commit compact Lenovo super audit to this working branch
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports/lenovo-super-*.md
+          git commit -m "Audit supplied TB350FU super image (run $GITHUB_RUN_ID)"
           git pull --rebase origin "$GITHUB_REF_NAME"
           git push origin "HEAD:$GITHUB_REF_NAME"
