@@ -127,3 +127,8 @@ przerobka vendora pod mt6789.
   /tmp czyste, duze obrazy dist zniknely). Odzyskanie: checkout -f -B z FETCH_HEAD
   (3a42aca, md5 5/5 identyczne) + replay #8 (toolchain 25 s + receptura 439 s,
   rc=0, suite 181/0, dist komplet). Laczny czas naprawy: ~10 minut.
+- Polecenie usera: Dysk wyczyszczony calkowicie (kit CLEAN + 8 plikow korzenia,
+  kosz nietkniety) i przeladowany na zestaw minimalny: system (lekki, 4836dcd4,
+  16 czesci 60 MB) + vbmeta (9cf2e7e4, .b64) + zloz.sh/bat (auto-weryfikacja sum,
+  e2e: pozytyw/negatyw/idempotencja) + sumy + README. md5 serwera=lokalne 22/22,
+  owner-only. Inwentarz: diagnostics/drive-system-vbmeta.tsv.

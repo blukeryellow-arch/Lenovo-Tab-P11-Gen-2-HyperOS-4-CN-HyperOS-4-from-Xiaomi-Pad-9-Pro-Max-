@@ -1,3 +1,8 @@
+# HISTORYCZNY: kit CLEAN na Google Drive, stan 2026-09-25 ~19:40 UTC.
+# 26 IX ~08:05 UTC wlasciciel kazal usunac WSZYSTKIE aktywne pliki z Dysku i wgrac
+# zestaw minimalny (system + vbmeta) - patrz drive-system-vbmeta.tsv. Kit ponzij
+# odbudujesz z repo (docs/08 receptura + tools/build_clean_kit.sh); ponizsze ID
+# juz NIE sa zywe (pliki trwale skasowane). Zestaw ponizej opisuje stan sprzed kasacji.
 # Kit CLEAN na Google Drive - stan 2026-09-25 ~19:40 UTC (po ukonczeniu uploadu)
 # Folder nadrzedny: HyperOS4_P11Gen2-release (1SocwHFQY4mxR1jnGCU7TYdZ1ctdoT1l6)
 # Folder kitu:     clean (1XHQnXDkzfwZTVjU53fwK8_AcEhVUFsZc) - 40 plikow, md5 zweryfikowane

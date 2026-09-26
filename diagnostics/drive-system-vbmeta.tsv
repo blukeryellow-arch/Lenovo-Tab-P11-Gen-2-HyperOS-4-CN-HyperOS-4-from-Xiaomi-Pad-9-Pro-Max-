@@ -1,0 +1,32 @@
+# Zestaw MINIMALNY na Google Drive: system + vbmeta - stan 2026-09-26 ~08:11 UTC
+# Polecenie wlasciciela: "usun wszystkie pliki z dysku google i uploaduj ten system
+# i vbmeta". Wczesniej skasowano WSZYSTKIE aktywne pliki (kit CLEAN 40 plikow +
+# 8 plikow korzenia: system_ext.img/product.img/boot/vendor_boot/vendor_mystical/
+# odm/system/stary vbmeta). KOSZ nie tkniety (pliki SpinjitzuLegends usera + vbmeta).
+# Wszystkie 22 pliki: md5 serwera Google = lokalne 1:1 (zweryfikowane po uploadie).
+# Uprawnienia: owner-only. Pobierz CALEGO folderu (korzen Dysku), potem: bash zloz.sh
+# (sam zweryfikuje sumy wzgledem SHA256SUMS.txt; negatyw przetestowany: ZLE + exit 1).
+# Zrodlo: dist/release/HyperOS4_P11Gen2/ (wariant lekki) - system 4836dcd4..., vbmeta 9cf2e7e4...
+# plik<TAB>id<TAB>bajty
+system_hyperos4_p11g2.img.part-000.bin	1IZkXvbPTzs8j5KqMMtM1zPMSqxvNjYke	60000000
+system_hyperos4_p11g2.img.part-001.bin	12caamELTU-LOF-J-coMjXfFV1Idsl8z0	60000000
+system_hyperos4_p11g2.img.part-002.bin	11kmpkunNEzJPkvpzx0hFb9D4JHvVkBnb	60000000
+system_hyperos4_p11g2.img.part-003.bin	1q1wQUQg3VSpSPGuMmEnTvEBVJM5XV_it	60000000
+system_hyperos4_p11g2.img.part-004.bin	1KVbM0HKUzs46H2FxImXGrgOu2DaVuHiO	60000000
+system_hyperos4_p11g2.img.part-005.bin	1dEm01cAkkNBsJQeyLc1V61Vc7rOK5kxd	60000000
+system_hyperos4_p11g2.img.part-006.bin	18eDvUufFNtzAkLDSxYFM84QfO0wEmPEx	60000000
+system_hyperos4_p11g2.img.part-007.bin	1iJM1hNBTi3f4aIUBt4mRO0zgj2T0saRZ	60000000
+system_hyperos4_p11g2.img.part-008.bin	1Stu3eawcziKvAsh4H16TDpiIstqoePT3	60000000
+system_hyperos4_p11g2.img.part-009.bin	1YjceBpC5cNDWs86O7j-dpPcfHy3yAhpY	60000000
+system_hyperos4_p11g2.img.part-010.bin	1UoayclkRpf9iBQWGRulyjlnBkmOOpUFG	60000000
+system_hyperos4_p11g2.img.part-011.bin	1YEWV2x7KJ31J_GSuJszeaXsskzWBFc8Z	60000000
+system_hyperos4_p11g2.img.part-012.bin	1BiqOwnYgjLfA-DX3SbcmEk-CXhW12DWG	60000000
+system_hyperos4_p11g2.img.part-013.bin	1D5b8dX7uidohW8H3QMECMlfFDXoimIXf	60000000
+system_hyperos4_p11g2.img.part-014.bin	1KsL7NIew1U1kLnZAYfb4M_SqTCxph_ne	60000000
+system_hyperos4_p11g2.img.part-015.bin	1abcJVvfPz1iOyntKL_gEkYhkLkJopG2d	20039424
+vbmeta_hyperos4_p11g2.img.b64	1beBYDw365ryyA_Z7HOt5DprpHjbUrZd-	5536
+zloz.sh	1OYeWHnLW4YRJaZZr2BoVxmyV787Grbzb	2141
+zloz.bat	1Qfgftdx0zT6LZV-p9lcVAKHx7h_dj41h	1187
+SHA256SUMS.txt	1Xdc548NkPy8IIQL3b8TP57wdd0Y8b9GI	184
+CZESCI-MD5.txt	1wGORSV9tPJd6ZYBVcol15DXjfgBxprOs	1410
+README.md	1XR_BPqWgr1oBaDFnHC_WkXQJ9KpRSfHU	2367

@@ -569,3 +569,27 @@ Odzyskanie, krok po kroku (łącznie ~10 min):
 To jest najmocniejszy dowód dnia: utrata całego stanu poza git+Dysk kosztuje
 10 minut i kończy się identycznymi bajtami. Receptura jest nie tylko dokumentem
 "jak zbudowano", ale realnym planem awaryjnym.
+
+## 26 IX ~08:05-08:11 UTC: Dysk czyszczony i przeładowany na zestaw minimalny (polecenie usera)
+
+User: "usun wszystkie pliki z dysku google i uploaduj ten system i vbmeta".
+
+1. **Kasacja (trwala, delete_file)**: folder `HyperOS4_P11Gen2-release` (z kitem
+   CLEAN 40 plikow) + 8 plikow korzenia: `system_ext.img` (donorski, 632 MB —
+   zabezpieczony w transfer-spool), `product.img` (6,4 GB — assety w transfer-spool),
+   `boot.img`/`vendor_boot.img` (target, analizy w docs/03-04; obrazy tylko na Dysku
+   — odtwarzalne z oficjalnego firmware Lenovo), `vendor_mystical.img` (665 MB),
+   `odm.img` (3,1 GB), `system.img` (937 MB), `vbmeta.img` (stary, 8 KB).
+   **Kosz nietkniety** (pliki SpinjitzuLegends usera + vbmeta — tam przeniesione
+   wczesniej). Weryfikacja: listing 0 plikow.
+2. **Upload (zestaw minimalny, 22 pliki w korzeniu)**: 16 czesci systemu po
+   60 000 000 B (z `dist/release/HyperOS4_P11Gen2`, wariant lekki, sha `4836dcd4…`)
+   + `vbmeta…img.b64` (4 096 B → dekoduje zloz, sha `9cf2e7e4…`) + zloz.sh (sam
+   weryfikuje sumy: OK/ZLE + exit 1) + zloz.bat + SHA256SUMS + CZESCI-MD5 + README
+   (co to, jak skleic, jak flashowac system+vbmeta, szanse).
+3. **Weryfikacja**: md5 serwera = lokalne **22/22 1:1** (metadata md5Checksum);
+   uprawnienia owner-only; zloz.sh przetestowany e2e PRZED uploadem (pozytyw:
+   SUMY ZGODNE rc=0; negatyw: przeklamany bajt w czesci 005 → ZLE + rc=1;
+   idempotentny; obrazy identyczne z wydaniem 2/2).
+4. Inwentarz: `diagnostics/drive-system-vbmeta.tsv`; stary `drive-clean-kit.tsv`
+   oznaczony HISTORYCZNY (ID niezywe, odbudowa kitu: receptura + build_clean_kit).
