@@ -653,7 +653,9 @@ jobs:
 
       - name: Download the user-supplied exact 4.0.11.0 recovery source
         env:
-          RECOVERY_URL: https://miuirom.org/load?o=xiaomi-pad-9-pro-max&v=4.0.11.0.XBMCNXM&l=en&t=Recovery
+          # Resolved from the exact miuirom.org catalogue URL supplied by the
+          # user, then cross-checked against the yingtian 4.0.11 listing.
+          RECOVERY_URL: https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
         run: |
           set -Eeuo pipefail
           mkdir -p input reports
