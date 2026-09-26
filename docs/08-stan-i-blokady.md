@@ -460,3 +460,11 @@ scenariusz nie przewidział):
    poszły 4 podmienione pliki kitu (zweryfikowane md5 po pobraniu 4/4).
 3. Dysk po synchronizacji: 40/40, uprawnienia owner-only, inwentarz
    (diagnostics/drive-clean-kit.tsv) odświeżony o nowe ID.
+4. **zloz.sh wzmacniany**: poprzednia wersja (25 IX) tylko WYPISYWARA sumy obrazów
+   — porównanie z SHA256SUMS.txt zostawiała userowi (łatwe do pominięcia przy
+   4×64 znakach). Nowa wersja (tools/zloz.sh, wersjonowana; na Dysku od 26 IX
+   ~06:38) **sama weryfikuje sklejone obrazy**: `OK/ZLE` per plik, przy rozjeździe
+   instrukcja "NIE flashuj, pobierz folder jeszcze raz" + **exit 1**. Testy e2e:
+   pozytywny (4× OK, "SUMY ZGODNE", rc=0), negatywny (przekłamany 1 bajt w części
+   007 → ZLE + rc=1), idempotentny ("pomijam" ×3), obrazy byte-w-byte z wydaniem.
+   Wieloplatformowość: sha256sum (Linux) z fallbackiem shasum -a 256 (macOS).

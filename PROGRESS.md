@@ -95,3 +95,7 @@ przerobka vendora pod mt6789.
   zamiast 920 MB (falszywe GO na 633-919 MB). Fix: jawne nazwy plikow; sumy/kontrakty
   odswiezone; 4 pliki kitu podmienione na Dysku (update_file_content znieksztalca
   UTF-8! -> delete+upload_file, md5 4/4 po pobraniu; 40/40, owner-only).
+- zloz.sh wzmacniany: stary tylko wypisywal sumy (porownanie reczne = do pominiecia);
+  nowy (tools/zloz.sh, wersjonowany) sam weryfikuje vs SHA256SUMS.txt: OK/ZLE per
+  obraz, exit 1 przy rozjezdzie + instrukcja. e2e: pozytyw 4x OK rc=0, negatyw
+  (przeklamany bajt w czesci) ZLE rc=1, idempotentny. Dysk: podmieniony, md5 1:1.
