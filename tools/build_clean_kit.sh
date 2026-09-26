@@ -23,6 +23,20 @@ if [ "$AVAIL_KB" -lt 3000000 ]; then
   exit 2
 fi
 
+# Mid-run (26 IX wieczor): start-owy guard nie widzi, ze WLASNE kroki buildera
+# (spool 2,1G + drzewa + mkfs + ekstrakty weryfikacji) moga sprowadzic dysk pod
+# prog w trakcie biegu - replay udowodnil (weryfikacja padla na ekstrakcji).
+# Kazdy ciezszy krok deklaruje zapotrzebowanie PRZED startem.
+need_space() { # need_space <MB> <opis-kroku>
+  local a
+  a=$(df -k --output=avail "$REPO" 2>/dev/null | awk 'END{print $1}')
+  case $a in ''|*[!0-9]*) echo "FATAL: df nieodczytywalny przed: $2" >&2; exit 2;; esac
+  if [ "$a" -lt $(($1*1024)) ]; then
+    echo "FATAL: $((a/1024)) MB wolnego, a krok '$2' chce >=$1 MB - posprzataj i wroc (krok jest idempotentny)." >&2
+    exit 2
+  fi
+}
+
 cd "$REPO"
 step() { echo; echo "=== $* ==="; }
 
@@ -50,6 +64,7 @@ fi
 
 step "2) spool -> donorski system_ext"
 if [ ! -f "$DONOR" ] || [ "$(stat -c%s "$DONOR")" != 632840192 ]; then
+  need_space 3000 "spool+donor (git archive 2,1G + obraz 633M)"
   mkdir -p /tmp/spool
   git fetch -q origin transfer-spool
   git archive FETCH_HEAD | tar -x -C /tmp/spool
@@ -62,9 +77,10 @@ echo "md5 donora: $M"
 
 step "3) drzewo product lekkiego (potrzebne do buildu systemu)"
 if [ ! -d /tmp/tree-product/etc ]; then
-  mkdir -p /tmp/prod-lekki-extract
+  rm -rf /tmp/prod-lekki-extract && mkdir -p /tmp/prod-lekki-extract   # fsck --extract na istniejacym
   /tmp/erofs-c/fsck.erofs --extract=/tmp/prod-lekki-extract \
     dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img >/dev/null 2>&1
+  # drzewie degraduje tryby katalogow do 0700 - zawsze na czysto (docs/08, 26 IX)
   rm -rf /tmp/tree-product && cp -a /tmp/prod-lekki-extract /tmp/tree-product
 fi
 
@@ -77,6 +93,7 @@ if [ ! -f "$LEK" ]; then
   fi
 fi
 if [ ! -f "$LEK" ]; then
+  need_space 3000 "budowa lekkiego (romkit 1,3G + rebuild 1G)"
   if [ ! -d /tmp/romkit/system_tree ]; then
     tools/assemble_raw_parts.py --parts /tmp/spool/transfer --out /tmp/rom-kit.tar.gz \
       --expect-sha256 537eb4ea0c98f4b87bd1ccdb2e0ab502745dfd0820ef1deefb9d42e2a5b0923b | tail -1
@@ -99,7 +116,8 @@ echo "system.img: ZGODNY z wydaniem lekkim"
 
 step "4) ekstrakcja + czyszczenie system_ext"
 if [ ! -d /tmp/ext-clean/app ]; then
-  rm -rf /tmp/ext-orig
+  need_space 1500 "ekstrakcja system_ext (ext-orig ~600M)"
+  rm -rf /tmp/ext-orig /tmp/ext-clean   # czesciowe ext-clean z przerwanego biegu tez przepisujemy od zera
   /tmp/erofs-c/fsck.erofs --extract=/tmp/ext-orig "$DONOR" >/dev/null 2>&1
   cp -al /tmp/ext-orig /tmp/ext-clean
   for p in app/EngineerMode app/DebugLoggerUI app/MiSightService app/VsimCore app/CameraMind app/PowerInsight priv-app/RtMiCloudSDK; do
@@ -109,7 +127,12 @@ fi
 echo "wpisow oryginal: $(find /tmp/ext-orig | wc -l), po czyszczeniu: $(find /tmp/ext-clean | wc -l)"
 
 step "5) mkfs system_ext CLEAN"
-if [ ! -f "$SYSEXT" ] || [ "$(stat -c%s "$SYSEXT")" -gt 744968192 ]; then
+# Warunek skipu: DOKLADNA suma CLEAN (53dd7dfb…), nie sam rozmiar - obraz uciety
+# przez ENOSPC ma poprawny rozmiar czesciowy i przeszedlby starym warunkiem
+# (rozmiar <= slot), a weryfikacja zlapalaby go dopiero po fakcie.
+CLEAN_SHA=53dd7dfb090153e6f1c939c8292d5149ab2f7e3aaf646094f91e416c9a737ccc
+if [ ! -f "$SYSEXT" ] || [ "$(sha256sum "$SYSEXT" | cut -d' ' -f1)" != "$CLEAN_SHA" ]; then
+  need_space 1000 "mkfs system_ext (602M)"
   ( cd /tmp && /tmp/erofs-c/mkfs.erofs -T 0 -U "$UUID_EXT" -zlz4hc,9 \
       --force-uid=0 --force-gid=0 "$SYSEXT" ext-clean > /tmp/mkfs-ext.log 2>&1 ) \
     || { tail -5 /tmp/mkfs-ext.log; exit 1; }
@@ -119,6 +142,7 @@ echo "rozmiar: $SZ B (slot: 744968192, donorski: 632840192)"
 [ "$SZ" -le 744968192 ] || { echo "FATAL: NIE MIESCI SIE W SLOCIE"; exit 1; }
 
 step "6) weryfikacja 1:1 (verify_image.sh: pliki po sha256, symlinki po readlink)"
+need_space 1500 "weryfikacja CLEAN (ekstrakcja kontrolna ~600M)"
 tools/verify_image.sh --img "$SYSEXT" --tree /tmp/ext-clean --fsck /tmp/erofs-c/fsck.erofs \
   || { echo "FATAL: weryfikacja obrazu CLEAN nie przeszla"; exit 1; }
 echo "sha256 CLEAN: $(sha256sum "$SYSEXT" | cut -d' ' -f1)"

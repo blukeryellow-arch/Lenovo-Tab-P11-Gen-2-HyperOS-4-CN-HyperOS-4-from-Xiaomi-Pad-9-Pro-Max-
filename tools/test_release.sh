@@ -30,6 +30,19 @@ while [ $# -gt 0 ]; do
     *) echo "nieznana opcja: $1 (zna --keep, --real, --erofs-dir)" >&2; exit 3;;
   esac
 done
+# --- pre-check miejsca (26 IX): przy <3000 MB wbudowane buildy suity blokuja sie
+# na df-guardzie make_release i wychodzi 30+ mylacych FAIL-y zamiast werdyktu.
+# Suite mowi to wprost i odmawia biegu, zamiast produkowac zaszumiony raport.
+AVAIL_KB=$(df -k --output=avail "$PWD" 2>/dev/null | awk 'END{print $1}')
+case $AVAIL_KB in
+  ''|*[!0-9]*) echo "FATAL: nie umiem odczytac wolnego miejsca (df) - nie odpalam suity na slepo." >&2; exit 2;;
+esac
+if [ "$AVAIL_KB" -lt 3000000 ]; then
+  echo "FATAL: $((AVAIL_KB/1024)) MB wolnego - suita buduje obrazy testowe i przy braku miejsca" >&2
+  echo "       da maly dziesiatek falszywych FAIL-i. Posprzataj (>=3000 MB) i wracaj." >&2
+  exit 2
+fi
+
 WORK=$(mktemp -d /tmp/reltest.XXXXXX)
 # PADDLE = lista FAIL-i w pliku, nie tylko w strumieniu. Powod jest moj: 24 IX odpalilem
 # suite jako '... | tail -3', zobaczylem '53 PASS / 1 FAIL' i commitnalem, a nazwy tej

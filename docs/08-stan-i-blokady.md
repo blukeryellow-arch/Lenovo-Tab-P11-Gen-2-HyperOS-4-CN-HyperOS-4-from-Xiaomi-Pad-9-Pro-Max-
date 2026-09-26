@@ -493,3 +493,37 @@ scenariusz nie przewidział):
    *Zasada ogólna: narzędzia upstreamowe bywają idempotentne tylko na świeżym
    stanie — każdy krok receptury, który coś wypakowuje, ma zacząć się od kasowania
    celu.*
+
+## Maraton 26 IX (finał replay, ~09:10 UTC): guard zadziałał w produkcie + piąta lekcja
+
+Finałowy pełny replay (po reconnect GitHub, commit `88e1421` z idempotencją tree2/
+tree-full) na zaśmieconym sandboxie dał EPIZOD, który domknął cały dzień:
+
+1. **df-guard zatrzymał build pełnego wariantu przy 2048 MB wolnego** (rc=2, zero
+   obrazów) — pierwszy raz w produkcie, nie w tescie. Po odzyskaniu miejsca
+   (skasowanie zużytego spoola) replay wznowiony.
+2. **Piąta lekcja: builder sam potrafi sprowadzić dysk pod prog w TRAKCIE biegu.**
+   Start-owy guard w `build_clean_kit` minął (było >3 GB), ale własne kroki buildera
+   (spool 2,1 GB + drzewa + mkfs + kontrolna ekstrakcja) zjadły dysk w locie —
+   weryfikacja 1:1 padła na ekstrakcji ("ekstrakcja nieudana") i builder słusznie
+   odmówił (exit 1, dist nietknięty). Fix: **mid-run `need_space MB`** przed każdym
+   ciężkim krokem (spool, budowa lekkiego, ekstrakcja system_ext, mkfs, weryfikacja).
+3. **Suite przy 360 MB wolnego dawała 35 mylących FAIL-y** (wbudowane buildy
+   blokowane przez df-guard raportowane jako awarie kodu). Fix: **pre-check miejsca
+   na starcie suity** (<3000 MB → jasny FATAL "posprzataj", zero zaszumionego
+   raportu; ciąg dalszy po odzyskaniu miejsca).
+4. **Szczelniejszy warunek skipu mkfs**: skip tylko przy DOKŁADNEJ sumie CLEAN
+   (`53dd7dfb…`), nie samym rozmiarze — obraz ucięty przez ENOSPC ma "poprawny"
+   częściowy rozmiar i stary warunek by go przepuścił (złapałaby go dopiero
+   weryfikacja). Plus `rm -rf` przed ekstraktem product (lekcja #4) i przed
+   częściowym `ext-clean` z przerwanego biegu.
+5. Notatka techniczna o wznawianiu: wycięcie fragmentu receptury od środka
+   ODCINA nagłówek `set -e` — wznowiony fragment biegnie bez niego (to się
+   stało tutaj: builder padł, a fragment poszedł dalej). Receptura jest jednym
+   blokiem albo niczym.
+
+**Bieg końcowy**: build_clean_kit od zera (spool → donor → czyszczenie 1910→1867
+→ mkfs → weryfikacja 1:1 ZGODNE 1866/0 → skompletowanie kitu) — **rc=0, 73 s,
+sha system_ext CLEAN = `53dd7dfb…`** (determinizm po raz kolejny). Suite po
+wszystkim: **173 PASS / 0 FAIL** i **181 / 0** (`--real`). Dist cały: 8/8, 8/8,
+9/9, 10/10.

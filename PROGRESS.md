@@ -113,3 +113,9 @@ przerobka vendora pod mt6789.
   /tmp drzewa rozjezdzaly sie z obrazem (J: etc 0700 vs 0755). Fix: rm -rf przed
   kazdym extractem w recepturze. Po naprawie 173/181. Finałowy replay przerwany
   na git fetch (token GitHub wygasl) = dowod dzialania set -e (dist nietkniety).
+- Final replay: df-guard zatrzymal build w produkcie (2048 MB -> rc=2) - dziala.
+  Piate lekcje dnia: builder mid-run zjada dysk sam z siebie -> need_space przed
+  kazdym ciezkim krokiem build_clean_kit; suite przy 360 MB dawala 35 myslacych
+  FAIL-i -> pre-check na starcie; skip mkfs tylko przy dokladnej sumie (ucity
+  obraz mialby dobry rozmiar). Bieg koncowy: builder od zera rc=0/73s, sha
+  53dd7dfb, suite 173/181.
