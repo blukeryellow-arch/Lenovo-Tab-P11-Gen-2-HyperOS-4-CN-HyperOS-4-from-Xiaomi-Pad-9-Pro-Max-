@@ -12,6 +12,7 @@ on:
       - 'tools/build_hybrid_super.sh'
       - 'tools/inject_logical_partition.py'
       - 'tools/inspect_hyperos_recovery.sh'
+      - 'tools/build_system_flash_package.sh'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -26,6 +27,7 @@ on:
       - 'tools/build_hybrid_super.sh'
       - 'tools/inject_logical_partition.py'
       - 'tools/inspect_hyperos_recovery.sh'
+      - 'tools/build_system_flash_package.sh'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -737,4 +739,83 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -f "${reports[@]}"
           git commit -m "Audit full HyperOS 4.0.11.0 recovery (run $GITHUB_RUN_ID)"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+  build-hyperos-system-flash-package:
+    # A system-only, dual-slot fastbootd package avoids depending on an
+    # exported Lenovo super.img. It keeps the device's installed Lenovo
+    # vendor/HAL partitions and makes the intended HyperOS runtime explicit.
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[build-system-package]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Prepare large runner and extraction prerequisites
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/hostedtoolcache/CodeQL \
+            /usr/share/swift /usr/local/graalvm /home/runner/.gradle/caches || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            unzip zip file curl erofs-utils e2fsprogs binutils golang-go liblzma-dev libzstd-dev
+          command -v fsck.erofs
+          df -h .
+
+      - name: Download verified exact yingtian OS4.0.11.0 recovery package
+        env:
+          RECOVERY_URL: https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+          RECOVERY_SHA256: 7b8c7f002abfeebae302961b73030984e5a065ec9f9e73976c0cc818349c8cce
+        run: |
+          set -Eeuo pipefail
+          mkdir -p input
+          archive=input/miui_YINGTIAN_OS4.0.11.0.XBMCNXM_recovery.zip
+          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 45 \
+            --user-agent 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36' \
+            --output "$archive" "$RECOVERY_URL"
+          echo "$RECOVERY_SHA256  $archive" | sha256sum -c -
+          unzip -Z1 "$archive" | grep -qx payload.bin
+
+      - name: Build pinned payload extractor and package the dual-slot system ROM
+        run: |
+          set -Eeuo pipefail
+          git clone --depth 1 --branch 1.3.0 https://github.com/ssut/payload-dumper-go.git work/payload-dumper-src
+          test "$(git -C work/payload-dumper-src rev-parse HEAD)" = \
+            a51234eaead276ff3d8b8c4c439c51c7f46a96a8
+          (cd work/payload-dumper-src && go build -trimpath -o ../payload-dumper-go .)
+          chmod +x tools/inspect_hyperos_recovery.sh tools/build_system_flash_package.sh
+          bash tools/build_system_flash_package.sh \
+            "reports/system-flash-package-${GITHUB_RUN_ID}.md" \
+            input/miui_YINGTIAN_OS4.0.11.0.XBMCNXM_recovery.zip \
+            work/payload-dumper-go work/system-package output
+
+      - name: Publish downloadable dual-slot system ROM
+        if: success()
+        uses: actions/upload-artifact@v5
+        with:
+          name: TB350FU-HyperOS4-CN-system-flash-${{ github.run_id }}
+          path: output/TB350FU_HyperOS4_CN_yingtian_4.0.11.0_XBMCNXM_system_flash.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Publish package report, including failures
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: system-flash-package-report-${{ github.run_id }}
+          path: reports/system-flash-package-${{ github.run_id }}.md
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Commit text-only package report
+        if: always()
+        run: |
+          set -euo pipefail
+          report="reports/system-flash-package-${GITHUB_RUN_ID}.md"
+          [ -f "$report" ] || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f "$report"
+          git commit -m "Build TB350FU HyperOS system flash package (run $GITHUB_RUN_ID)"
           git push origin "HEAD:$GITHUB_REF_NAME"
