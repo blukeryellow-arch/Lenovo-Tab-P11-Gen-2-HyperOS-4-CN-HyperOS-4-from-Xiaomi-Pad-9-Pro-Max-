@@ -139,3 +139,17 @@ przerobka vendora pod mt6789.
   (listing + Content-Disposition: attachment + Accept-Ranges; testy: 200/206/200,
   Content-Length 920039464). Zestaw w /home/user/sysvb3-staging (5 plikow, sumy OK).
   Link: https://8000-ikf2m55kta9j9kouiojzw.e2b.app/ (sesyjny, do konca maratonu).
+- KRYTYCZNE przed dostawa (26 IX ~12:05 UTC): sprawdz.sh odrzucil obraz sparse - ZLA
+  MAGIC. Zrodlo prawdy: AOSP libsparse/sparse_format.h (fetch_page na aosp-mirror,
+  bo raw.githubusercontent SSL-EOF i googlesource 503 z sandboxa) -> SPARSE_HEADER_
+  MAGIC 0xed26ff3a, czyli bajty 3a ff 26 ed. sparse_img.py mial 0x3AED41C8 (c8 41
+  ed 3a) - bledna stala; przetrwala, bo narzedzia byly cyrkularnie zgodne (img2simg
+  pisal i czytal to samo, "fix" fs_probe z notatek tez mial c8 41 ed 3a). Prawdziwy
+  fastboot BY ODRZUCIL obraz. Fix: MAGIC=0xED26FF3A; re-sparse z raw 4836dcd4 (round-
+  -trip OK, e2e rc=0), nowy sha sparse 8b71ea568dfb6043cfb3234372b3b672c30f9dfb2e81
+  d11ed1bbae89e98dc14f; SHA256SUMS/README/sprawdz.sh zaktualizowane. fs_probe.py:
+  stala 0xed26ff3b -> 3a ff 26 ed + layout <HHHHIIII> (file_hdr_sz/chunk_hdr_sz to
+  dwa u16, image_checksum na koncu) + fixture selftestu z niezaleznych stalych spec.
+  Reset #10 (~11:55 UTC): repo->5b03aea, recovery fetch+checkout cb16240 + pelna
+  odbudowa receptura 192 s (raw 4836dcd4 IDENTYCZNY). Lekcja: stala formatu musi
+  pochodzic ze spec, nie z wlasnego generatora.

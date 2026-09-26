@@ -17,7 +17,7 @@ import os
 import struct
 import sys
 
-SPARSE_MAGIC = b'\x3b\xff\x26\xed'
+SPARSE_MAGIC = b'\x3a\xff\x26\xed'  # 0xed26ff3a LE, libsparse/sparse_format.h
 EROFS_MAGIC = b'\xe2\xe1\xf5\xe0'
 
 
@@ -118,18 +118,19 @@ def probe_erofs(fh, size):
 
 
 def probe_sparse(fh, size):
-    """sparse_header: magic@0, major@4, minor@6, file_hdr_size@8, chunk_size@12,
-    blk_sz@16, blk_cnt@20, total_chunks@24."""
+    """sparse_header (libsparse/sparse_format.h): magic@0 (0xed26ff3a), major@4, minor@6,
+    file_hdr_sz@8 (28), chunk_hdr_sz@12 (12), blk_sz@16, total_blks@20, total_chunks@24,
+    image_checksum@28."""
     buf = _readat(fh, 0, 28)
     if buf[:4] != SPARSE_MAGIC:
         return None
-    vmaj, vmin, hdrsz, chunksz, blksz, nb, totchk = struct.unpack_from('<HH5I', buf, 4)
-    print(f"  Android SPARSE v{vmaj}.{vmin}: file_hdr_size={hdrsz} chunk={chunksz} B "
-          f"blk_sz={blksz} B blk_cnt={nb} total_chunks={totchk}")
-    print(f"    po konwersji (simg2img) raw = {human(nb * blksz)}; plik zajety = {human(size)}")
+    vmaj, vmin, fhsz, chsz, blksz, tblks, totchk, csum = struct.unpack_from('<HHHHIIII', buf, 4)
+    print(f"  Android SPARSE v{vmaj}.{vmin}: file_hdr_sz={fhsz} chunk_hdr_sz={chsz} "
+          f"blk_sz={blksz} B total_blks={tblks} total_chunks={totchk} csum={csum:#x}")
+    print(f"    po konwersji (simg2img) raw = {human(tblks * blksz)}; plik zajety = {human(size)}")
     print("    -> obraz w srodku to wlasciwy FS: najpierw simg2img, pozniej ten skrypt")
-    return {'kind': 'sparse', 'raw_bytes': nb * blksz, 'file_bytes': size,
-            'blk_sz': blksz, 'blk_cnt': nb}
+    return {'kind': 'sparse', 'raw_bytes': tblks * blksz, 'file_bytes': size,
+            'blk_sz': blksz, 'blk_cnt': tblks}
 
 
 def probe(path):
@@ -200,9 +201,14 @@ def selftest():
     if r.get('bb_size') != 4096 or r.get('block_size') != 4096:
         print("  BLAD erofs: bb_size/block_size")
         ok = False
-    # sparse
+    # sparse - fixture z NIEZALEZNYCH stalych spec AOSP (libsparse/sparse_format.h),
+    # celowo nie ze stalej SPARSE_MAGIC tego pliku (uczenie po incydencie 0x3AED41C8)
+    aosp_magic = b'\x3a\xff\x26\xed'
+    if SPARSE_MAGIC != aosp_magic:
+        print("  BLAD sparse: stala SPARSE_MAGIC != 0xed26ff3a z AOSP")
+        ok = False
     d = bytearray(28)
-    struct.pack_into('<4sHH5I', d, 0, SPARSE_MAGIC, 1, 0, 28, 4096, 4096, 100, 3)
+    struct.pack_into('<4sHHHHIIII', d, 0, aosp_magic, 1, 0, 28, 12, 4096, 100, 3, 0)
     img = bytes(d) + bytes(4096)
     r = probe_sparse(io.BytesIO(img), len(img))
     if r['raw_bytes'] != 100 * 4096 or r['blk_cnt'] != 100:

@@ -3,10 +3,10 @@
 # img2simg: raw -> sparse (zerowe bloki -> chunk FILL, reszta -> RAW).
 # simg2img: sparse -> raw (FILL rozplywa sie w zera, DONT-CARE to dziura=offs).
 # info:     struktura pliku sparse.
-# Format: sparse v1.0 (libsparse/sparse_format.h), magic 0x3AED41C8, LE.
+# Format: sparse v1.0 (libsparse/sparse_format.h), magic 0xED26FF3A (libsparse/sparse_format.h), LE.
 import struct, sys, hashlib
 
-MAGIC = 0x3AED41C8
+MAGIC = 0xED26FF3A
 CHUNK_RAW, CHUNK_FILL, CHUNK_DONT_CARE, CHUNK_CRC32 = 0xCAC1, 0xCAC2, 0xCAC3, 0xCAC4
 FILE_HDR_SZ, CHUNK_HDR_SZ, BLK = 28, 12, 4096
 
