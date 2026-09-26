@@ -75,7 +75,7 @@ jobs:
               --extra-domains:system_server
           echo "--- dopisany blok: ---"
           sed -n '/arena-permissive-patch/,$p' "$CIL"
-          test "$(grep -c '^;; arena-permissive-patch' "$CIL")" = "1"
+          test "$(grep -c '^;;; arena-permissive-patch' "$CIL")" = "1"
           grep -q '(typepermissive system_server)' "$CIL"
           grep -q '(typepermissive audioserver)' "$CIL"
           grep -q '(typepermissive fuelgauged)' "$CIL"
@@ -96,8 +96,10 @@ jobs:
       - name: NAPRAWA 1 (wariant) - system_ext donora ze spoola (coherent)
         run: |
           set -euo pipefail
+          # UWAGA: --out MUSI miec nazwe wpisu z manifestu (assemble dopasowuje po nazwie;
+          # przy niezgodnej nazwie sklada PIERWSZY wpis manifestu - zlapanane lokalnie 26 IX)
           tools/assemble_raw_parts.py --parts /tmp/spool/transfer \
-              --out /tmp/system_ext_hyperos4_p11g2.img --expect-sha256 "$SE_SHA" --md5 "$SE_MD5"
+              --out /tmp/drive-13e-okLFNX3m7feTp8AlYoGME2rKFFitr.img --expect-sha256 "$SE_SHA" --md5 "$SE_MD5"
           rm -rf /tmp/spool
 
       - name: Zestawy - minimal v2 + coherent v2 (sparse + sumy + sprawdz.sh)
@@ -147,7 +149,7 @@ jobs:
           # coherent: system v2 + product + system_ext donora + vbmeta
           cp /tmp/kit/{system,vbmeta}_hyperos4_p11g2.img /tmp/kit-coh/
           cp dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img /tmp/kit-coh/
-          cp /tmp/system_ext_hyperos4_p11g2.img /tmp/kit-coh/
+          cp /tmp/drive-13e-okLFNX3m7feTp8AlYoGME2rKFFitr.img /tmp/kit-coh/system_ext_hyperos4_p11g2.img
           cd /tmp/kit-coh && sha256sum *.img > SHA256SUMS.txt
           cp /tmp/kit/README.md /tmp/kit-coh/ && cp /tmp/kit/sprawdz.sh /tmp/kit-coh/
 
@@ -177,7 +179,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           mkdir -p reports
           { echo "### v2 links (run ${{ github.run_id }})"; echo "RAW_V2=$RAW_V2"; echo "SPARSE_V2=$SPARSE_V2"; echo
-            cat /tmp/links-v2.md /tmp/links-coh.md 2>/dev/null; } > "reports/v2-links-${{ github.run_id }}.md"
+            cat /tmp/links-v2.md 2>/dev/null || echo "(links-v2.md brak - patrz logi)"
+            cat /tmp/links-coh.md 2>/dev/null || echo "(links-coh.md brak - patrz logi)"; } > "reports/v2-links-${{ github.run_id }}.md"
           git add -f reports
           git diff --cached --quiet || {
             git commit -q -m "v2-links: run ${{ github.run_id }}"
