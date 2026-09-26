@@ -175,3 +175,8 @@ przerobka vendora pod mt6789.
   GITHUB_TOKEN runnera tez nie zmienia widocznosci). Do zrobienia wylacznie przez
   wlasciciela: Settings -> Danger Zone -> Change visibility, albo logowanie w
   przegladarce (wtedy prywatny release dziala).
+- Linki publiczne bez logowania (run 36249359117, raport reports/public-links-*.md):
+  gofile https://gofile.io/d/GeNjsGW1 (status ok, 752 232 412 B, md5 b0bf9273ce6ae5b698702829941e420c)
+  oraz litterbox https://litter.catbox.moe/rvflcy.zip (bezposredni, 72 h). Pixeldrain
+  odrzucil upload anonimowy (authentication_required). GIT: commit bota dospuscil sie
+  z opoznieniem po moim fetchu (ls-remote rozstrzyga).
