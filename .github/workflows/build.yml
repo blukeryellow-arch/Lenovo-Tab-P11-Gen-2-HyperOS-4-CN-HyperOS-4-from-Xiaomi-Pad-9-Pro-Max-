@@ -300,9 +300,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
             erofs-utils android-sdk-libsparse-utils e2fsprogs file unzip binutils
+          sudo apt-get install -y -qq --no-install-recommends baksmali || \
+            sudo apt-get install -y -qq --no-install-recommends libsmali-java
           command -v simg2img
           command -v fsck.erofs
           command -v debugfs
+          command -v baksmali || test -f /usr/share/java/baksmali.jar
           df -h .
 
       - name: Download user-supplied TB350FU super image

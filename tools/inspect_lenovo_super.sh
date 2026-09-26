@@ -159,6 +159,7 @@ done
 
 artifact_dir="$work/selected-framework"
 mkdir -p "$artifact_dir"
+services_jar=''
 {
   echo
   echo '## System-server and Lenovo battery-hook inventory'
@@ -177,6 +178,9 @@ mkdir -p "$artifact_dir"
       dest="$artifact_dir/$part/$relative"
       mkdir -p "$(dirname "$dest")"
       cp --reflink=auto "$jar" "$dest"
+      if [[ $part == system_a || $part == system ]] && [[ $relative == system/framework/services.jar ]]; then
+        services_jar=$jar
+      fi
       echo "sha256 $(sha256sum "$jar" | cut -d' ' -f1)  $part/$relative"
       matches=$(unzip -p "$jar" 'classes*.dex' 2>/dev/null | strings | \
         grep -E 'IBatteryServiceManager|mBatteryServiceManager|com[./]lenovo[./]lgsi|updateHealthInfo|vendor\.lenovo\.hardware\.battery' || true)
@@ -204,5 +208,69 @@ mkdir -p "$artifact_dir"
   done
   echo '```'
 } >> "$report"
+
+# Render the actual failing code path to text on the disposable runner. This
+# provides a reviewable, precise patch target without putting the stock Lenovo
+# framework archive into Git or treating it as a HyperOS donor.
+if [[ -n $services_jar ]]; then
+  dex_dir="$work/services-dex"
+  smali_dir="$work/services-smali"
+  mkdir -p "$dex_dir" "$smali_dir"
+  mapfile -t dex_entries < <(unzip -Z1 "$services_jar" | grep -E '^classes[0-9]*\.dex$' || true)
+  [[ ${#dex_entries[@]} -gt 0 ]] || { echo "No DEX entries in $services_jar" >&2; exit 1; }
+  for entry in "${dex_entries[@]}"; do
+    dex="$dex_dir/${entry//\//_}"
+    unzip -p "$services_jar" "$entry" >"$dex"
+    if command -v baksmali >/dev/null; then
+      baksmali d "$dex" -o "$smali_dir" >"$work/baksmali-${entry}.log" 2>&1
+    elif [[ -f /usr/share/java/baksmali.jar ]]; then
+      java -jar /usr/share/java/baksmali.jar d "$dex" -o "$smali_dir" >"$work/baksmali-${entry}.log" 2>&1
+    else
+      echo 'baksmali is required to inspect the exact battery callback' >&2
+      exit 1
+    fi
+  done
+
+  battery_smali=$(find "$smali_dir" -path '*/com/android/server/BatteryService.smali' -type f -print -quit)
+  manager_smali=$(find "$smali_dir" -path '*/com/lenovo/lgsi/server/battery/IBatteryServiceManager.smali' -type f -print -quit)
+  [[ -n $battery_smali ]] || { echo 'BatteryService.smali not found after disassembly' >&2; exit 1; }
+  awk '
+    /^\.method .*processValuesLocked/ { show=1 }
+    show { print }
+    show && /^\.end method/ { show=0 }
+  ' "$battery_smali" >"$work/processValuesLocked.smali"
+  {
+    echo
+    echo '## Decompiled exact Lenovo BatteryService evidence'
+    echo
+    echo '- source archive: `system/framework/services.jar` from the supplied TB350FU build'
+    echo '- this identifies the null-safe callback patch target; it does not authorize replacing Xiaomi HyperOS services.jar with Lenovo services.jar'
+    echo
+    echo '### BatteryService fields and callback references'
+    echo '```smali'
+    grep -n -C 5 'mBatteryServiceManager' "$battery_smali" | head -500 || true
+    echo '```'
+    echo
+    echo '### `processValuesLocked`'
+    echo '```smali'
+    sed -n '1,1800p' "$work/processValuesLocked.smali"
+    echo '```'
+    echo
+    echo '### Lenovo IBatteryServiceManager declaration'
+    echo '```smali'
+    if [[ -n $manager_smali ]]; then
+      sed -n '1,700p' "$manager_smali"
+    else
+      echo 'IBatteryServiceManager.smali was not found after disassembly.'
+    fi
+    echo '```'
+    echo
+    echo '### Vendor SELinux battery-related rules'
+    echo '```'
+    grep -R -a -E 'hal_battery|lenovo\.hardware\.battery|vendor\.lenovo\.hardware\.battery' \
+      "$work"/vendor*.root/etc/selinux 2>/dev/null | head -500 || true
+    echo '```'
+  } >> "$report"
+fi
 
 echo "Lenovo super audit complete: $report"
