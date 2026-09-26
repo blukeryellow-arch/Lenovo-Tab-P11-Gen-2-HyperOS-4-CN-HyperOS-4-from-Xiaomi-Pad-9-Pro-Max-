@@ -95,6 +95,10 @@ jobs:
           echo "$VBMETA_SHA  /tmp/kit/vbmeta_hyperos4_p11g2.img" | sha256sum -c -
           cp dist/sparse-kit/README.md dist/sparse-kit/sprawdz.sh dist/sparse-kit/SHA256SUMS.txt /tmp/kit/
           cd /tmp/kit && bash sprawdz.sh
+          # JEDEN plik do pobrania: zip, po rozpakowaniu w Downloads powstaje folder
+          # HyperOS4_P11Gen2/ ze wszystkimi 5 plikami (zawartosc zweryfikowana wyzej)
+          rm -f /tmp/HyperOS4_P11Gen2.zip
+          zip -q -r /tmp/HyperOS4_P11Gen2.zip . && ls -l /tmp/HyperOS4_P11Gen2.zip
 
       - name: Release (tag hyperos4-p11g2, 5 plikow)
         env:
@@ -116,7 +120,7 @@ jobs:
             >>/tmp/rel.log 2>&1
           echo "create: OK" >>/tmp/rel.log
           cd /tmp/kit
-          for f in README.md SHA256SUMS.txt sprawdz.sh vbmeta_hyperos4_p11g2.img system_hyperos4_p11g2.img; do
+          for f in /tmp/HyperOS4_P11Gen2.zip README.md SHA256SUMS.txt sprawdz.sh vbmeta_hyperos4_p11g2.img system_hyperos4_p11g2.img; do
             ok=0
             for i in 1 2 3 4 5; do
               if gh release upload hyperos4-p11g2 "$f" --clobber >>/tmp/rel.log 2>&1; then ok=1; break; fi
