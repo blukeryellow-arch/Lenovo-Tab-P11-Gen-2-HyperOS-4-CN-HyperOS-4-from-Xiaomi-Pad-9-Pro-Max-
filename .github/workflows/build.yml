@@ -513,18 +513,50 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x tools/drive_form_post.py
-          mkdir -p input
+          mkdir -p input reports
+          report="reports/hybrid-super-${GITHUB_RUN_ID}.md"
+          transfer_failure() {
+            rc=$?
+            trap - ERR
+            {
+              echo '# TB350FU HyperOS 4 CN hybrid-super build'
+              echo
+              echo '## Input-transfer failure diagnostic'
+              echo
+              echo "- failed command: \`$BASH_COMMAND\`"
+              echo "- exit code: \`$rc\`"
+              echo '```'
+              find input -maxdepth 1 -type f -printf '%p %s B\n' 2>/dev/null | sort || true
+              echo '```'
+              for log in input/*.download.log input/*.curl.log; do
+                [ -s "$log" ] || continue
+                echo
+                echo "### $(basename "$log")"
+                echo '```'
+                tail -80 "$log" || true
+                echo '```'
+              done
+            } >> "$report"
+            exit "$rc"
+          }
+          trap transfer_failure ERR
           download_drive() {
             local id=$1 expected_size=$2 output=$3
-            local cookie warning url
+            local cookie warning url size
             cookie=$(mktemp); warning=$(mktemp)
             for url in \
               "https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t&authuser=0" \
               "https://drive.google.com/uc?export=download&confirm=t&id=$id"; do
               rm -f "$output"
               curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 \
-                --cookie "$cookie" --cookie-jar "$cookie" -o "$output" "$url" || continue
-              if [ "$(stat -c%s "$output")" = "$expected_size" ]; then break; fi
+                --cookie "$cookie" --cookie-jar "$cookie" -o "$output" "$url" 2>>"${output}.curl.log" || continue
+              size=$(stat -c%s "$output" 2>/dev/null || printf 0)
+              if [ "$size" = "$expected_size" ]; then break; fi
+              {
+                echo "unexpected response from $url: $size B (expected $expected_size B)"
+                head -c 2048 "$output" 2>/dev/null | tr '\000' '?' || true
+                echo
+              } >>"${output}.download.log"
               mv "$output" "$warning"
             done
             if [ ! -f "$output" ] && [ -s "$warning" ]; then
