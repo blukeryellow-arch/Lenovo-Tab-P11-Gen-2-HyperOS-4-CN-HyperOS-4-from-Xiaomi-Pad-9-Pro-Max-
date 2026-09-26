@@ -248,7 +248,7 @@ if [[ -n $services_jar ]]; then
     echo
     echo '### BatteryService fields and callback references'
     echo '```smali'
-    grep -n -C 5 'mBatteryServiceManager' "$battery_smali" | head -500 || true
+    grep -n -C 5 -E 'iBatteryService|mBatteryServiceManager' "$battery_smali" | head -800 || true
     echo '```'
     echo
     echo '### `processValuesLocked`'
@@ -267,8 +267,11 @@ if [[ -n $services_jar ]]; then
     echo
     echo '### Vendor SELinux battery-related rules'
     echo '```'
-    grep -R -a -E 'hal_battery|lenovo\.hardware\.battery|vendor\.lenovo\.hardware\.battery' \
-      "$work"/vendor*.root/etc/selinux 2>/dev/null | head -500 || true
+    # Restrict the text scan to CIL/context inputs. Grepping the binary
+    # precompiled policy would inject NUL bytes into the Markdown report.
+    find "$work"/vendor*.root/etc/selinux -type f \( -name '*.cil' -o -name '*contexts' \) -print0 2>/dev/null | \
+      xargs -0 -r grep -a -E 'hal_battery|lenovo\.hardware\.battery|vendor\.lenovo\.hardware\.battery' | \
+      head -500 || true
     echo '```'
   } >> "$report"
 fi

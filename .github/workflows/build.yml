@@ -8,6 +8,7 @@ on:
       - 'tools/extract_sparse_super_partitions.py'
       - 'tools/inspect_lenovo_runtime.sh'
       - 'tools/inspect_lenovo_super.sh'
+      - 'tools/inspect_hyperos_target.sh'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -18,6 +19,7 @@ on:
       - 'tools/extract_sparse_super_partitions.py'
       - 'tools/inspect_lenovo_runtime.sh'
       - 'tools/inspect_lenovo_super.sh'
+      - 'tools/inspect_hyperos_target.sh'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -380,4 +382,96 @@ jobs:
           # This job is the sole writer for the report of its own run. Avoid a
           # pull/rebase after a diagnostic failure: it obscures the forensic
           # report that must be retained for the next repair step.
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+  inspect-hyperos-target:
+    # Audit the original port image only when explicitly requested. This
+    # compares classpaths; it does not replace the Xiaomi HyperOS base.
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[target-runtime]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install filesystem and DEX inspection tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            erofs-utils android-sdk-libsparse-utils e2fsprogs file unzip binutils
+          sudo apt-get install -y -qq --no-install-recommends baksmali || \
+            sudo apt-get install -y -qq --no-install-recommends libsmali-java
+          command -v simg2img
+          command -v fsck.erofs
+          command -v debugfs
+          command -v baksmali || test -f /usr/share/java/baksmali.jar
+
+      - name: Download exact original HyperOS system input
+        env:
+          DRIVE_ID: 1341C_UdIvdqgT4CdZ1V4VpbCHQcK5z-O
+          EXPECTED_SIZE: '920039464'
+          EXPECTED_SHA256: 8b71ea568dfb6043cfb3234372b3b672c30f9dfb2e81d11ed1bbae89e98dc14f
+        run: |
+          set -euo pipefail
+          chmod +x tools/drive_form_post.py
+          mkdir -p input
+          out=input/system_hyperos4_p11g2.img
+          cookie=$(mktemp)
+          warning=$(mktemp)
+          trap 'rm -f "$cookie" "$warning"' EXIT
+          for url in \
+            "https://drive.usercontent.google.com/download?id=$DRIVE_ID&export=download&confirm=t&authuser=0" \
+            "https://drive.google.com/uc?export=download&confirm=t&id=$DRIVE_ID"; do
+            rm -f "$out"
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 \
+              --cookie "$cookie" --cookie-jar "$cookie" -o "$out" "$url" || continue
+            if [ "$(stat -c%s "$out")" = "$EXPECTED_SIZE" ]; then break; fi
+            mv "$out" "$warning"
+          done
+          if [ ! -f "$out" ] && [ -s "$warning" ]; then
+            python3 tools/drive_form_post.py --html "$warning" --jar "$cookie" \
+              --out "$out" --id "$DRIVE_ID" --log input/download.log
+          fi
+          test "$(stat -c%s "$out")" = "$EXPECTED_SIZE"
+          echo "$EXPECTED_SHA256  $out" | sha256sum -c -
+
+      - name: Compare target BatteryService with exact Lenovo runtime
+        run: |
+          set -euo pipefail
+          chmod +x tools/inspect_hyperos_target.sh
+          bash tools/inspect_hyperos_target.sh \
+            "reports/hyperos-target-${GITHUB_RUN_ID}.md" \
+            input/system_hyperos4_p11g2.img target-audit
+
+      - name: Publish target audit, including failures
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: hyperos-target-audit-${{ github.run_id }}
+          path: reports/hyperos-target-${{ github.run_id }}.md
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Publish original target framework for bytecode review
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: hyperos-target-framework-${{ github.run_id }}
+          path: target-audit/target-framework
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Commit compact target audit to this working branch
+        if: always()
+        run: |
+          set -euo pipefail
+          report="reports/hyperos-target-${GITHUB_RUN_ID}.md"
+          if [ ! -f "$report" ]; then
+            echo 'No target audit report was produced.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f "$report"
+          git commit -m "Audit original HyperOS target image (run $GITHUB_RUN_ID)"
           git push origin "HEAD:$GITHUB_REF_NAME"
