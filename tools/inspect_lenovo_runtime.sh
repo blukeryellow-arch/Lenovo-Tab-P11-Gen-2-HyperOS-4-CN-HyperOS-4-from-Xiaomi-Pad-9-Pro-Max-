@@ -70,6 +70,18 @@ if ! unzip -tqq "$archive"; then
     grep -Eio 'https?[^"<>[:space:]]+' "$work/filewale-page.html" 2>/dev/null | \
       grep -Ei 'download|api|zip|cloud|s3|r2' | sort -u | head -100 || true
     echo '```'
+    echo
+    echo '### Filewale client route hints'
+    echo '```'
+    mkdir -p "$work/filewale-js"
+    grep -Eo '(/_next/static/[^"?[:space:]]+\.js)' "$work/filewale-page.html" | sort -u | while IFS= read -r path; do
+      name=$(basename "$path")
+      curl --fail --location --silent --show-error --connect-timeout 30 \
+        "https://filewale.com$path" -o "$work/filewale-js/$name" 2>>"$work/filewale-js.stderr" || continue
+    done
+    grep -Eio '.{0,100}(download|presign|fileurl|api/).{0,180}' "$work"/filewale-js/*.js 2>/dev/null | \
+      sort -u | head -120 || true
+    echo '```'
   } >> "$report"
   false
 fi
