@@ -1252,6 +1252,42 @@ else
     bad "tylko $p2 scenariuszy ladunku - petla padla w polowie"; fi
 fi
 
+# ------------------------------------------- AB: NEED_S device-probe (26 IX)
+# Anty-regresja buga z przegladu adwersarza: awk '$1 ~ /^system_/' bral PIERWSZY
+# wiersz manifestu pasujacy do prefiksu - a '^system_' lapie tez 'system_ext'.
+# W manifeście coherent system_ext jest PIERWSZY, wiec probe porownywal slot
+# system_a z 602 MB (rozmiar system_ext) zamiast 920 MB (system): fałszywe GO
+# na slotach 633-919 MB. Test: manifest z system_ext na poczatku + slot 0x2A000000
+# (704 643 072 B - miesci system_ext, NIE miesci system) musi dac NO-GO.
+if [ -x "$PP/fb/fastboot" ] && [ -f "$PROBE" ]; then
+echo "== AB    NEED_S: manifest z system_ext pierwszym nie zmyla bramki rozmiaru"
+ABREL=$WORK/abrel; mkdir -p $ABREL
+printf 'system_ext_hyperos4_p11g2.img\t602189824\tx\tsystem_ext\nsystem_hyperos4_p11g2.img\t920039424\tx\tsystem_a\nproduct_hyperos4_p11g2.img\t75198464\tx\tproduct_a\n' > $ABREL/release-manifest.tsv
+rc=0
+env FASTBOOT=$PP/fb/fastboot ADB=$PP/adb/adb FB_SIZE_SYSTEM_A=0x2A000000 \
+  bash "$PROBE" --release $ABREL --assume-booted > $PP/log 2>&1 || rc=$?
+if [ "$rc" = "2" ] && grep -q "system_a.*920039424\|920039424.*system_a\|slot.*920039424" $PP/log && ! grep -q "WERDYKT: GO" $PP/log; then
+  ok "AB: slot 672 MiB + system_ext pierwszy w manifesecie -> NO-GO (porownano z 920 039 424)"
+elif [ "$rc" = "0" ]; then
+  bad "AB: REGRESJA - probe dal GO na slocie 672 MiB przy obrazie 920 MB (bug prefiksu ^system_ wrocil)"
+else
+  bad "AB: rc=$rc, ale brak linii o 920039424 w wypisie: $(grep -E '^ +\[(NE|UW)' $PP/log | head -2 | tr '\n' ' ')"
+fi
+rc=0
+env FASTBOOT=$PP/fb/fastboot ADB=$PP/adb/adb FB_SIZE_SYSTEM_A=0x3E000000 \
+  bash "$PROBE" --release $ABREL --assume-booted > $PP/log 2>&1 || rc=$?
+if [ "$rc" = "0" ]; then
+  ok "AB: slot ~992 MiB -> GO (bramka nie robi sie nadgorliwa)"
+else
+  bad "AB: duzy slot dal rc=$rc zamiast 0: $(grep -E '^ +\[(NE|UW)' $PP/log | head -2 | tr '\n' ' ')"
+fi
+if grep -qF '$1 == "system_hyperos4_p11g2.img"' "$HERE/device_probe.sh"; then
+  ok "AB: NEED_S pyta o jawna nazwe pliku (statycznie)"
+else
+  bad "AB: device_probe wrocil do prefiksu ^system_ - sprawdz NEED_S"
+fi
+fi
+
 # --------------------------------------------------- Q: kontrakt rozmirow w README
 echo "== Q      rozmiary w dokumentach wydania musza zgadzac sie z plikami (kontrakt)"
 # Sekcja N pilnuje, ze dokumenty cytują ISTNIEJACE sumy. To za malo: 23 IX 2026 automat

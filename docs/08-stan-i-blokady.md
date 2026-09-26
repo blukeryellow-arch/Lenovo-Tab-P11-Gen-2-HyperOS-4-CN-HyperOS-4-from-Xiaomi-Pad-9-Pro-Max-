@@ -73,20 +73,20 @@ Po re-clone sandboxa (`/tmp` pusty, `~/romtools` skasowane) łańcuch narzędzi 
 ```
 tools/build_comp_libs.sh /tmp/comp-build      # 11 s, od zera, bez cache: libz.a 150 244 B + liblz4.a 277 634 B
 tools/build_erofs_local.sh /tmp/erofs-c       # ~30 s: mkfs 588 376 B, fsck 580 496 B, dump 571 776 B
-tools/test_release.sh --erofs-dir /tmp/erofs-c        # 170 PASS / 0 FAIL (sekcje F2/F3/V/W/X/Y/Z/ZC/AA)
+tools/test_release.sh --erofs-dir /tmp/erofs-c        # 173 PASS / 0 FAIL (sekcje F2/F3/V/W/X/Y/Z/ZC/AA/AB)
 ```
 
 To przebieg **niezależny od wszystkiego, co miałem wczoraj**: identyczne liczniki, jakich wymaga
 sekcja Q (16 pozycji kontraktu, `absent-skip 3`, wiersze `docs/07` 2/2) — czyli dokładnie ten kształt,
 który widzi runner, bo oba katalogi wydania mają na czystym checkoutcie tyle samo plików co u mnie.
-Z tą różnicą, że ciemna strona jest moja: **`--real` (178 PASS) wymaga drzew donora w `/tmp`
+Z tą różnicą, że ciemna strona jest moja: **`--real` (181 PASS) wymaga drzew donora w `/tmp`
 i `~/romtools/avb`, a te nie są w gicie i nie odtwarzają się same** — `system.img` (920 MB) i
 `product.img` wariantu `-full` (150 MB) przekraczają limit GitHuba. Dlatego po reboocie mam prawo
 napisać „88/0", a nie „96/0". **Aktualizacja 24 IX ~14:00 UTC: to prawo przestało być potrzebne.**
 Drugie mrugnięcie snapshotu zabrało właśnie te trzy nieśledzone obrazy, a odbudowa z
 `transfer-spool` odtworzyła je **bajt w bajt** w kwadrans (receptura: sekcja na końcu pliku).
 `--real` jest odtwarzalny w pełni: pełne PASS potwierdzone po odbudowie (96/0 w chwili odbudowy;
-161/0 po dodaniu sekcji F3, V, W, X, Y i Z jeszcze tego samego dnia (noc 24/25 IX); 26 IX sekcja ZC (wariant CLEAN) podnosi do **166/174**, tego samego dnia sekcja AA (df-guard) do **170/178** — liczby historyczne niżej
+161/0 po dodaniu sekcji F3, V, W, X, Y i Z jeszcze tego samego dnia (noc 24/25 IX); 26 IX sekcja ZC (wariant CLEAN) podnosi do **166/174**, tego samego dnia AA (df-guard) do **170/178** i AB (anty-regresja NEED_S) do **173/181** — liczby historyczne niżej
 dotyczą suity sprzed F3/V/W/X/Y). `sha256sum -c`
 na czystym checkoutcie wychodzi
 7/8 (lekki) i 6/8 (`-full`), a każde `FAILED open or read` to właśnie ten brakujący duży obraz —
@@ -99,7 +99,7 @@ przechodzą `bash -n` i mają rozmiary zgodne z kontraktami README.
 ```
 tools/build_comp_libs.sh /tmp/comp-build            # zlib + lz4 (wymaga sieci na tarball)
 tools/build_erofs_local.sh /tmp/erofs-c             # mkfs/fsck/dump, selfcheck na 3 binarkach
-tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 178 PASS / 0 FAIL z drzewami sesji (bez --real: 170)
+tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 181 PASS / 0 FAIL z drzewami sesji (bez --real: 173)
 ```
 
 Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (patrz `.gitignore`):
@@ -282,7 +282,7 @@ pliku wykonany bez zmian: 189 s, rc=0, (4) trzy nowe sekcje suity w schemacie F2
 | X | `dist/modules` + `dist/rom-kit` — pozostałe ładunki w gicie, których suita nie dotykała: modul Magisk (trzy kopie sumy, struktura, CRC), rom-kit (`bash -n`, sumy gita 1:1), świadoma różnica vbmeta donor `3506d20e…` vs wydanie testkey `9cf2e7e4…`, oraz **wykonanie `rom-kit/flash.sh`**: bez `system.img` (stan z czystego gita) → czysta odmowa; z oboma → 4 flashy + 2 kopie `fetch`, bez `erase userdata`; z bootloadera → `reboot fastboot` + kontynuacja | 9 |
 | Y | `assemble_raw_parts.py` na syntetycznych cząstkach — narzędzie, od którego wisi receptura odzysku, do tej pory tylko w replayach sesyjnych: rc 0/1/2/3 + adopcja sierot (bieg 35892866524) | 6 |
 
-Liczniki suity: **88/96 → 129/137** (popołudnie, F3/V/W/X/Xb/Y) → **153/161** (noc, sekcja Z) → **166/174** (26 IX, sekcja ZC wariantu CLEAN) → **170/178** (26 IX po południu, sekcja AA: df-guard).
+Liczniki suity: **88/96 → 129/137** (popołudnie, F3/V/W/X/Xb/Y) → **153/161** (noc, sekcja Z) → **166/174** (26 IX, sekcja ZC wariantu CLEAN) → **170/178** (26 IX po południu, sekcja AA: df-guard) → **173/181** (26 IX wieczorem, sekcja AB: anty-regresja NEED_S).
 CI zielone dla `4e3452e` (F2), `9437ffa` (F3), `33ecec0` (V)
 i `d4cebe2` (W), `d55ef27` (X), `f67b560` (Xb) — oba workflow; Y (`fb51263`..`fa24354`) dojechała
 na remote o 18:09, gdy token GH odżył po ~80 min przerwy (commity czekały lokalnie — drzewo
@@ -468,3 +468,9 @@ scenariusz nie przewidział):
    pozytywny (4× OK, "SUMY ZGODNE", rc=0), negatywny (przekłamany 1 bajt w części
    007 → ZLE + rc=1), idempotentny ("pomijam" ×3), obrazy byte-w-byte z wydaniem.
    Wieloplatformowość: sha256sum (Linux) z fallbackiem shasum -a 256 (macOS).
+5. **Sekcja AB (anty-regresja NEED_S)**: trzy kontrolę — (1) manifest z system_ext
+   PIERWSZYM + slot 672 MiB → NO-GO z porównaniem do 920 039 424 (stary kod dałby
+   fałszywe GO); (2) slot ~992 MiB → GO (bramka nie nadgorliwa); (3) statycznie:
+   NEED_S pyta o jawną nazwę pliku. **Negatyw testu**: podsunięcie starego wzorca
+   `^system_` (sed) → 2× FAIL (REGRESJA + kontrola statyczna) — test jest ostry
+   w obie strony. Liczniki: **173/181**.

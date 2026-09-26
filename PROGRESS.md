@@ -102,3 +102,9 @@ przerobka vendora pod mt6789.
 - docs/10-rejestr-dowodow.md: kompendium 19 twardych dowodow (tozsamosc bajtow,
   suite+negatywy, prowieniencja, proces/transfer) + sekcja "czego swiadomie NIE
   udowadniamy"; README main: pelny wykaz docs/01-10.
+- Sekcja AB suity (anty-regresja NEED_S, 3 kontrole): manifest z system_ext pierwszym
+  + slot 672 MiB -> NO-GO z 920 039 424; slot 992 MiB -> GO; statycznie jawna nazwa.
+  Negatyw testu: sed stary wzorzec ^system_ -> 2x FAIL. Suite: 173/181.
+- Przeglad adwersarza dalszych skryptow: postflash_triage (test na syntetycznym
+  logu: SF zlapany, werdykt, rc=1), verify_image (jawne argumenty, brak prefiksow),
+  flash-all lekki vs clean (nezalezne struktury, bramki pokryte E-H+ZC).
