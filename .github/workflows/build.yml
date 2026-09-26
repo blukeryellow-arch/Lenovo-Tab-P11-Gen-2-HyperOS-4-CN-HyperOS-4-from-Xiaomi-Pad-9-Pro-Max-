@@ -5,6 +5,7 @@ on:
     paths:
       - 'drive-probe.request'
       - 'tools/drive_form_post.py'
+      - 'tools/extract_sparse_super_partitions.py'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -12,6 +13,7 @@ on:
     paths:
       - 'drive-probe.request'
       - 'tools/drive_form_post.py'
+      - 'tools/extract_sparse_super_partitions.py'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -172,15 +174,27 @@ jobs:
               echo '- tool: `unix3dgforce/lpunpack` at commit `c59b8f3b069c5a8aa438a049fa4a091177172434`'
               echo '- license: `LGPL-3.0`; downloaded only to the disposable runner for this read-only audit'
             } >> "$report"
+            # Read the sparse super image virtually: materializing its full raw
+            # form exhausts hosted-runner disk before system can be inspected.
+            python3 tools/extract_sparse_super_partitions.py \
+              --lpunpack donor/lpunpack.py --list "$super" \
+              >donor/logical-partitions.txt 2>donor/lpunpack-list.stderr
+            mapfile -t logical_parts < <(grep -Ex 'system(_a)?|system_ext(_a)?' donor/logical-partitions.txt)
+            test "${#logical_parts[@]}" -gt 0
+            part_args=()
+            for logical_part in "${logical_parts[@]}"; do
+              part_args+=(--partition "$logical_part")
+            done
             mkdir -p extract/logical
-            python3 donor/lpunpack.py --partition system,system_ext,system_a,system_ext_a \
+            python3 tools/extract_sparse_super_partitions.py \
+              --lpunpack donor/lpunpack.py "${part_args[@]}" \
               "$super" extract/logical >donor/lpunpack.log 2>&1
           fi
 
           for part in system system_ext; do
             image=$(find extract -type f \( -name "$part.img" -o -name "${part}_a.img" \) | head -1 || true)
             [ -n "$image" ] || continue
-            raw="extract/$part.raw.img"
+            raw="$image"
             kind=$(python3 - "$image" <<'PY'
           import struct, sys
           with open(sys.argv[1], 'rb') as f:
@@ -188,9 +202,8 @@ jobs:
           PY
             )
             if [ "$kind" = sparse ]; then
+              raw="extract/$part.raw.img"
               simg2img "$image" "$raw"
-            else
-              cp "$image" "$raw"
             fi
             root="extract/$part.root"
             mkdir -p "$root"
