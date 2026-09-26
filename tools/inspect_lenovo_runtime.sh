@@ -6,6 +6,7 @@
 set -Eeuo pipefail
 
 readonly LENOVO_RUNTIME_URL='https://support.halabtech.com/index.php?a=downloads&b=file&c=download&id=1043822'
+readonly LENOVO_RUNTIME_PAGE='https://filewale.com/files/lenovo-tab-p11-gen-2-tb350fu_user_s231044_2601050946_mp_row_filewalecomzip/45346'
 readonly LPUNPACK_URL='https://raw.githubusercontent.com/unix3dgforce/lpunpack/c59b8f3b069c5a8aa438a049fa4a091177172434/lpunpack.py'
 
 report=${1:?Usage: $0 REPORT_PATH}
@@ -52,6 +53,26 @@ trap fail_report ERR
 curl --fail --location --retry 3 --connect-timeout 45 --output "$archive" \
   "$LENOVO_RUNTIME_URL" 2>"$work/download.stderr"
 test -s "$archive"
+if ! unzip -tqq "$archive"; then
+  # HalabTech currently redirects anonymous requests to its login form. Retain
+  # a compact, non-sensitive record of the alternative public page's download
+  # route instead of mistaking HTML for a firmware ZIP.
+  mv "$archive" "$work/halab-response.html"
+  curl --fail --location --retry 3 --connect-timeout 45 --output "$work/filewale-page.html" \
+    "$LENOVO_RUNTIME_PAGE" 2>"$work/filewale.stderr" || true
+  {
+    echo
+    echo '## Download-route diagnostic'
+    echo
+    echo '- HalabTech returned an HTML/login response instead of a ZIP to an anonymous request.'
+    echo "- alternative public page: \`$LENOVO_RUNTIME_PAGE\`"
+    echo '```'
+    grep -Eio 'https?[^"<>[:space:]]+' "$work/filewale-page.html" 2>/dev/null | \
+      grep -Ei 'download|api|zip|cloud|s3|r2' | sort -u | head -100 || true
+    echo '```'
+  } >> "$report"
+  false
+fi
 unzip -Z1 "$archive" > "$work/archive-files.txt"
 {
   echo "- archive bytes: \`$(stat -c%s "$archive")\`"
