@@ -100,7 +100,7 @@ jobs:
               --out /tmp/system_ext_hyperos4_p11g2.img --expect-sha256 "$SE_SHA" --md5 "$SE_MD5"
           rm -rf /tmp/spool
 
-      - name: Zestawy: minimal v2 + coherent v2 (sparse + sumy + sprawdz.sh)
+      - name: Zestawy - minimal v2 + coherent v2 (sparse + sumy + sprawdz.sh)
         run: |
           set -euo pipefail
           rm -rf /tmp/kit /tmp/kit-coh && mkdir /tmp/kit /tmp/kit-coh
