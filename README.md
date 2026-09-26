@@ -82,6 +82,12 @@ docs/01-ustalenia-srodowiska.md       limity sandboxa, korekta o bootloaderze
 docs/02-sciezka-A-nakladka.md         procedura krok po kroku i rollback
 docs/03-analiza-vbmeta.md             pelna analiza vbmeta targetu + granica wykonania
 docs/04-proweniencja-i-kernel.md      limit transferu, skad ktory obraz, zmierzony kernel
+docs/05-analiza-i-projekt-romu.md     analiza donorow, projekt wydania i wariantow
+docs/06-budowa-lokalna.md             toolchain EROFS bez apt/root, lekcje budowy
+docs/07-jak-weryfikowac.md            jak sprawdzic wydanie (suite, sumy, round-trip)
+docs/08-stan-i-blokady.md             receptura odbudowy + pelna kronika utwardzen
+docs/09-analiza-targetu.md            bramki startu TB350FU i szanse wariantow
+docs/10-rejestr-dowodow.md            KOMPENDIUM: twierdzenie -> dowod -> odtworzenie
 ```
 
 ## Kolejność pracy (nie skracać)

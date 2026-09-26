@@ -99,3 +99,6 @@ przerobka vendora pod mt6789.
   nowy (tools/zloz.sh, wersjonowany) sam weryfikuje vs SHA256SUMS.txt: OK/ZLE per
   obraz, exit 1 przy rozjezdzie + instrukcja. e2e: pozytyw 4x OK rc=0, negatyw
   (przeklamany bajt w czesci) ZLE rc=1, idempotentny. Dysk: podmieniony, md5 1:1.
+- docs/10-rejestr-dowodow.md: kompendium 19 twardych dowodow (tozsamosc bajtow,
+  suite+negatywy, prowieniencja, proces/transfer) + sekcja "czego swiadomie NIE
+  udowadniamy"; README main: pelny wykaz docs/01-10.
