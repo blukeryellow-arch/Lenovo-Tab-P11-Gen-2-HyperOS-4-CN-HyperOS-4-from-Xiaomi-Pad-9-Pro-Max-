@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Apply the source-level HyperOS/Lenovo compatibility patches.
+"""Apply source-level Lenovo-runtime compatibility patches.
 
-This tool deliberately patches a source checkout, not a built system image.  It
+This tool deliberately patches a source checkout, not a built system image. It
 fails closed when the expected Lenovo hook is not present, so it cannot silently
-patch an unrelated BatteryService implementation.
+patch an unrelated BatteryService implementation or the stock Xiaomi donor.
 """
 
 from __future__ import annotations

@@ -8,7 +8,7 @@ from the exact failing image, is available in the build workspace.
 ## Implemented change: missing Lenovo battery manager
 
 `tools/apply_compat_patches.py` changes the exact standalone invocation below
-in the donor's modified `BatteryService`:
+in the **Lenovo runtime's** modified `BatteryService`:
 
 ```java
 mBatteryServiceManager.updateHealthInfo(healthInfo);
@@ -31,8 +31,16 @@ if (mBatteryServiceManager != null) {
 
 The tool stops rather than guessing if this exact call exists zero or multiple
 times. That matters because a normal AOSP `BatteryService.java` has no Lenovo
-manager and patching it would not repair the prebuilt HyperOS framework that
-actually crashed.
+manager and patching it would not repair the prebuilt framework that actually
+crashed.
+
+> **Donor verification:** the official `yingtian` China
+> `OS4.0.11.0.XBMCNXM` fastboot archive was inspected directly. Its `system`
+> and `system_ext` framework contains no `IBatteryServiceManager`,
+> `mBatteryServiceManager`, or `com.lenovo.lgsi` reference. The Lenovo hook in
+> the device log is therefore not a donor implementation waiting to be copied;
+> it must be located in the Lenovo runtime/classpath that is actually loaded on
+> TB350FU. See [`DONOR_AUDIT.md`](DONOR_AUDIT.md).
 
 ## Temporary SELinux diagnostic mode
 

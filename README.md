@@ -5,9 +5,12 @@ Narzędzia i dokumentacja dla naprawy bootloopu `system_server` w porcie HyperOS
 
 ## Co zawiera repozytorium
 
-- `tools/apply_compat_patches.py` — dodaje null-check / exception guard dla
-  brakującego Lenovo `IBatteryServiceManager` oraz tymczasowy argument bootowy
-  SELinux permissive do wskazanego `BoardConfig.mk`.
+- `tools/apply_compat_patches.py` — dodaje null-check / exception guard do
+  rzeczywiście ładowanego Lenovo `IBatteryServiceManager` oraz tymczasowy
+  argument bootowy SELinux permissive do wskazanego `BoardConfig.mk`.
+- [`DONOR_AUDIT.md`](DONOR_AUDIT.md) — wynik bezpośredniego audytu
+  oficjalnego donora `yingtian` China `OS4.0.11.0.XBMCNXM`; potwierdza, że
+  nie zawiera on Lenovo battery managera.
 - `tools/build_system_image.sh` — buduje `system.img` z pasującego drzewa
   źródeł i opcjonalnie tworzy archiwum `.lz4hc` lub `.gz`.
 - [`PATCHING.md`](PATCHING.md) — wymagania, ograniczenia GSI i pełna procedura.
