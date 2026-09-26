@@ -1,0 +1,49 @@
+=== unpack_on_runner: one -> transfer (limit kawalka 94371840 B) ===
+narzedzia: mount=tak debugfs=tak fsck.erofs=tak simg2img=NIE tar=tak
+
+--- drive-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN (937791488 B)
+    zamontowane read-only
+    trafil: 7 pozycji: ./system/build.prop ./system/etc/permissions ./system/etc/public.libraries.txt ./system/etc/sysconfig ./system/etc/vintf ./system/fonts ./system/framework/framework-res.apk 
+    budzet po tej paczce: 1827190885 B
+    paczka: drive-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN-assets.tar.gz 72809115 B sha256=df3181867b39a537...
+    wolne teraz: /dev/root        72G   39G   34G  54% /
+
+=== podsumowanie: 1 paczek, pominietych:brak ===
+drive-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN-assets.tar.gz	df3181867b39a537938ed1b49dbbaef4c403864030b3662fbd7776b891820f08	72809115	1
+transfer/drive-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN-assets.tar.gz	68e086499dd3f0c8c9e033a0f68d66519995d271
+=== unpack_on_runner: one -> transfer (limit kawalka 94371840 B) ===
+narzedzia: mount=tak debugfs=tak fsck.erofs=tak simg2img=NIE tar=tak
+
+--- drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1 (6445187072 B)
+    zamontowane read-only
+    trafil: 6 pozycji: ./etc/build.prop ./etc/permissions ./etc/sysconfig ./etc/vintf ./fonts ./overlay 
+    budzet po tej paczce: 1765191938 B
+    paczka: drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz 134808062 B sha256=a53ff508fb4e9224...
+    podzial na 2 czastek (limit GitHuba 100 MB/plik)
+    spr: zlozone czastki = paczka rodzic OK
+    wolne teraz: /dev/root        72G   44G   28G  61% /
+
+=== podsumowanie: 1 paczek, pominietych:brak ===
+drive-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN-assets.tar.gz	df3181867b39a537938ed1b49dbbaef4c403864030b3662fbd7776b891820f08	72809115	1
+transfer/drive-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN-assets.tar.gz	68e086499dd3f0c8c9e033a0f68d66519995d271
+drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz	a53ff508fb4e9224350635fb87a5bc60e8829504b93f86a61e4ae1963c063ff6	134808062	2
+transfer/drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz.part.000	3cbc3f6a3eefab4b8695b56028de4dd3bf7887ea
+transfer/drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz.part.001	0c4e7015b1de06426e91937bcbbd3d91dc5b1044
+=== unpack_on_runner: one -> transfer (limit kawalka 94371840 B) ===
+narzedzia: mount=tak debugfs=tak fsck.erofs=tak simg2img=NIE tar=tak
+
+--- drive-1rrK7z7PVCB5rQpgubGt6pDeJgh1_pcEl (3096117248 B)
+    zamontowane read-only
+    trafil: 3 pozycji: ./etc/build.prop ./etc/permissions ./etc/vintf 
+    budzet po tej paczce: 1899993683 B
+    paczka: drive-1rrK7z7PVCB5rQpgubGt6pDeJgh1_pcEl-assets.tar.gz 6317 B sha256=cb4366a5f511cfab...
+    wolne teraz: /dev/root        72G   41G   32G  57% /
+
+=== podsumowanie: 1 paczek, pominietych:brak ===
+drive-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN-assets.tar.gz	df3181867b39a537938ed1b49dbbaef4c403864030b3662fbd7776b891820f08	72809115	1
+transfer/drive-1Pu6RU00SsbFiXiGlx6IpG14714jaZThN-assets.tar.gz	68e086499dd3f0c8c9e033a0f68d66519995d271
+drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz	a53ff508fb4e9224350635fb87a5bc60e8829504b93f86a61e4ae1963c063ff6	134808062	2
+transfer/drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz.part.000	3cbc3f6a3eefab4b8695b56028de4dd3bf7887ea
+transfer/drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz.part.001	0c4e7015b1de06426e91937bcbbd3d91dc5b1044
+drive-1rrK7z7PVCB5rQpgubGt6pDeJgh1_pcEl-assets.tar.gz	cb4366a5f511cfab96b7947f4196cd7982d167d57a96d563801f0e6e0d958008	6317	1
+transfer/drive-1rrK7z7PVCB5rQpgubGt6pDeJgh1_pcEl-assets.tar.gz	7ea329fb5bd804f885872b7e924d2c481efc9c22
