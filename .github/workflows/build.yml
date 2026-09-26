@@ -511,7 +511,7 @@ jobs:
           HYPEROS_SIZE: '920039464'
           HYPEROS_SHA256: 8b71ea568dfb6043cfb3234372b3b672c30f9dfb2e81d11ed1bbae89e98dc14f
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
           chmod +x tools/drive_form_post.py
           mkdir -p input reports
           report="reports/hybrid-super-${GITHUB_RUN_ID}.md"
