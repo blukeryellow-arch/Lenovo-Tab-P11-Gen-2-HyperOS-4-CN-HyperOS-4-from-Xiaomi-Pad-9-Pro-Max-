@@ -79,7 +79,6 @@ jobs:
     # The requested official Xiaomi yingtian 4.0.11.0 donor is inspected on a
     # disposable GitHub runner. Only a compact audit is committed back; no 11.8
     # GiB firmware archive or image is put in Git.
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[donor-011]')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
