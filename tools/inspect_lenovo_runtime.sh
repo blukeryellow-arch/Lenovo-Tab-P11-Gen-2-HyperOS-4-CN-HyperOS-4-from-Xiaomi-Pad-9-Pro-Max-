@@ -90,6 +90,43 @@ if ! unzip -tqq "$archive"; then
     grep -Eio '.{0,220}(baseURL|axios\.create|uE=|apiUrl|api-url).{0,480}' "$work"/filewale-js/*.js 2>/dev/null | \
       sort -u | head -80 || true
     echo '```'
+    echo
+    echo '### Filewale public download-request probe'
+    echo '```'
+    # This is the documented client-side request used by Filewale's own public
+    # file page.  It deliberately follows neither a returned URL nor a login
+    # flow: the probe only records whether anonymous access is authorized.
+    curl --location --silent --show-error --connect-timeout 30 --max-time 90 \
+      --dump-header "$work/filewale-request.headers" \
+      'https://filewale.com/api/v1/file-manager/public/file-items/45346/request-download' \
+      -o "$work/filewale-request.json" 2>>"$work/filewale-request.stderr" || true
+    printf '%s\n' 'response headers:'
+    sed -n '1,40p' "$work/filewale-request.headers" 2>/dev/null || true
+    printf '%s\n' 'JSON/text response (redacted to status, keys and non-secret messages):'
+    python3 - "$work/filewale-request.json" <<'PY'
+import json, pathlib, sys
+p = pathlib.Path(sys.argv[1])
+try:
+    value = json.loads(p.read_text())
+except Exception:
+    print('not JSON; bytes=' + str(p.stat().st_size if p.exists() else 0))
+    raise SystemExit(0)
+if isinstance(value, dict):
+    print('top-level keys=' + ','.join(sorted(value)))
+    for key in ('status', 'message', 'error', 'code'):
+        if key in value:
+            print(f'{key}={value[key]!r}')
+    data = value.get('data')
+    if isinstance(data, dict):
+        print('data keys=' + ','.join(sorted(data)))
+        for key in ('message', 'code', 'status', 'token', 'expiresAt'):
+            if key in data:
+                print(f'data.{key}={data[key]!r}')
+        print('data.url present=' + str(bool(data.get('url'))))
+else:
+    print('JSON type=' + type(value).__name__)
+PY
+    echo '```'
   } >> "$report"
   false
 fi
