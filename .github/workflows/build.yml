@@ -671,14 +671,18 @@ jobs:
       - name: Extract only the recovery system payload and verify its runtime
         run: |
           set -Eeuo pipefail
-          export GOBIN="$RUNNER_TEMP/go-bin"
-          mkdir -p "$GOBIN"
-          go install github.com/ssut/payload-dumper-go@v1.3.0
+          # The project uses numeric Git tags (not Go's v-prefixed module
+          # tags), so build the pinned, audited tag rather than resolving a
+          # mutable module version.
+          git clone --depth 1 --branch 1.3.0 https://github.com/ssut/payload-dumper-go.git work/payload-dumper-src
+          test "$(git -C work/payload-dumper-src rev-parse HEAD)" = \
+            a51234eaead276ff3d8b8c4c439c51c7f46a96a8
+          go build -trimpath -o work/payload-dumper-go ./work/payload-dumper-src
           chmod +x tools/inspect_hyperos_recovery.sh tools/inspect_hyperos_target.sh
           bash tools/inspect_hyperos_recovery.sh \
             "reports/hyperos-recovery-${GITHUB_RUN_ID}.md" \
             input/miui_YINGTIAN_OS4.0.11.0.XBMCNXM_recovery.zip \
-            "$GOBIN/payload-dumper-go" work/recovery
+            work/payload-dumper-go work/recovery
           system=$(find work/recovery/extracted -type f -name 'system*.img' -print -quit)
           test -n "$system"
           bash tools/inspect_hyperos_target.sh \
