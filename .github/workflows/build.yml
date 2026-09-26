@@ -343,6 +343,15 @@ jobs:
             "reports/lenovo-super-${GITHUB_RUN_ID}.md" \
             input/TB350FU_S231044_260105_ROW.super.img audit
 
+      - name: Publish compact audit report, including failures
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: lenovo-super-audit-${{ github.run_id }}
+          path: reports/lenovo-super-${{ github.run_id }}.md
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Publish selected framework archives for bytecode review
         if: always()
         uses: actions/upload-artifact@v5
@@ -358,7 +367,11 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add reports/lenovo-super-*.md
+          git add -f reports/lenovo-super-*.md || true
+          if git diff --cached --quiet; then
+            echo 'No audit report was produced; artifact upload carries diagnostics.'
+            exit 0
+          fi
           git commit -m "Audit supplied TB350FU super image (run $GITHUB_RUN_ID)"
           git pull --rebase origin "$GITHUB_REF_NAME"
           git push origin "HEAD:$GITHUB_REF_NAME"
