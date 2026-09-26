@@ -196,3 +196,16 @@ przerobka vendora pod mt6789.
   surowy sha v2 != 4836dcd4 - celowa zmiana funkcjonalna). Dowod: diagnostics/
   bootloop-avc-26IX.txt. Release: hyperos4-p11g2-v2 (minimal + coherent) + linki
   publiczne.
+- v2 debug (26 IX wieczor): 3 iteracje CI. (1) dwukropek w nazwie kroku lamal YAML;
+  (2) grep markera '^;; ' z 2 srednikami vs marker ';;; ' z 3 - krok inject padal na
+  runnerze, zreprodukowane lokalnie 1:1 na prawdziwym drzewie (rom-kit ze spoola,
+  inject OK, guard FAIL); (3) cp dist/... wzgledna sciezka po 'cd /tmp/kit'. Fix: 3
+  sredniki, absolutne $GITHUB_WORKSPACE, system_ext --out wg nazwy z manifestu
+  (assemble dopasowuje po nazwie, przy niezgodnej sklada pierwszy wpis - zlapanane
+  lokalnie zanim doszlo do CI). DETERMINIZM v2: lokalny build (sandbox) i runner
+  wyszly IDENTYCZNIE - raw 7514fdfb582b291200212d55148db025b9cab2e3588cc18546de
+  f81403e35034, sparse 4cd937f0024d720703f9e7cfc9325fa933f712ad87513066acb0cc2cc
+  74ebf30. CIL plat_sepolicy.cil (3,3 MB) potwierdzony w drzewie. Suita lokalna
+  173/0 po zmianach (CI selftest failure = flake). Uwaga: rownolegla sesja (branch
+  arena/01a0de2f) dopchnela swoje czesci na transfer-spool - rom-kit nadal
+  sha-zgodny 537eb4ea, bramki trzymaja.

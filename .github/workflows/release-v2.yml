@@ -148,7 +148,8 @@ jobs:
           bash /tmp/kit/sprawdz.sh
           # coherent: system v2 + product + system_ext donora + vbmeta
           cp /tmp/kit/{system,vbmeta}_hyperos4_p11g2.img /tmp/kit-coh/
-          cp dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img /tmp/kit-coh/
+          # UWAGA: cwd to juz /tmp/kit (cd wyzej) - sciezki do repo MUSZA byc absolutne
+          cp "$GITHUB_WORKSPACE/dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img" /tmp/kit-coh/
           cp /tmp/drive-13e-okLFNX3m7feTp8AlYoGME2rKFFitr.img /tmp/kit-coh/system_ext_hyperos4_p11g2.img
           cd /tmp/kit-coh && sha256sum *.img > SHA256SUMS.txt
           cp /tmp/kit/README.md /tmp/kit-coh/ && cp /tmp/kit/sprawdz.sh /tmp/kit-coh/
