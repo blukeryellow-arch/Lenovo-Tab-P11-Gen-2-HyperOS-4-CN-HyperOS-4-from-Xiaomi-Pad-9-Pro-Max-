@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download public Google Drive image and verify its identity
         env:
@@ -82,7 +82,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Free runner space and install filesystem tools
         run: |
@@ -128,11 +128,11 @@ jobs:
             [ -n "$image" ] || continue
             raw="extract/$part.raw.img"
             kind=$(python3 - "$image" <<'PY'
-import struct, sys
-with open(sys.argv[1], 'rb') as f:
-    print('sparse' if f.read(4) == struct.pack('<I', 0xed26ff3a) else 'raw')
-PY
-)
+          import struct, sys
+          with open(sys.argv[1], 'rb') as f:
+              print('sparse' if f.read(4) == struct.pack('<I', 0xed26ff3a) else 'raw')
+          PY
+            )
             if [ "$kind" = sparse ]; then
               simg2img "$image" "$raw"
             else
