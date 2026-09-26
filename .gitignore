@@ -1,0 +1,8 @@
+# Large binary artifacts and transient Google Drive downloads
+/google_drive/
+/out/
+*.img
+*.img.gz
+*.img.lz4hc
+
+__pycache__/
