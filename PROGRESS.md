@@ -180,3 +180,19 @@ przerobka vendora pod mt6789.
   oraz litterbox https://litter.catbox.moe/rvflcy.zip (bezposredni, 72 h). Pixeldrain
   odrzucil upload anonimowy (authentication_required). GIT: commit bota dospuscil sie
   z opoznieniem po moim fetchu (ls-remote rozstrzyga).
+- ZLECENIE NAPRAWY BOOTLOOPA (26 IX ~16:30 UTC): user dal log (NPE baterii Lenovo
+  com.lenovo.lgsi + avc denied). Analiza: hook lgsi w Lenovo system_ext (A14) dokleja
+  sie do system_server A17, lookup serwisu vendor odrzucony przez SELinux -> null ->
+  NPE w binderze -> crash. Realizacja: (1) tools/sepolicy_patch.py - avc z logcatu do
+  (typepermissive <domena>) w plat_sepolicy.cil (CIL kompilowany przy boocie przy
+  mismatchu hashy precompiled - sprawdzone ze zrodla cil_reference: "(permissive ...)"
+  NIE istnieje w CIL, zlapano przed buildem); domeny: system_server, audioserver,
+  keystore2, fuelgauged; (2) wariant coherent (system_ext donora) usuwa kod lgsi -
+  to naprawa 1 wykonana bez patchowania cudzego services.jar (nie kompilujemy ze
+  zrodel; cmdline/boot.img = wlasciwosc Lenovo, wiec androidboot.selinux=permissive
+  nieosiagalne - typepermissive w CIL to rownowartny efekt per domene).
+  Build: .github/workflows/release-v2.yml (bramki: rom-kit 537eb4ea, system_ext
+  7340a836+md5 Google, round-trip unsparse v2, obecosc bloku typepermissive;
+  surowy sha v2 != 4836dcd4 - celowa zmiana funkcjonalna). Dowod: diagnostics/
+  bootloop-avc-26IX.txt. Release: hyperos4-p11g2-v2 (minimal + coherent) + linki
+  publiczne.

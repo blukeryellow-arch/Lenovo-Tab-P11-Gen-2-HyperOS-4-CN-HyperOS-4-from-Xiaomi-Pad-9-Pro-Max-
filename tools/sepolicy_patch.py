@@ -14,7 +14,7 @@ Tryby:
   ./sepolicy_patch.py parse <log.txt> --allow       # zamiast permissive: allow per para
   ./sepolicy_patch.py inject <cil> <logcat.txt>     # dopisz blok do plat_sepolicy.cil
 
-Dlaczego domyslnie (permissive <domena>) a nie (allow ...):
+Dlaczego domyslnie (typepermissive <domena>) a nie (allow ...):
   - permissive nie koliduje z neverallow (allow moglby odrzucic cala polityke
     przy kompilacji = gorszy bootloop niz byl),
   - efekt rowny lokalnemu permissive dla tej domeny, bez rozpieczania calego
@@ -47,7 +47,7 @@ def gen(hits, allow=False):
                          % (s, t, c, ' '.join(perms)))
     else:
         doms = sorted({s for s, _, _, _ in hits})
-        lines = ['(permissive %s)' % d for d in doms]
+        lines = ['(typepermissive %s)' % d for d in doms]
     return lines
 
 
@@ -59,21 +59,27 @@ def main():
     mode, a = args[0], args[1]
     if mode == 'parse':
         allow = '--allow' in args[2:]
+        extra = [a[len('--extra-domains:'):] for a in args[2:] if a.startswith('--extra-domains:')]
         hits = parse(open(a, encoding='utf-8', errors='replace').read())
         if not hits:
             print('brak linii avc: denied w logu')
             return 1
-        print('# %d naruszen, %d domen' % (len(hits), len({h[0] for h in hits})))
-        for line in gen(hits, allow):
-            print(line)
+        doms = {h[0] for h in hits} | set(','.join(extra).split(',')) if extra else {h[0] for h in hits}
+        print('# %d naruszen, %d domen' % (len(hits), len(doms)))
+        for d in sorted(doms):
+            print('(typepermissive %s)' % d)
         return 0
     if mode == 'inject' and len(args) >= 3:
         cil, log = a, args[2]
+        extra = [x for x in args[3:] if x.startswith('--extra-domains:')]
+        extra_doms = set()
+        for x in extra:
+            extra_doms |= {d for d in x[len('--extra-domains:'):].split(',') if d}
         hits = parse(open(log, encoding='utf-8', errors='replace').read())
-        if not hits:
+        if not hits and not extra_doms:
             print('brak avc w logu - nie ma czego wstrzykiwac')
             return 1
-        body = gen(hits)
+        body = ['(typepermissive %s)' % d for d in sorted({h[0] for h in hits} | extra_doms)]
         cur = open(cil, encoding='utf-8', errors='replace').read()
         if ';;; arena-permissive-patch' in cur:
             print('blok juz istnieje - najpierw usun starego')
