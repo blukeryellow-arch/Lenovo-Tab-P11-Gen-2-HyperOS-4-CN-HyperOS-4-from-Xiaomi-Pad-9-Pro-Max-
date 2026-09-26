@@ -162,3 +162,10 @@ przerobka vendora pod mt6789.
   product a961bec4 -> sparse 8b71ea56) i tworzy release hyperos4-p11g2 z 5 plikami
   (system sparse, vbmeta 9cf2e7e4, README, sprawdz.sh, SHA256SUMS). Tag na SHA areny.
   Repo prywatne: link do assetow dziala zalogowanemu wlascicielowi.
+- Release hyperos4-p11g2 UTWORZONY (26 IX, run 36243724199, ~4 min): 5 assetow,
+  system 920 039 464 B + vbmeta 4096 B + README/sprawdz.sh/SHA256SUMS. Pierwszy bieg
+  (36243355937) padl na kroku Release: gh po 'cd /tmp/kit' nie mial kontekstu gita
+  -> fix GH_REPO jawne + uploady z 5 probami + raport porazki do repo. Bramki sha
+  przeszly za oba razy (raw 4836dcd4, product a961bec4, sparse 8b71ea56 na RUNNERZE,
+  ubuntu-latest - determinizm potwierdzony poza sandboksem). Link dziala zalogowanemu
+  wlascicielowi (repo prywatne).
