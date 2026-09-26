@@ -153,3 +153,12 @@ przerobka vendora pod mt6789.
   Reset #10 (~11:55 UTC): repo->5b03aea, recovery fetch+checkout cb16240 + pelna
   odbudowa receptura 192 s (raw 4836dcd4 IDENTYCZNY). Lekcja: stala formatu musi
   pochodzic ze spec, nie z wlasnego generatora.
+- Dostawa ostateczna (26 IX ~12:50 UTC): user chce link do pobrania; preview platformy
+  odrzucone (proxy wymaga naglowka e2b-traffic-access-token, "klik i pobierz" z nowej
+  karty niewykonalne), Dysk zarzucony przez usera. Sandbox blokuje uploads.github.com,
+  lfs.github.com, www.googleapis.com i hostingi plikow -> wydanie robi RUNNER:
+  .github/workflows/release-sparse-kit.yml buduje system LEKKI receptura docs/08
+  (spool d7b8061 -> rom-kit 537eb4ea -> make_release -> bramki sha: raw 4836dcd4,
+  product a961bec4 -> sparse 8b71ea56) i tworzy release hyperos4-p11g2 z 5 plikami
+  (system sparse, vbmeta 9cf2e7e4, README, sprawdz.sh, SHA256SUMS). Tag na SHA areny.
+  Repo prywatne: link do assetow dziala zalogowanemu wlascicielowi.
