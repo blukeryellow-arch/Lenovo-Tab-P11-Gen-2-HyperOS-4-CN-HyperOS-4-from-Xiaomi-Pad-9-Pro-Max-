@@ -545,6 +545,7 @@ jobs:
             local cookie warning url size
             cookie=$(mktemp); warning=$(mktemp)
             for url in \
+              "https://drive.usercontent.google.com/open?id=$id" \
               "https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t&authuser=0" \
               "https://drive.google.com/uc?export=download&confirm=t&id=$id"; do
               rm -f "$output"
