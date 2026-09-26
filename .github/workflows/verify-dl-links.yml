@@ -1,0 +1,69 @@
+name: verify-dl-links
+
+# Weryfikuje linki pobierania z WIELOKU punktow, w tym z POLSKI (check-host.net).
+# Cel: wiedziec OBIEKTYWNIE, czy transfer.archivete.am / litter.catbox.moe
+# odpowiadaja 200 z PL (user ma polskiego ISP - catbox bywa blokowany).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/verify-dl-links.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: verify-dl-links
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: probe linkow (HTTP + wezly PL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe + check-host (wezly pl)
+        run: |
+          set -uo pipefail
+          LINKS="https://transfer.archivete.am/IoyzF/HyperOS4_P11Gen2.zip https://litter.catbox.moe/2jmcrz.zip"
+          : > /tmp/verify.md
+          echo "### Weryfikacja linkow $(date -u +%FT%TZ)" >> /tmp/verify.md
+          for u in $LINKS; do
+            echo "" >> /tmp/verify.md
+            echo "## $u" >> /tmp/verify.md
+            hdr=$(curl -sIL --max-time 60 "$u" 2>&1 || true)
+            code=$(printf '%s' "$hdr" | grep -iE '^HTTP' | tail -1 | tr -d '\r')
+            clen=$(printf '%s' "$hdr" | grep -i '^content-length' | tail -1 | tr -dc 0-9)
+            echo "- bezposrednio z runnera (USA): ${code:-brak} | dlugosc: ${clen:-?} (ma byc 752232412)" >> /tmp/verify.md
+            # check-host: wezly polskie
+            rid=$(curl -sS --max-time 30 -H 'Accept: application/json' \
+                  "https://check-host.net/check-http?host=$u&node=pl1.node.check-host.net&node=pl2.node.check-host.net&node=pl3.node.check-host.net" \
+                  | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+            echo "- check-host request: ${rid:-BRAK}" >> /tmp/verify.md
+            if [ -n "${rid:-}" ]; then
+              sleep 20
+              res=$(curl -sS --max-time 30 -H 'Accept: application/json' "https://check-host.net/check-result/$rid")
+              echo '```' >> /tmp/verify.md
+              printf '%s\n' "$res" | head -c 1200 >> /tmp/verify.md
+              echo '' >> /tmp/verify.md
+              echo '```' >> /tmp/verify.md
+            fi
+          done
+          cat /tmp/verify.md
+
+      - name: Raport do repo
+        if: always()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports
+          cp /tmp/verify.md "reports/verify-links-${{ github.run_id }}.md"
+          git add -f reports
+          git diff --cached --quiet || {
+            git commit -q -m "verify-links: run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo "raport wypchniety"
+          }
