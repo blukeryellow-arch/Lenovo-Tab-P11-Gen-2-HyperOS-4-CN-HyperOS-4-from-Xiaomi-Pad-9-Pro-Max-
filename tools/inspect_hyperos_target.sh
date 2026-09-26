@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Read-only audit of the exact user-supplied HyperOS system image.
 # It proves which BatteryService implementation is actually packaged by the
-# Xiaomi-based target before any binary modification is attempted.
+# Xiaomi-based target before any binary modification is attempted. Its workflow
+# is deliberately activated only by an explicit [target-runtime] audit commit.
 set -Eeuo pipefail
 
 if [[ $# -ne 3 ]]; then
