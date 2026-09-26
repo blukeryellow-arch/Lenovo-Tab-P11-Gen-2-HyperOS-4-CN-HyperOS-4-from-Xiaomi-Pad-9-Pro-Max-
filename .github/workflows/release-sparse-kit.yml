@@ -99,14 +99,48 @@ jobs:
       - name: Release (tag hyperos4-p11g2, 5 plikow)
         env:
           GH_TOKEN: ${{ github.token }}
+          # GH_REPO jawnie: kroki plikowe robia cd /tmp/kit (poza katalogiem gita) -
+          # bez tego gh nie zna repo i padal na "not a git repository" (run 36243355937)
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh release delete hyperos4-p11g2 --yes --cleanup-tag 2>/dev/null || true
-          cd /tmp/kit
+          {
+            echo "# release-sparse-kit run ${{ github.run_id }} ($GITHUB_SHA)"
+            gh --version
+          } > /tmp/rel.log 2>&1
+          gh release delete hyperos4-p11g2 --yes --cleanup-tag >>/tmp/rel.log 2>&1 || true
           gh release create hyperos4-p11g2 \
             --target "$GITHUB_SHA" \
             --title "HyperOS 4 - Lenovo Tab P11 Gen 2: system (sparse) + vbmeta" \
             --notes "Zestaw minimalny: JEDEN plik system (Android sparse; po unsparse sha256 $RAW_SHA) + surowy vbmeta (AVB Flags=3). Flash: vbmeta_a/b + system_a/b - szczegoly w README.md. Weryfikacja po pobraniu: bash sprawdz.sh. Budowa: receptura docs/08 (transfer-spool -> rom-kit -> make_release -> sparse_img) z twardymi bramkami sha256 w CI." \
-            system_hyperos4_p11g2.img vbmeta_hyperos4_p11g2.img README.md sprawdz.sh SHA256SUMS.txt
+            >>/tmp/rel.log 2>&1
+          echo "create: OK" >>/tmp/rel.log
+          cd /tmp/kit
+          for f in README.md SHA256SUMS.txt sprawdz.sh vbmeta_hyperos4_p11g2.img system_hyperos4_p11g2.img; do
+            ok=0
+            for i in 1 2 3 4 5; do
+              if gh release upload hyperos4-p11g2 "$f" --clobber >>/tmp/rel.log 2>&1; then ok=1; break; fi
+              echo "upload $f - proba $i nieudana, czekam 15 s" >>/tmp/rel.log
+              sleep 15
+            done
+            [ "$ok" = 1 ] || { echo "::error::upload $f padl po 5 probach (patrz reports/release-sparse-*)"; exit 1; }
+          done
           gh release view hyperos4-p11g2 --json url,assets \
-            -q '.url, (.assets[] | "\(.name)  \(.size) B  \(.state)")'
+            -q '.url, (.assets[] | "\(.name)  \(.size) B  \(.state)")' | tee -a /tmp/rel.log
+
+      - name: Raport porazki do repo (logi runnera sa nieosiagalne z sandboksa)
+        # Logi CI zyja pod results-receiver.actions.githubusercontent.com - z sandboksa
+        # agenta ten host jest zablokowany, wiec jedyny czytelny kanal to commit do repo.
+        if: failure()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports
+          { echo "## release-sparse-kit - run ${{ github.run_id }}"; echo; echo '```'
+            cat /tmp/rel.log 2>/dev/null || echo "(brak rel.log - porazka przed krokiem Release)"
+            echo '```'; } > "reports/release-sparse-${{ github.run_id }}.md"
+          git add -f reports
+          if git diff --cached --quiet; then echo "brak zmian do raportu"; exit 0; fi
+          git commit -q -m "release-sparse: raport porazki (run ${{ github.run_id }})"
+          git push -q origin "HEAD:${{ github.ref_name }}" && echo "raport wypchniety na ${{ github.ref_name }}"
