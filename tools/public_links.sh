@@ -34,6 +34,10 @@ up() {  # $1=nazwa, $2=komenda uploadu
 
 up bashupload  "curl -sS --max-time 900 -T '$Z' https://bashupload.com/HyperOS4_P11Gen2.zip"
 up tempsh      "curl -sS --max-time 900 -T '$Z' https://temp.sh/HyperOS4_P11Gen2.zip"
+up transferarch "curl -sS --max-time 900 -T '$Z' https://transfer.archivete.am/HyperOS4_P11Gen2.zip"
+up oshiat      "curl -sS --max-time 900 -T '$Z' 'https://oshi.at/?expire=259200'" 
+BIN="hyperos4-p11g2-$(date +%s)"
+up filebin     "curl -sS --max-time 900 -X POST -F 'file=@$Z' https://filebin.net/$BIN/HyperOS4_P11Gen2.zip"
 up litterbox72 "curl -sS --max-time 900 -F reqtype=fileupload -F time=72h -F fileToUpload=@'$Z' https://litterbox.catbox.moe/resources/internals/api.php"
 SRV=$(curl -sS --max-time 30 https://api.gofile.io/servers | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | head -1)
 if [ -n "${SRV:-}" ]; then
