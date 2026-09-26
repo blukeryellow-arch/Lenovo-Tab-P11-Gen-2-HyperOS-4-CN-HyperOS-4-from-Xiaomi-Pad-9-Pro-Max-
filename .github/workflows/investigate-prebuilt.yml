@@ -1,0 +1,50 @@
+name: Investigate HyperOS prebuilt framework
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out patch tools
+        uses: actions/checkout@v4
+
+      - name: Install sparse and EROFS tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            android-sdk-libsparse-utils erofs-utils file unzip binutils
+          command -v simg2img
+          command -v fsck.erofs
+
+      - name: Download the exact released input image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p input
+          gh release download hyperos4-p11g2 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern HyperOS4_P11Gen2.zip \
+            --dir input
+          unzip -t input/HyperOS4_P11Gen2.zip
+          unzip -j input/HyperOS4_P11Gen2.zip 'system_hyperos4_p11g2.img' -d input
+          sha256sum input/system_hyperos4_p11g2.img
+
+      - name: Extract and identify the real battery hook
+        run: |
+          chmod +x tools/investigate_prebuilt_system.sh
+          tools/investigate_prebuilt_system.sh input/system_hyperos4_p11g2.img work
+          cat work/inventory.txt
+
+      - name: Publish forensic report
+        uses: actions/upload-artifact@v4
+        with:
+          name: hyperos4-prebuilt-inventory
+          path: work/inventory.txt
+          if-no-files-found: error
+          retention-days: 7
