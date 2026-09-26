@@ -1,7 +1,8 @@
 # Lenovo Tab P11 Gen 2 (Helio G99) ← HyperOS 4 (Xiaomi Pad 9 Pro Max)
 
-Repozytorium procesu, nie repozytorium ROM-u. Trzyma skrypty, moduł i CI.
-Duże obrazy mieszkają w Hugging Face i trafiają do nich wyłącznie runner Actions.
+Repozytorium procesu, nie repozytorium ROM-u. Trzyma skrypty, moduł, wydania i CI.
+Duże obrazy (>100 MB) żyją w gałęzi `transfer-spool` (odbudowa recepturą z docs/08)
+i na Google Drive użytkownika; runner Actions to jedyna maszyna z trasą do Dysku.
 
 ## Status: co jest wykonalne, a co nie
 
@@ -33,6 +34,24 @@ Odblokowany bootloader nic tu nie daje — blokady są w binariach i kernelu, ni
 Style, fonty, tapety, dźwięki, krzywe animacji, launcher i gotowe overlaye RRO ze źródła,
 na stockowym firmware Lenovo. Zero ruszenia `vendor`, kernela i tablicy partycji, więc
 ryzyko sprowadza się do „wyłącz moduł i zrestartuj".
+
+## Wydania ROM — cztery warianty (stan 26 IX 2026)
+
+| wariant | katalog | czym się różni | szanse (docs/09 §5) |
+|---|---|---|---|
+| lekki | `dist/release/HyperOS4_P11Gen2/` | system A17 + macierz VINTF poziomu 5 (miękka), product = fonty | init ~85%, system_server ~50-60%, pulpit ~10-25% |
+| -full | `dist/release/HyperOS4_P11Gen2-full/` | + product donora (fonty+overlaye, 147 wpisów) | j.w. |
+| coherent | `dist/coherent-release/…-coherent/` | + donorski system_ext (A17 sdk 37, oryginalne bajty) | j.w., spójniejszy VINTF |
+| **CLEAN** | `dist/clean-release/…-clean/` | **coherent minus 7 pakietów diagnostyki/telemetrii** (EngineerMode, MiSightService, DebugLoggerUI, VsimCore, CameraMind, PowerInsight, RtMiCloudSDK) | j.w. — czyszczenie nie zmienia bramek bootu |
+
+**Gotowy do pobrania komplet jest na Google Drive użytkownika** (folder
+`HyperOS4_P11Gen2-release/clean/`, 40 plików: części 60 MB + skrypty + sumy).
+Sklejanie: `zloz.sh` / `zloz.bat` — przetestowane end-to-end 26 IX: sklejone obrazy
+byte w byte identyczne z wydaniem (sha256 4836dcd4…/53dd7dfb…/a961bec4…/9cf2e7e4…).
+MSA/GetApps/reklamy nie występują w żadnym wariancie z konstrukcji (product donora
+z bloatem nigdy nie jest wgrywany). Kontrola jakości: `tools/test_release.sh`
+(**166 PASS no-real / 174 z --real**, sekcja ZC pilnuje m.in. anty-zamiennosci
+system_ext), CI zielone na obu workflowach.
 
 ## Układ
 
