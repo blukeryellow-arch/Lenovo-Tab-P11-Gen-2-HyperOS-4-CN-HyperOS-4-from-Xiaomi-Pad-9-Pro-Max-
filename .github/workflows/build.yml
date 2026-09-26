@@ -8,6 +8,13 @@ on:
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
+  pull_request:
+    paths:
+      - 'drive-probe.request'
+      - 'tools/drive_form_post.py'
+      - 'tools/raw_parts_on_runner.sh'
+      - 'tools/push_spool_branch.sh'
+      - '.github/workflows/build.yml'
   workflow_dispatch:
 
 permissions:
@@ -18,7 +25,7 @@ jobs:
     # A push tagged [drive-probe] is deliberate: it transfers the public Drive
     # asset to a temporary Git branch in <=90 MiB verified pieces, where this
     # sandbox can fetch it through git.
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[drive-probe]')
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || contains(github.event.head_commit.message, '[drive-probe]')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
