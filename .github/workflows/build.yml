@@ -11,6 +11,7 @@ on:
       - 'tools/inspect_hyperos_target.sh'
       - 'tools/build_hybrid_super.sh'
       - 'tools/inject_logical_partition.py'
+      - 'tools/inspect_hyperos_recovery.sh'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -24,6 +25,7 @@ on:
       - 'tools/inspect_hyperos_target.sh'
       - 'tools/build_hybrid_super.sh'
       - 'tools/inject_logical_partition.py'
+      - 'tools/inspect_hyperos_recovery.sh'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -623,4 +625,80 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -f "$report"
           git commit -m "Build hybrid TB350FU HyperOS super image (run $GITHUB_RUN_ID)"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+  inspect-hyperos-full-recovery:
+    # Explicit user-requested audit of the 4.0.11.0 recovery archive. This
+    # does not build or flash a ROM: it proves that its system payload is the
+    # requested yingtian release before it can be considered as a source.
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[audit-full-recovery]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Free runner space and install audited extraction prerequisites
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/hostedtoolcache/CodeQL \
+            /usr/share/swift /usr/local/graalvm /home/runner/.gradle/caches || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            unzip file curl erofs-utils e2fsprogs baksmali default-jre-headless golang-go
+          df -h .
+
+      - name: Download the user-supplied exact 4.0.11.0 recovery source
+        env:
+          RECOVERY_URL: https://miuirom.org/load?o=xiaomi-pad-9-pro-max&v=4.0.11.0.XBMCNXM&l=en&t=Recovery
+        run: |
+          set -Eeuo pipefail
+          mkdir -p input reports
+          archive=input/miui_YINGTIAN_OS4.0.11.0.XBMCNXM_recovery.zip
+          curl --fail --location --retry 3 --retry-all-errors --connect-timeout 45 \
+            --referer 'https://miuirom.org/tablets/xiaomi-pad-9-pro-max' \
+            --user-agent 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36' \
+            --output "$archive" "$RECOVERY_URL" 2>input/recovery-download.stderr
+          # A catalogue/error page is never accepted as firmware.
+          test "$(stat -c%s "$archive")" -gt 9000000000
+          unzip -Z1 "$archive" | grep -qx payload.bin
+
+      - name: Extract only the recovery system payload and verify its runtime
+        run: |
+          set -Eeuo pipefail
+          export GOBIN="$RUNNER_TEMP/go-bin"
+          mkdir -p "$GOBIN"
+          go install github.com/ssut/payload-dumper-go@v1.3.0
+          chmod +x tools/inspect_hyperos_recovery.sh tools/inspect_hyperos_target.sh
+          bash tools/inspect_hyperos_recovery.sh \
+            "reports/hyperos-recovery-${GITHUB_RUN_ID}.md" \
+            input/miui_YINGTIAN_OS4.0.11.0.XBMCNXM_recovery.zip \
+            "$GOBIN/payload-dumper-go" work/recovery
+          system=$(find work/recovery/extracted -type f -name 'system*.img' -print -quit)
+          test -n "$system"
+          bash tools/inspect_hyperos_target.sh \
+            "reports/hyperos-recovery-system-${GITHUB_RUN_ID}.md" "$system" work/recovery-system
+
+      - name: Publish full-recovery audit reports
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: hyperos-full-recovery-audit-${{ github.run_id }}
+          path: reports/hyperos-recovery*-${{ github.run_id }}.md
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Commit text-only recovery audit reports
+        if: always()
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          reports=(reports/hyperos-recovery*-${GITHUB_RUN_ID}.md)
+          if [ ${#reports[@]} -eq 0 ]; then
+            echo 'No recovery audit report was produced.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f "${reports[@]}"
+          git commit -m "Audit full HyperOS 4.0.11.0 recovery (run $GITHUB_RUN_ID)"
           git push origin "HEAD:$GITHUB_REF_NAME"
