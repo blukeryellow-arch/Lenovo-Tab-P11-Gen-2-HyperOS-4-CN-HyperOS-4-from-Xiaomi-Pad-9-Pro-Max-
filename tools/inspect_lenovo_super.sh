@@ -81,7 +81,10 @@ python3 "$script_dir/extract_sparse_super_partitions.py" --lpunpack "$work/lpunp
 # Extract only partitions relevant to framework and vendor policy.  Do not
 # materialize a full raw super image.
 parts=()
-for base in system system_ext vendor product; do
+# The framework callback and its SELinux/HAL dependencies live in system,
+# system_ext and vendor.  Avoid extracting product in this first pass: it is
+# unrelated to system_server's classpath and costs several GiB on the runner.
+for base in system system_ext vendor; do
   for candidate in "$base" "${base}_a"; do
     if grep -Fxq "$candidate" "$work/logical-partitions.txt"; then
       parts+=("$candidate")
@@ -127,7 +130,9 @@ PY
   if file "$raw" | grep -qi EROFS; then
     fsck.erofs --extract="$root" --no-preserve "$raw" >"$work/${label}-extract.log" 2>&1 || \
       fsck.erofs --extract="$root" "$raw" >>"$work/${label}-extract.log" 2>&1
-  elif file "$raw" | grep -qi ext4; then
+  elif file "$raw" | grep -qiE 'ext[234] filesystem|Linux rev 1\.0'; then
+    # Android's ext4 images are sometimes labelled "Linux rev 1.0 ext2" by
+    # libmagic despite carrying ext4 features. debugfs handles all ext2/3/4.
     debugfs -R "rdump / $root" "$raw" >"$work/${label}-extract.log" 2>&1
   else
     echo "Unsupported $label filesystem: $(file -b "$raw")" >&2
