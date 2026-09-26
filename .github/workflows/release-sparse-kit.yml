@@ -132,6 +132,40 @@ jobs:
           gh release view hyperos4-p11g2 --json url,assets \
             -q '.url, (.assets[] | "\(.name)  \(.size) B  \(.state)")' | tee -a /tmp/rel.log
 
+      - name: Publiczne linki bez logowania (hosty zewnetrzne z runnera)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          Z=/tmp/HyperOS4_P11Gen2.zip
+          [ -f "$Z" ] || { echo "::error::brak $Z"; exit 1; }
+          ls -l "$Z"
+          {
+            echo "### publiczne linki run ${{ github.run_id }} ($GITHUB_SHA)"
+            echo "- rozmiar: $(stat -c%s "$Z") B"
+          } > /tmp/public-links.txt
+          SRV=$(curl -sS --max-time 30 https://api.gofile.io/servers \
+                | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | head -1)
+          echo "gofile server: ${SRV:-BRAK}"
+          if [ -n "${SRV:-}" ]; then
+            curl -sS --max-time 900 -F "file=@$Z" "https://${SRV}.gofile.io/contents/uploadfile" \
+              | tee -a /tmp/public-links.txt | head -c 400; echo
+          fi
+          curl -sS --max-time 900 -T "$Z" "https://pixeldrain.com/api/file/system-hyperos4-p11g2" \
+            | tee -a /tmp/public-links.txt | head -c 400; echo
+          curl -sS --max-time 900 -F "reqtype=fileupload" -F "time=72h" -F "fileToUpload=@$Z" \
+            "https://litterbox.catbox.moe/resources/internals/api.php" \
+            | tee -a /tmp/public-links.txt | head -c 400; echo
+          echo "---"; cat /tmp/public-links.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports && cp /tmp/public-links.txt "reports/public-links-${{ github.run_id }}.md"
+          git add -f reports
+          git diff --cached --quiet || {
+            git commit -q -m "public-links: run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo "linki wypchniete"
+          }
+
       - name: Raport porazki do repo (logi runnera sa nieosiagalne z sandboksa)
         # Logi CI zyja pod results-receiver.actions.githubusercontent.com - z sandboksa
         # agenta ten host jest zablokowany, wiec jedyny czytelny kanal to commit do repo.
