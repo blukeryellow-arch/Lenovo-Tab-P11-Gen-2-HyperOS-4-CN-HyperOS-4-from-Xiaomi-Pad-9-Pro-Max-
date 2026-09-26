@@ -108,3 +108,8 @@ przerobka vendora pod mt6789.
 - Przeglad adwersarza dalszych skryptow: postflash_triage (test na syntetycznym
   logu: SF zlapany, werdykt, rc=1), verify_image (jawne argumenty, brak prefiksow),
   flash-all lekki vs clean (nezalezne struktury, bramki pokryte E-H+ZC).
+- Czwarta lekcja dnia: fsck.erofs --extract na istniejacym drzewie zostawia katalogi
+  0700 (pierwszy na pustym: 0755) i nie czysci starych plikow -> repliku na cieplym
+  /tmp drzewa rozjezdzaly sie z obrazem (J: etc 0700 vs 0755). Fix: rm -rf przed
+  kazdym extractem w recepturze. Po naprawie 173/181. Finałowy replay przerwany
+  na git fetch (token GitHub wygasl) = dowod dzialania set -e (dist nietkniety).

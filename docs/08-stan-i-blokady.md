@@ -178,7 +178,8 @@ Receptura krok po kroku (ścieżki jak w sesji 24 IX):
 
 ```
 set -e   # 26 IX: urwane cp przy ENOSPC musi PRZERWAC recepture, nie nadpisywac dist.
-        # Blok zakłada czyste /tmp (drzewa/tarballe z poprzedniego biegu posprzataj).
+        # Blok sam czyści swoje pośrednie katalogi (extract/tree-product) - idempotentny
+        # na cieplym /tmp (fsck --extract na istniejacym drzewie degraduje tryby do 0700!).
 # 0) toolchain (jeśli /tmp/erofs-c nie żyje)
 tools/build_comp_libs.sh /tmp/comp-build
 tools/build_erofs_local.sh /tmp/erofs-c
@@ -209,7 +210,10 @@ cp -al /tmp/romkit/system_tree /tmp/donor/            # FULL system: 4568 (obraz
 mkdir -p /tmp/tree2 && cp -al /tmp/romkit/system_tree /tmp/tree2/
 rm -f /tmp/tree2/system_tree/system/etc/vintf/compatibility_matrix.{4,5,6}.{xml,komentarz.txt}
                                                       # LEKKI system: 4562 (build doklada macierz 5 -> 4563)
-mkdir -p /tmp/prod-lekki-extract                       # wyciag z LEKKIEGO product, ktory zyje w gicie
+rm -rf /tmp/prod-lekki-extract && mkdir -p /tmp/prod-lekki-extract   # wyciag z LEKKIEGO product (z GITA). UWAGA: fsck.erofs
+                                                      # --extract NIE jest idempotentny wobec trybow katalogow -
+                                                      # na istniejacym drzewie zostawia katalogi 0700 (pierwszy
+                                                      # extract na pustym daje 0755). Zawsze kasuj przed extractem.
 /tmp/erofs-c/fsck.erofs --extract=/tmp/prod-lekki-extract \
     dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img    # (flaga --extract=, nie --out)
 rm -rf /tmp/tree-product && cp -a /tmp/prod-lekki-extract /tmp/tree-product   # LEKKI product: 67 (etc/{passwd,group} + 63 fonty); rm -rf = odpornosc na powtorke receptury
@@ -474,3 +478,17 @@ scenariusz nie przewidział):
    NEED_S pyta o jawną nazwę pliku. **Negatyw testu**: podsunięcie starego wzorca
    `^system_` (sed) → 2× FAIL (REGRESJA + kontrola statyczna) — test jest ostry
    w obie strony. Liczniki: **173/181**.
+6. **Czwarta lekcja dnia: `fsck.erofs --extract` nie jest idempotentny wobec trybów.**
+   Finałowy replay receptury (po dopisaniu set -e + kroku 5b) przerwał się
+   natychmiast na `git fetch` (wygasły token GitHub w sesji) — i to jest dodatkowy
+   dowód działania set -e: zero dalszych kroków, dist nietknięty (8/8, 8/8, 9/9,
+   10/10). Dokończenie od kroku 2 (drzewa lokalne, sumy tarballi potwierdzone
+   rano) wykopało nową niejednoznaczność: sekcja J padła na `etc` 0700 vs 0755.
+   Eksperyment: pierwszy `--extract` na pustym katalogu daje 0755; **powtórny na
+   istniejącym pełnym drzewie zostawia katalogi 0700** (i nie czyści starych
+   plików — stary plik w fonts/ zostaje). Stąd oba dzisiejsze "633-919 MB"-styl
+   rozjazdy drzewa: replay na ciepłym /tmp. Fix w recepturze: `rm -rf` przed
+   KAŻDYM extractem (jak przy tree-product). Po naprawie: **173/181**.
+   *Zasada ogólna: narzędzia upstreamowe bywają idempotentne tylko na świeżym
+   stanie — każdy krok receptury, który coś wypakowuje, ma zacząć się od kasowania
+   celu.*
