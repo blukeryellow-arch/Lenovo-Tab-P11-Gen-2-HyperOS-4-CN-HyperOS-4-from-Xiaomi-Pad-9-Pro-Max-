@@ -132,3 +132,10 @@ przerobka vendora pod mt6789.
   16 czesci 60 MB) + vbmeta (9cf2e7e4, .b64) + zloz.sh/bat (auto-weryfikacja sum,
   e2e: pozytyw/negatyw/idempotencja) + sumy + README. md5 serwera=lokalne 22/22,
   owner-only. Inwentarz: diagnostics/drive-system-vbmeta.tsv.
+- Zmiana dostawy na zadanie usera ("link ktory otworzy strone i pobierze plik"):
+  Dysk zarzucony; uploads.github.com zablokowany z sandboxa (SSL EOF -> release z
+  assetami odpada), hostingi zewnetrzne (gofile/pixeldrain/litterbox) nieosiagalne
+  (000). Dostawa = tools/serve_dl.py na 0.0.0.0:8000 przez preview platformy
+  (listing + Content-Disposition: attachment + Accept-Ranges; testy: 200/206/200,
+  Content-Length 920039464). Zestaw w /home/user/sysvb3-staging (5 plikow, sumy OK).
+  Link: https://8000-ikf2m55kta9j9kouiojzw.e2b.app/ (sesyjny, do konca maratonu).
