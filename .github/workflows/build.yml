@@ -677,7 +677,7 @@ jobs:
           git clone --depth 1 --branch 1.3.0 https://github.com/ssut/payload-dumper-go.git work/payload-dumper-src
           test "$(git -C work/payload-dumper-src rev-parse HEAD)" = \
             a51234eaead276ff3d8b8c4c439c51c7f46a96a8
-          go build -trimpath -o work/payload-dumper-go ./work/payload-dumper-src
+          (cd work/payload-dumper-src && go build -trimpath -o ../payload-dumper-go .)
           chmod +x tools/inspect_hyperos_recovery.sh tools/inspect_hyperos_target.sh
           bash tools/inspect_hyperos_recovery.sh \
             "reports/hyperos-recovery-${GITHUB_RUN_ID}.md" \
