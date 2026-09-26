@@ -81,10 +81,10 @@ adb shell 'ls -lZ /system/bin/su /product/bin 2>/dev/null; restorecon -RFv /prod
 bash tools/test_release.sh --erofs-dir <katalog z mkfs/fsck>
 ```
 
-Oczekiwane: `=== podsumowanie: 166 PASS, 0 FAIL ===` (26 IX: +13 kontroli wariantu CLEAN, sekcja ZC), a z `--real` (z drzewami podanymi w
+Oczekiwane: `=== podsumowanie: 170 PASS, 0 FAIL ===` (26 IX: +13 kontroli wariantu CLEAN w sekcji ZC i +4 df-guardu w AA), a z `--real` (z drzewami podanymi w
 `PRODTREE`, `PRODTREE_FULL`, `SYSTREE`, `SYSTREE_FULL` — `SYSTREE_FULL` = drzewo donora z trzema
 plikami runnera, bo `-full` trzeba porównywać z drzewem, z którego powstał):
-`=== podsumowanie: 174 PASS, 0 FAIL ===`.
+`=== podsumowanie: 178 PASS, 0 FAIL ===`.
 
 Sekcje: A selftest buildera · B determinizm (dwa `mkfs.erofs` na tym samym drzewie = **identyczny
 plik**, `cmp` bez różnic) · C **test negatywny** weryfikatora (drzewo ma plik, którego nie ma w

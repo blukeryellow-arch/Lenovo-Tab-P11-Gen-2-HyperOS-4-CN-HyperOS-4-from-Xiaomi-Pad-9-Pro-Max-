@@ -87,3 +87,6 @@ przerobka vendora pod mt6789.
   system.img w 3 wariantach dist; naprawa przez odbudowe (8/8, 8/8, 9/9, 10/10)
   + utwardzenia: set -e w recepturze, rm -rf przed cp drzewa product, df-guard
   (<3000 MB = FATAL) w make_release i build_clean_kit. Suite po wszystkim: 166/174.
+- Sekcja AA suity (df-guard): test izolacyjny ze stubem df wykazal, ze tr -dc '0-9'
+  na calej linii zbiera cyfry z wszystkich kolumn (fail-open!) - fix: awk END{print $1}
+  + case *[!0-9]* (fail-closed). 4 kontrole anty-regresyjne. Suite: 170/178.

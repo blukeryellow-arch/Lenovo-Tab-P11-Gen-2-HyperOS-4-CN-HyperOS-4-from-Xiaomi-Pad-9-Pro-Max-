@@ -104,8 +104,15 @@ mkdir -p "$OUT" || exit 2
 # --- df-guard (26 IX): ENOSPC ucina i mkfs, i cp bez wzgledu na kod bledu ------------
 # Replay przy 100% dysku nadpisal dist urwanymi obrazami; round-trip lapal to dopiero
 # przy okazji suity. Od tad: najpierw miejsce, potem jakakolwiek budowa.
-AVAIL_KB=$(df -k --output=avail "$OUT" 2>/dev/null | tail -1 | tr -dc '0-9')
-[ -n "$AVAIL_KB" ] || AVAIL_KB=99999999   # fs bez df --output: przepusc (nie blokuj)
+# FAIL-CLOSED: jak nie umiem odczytac wolnego miejsca, to nie buduje (test izolacji
+# ze stubem df wykazal, ze 'tr -dc 0-9' na calej linii zbiera cyfry z wszystkich
+# kolumn i guard fail-open przepuszczal - docs/08, maraton 26 IX).
+AVAIL_KB=$(df -k --output=avail "$OUT" 2>/dev/null | awk 'END{print $1}')
+case $AVAIL_KB in
+  ''|*[!0-9]*)
+    echo "FATAL: nie umiem odczytac wolnego miejsca na $OUT (df --output=avail niezwrotny) - nie buduje na slepo." >&2
+    exit 2;;
+esac
 if [ "$AVAIL_KB" -lt 3000000 ]; then
   echo "FATAL: $((AVAIL_KB/1024)) MB wolnego na $OUT - wymagane >=3000 MB." >&2
   echo "       ENOSPC ucina obrazy BEZ bledu (patrz docs/08, 26 IX). Posprzataj i wracaj." >&2

@@ -892,6 +892,39 @@ else bad "ZC: brak katalogu dist/clean-release - wariant CLEAN zniknal z drzewa"
 if [ $ZC -ge 10 ]; then ok "przeanalizowane pozycje wariantu CLEAN: $ZC"; else
   bad "tylko $ZC pozycji CLEAN - kontrola padla w polowie"; fi
 
+# ---------------------------------------------------------------- AA: df-guard (26 IX)
+# Trzecia odsłona ENOSPC: replay przy pełnym dysku CICHO nadpisał system.img w dist
+# urwanymi bajtami (cp bez błędu). Od tad make_release/build_clean_kit odmawiają
+# budowy przy <3000 MB wolnego lub gdy nie umieją odczytać df (fail-closed).
+# Test izolacyjny ze stubem df: pierwsza wersja guardu (tr -dc '0-9' na całej linii)
+# zliczyła cyfry z WSZYSTKICH kolumn i wypuściła 11 GB z fałszywego outputu — stąd
+# awk END{print $1} + case *[!0-9]*. Że przy realnym df guard przepuszcza, dowodzi
+# sekcja A (selftest przechodzi guard w każdym biegu suity).
+echo "== AA    df-guard: ENOSPC nie nadpisze dist (26 IX)"
+AADF=$WORK/dfstub; mkdir -p "$AADF"
+AATREE=$WORK/aatree; mkdir -p "$AATREE/fonts"; echo test > "$AATREE/fonts/test.ttf"
+printf '#!/bin/bash\necho Avail\necho 100\n' > "$AADF/df"; chmod +x "$AADF/df"
+rm -rf "$WORK/aa-out"
+out=$(cd "$ROOT" && PATH="$AADF:$PATH" bash tools/make_release.sh --product-tree "$AATREE" --out "$WORK/aa-out" --allow-no-vbmeta 2>&1); aarc=$?
+if [ "$aarc" = "2" ] && printf '%s' "$out" | grep -q "wymagane >=3000 MB" && [ ! -e "$WORK/aa-out/system_hyperos4_p11g2.img" ]; then
+  ok "AA: 100 KB wolnego -> FATAL przed budowa (rc=2, zadnych obrazow)"
+else bad "AA: guard niskiego miejsca nie dziala (rc=$aarc)"; fi
+printf '#!/bin/bash\necho "Filesystem 1K-blocks Used Available Use%% Mounted"\necho "/dev/root 12345 6789 101112 40%% /"\n' > "$AADF/df"
+out=$(cd "$ROOT" && PATH="$AADF:$PATH" bash tools/make_release.sh --product-tree "$AATREE" --out "$WORK/aa-out" --allow-no-vbmeta 2>&1); aarc=$?
+if [ "$aarc" = "2" ] && printf '%s' "$out" | grep -q "nie umiem odczytac"; then
+  ok "AA: nieczytelny df -> fail-closed (rc=2), nie buduje na slepo"
+else bad "AA: fail-closed nie dziala (rc=$aarc)"; fi
+printf '#!/bin/bash\necho Avail\necho 100\n' > "$AADF/df"
+out=$(cd "$ROOT" && PATH="$AADF:$PATH" bash tools/build_clean_kit.sh 2>&1); aarc=$?
+if [ "$aarc" = "2" ] && printf '%s' "$out" | grep -q "wymagane >=3000 MB"; then
+  ok "AA: build_clean_kit: niskie miejsce -> FATAL (rc=2)"
+else bad "AA: build_clean_kit bez guardu (rc=$aarc)"; fi
+if grep -q 'END{print \$1}' "$HERE/make_release.sh" && grep -q 'END{print \$1}' "$HERE/build_clean_kit.sh" \
+   && grep -q '\*\[!0-9\]\*' "$HERE/make_release.sh" && grep -q '\*\[!0-9\]\*' "$HERE/build_clean_kit.sh"; then
+  ok "AA: oba guardy parsuja 1. kolumne df i sa fail-closed (statycznie)"
+else bad "AA: guard stracil fail-closed - ktos cofnal wzorzec tr -dc?"; fi
+rm -rf "$WORK/aa-out" "$AADF" "$AATREE"
+
 # ---------------------------------------------------------------- K: higiena tekstu
 echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
 # Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt

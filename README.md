@@ -50,7 +50,7 @@ Sklejanie: `zloz.sh` / `zloz.bat` — przetestowane end-to-end 26 IX: sklejone o
 byte w byte identyczne z wydaniem (sha256 4836dcd4…/53dd7dfb…/a961bec4…/9cf2e7e4…).
 MSA/GetApps/reklamy nie występują w żadnym wariancie z konstrukcji (product donora
 z bloatem nigdy nie jest wgrywany). Kontrola jakości: `tools/test_release.sh`
-(**166 PASS no-real / 174 z --real**, sekcja ZC pilnuje m.in. anty-zamiennosci
+(**170 PASS no-real / 178 z --real**, sekcje ZC+AA pilnuja m.in. anty-zamiennosci
 system_ext), CI zielone na obu workflowach.
 
 ## Układ

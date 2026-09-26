@@ -11,8 +11,13 @@ DONOR=/tmp/system_ext_donor.img
 UUID_EXT=a11ce5a1-0000-4000-8000-5c1e4b7e9a64
 
 # --- df-guard (26 IX): ENOSPC ucina mkfs/cp bez bledu; najpierw miejsce, potem build ---
-AVAIL_KB=$(df -k --output=avail "$REPO" 2>/dev/null | tail -1 | tr -dc '0-9')
-[ -n "$AVAIL_KB" ] || AVAIL_KB=99999999
+# FAIL-CLOSED (jak w make_release.sh): nieczytelny df = odmowa budowy.
+AVAIL_KB=$(df -k --output=avail "$REPO" 2>/dev/null | awk 'END{print $1}')
+case $AVAIL_KB in
+  ''|*[!0-9]*)
+    echo "FATAL: nie umiem odczytac wolnego miejsca (df --output=avail niezwrotny) - nie buduje na slepo." >&2
+    exit 2;;
+esac
 if [ "$AVAIL_KB" -lt 3000000 ]; then
   echo "FATAL: $((AVAIL_KB/1024)) MB wolnego - wymagane >=3000 MB (ENOSPC ucina obrazy bez bledu, docs/08 26 IX)." >&2
   exit 2
