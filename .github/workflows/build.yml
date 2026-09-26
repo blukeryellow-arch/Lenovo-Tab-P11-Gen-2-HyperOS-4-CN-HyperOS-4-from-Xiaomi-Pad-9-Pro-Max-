@@ -536,6 +536,16 @@ jobs:
                 tail -80 "$log" || true
                 echo '```'
               done
+              for response in input/*.img; do
+                [ -f "$response" ] || continue
+                [ "$(stat -c%s "$response")" -le 8192 ] || continue
+                echo
+                echo "### $(basename "$response") response body"
+                echo '```html'
+                tr '\000' '?' < "$response" | head -c 8192 || true
+                echo
+                echo '```'
+              done
             } >> "$report"
             exit "$rc"
           }
