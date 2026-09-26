@@ -9,6 +9,8 @@ on:
       - 'tools/inspect_lenovo_runtime.sh'
       - 'tools/inspect_lenovo_super.sh'
       - 'tools/inspect_hyperos_target.sh'
+      - 'tools/build_hybrid_super.sh'
+      - 'tools/inject_logical_partition.py'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -20,6 +22,8 @@ on:
       - 'tools/inspect_lenovo_runtime.sh'
       - 'tools/inspect_lenovo_super.sh'
       - 'tools/inspect_hyperos_target.sh'
+      - 'tools/build_hybrid_super.sh'
+      - 'tools/inject_logical_partition.py'
       - 'tools/raw_parts_on_runner.sh'
       - 'tools/push_spool_branch.sh'
       - '.github/workflows/build.yml'
@@ -474,4 +478,106 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -f "$report"
           git commit -m "Audit original HyperOS target image (run $GITHUB_RUN_ID)"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+
+  build-hybrid-super:
+    # Creates a complete dynamic-super flash package. The Xiaomi HyperOS system
+    # payload is installed in both Lenovo system slots; all device-specific
+    # vendor/product/system_ext data stays from the exact user-supplied build.
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[build-hybrid-super]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Free runner space and install image tools
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/hostedtoolcache/CodeQL \
+            /usr/share/swift /usr/local/graalvm /home/runner/.gradle/caches || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            android-sdk-libsparse-utils e2fsprogs file curl
+          command -v simg2img
+          command -v img2simg
+          df -h .
+
+      - name: Download verified Lenovo super and exact HyperOS system inputs
+        env:
+          LENOVO_DRIVE_ID: 1J6RMoBpZPyDsD1M8zaxPTjn8zTw7grd4
+          LENOVO_SIZE: '8298777076'
+          LENOVO_MD5: adfad47a49c78f6b9ec1c740ea5399e2
+          HYPEROS_DRIVE_ID: 1341C_UdIvdqgT4CdZ1V4VpbCHQcK5z-O
+          HYPEROS_SIZE: '920039464'
+          HYPEROS_SHA256: 8b71ea568dfb6043cfb3234372b3b672c30f9dfb2e81d11ed1bbae89e98dc14f
+        run: |
+          set -euo pipefail
+          chmod +x tools/drive_form_post.py
+          mkdir -p input
+          download_drive() {
+            local id=$1 expected_size=$2 output=$3
+            local cookie warning url
+            cookie=$(mktemp); warning=$(mktemp)
+            for url in \
+              "https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t&authuser=0" \
+              "https://drive.google.com/uc?export=download&confirm=t&id=$id"; do
+              rm -f "$output"
+              curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 \
+                --cookie "$cookie" --cookie-jar "$cookie" -o "$output" "$url" || continue
+              if [ "$(stat -c%s "$output")" = "$expected_size" ]; then break; fi
+              mv "$output" "$warning"
+            done
+            if [ ! -f "$output" ] && [ -s "$warning" ]; then
+              python3 tools/drive_form_post.py --html "$warning" --jar "$cookie" \
+                --out "$output" --id "$id" --log "${output}.download.log"
+            fi
+            rm -f "$cookie" "$warning"
+            test "$(stat -c%s "$output")" = "$expected_size"
+          }
+          download_drive "$LENOVO_DRIVE_ID" "$LENOVO_SIZE" input/TB350FU_S231044_260105_ROW.super.img
+          echo "$LENOVO_MD5  input/TB350FU_S231044_260105_ROW.super.img" | md5sum -c -
+          download_drive "$HYPEROS_DRIVE_ID" "$HYPEROS_SIZE" input/system_hyperos4_p11g2.img
+          echo "$HYPEROS_SHA256  input/system_hyperos4_p11g2.img" | sha256sum -c -
+
+      - name: Build and verify dual-slot HyperOS dynamic super image
+        run: |
+          set -euo pipefail
+          chmod +x tools/build_hybrid_super.sh
+          bash tools/build_hybrid_super.sh \
+            "reports/hybrid-super-${GITHUB_RUN_ID}.md" \
+            input/TB350FU_S231044_260105_ROW.super.img \
+            input/system_hyperos4_p11g2.img output
+
+      - name: Publish build report, including failures
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: hybrid-super-report-${{ github.run_id }}
+          path: reports/hybrid-super-${{ github.run_id }}.md
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Publish verified ROM download parts
+        if: success()
+        uses: actions/upload-artifact@v5
+        with:
+          name: TB350FU-HyperOS4-CN-ROM-${{ github.run_id }}
+          path: output/download-parts
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Commit compact hybrid build report
+        if: always()
+        run: |
+          set -euo pipefail
+          report="reports/hybrid-super-${GITHUB_RUN_ID}.md"
+          if [ ! -f "$report" ]; then
+            echo 'No hybrid build report was produced.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f "$report"
+          git commit -m "Build hybrid TB350FU HyperOS super image (run $GITHUB_RUN_ID)"
           git push origin "HEAD:$GITHUB_REF_NAME"
