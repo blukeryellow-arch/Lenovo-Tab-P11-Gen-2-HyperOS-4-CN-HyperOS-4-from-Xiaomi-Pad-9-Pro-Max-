@@ -169,3 +169,9 @@ przerobka vendora pod mt6789.
   przeszly za oba razy (raw 4836dcd4, product a961bec4, sparse 8b71ea56 na RUNNERZE,
   ubuntu-latest - determinizm potwierdzony poza sandboksem). Link dziala zalogowanemu
   wlascicielowi (repo prywatne).
+- Proba zrobienia repo publicznym (zeby linki do assetow dzialaly bez logowania):
+  skan sekretow w drzewie i historii CZYSTO, ale PATCH private=false -> 403
+  "Resource not accessible by integration" (token sandboksa nie robi admin-ops;
+  GITHUB_TOKEN runnera tez nie zmienia widocznosci). Do zrobienia wylacznie przez
+  wlasciciela: Settings -> Danger Zone -> Change visibility, albo logowanie w
+  przegladarce (wtedy prywatny release dziala).
