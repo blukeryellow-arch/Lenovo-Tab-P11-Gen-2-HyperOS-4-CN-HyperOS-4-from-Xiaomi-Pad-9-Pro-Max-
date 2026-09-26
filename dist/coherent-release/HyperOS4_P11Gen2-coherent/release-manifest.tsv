@@ -5,4 +5,4 @@ product_hyperos4_p11g2.img	75198464	a961bec46085883d6d9c3737b804afdf9dcdf2f512cb
 vbmeta_hyperos4_p11g2.img	4096	9cf2e7e4e165687abe78fb0f084e2b07707c317376efd5d4ffbdea75537e6141	lokalnie (Flags 3, testkey AOSP — identyczny z lekkim)
 flash-all.sh	7662	0c27359521fb7cbf946942ea61372947fd31546ee6eff7e22b8b47364307fac1	lokalnie
 rollback.sh	1345	95931988b05fdea48fda35e89a104f0628a281496c7e7e19a79c3f408aaa58c9	lokalnie (z ostrzezeniem o jednokierunkowym system_ext)
-device-probe.sh	6533	57641a5620e7821553ba14934b116bc39f7c3b0a428de72a82fa85c0742c6230	lokalnie (identyczny z lekkim)
+device-probe.sh	6897	d9636ee1a8709a40dac8f7d4d3288eec30dea7e9a54fa29086333f8cb2ac144b	lokalnie (identyczny z lekkim)

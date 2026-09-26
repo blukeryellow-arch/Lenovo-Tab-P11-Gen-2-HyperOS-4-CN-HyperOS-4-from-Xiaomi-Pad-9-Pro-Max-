@@ -79,8 +79,12 @@ fi
 say "== 2/4  rozmiary slotow vs obrazy wydania"
 NEED_P=""; NEED_S=""
 if [ -n "$REL" ] && [ -f "$REL/release-manifest.tsv" ]; then
-  NEED_P=$(awk -F'\t' '$1 ~ /^product_/ {print $2; exit}' "$REL/release-manifest.tsv")
-  NEED_S=$(awk -F'\t' '$1 ~ /^system_/  {print $2; exit}' "$REL/release-manifest.tsv")
+  # 26 IX, przegląd adwersarza: prefiks '^system_' łapał TEŻ 'system_ext_...' i brał
+  # PIERWSZY wiersz manifestu. W coherent system_ext był pierwszy, więc probe
+  # porównywał slot systemu z 632 MB (system_ext) zamiast 920 MB (system) -
+  # fałszywe GO na slotach 633-919 MB. Jawne nazwy plików zamiast prefiksów.
+  NEED_P=$(awk -F'\t' '$1 == "product_hyperos4_p11g2.img" {print $2; exit}' "$REL/release-manifest.tsv")
+  NEED_S=$(awk -F'\t' '$1 == "system_hyperos4_p11g2.img"  {print $2; exit}' "$REL/release-manifest.tsv")
   say "  wydanie: product=${NEED_P:-?} B  system=${NEED_S:-?} B  (z $REL/release-manifest.tsv)"
 else
   warn "nie podano --release - nie mam z czym porownac rozmiarow (bramka pozostaje w flash-all.sh)"

@@ -46,7 +46,7 @@ product_hyperos4_p11g2.img=75198464
 vbmeta_hyperos4_p11g2.img=4096
 flash-all.sh=8177
 rollback.sh=1345
-device-probe.sh=6533
+device-probe.sh=6897
 -->
 
 | plik | bajty | co to |
@@ -57,7 +57,7 @@ device-probe.sh=6533
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | Flags 3 (weryfikacja i verity wylaczone), testkey AOSP; sha256 `9cf2e7e4…` — identyczny we wszystkich wariantach |
 | `flash-all.sh` | 8 177 | bramki: sumy -> identyfikacja -> kopia vbmeta -> rozmiar (zapytany) -> resize tylko po zgodzie -> flash |
 | `rollback.sh` | 1 345 | przywraca vbmeta z kopii; ostrzega o braku rollbacku system_ext bez slotow |
-| `device-probe.sh` | 6 533 | krok 0 przed flashem (GO/NO-GO): fastbootd, rozmiary slotow, CONFIG_EROFS_FS_LZ4 |
+| `device-probe.sh` | 6 897 | krok 0 przed flashem (GO/NO-GO): fastbootd, rozmiary slotow, CONFIG_EROFS_FS_LZ4 |
 
 Weryfikacja budowy: `tools/verify_image.sh` — obraz oddaje drzewo **1:1**
 (1866 wpisow: 1683 pliki + 21 symlinki + 162 katalogi, 0 rozbieznosci);

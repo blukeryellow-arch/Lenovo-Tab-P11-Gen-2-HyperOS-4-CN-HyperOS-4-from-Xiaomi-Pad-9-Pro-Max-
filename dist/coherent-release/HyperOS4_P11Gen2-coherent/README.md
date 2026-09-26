@@ -38,7 +38,7 @@ product_hyperos4_p11g2.img=75198464
 vbmeta_hyperos4_p11g2.img=4096
 flash-all.sh=7662
 rollback.sh=1345
-device-probe.sh=6533
+device-probe.sh=6897
 -->
 
 | plik | bajty | co to |
@@ -49,7 +49,7 @@ device-probe.sh=6533
 | `vbmeta_hyperos4_p11g2.img` | 4 096 | Flags 3 (weryfikacja i verity wyłączone), testkey AOSP; sha256 `9cf2e7e4…` — identyczny w obu wcześniejszych wariantach |
 | `flash-all.sh` | 7662 | bramki: sumy → identyfikacja → kopia vbmeta → **bramka rozmiaru (pytana!)** → resize tylko po zgodzie → flash vbmeta/system/system_ext/product |
 | `rollback.sh` | 1 345 | przywraca vbmeta z kopii; **ostrzega**, że system_ext bez slotów nie ma rollbacku |
-| `device-probe.sh` | 6 533 | krok 0 przed flashem (GO/NO-GO) — ten sam co w lekkim |
+| `device-probe.sh` | 6 897 | krok 0 przed flashem (GO/NO-GO) — ten sam co w lekkim |
 
 Sumy wszystkich plików: `SHA256SUMS.txt`; wiersz-per-plik: `release-manifest.tsv`.
 Dwa duże obrazy (>100 MB) nie żyją w gicie — odbudowa: `docs/08` §„Odbudowa obrazów wydań"

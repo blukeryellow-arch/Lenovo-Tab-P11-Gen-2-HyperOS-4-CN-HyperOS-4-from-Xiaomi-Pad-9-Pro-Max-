@@ -433,3 +433,30 @@ receptura, na Dysku zostaje wariant CLEAN jako jedyny flashowalny komplet.
    + `case *[!0-9]*` = fail-closed. AA testuje 4 kontrolami (niskie miejsce →
    FATAL przed budową i zero obrazów; nieczytelny df → FATAL; build_clean_kit →
    FATAL; wzorzec fail-closed statycznie). Liczniki: **170/178**.
+
+## Maraton 26 IX (przegląd adwersarza): latentny bug NEED_S w device-probe
+
+Przegląd skryptów wydania pod kątem błędów, których suita nie łapie (suite testuje
+atrapą fastboot na ŚWIADOMIE dobranych scenariuszach — przegląd szuka tych, których
+scenariusz nie przewidział):
+
+1. **`device_probe.sh`, sekcja 2/4**: `awk '$1 ~ /^system_/'` brał PIERWSZY wiersz
+   manifestu zaczynający się od "system_" — a to pasuje też do `system_ext_...`.
+   W wariancie **coherent** system_ext był w manifeście pierwszy, więc probe
+   porównywał slot `system_a` z 602/632 MB (rozmiarem system_ext) zamiast 920 MB
+   (system): **fałszywe GO na slotach 633–919 MB** — dokładnie ten typ "wydmuszki",
+   przed którym projekt się chroni (patrz historia getvar w docs/06). W lekkim
+   (-full, clean) ratowała kolejność wierszy manifestu. Fix: jawne nazwy plików
+   (`$1 == "system_hyperos4_p11g2.img"`). Poprawka w tools/device_probe.sh
+   + 4 katalogi wydań; sumy w SHA256SUMS/manifestach i ROZMIARY-KONTRAKT README
+   odświeżone (device-probe.sh: 6533→6897 B); suite po wszystkim **170/178**.
+   *Czego to uczy: prefiksowe dopasowanie nazw plików wydania to ukryta zależność
+   od kolejności wierszy manifestu — bramki rozmiarowe muszą pytać o konkret.*
+2. **Lekcja narzędziowa (konektor Drive)**: `update_file_content` zniekształca
+   UTF-8 (polskie znaki/em-dash → inne bajty) i zjada trailing newline — na
+   serwerze ląduje plik różniący się od lokalnego. Wszystkie porównania md5 to
+   wyłapały od razu. **Bajt-dokładne pliki na Dysk: wyłącznie `upload_file`
+   z pliku** (delete starego + upload nowego) — tak szły części .bin i tak
+   poszły 4 podmienione pliki kitu (zweryfikowane md5 po pobraniu 4/4).
+3. Dysk po synchronizacji: 40/40, uprawnienia owner-only, inwentarz
+   (diagnostics/drive-clean-kit.tsv) odświeżony o nowe ID.

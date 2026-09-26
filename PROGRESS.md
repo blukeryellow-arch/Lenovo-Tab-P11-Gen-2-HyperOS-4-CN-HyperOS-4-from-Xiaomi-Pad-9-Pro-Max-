@@ -90,3 +90,8 @@ przerobka vendora pod mt6789.
 - Sekcja AA suity (df-guard): test izolacyjny ze stubem df wykazal, ze tr -dc '0-9'
   na calej linii zbiera cyfry z wszystkich kolumn (fail-open!) - fix: awk END{print $1}
   + case *[!0-9]* (fail-closed). 4 kontrole anty-regresyjne. Suite: 170/178.
+- Przeglad adwersarza skryptow wydania: LATENTNY BUG device_probe.sh NEED_S - regex
+  '^system_' lapanl tez 'system_ext' i w coherent porownywal slot systemu z 602 MB
+  zamiast 920 MB (falszywe GO na 633-919 MB). Fix: jawne nazwy plikow; sumy/kontrakty
+  odswiezone; 4 pliki kitu podmienione na Dysku (update_file_content znieksztalca
+  UTF-8! -> delete+upload_file, md5 4/4 po pobraniu; 40/40, owner-only).

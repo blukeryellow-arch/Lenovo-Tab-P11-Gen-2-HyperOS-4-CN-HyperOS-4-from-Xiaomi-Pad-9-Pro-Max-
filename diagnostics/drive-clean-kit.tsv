@@ -9,12 +9,19 @@ system_hyperos4_p11g2.img.part-015.bin	1AKDNX7J0Vi0geNCoxr429zsqqNzzdYrV	2003942
 system_ext_hyperos4_p11g2.img.part-010.bin	11TDw1XW-CXGdJdkhKb2FuD2DPCgBEB7t	2189824
 product_hyperos4_p11g2.img.part-001.bin	1TwT-kBywBehHLRAXvW7zr2K5M--2thzo	15198464
 flash-all.sh	1vFVbUby46viZWX0HUocNR1LXdPZfZXMw	8177
-SHA256SUMS.txt	1sd6tEyewbdL0IYb2ysEkFsJH8jN5lXCU	856
+SHA256SUMS.txt	1JNRXVDZSYqQBVEo8UXsJx34h1boHU7i0	856
 CZESCI-MD5.txt	1nwNvGno6EqIsSoj7YXHuqmy4KBc0g8xo	2316
 zloz.sh	10yl_UVDFa6cfNYeXXXqrbjQwB5Vj-QIU	851
 zloz.bat	1FIMbxYjGRqfU4FuoiaoNhgc_81XSTGDl	1874
-README.md	10JlHxTPxA0YKl2gmXuz5f_TvWNy40-7V	5235
+README.md	1kdzQ_sCDRE2CJ7g0NMj0TnJcOdFEWjrz	4866
 vbmeta_hyperos4_p11g2.img.b64	1lebbCJyqz_8aP2wKLNnBxop4IIr6g-yQ	5536
 # (pozostale 29 czesci patrz listing folderu; komplet = 16+11+2 czesci + 12 plikow kitu)
+# Update 26 IX ~06:33 UTC (przeglad adwersarza: device-probe NEED_S lapanl system_ext):
+#   podmienione 4 pliki = device-probe.sh 6897 B (1jkx0Xu4j2Hoo6_aUO-FSvUKA1_F7Srx6),
+#   SHA256SUMS.txt (suma device-probe/README/manifest), release-manifest.tsv 754 B
+#   (1bJ2osRkKBdD6ODHnWPNAH3cmOcOjjIvi), README.md (kontrakt device-probe=6897).
+#   Wszystkie 4 zweryfikowane bajt-w-bajt po pobraniu (md5 1:1). Czesci .bin nietkniete.
+#   UWAGA narzedziowa: update_file_content znieksztalca UTF-8 i zjada trailing newline -
+#   bajt-dokladne pliki wgrac przez upload_file z pliku (delete + upload).
 # Skasowano (trwale, 25 IX wieczor): 5 folderow prob z przerwanych uploadow + testowe
 # pliki z kosza. NIE tknieto: SpinjitzuLegends_* i starego vbmeta.img (wlasnosc usera).
