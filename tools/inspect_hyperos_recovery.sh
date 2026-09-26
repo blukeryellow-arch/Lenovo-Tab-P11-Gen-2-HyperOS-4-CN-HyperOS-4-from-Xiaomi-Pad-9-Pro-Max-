@@ -85,11 +85,17 @@ unzip -t "$zip" >"$work/unzip-test.log" 2>&1
   echo '```'
 } >> "$report"
 
-# Do not infer the release from a web page alone. Require the requested release
-# token to be present in the package's own metadata, filename, or manifest.
-if ! { grep -a -q 'OS4\.0\.11\.0\.XBMCNXM\|4\.0\.11\.0\.XBMCNXM' "$work/zip-members.txt" ||
-       unzip -p "$zip" 'META-INF/com/android/metadata' 2>/dev/null | grep -q '4\.0\.11\.0\.XBMCNXM'; }; then
-  echo 'The downloaded recovery archive does not identify itself as 4.0.11.0.XBMCNXM.' >&2
+# Do not identify Xiaomi's release from its internal post-build fingerprint:
+# the user explicitly established that the XRPD/missi-style fingerprint is not
+# the release identity for this port. Instead bind the exact requested release
+# to the CDN archive name and independently bind the archive metadata to the
+# yingtian device codename.
+case "$(basename "$zip")" in
+  *OS4.0.11.0.XBMCNXM*) ;;
+  *) echo 'Recovery archive filename is not OS4.0.11.0.XBMCNXM.' >&2; exit 1 ;;
+esac
+if ! unzip -p "$zip" 'META-INF/com/android/metadata' 2>/dev/null | grep -qx 'pre-device=yingtian'; then
+  echo 'Recovery metadata is not for yingtian.' >&2
   exit 1
 fi
 
