@@ -550,3 +550,22 @@ tylko toolchain erofs-c), blok receptury wycięty z TEGO pliku dosłownie
 
 To jest stan, w jakim receptura ma być czytana przez kogokolwiek innego:
 jednym blokiem, na czystym /tmp, bez dopisywania kroków z pamięci.
+
+## Incydent 26 IX ~07:50 UTC: reset sandboxa (ósmy) — odzyskanie w 10 minut
+
+Platforma zresetowała środowisko PO ostatnim pushu: `.git` wrócił do stanu
+początkowego sesji (HEAD = `5b03aea`, gałąź arena zniknęła lokalnie), `/tmp`
+wyczyszczone, a z dist zniknęły dokładnie obrazy >100 MB (lekki: system; -full:
+system+product; coherent/clean: system+system_ext). Przetrwały: wszystkie małe
+pliki kitu, product lekkiego (75 MB), gity zdalne i Dysk.
+
+Odzyskanie, krok po kroku (łącznie ~10 min):
+1. `git fetch origin <branch>` + `git checkout -f -B arena/… FETCH_HEAD`
+   → HEAD = `3a42aca`; md5 5 kluczowych plików przed/po IDENTYCZNE (zero strat).
+2. **Replay #8**: toolchain od zera (25 s) + pełny blok receptury z TEGO pliku,
+   bez ingerencji → **rc=0, 439 s**: 3× ZGODNY z runnerem, sha CLEAN `53dd7dfb…`,
+   **suite 181/0**, dist 8/8+8/8+9/9+10/10.
+
+To jest najmocniejszy dowód dnia: utrata całego stanu poza git+Dysk kosztuje
+10 minut i kończy się identycznymi bajtami. Receptura jest nie tylko dokumentem
+"jak zbudowano", ale realnym planem awaryjnym.

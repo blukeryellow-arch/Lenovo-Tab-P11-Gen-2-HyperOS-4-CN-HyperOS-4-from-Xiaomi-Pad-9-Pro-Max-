@@ -123,3 +123,7 @@ przerobka vendora pod mt6789.
   rc=0/413s, 3x ZGODNY, 8/8+8/8+9/9+10/10, builder, suite 181/0, szczyt ~8 GB przy
   12 GB wolnych (higiena dysku dziala). Dist po replayu nietkniety. CI zielone na
   fd789b2 (kody) - a90ec00 to samo docs.
+- Incydent ~07:50 UTC: platforma zresetowala sandbox (.git -> initial commit,
+  /tmp czyste, duze obrazy dist zniknely). Odzyskanie: checkout -f -B z FETCH_HEAD
+  (3a42aca, md5 5/5 identyczne) + replay #8 (toolchain 25 s + receptura 439 s,
+  rc=0, suite 181/0, dist komplet). Laczny czas naprawy: ~10 minut.
