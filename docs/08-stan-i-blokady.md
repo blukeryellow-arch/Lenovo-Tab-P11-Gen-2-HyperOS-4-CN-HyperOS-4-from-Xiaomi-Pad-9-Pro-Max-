@@ -191,6 +191,7 @@ git archive FETCH_HEAD | tar -x -C /tmp/spool   # NIE istnieje - archive idzie p
 tools/assemble_raw_parts.py --parts /tmp/spool/transfer --out /tmp/rom-kit.tar.gz \
     --expect-sha256 537eb4ea0c98f4b87bd1ccdb2e0ab502745dfd0820ef1deefb9d42e2a5b0923b
 tar -xzf /tmp/rom-kit.tar.gz -C /tmp/romkit          # w srodku m.in. system_tree (4568 wpisow)
+rm -f /tmp/rom-kit.tar.gz                             # higiena dysku: tarball zuzyty (1,4 GB)
 tools/assemble_raw_parts.py --parts /tmp/spool/transfer \
     --out /tmp/ta-product/drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz \
     --expect-sha256 a53ff508fb4e9224350635fb87a5bc60e8829504b93f86a61e4ae1963c063ff6
@@ -203,6 +204,9 @@ tools/assemble_raw_parts.py --parts /tmp/spool/transfer \
     --expect-sha256 7340a8367d3da8e4bdcf56a0f53dd7b77d87f81389d08b2a7e9e449fc02a5385
 test "$(md5sum /tmp/donor/drive-13e-*.img | awk '{print $1}')" = f879747f3f7ebb5eb026eddeb02f8d13 \
     || { echo "system_ext: md5 != suma Google"; exit 1; }
+rm -rf /tmp/spool                                      # higiena dysku: spool skonsumowany (2,1 GB);
+                                                       # build_clean_kit nie pobiera go ponownie, bo
+                                                       # donor i lekki system juz sa na miejscu
 
 # 2) cztery drzewa (artrytmyka wpisow sprawdza sie przy kazdym kroku)
 rm -rf /tmp/donor/system_tree /tmp/tree2 /tmp/tree-full   # idempotencja: cp -al/cp -a na istniejacym
@@ -241,6 +245,7 @@ cp /tmp/rebuild-full/{system,product}_hyperos4_p11g2.img dist/release/HyperOS4_P
 cp /tmp/donor/drive-13e-*.img dist/coherent-release/HyperOS4_P11Gen2-coherent/system_ext_hyperos4_p11g2.img
 cp dist/release/HyperOS4_P11Gen2/{system,product,vbmeta}_hyperos4_p11g2.img \
    dist/coherent-release/HyperOS4_P11Gen2-coherent/
+rm -rf /tmp/rebuild-lekki /tmp/rebuild-full            # higiena dysku: buildy skonsumowane (2,1 GB)
 
 # 5) dowod
 (cd dist/release/HyperOS4_P11Gen2 && sha256sum -c SHA256SUMS.txt)        # 8/8
