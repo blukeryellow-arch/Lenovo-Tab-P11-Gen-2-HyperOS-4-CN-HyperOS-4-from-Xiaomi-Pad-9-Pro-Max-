@@ -177,6 +177,8 @@ można bezpiecznie odpalać ponownie.
 Receptura krok po kroku (ścieżki jak w sesji 24 IX):
 
 ```
+set -e   # 26 IX: urwane cp przy ENOSPC musi PRZERWAC recepture, nie nadpisywac dist.
+        # Blok zakłada czyste /tmp (drzewa/tarballe z poprzedniego biegu posprzataj).
 # 0) toolchain (jeśli /tmp/erofs-c nie żyje)
 tools/build_comp_libs.sh /tmp/comp-build
 tools/build_erofs_local.sh /tmp/erofs-c
@@ -204,13 +206,13 @@ test "$(md5sum /tmp/donor/drive-13e-*.img | awk '{print $1}')" = f879747f3f7ebb5
 # 2) cztery drzewa (artrytmyka wpisow sprawdza sie przy kazdym kroku)
 mkdir -p /tmp/donor
 cp -al /tmp/romkit/system_tree /tmp/donor/            # FULL system: 4568 (obraz: -3 komentarze = 4565)
-mkdir /tmp/tree2 && cp -al /tmp/romkit/system_tree /tmp/tree2/
+mkdir -p /tmp/tree2 && cp -al /tmp/romkit/system_tree /tmp/tree2/
 rm -f /tmp/tree2/system_tree/system/etc/vintf/compatibility_matrix.{4,5,6}.{xml,komentarz.txt}
                                                       # LEKKI system: 4562 (build doklada macierz 5 -> 4563)
 mkdir -p /tmp/prod-lekki-extract                       # wyciag z LEKKIEGO product, ktory zyje w gicie
 /tmp/erofs-c/fsck.erofs --extract=/tmp/prod-lekki-extract \
     dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img    # (flaga --extract=, nie --out)
-cp -a /tmp/prod-lekki-extract /tmp/tree-product        # LEKKI product: 67 (etc/{passwd,group} + 63 fonty)
+rm -rf /tmp/tree-product && cp -a /tmp/prod-lekki-extract /tmp/tree-product   # LEKKI product: 67 (etc/{passwd,group} + 63 fonty); rm -rf = odpornosc na powtorke receptury
 mkdir -p /tmp/tree-full/etc                          # FULL product: 147 (132 pliki + 15 katalogow)
 cp -a /tmp/ta-product/fonts /tmp/ta-product/overlay /tmp/tree-full/
 cp -a /tmp/prod-lekki-extract/etc/passwd /tmp/prod-lekki-extract/etc/group /tmp/tree-full/etc/
@@ -239,9 +241,16 @@ cp dist/release/HyperOS4_P11Gen2/{system,product,vbmeta}_hyperos4_p11g2.img \
 (cd dist/release/HyperOS4_P11Gen2 && sha256sum -c SHA256SUMS.txt)        # 8/8
 (cd dist/release/HyperOS4_P11Gen2-full && sha256sum -c SHA256SUMS.txt)   # 8/8
 (cd dist/coherent-release/HyperOS4_P11Gen2-coherent && sha256sum -c SHA256SUMS.txt)  # 9/9
+
+# 5b) wariant CLEAN (system_ext minus 7 pakietow diagnostyki) - builder idempotentny,
+#     korzysta z powyzszych krokow (toolchain, spool, drzewa). Od 26 IX NIE robi
+#     'git reset --hard' bez jawnej flagi --force-git-restore.
+bash tools/build_clean_kit.sh
+(cd dist/clean-release/HyperOS4_P11Gen2-clean && sha256sum -c SHA256SUMS.txt)  # 10/10
+
 SYSTREE=/tmp/tree2/system_tree SYSTREE_FULL=/tmp/donor/system_tree \
 PRODTREE=/tmp/tree-product PRODTREE_FULL=/tmp/tree-full \
-    tools/test_release.sh --erofs-dir /tmp/erofs-c --real               # 161 PASS / 0 FAIL (replay 24 IX ~14:10 dal 96/0 - sprzed F3/V/W/X/Y); 26 IX z ZC: 174
+    tools/test_release.sh --erofs-dir /tmp/erofs-c --real               # 174 PASS / 0 FAIL (ZC od 26 IX; replay 24 IX: 96, noc 24/25: 161)
 ```
 
 Dwa szczególy, które kosztowaly najwiecej namyslu przy rekonstrukcji receptury:
@@ -387,3 +396,33 @@ receptura, na Dysku zostaje wariant CLEAN jako jedyny flashowalny komplet.
    Zasada: `df` przed kazdym mkfs/buildem; duplikaty obrazow w /tmp to pierwsze
    do skasowania.
 5. **Zrodlo donora**: docs/04 (miuirom.org, yingtian/M367FC, build 260916 ~= 4.0.11.0).
+
+## Maraton 26 IX (rano): zloz.sh end-to-end, README, trzecia odsłona ENOSPC → utwardzenia
+
+1. **Test zloz.sh dokładnie ścieżką użytkownika**: skrypt pobrany z Dysku (md5 1:1
+   z serwerem), części 60 000 000 B pocięte z `dist/clean-release` (te same bajty,
+   które leżą na Dysku — md5 serwera=lokalne udowodnione przy uploadzie), SHA256SUMS
+   z dist, `bash zloz.sh` → **4/4 obrazy (system/system_ext/product/vbmeta) IDENTYCZNE
+   z wydaniem co do bajta**, drugi przebieg idempotentny ("pomijam"). Review zloz.bat:
+   copy /b + certutil, logika spójna. Uprawnienia folderu `clean`: owner-only ✓.
+2. **Negatywny test anty-nadpis ZC**: podmiana flash-all cleana na wersję coherent
+   → **3× FAIL** ("ZC: flash-all wydaje sie coherentem"); przywrócenie → 166/0.
+   Obie kontrole ZC (anty-zamienna i anty-nadpis) dowiedzione w obie strony.
+3. **README main**: nowa sekcja „Wydania ROM — cztery warianty" (tabela różnic+szans,
+   CLEAN na Dysku, dowód zloz, 166/174), korekta kanału obrazów (transfer-spool+Dysk,
+   nie Hugging Face). docs/06: wzmianka o build_clean_kit. Receptura: krok 5b (CLEAN).
+4. **Wypadek: replay dosłowny przy 6,4 GB wolnego** → dysk 100% w trakcie suity, ale
+   **wcześniej**: cp z urwanymi bajtami nadpisał `system.img` w trzech wariantach
+   dist (lekki 920 027 136 vs 920 039 424 B; -full 385 581 056 vs 920 047 616 B).
+   Blok receptury nie miał `set -e`, więc błąd cp nie przerwał biegu — dist cicho
+   zepsuty aż do suity (W/Z złapały w 2 kontrole po jednym FAIL-u na wariant).
+   **Naprawa**: odbudowa lekkiego i -full z receptury, cp z powrotem, sumy 8/8, 8/8,
+   9/9, 10/10, suite **166/174**. **Utwardzenia** (trzy warstwy):
+   - `set -e` w bloku receptury (urwane cp PRZERYWA, nie nadpisuje dist);
+   - `rm -rf /tmp/tree-product && cp -a …` (powtórka receptury na ciepłym /tmp
+     dotąd zanieczyszczała drzewo: cp kopiował extract DO ŚRODKA istniejącego
+     katalogu → 173/1; po czyszczeniu 174/0 — obraz był cały czas dobry);
+   - **df-guard w make_release.sh i build_clean_kit.sh**: <3000 MB wolnego na
+     katalog wyjściowy → FATAL przed jakąkolwiek budową (ENOSPC ucina mkfs/cp
+     bez błędu — dziś udowodnione po raz trzeci). Logika guardu zweryfikowana,
+     make_release --selftest rc=0 po zmianach.

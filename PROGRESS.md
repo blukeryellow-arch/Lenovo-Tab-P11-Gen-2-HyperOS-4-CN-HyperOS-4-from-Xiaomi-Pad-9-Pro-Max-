@@ -70,3 +70,20 @@ dist/rom-kit/ (vbmeta Flags:3 + flash.sh 84 linie + sumy runnera i gita), napraw
 unpack_on_runner/assemble_raw_parts/build_rom_on_runner, fontgen po cmap, rro_targets
 z krzyzowka 67 apk. NIE zrobione: flash na urzadzeniu (brak sprzetu tu) i jakakolwiek
 przerobka vendora pod mt6789.
+
+## Maraton 26 IX (04:24-13:00 UTC): ciagla wiarygodnosc wydania
+
+- Dysk COMPLETE (2b406b1): folder clean 40/40, md5 serwera=lokalne 1:1, sprzatanie,
+  inwentarz diagnostics/drive-clean-kit.tsv, fix buildera krok 7.
+- Flake CI wyjasniony przez tag ci-repro-b69ff4c (zielony 1m27s, ten sam commit);
+  logi/artefakty z sandboxa niepobieralne - patrz docs/08 "Noc 25/26 IX".
+- Sekcja ZC (13 kontroli CLEAN) -> 166 PASS no-real / 174 --real (9689c7a, CI zielone);
+  oba negatywy sprawdzone: anty-zamienna (sumy 53dd7dfb vs donorska) i anty-nadpis
+  (flash-all coherent -> 3x FAIL, przywrocono -> 166/0).
+- zloz.sh end-to-end (7b6a3d3): skrypt z Dysku + czesci = 4/4 obrazy IDENTYCZNE z dist,
+  idempotentny; zloz.bat review OK; uprawnienia folderu clean: owner-only.
+- README main: sekcja Wydania (4 warianty, szanse, CLEAN/Dysk/zloz, 166/174).
+- Trzecia odsłona ENOSPC: replay przy 6,4 GB wolnego urwal cp i CICHO nadpisal
+  system.img w 3 wariantach dist; naprawa przez odbudowe (8/8, 8/8, 9/9, 10/10)
+  + utwardzenia: set -e w recepturze, rm -rf przed cp drzewa product, df-guard
+  (<3000 MB = FATAL) w make_release i build_clean_kit. Suite po wszystkim: 166/174.

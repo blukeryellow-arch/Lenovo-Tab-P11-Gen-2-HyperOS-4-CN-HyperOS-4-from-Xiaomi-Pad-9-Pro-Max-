@@ -4,12 +4,19 @@
 # Odporny na restarty: kazdy krok sprawdza, czy juz nie jest zrobiony.
 # NIE tnie na czesci, NIE wysyla na Dysk (user powiedzial: poczekac na sygnal).
 set -uo pipefail
-
 REPO=/home/user/Lenovo-Tab-P11-Gen-2-HyperOS-4-CN-HyperOS-4-from-Xiaomi-Pad-9-Pro-Max-
 OUTDIR=$REPO/dist/clean-release/HyperOS4_P11Gen2-clean
 SYSEXT=/tmp/system_ext_clean.img
 DONOR=/tmp/system_ext_donor.img
 UUID_EXT=a11ce5a1-0000-4000-8000-5c1e4b7e9a64
+
+# --- df-guard (26 IX): ENOSPC ucina mkfs/cp bez bledu; najpierw miejsce, potem build ---
+AVAIL_KB=$(df -k --output=avail "$REPO" 2>/dev/null | tail -1 | tr -dc '0-9')
+[ -n "$AVAIL_KB" ] || AVAIL_KB=99999999
+if [ "$AVAIL_KB" -lt 3000000 ]; then
+  echo "FATAL: $((AVAIL_KB/1024)) MB wolnego - wymagane >=3000 MB (ENOSPC ucina obrazy bez bledu, docs/08 26 IX)." >&2
+  exit 2
+fi
 
 cd "$REPO"
 step() { echo; echo "=== $* ==="; }

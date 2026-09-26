@@ -136,6 +136,8 @@ ale assembling macierzy, na którym `init` wstrzymuje start, dzieje się **wcze�
 magic-mount Magiska (post-fs-data), więc moduł mógłby ratować `system_server`, a nie `init`
 — a sprzedawanie murowanego efektu na tym mechanizmie byłoby zgadywaniem. Kto chce ruszyć
 wymagania, ten regeneruje obraz (`tools/make_release.sh`), i to jest w `dist/release/`.
+Wariant CLEAN (system_ext bez 7 pakietow diagnostyki) buduje `tools/build_clean_kit.sh`
+(idempotentny; od 26 IX bez side-effectu na drzewie gita).
 
 ## 6.8 Co nadal NIE jest zweryfikowane
 
