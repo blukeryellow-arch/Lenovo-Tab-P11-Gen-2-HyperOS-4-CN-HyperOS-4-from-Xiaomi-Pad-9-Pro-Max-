@@ -24,8 +24,9 @@ jobs:
   fetch-system-to-spool:
     # A push tagged [drive-probe] is deliberate: it transfers the public Drive
     # asset to a temporary Git branch in <=90 MiB verified pieces, where this
-    # sandbox can fetch it through git.
-    if: github.event_name == 'pull_request' || contains(github.event.head_commit.message, '[drive-probe]')
+    # sandbox can fetch it through git. Ordinary PR synchronization never
+    # starts another 920 MiB transfer.
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[drive-probe]')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -104,13 +105,41 @@ jobs:
           set -euo pipefail
           mkdir -p donor extract reports
           archive=donor/yingtian-images-OS4.0.11.0.XBMCNXM.tgz
-          curl --fail --location --retry 3 --connect-timeout 45 --output "$archive" "$DONOR_URL"
-          test -s "$archive"
-          tar -tzf "$archive" > donor/archive-files.txt
+          report=reports/donor-011-${GITHUB_RUN_ID}.md
           {
             echo '# Donor audit: yingtian China OS4.0.11.0.XBMCNXM'
             echo
             echo "- source: \`$DONOR_URL\`"
+          } > "$report"
+          diagnose_failure() {
+            rc=$?
+            trap - ERR
+            {
+              echo
+              echo '## Audit failure diagnostic'
+              echo
+              echo "- failed command: \`$BASH_COMMAND\`"
+              echo "- exit code: \`$rc\`"
+              echo
+              echo '### Download / extraction state'
+              echo '```'
+              find donor extract -maxdepth 2 -type f -printf '%p %s B\n' 2>/dev/null | sort || true
+              echo '```'
+              if [ -s donor/curl.stderr ]; then
+                echo
+                echo '### curl stderr (tail)'
+                echo '```'
+                tail -80 donor/curl.stderr || true
+                echo '```'
+              fi
+            } >> "$report"
+            exit "$rc"
+          }
+          trap diagnose_failure ERR
+          curl --fail --location --retry 3 --connect-timeout 45 --output "$archive" "$DONOR_URL" 2>donor/curl.stderr
+          test -s "$archive"
+          tar -tzf "$archive" > donor/archive-files.txt
+          {
             echo "- archive bytes: \`$(stat -c%s "$archive")\`"
             echo "- archive SHA-256: \`$(sha256sum "$archive" | cut -d' ' -f1)\`"
             echo
@@ -118,7 +147,7 @@ jobs:
             echo '```'
             grep -E '(^|/)(system|system_ext)\.img$' donor/archive-files.txt || true
             echo '```'
-          } > reports/donor-011-${GITHUB_RUN_ID}.md
+          } >> "$report"
 
           mapfile -t images < <(grep -E '(^|/)(system|system_ext)\.img$' donor/archive-files.txt)
           test "${#images[@]}" -gt 0
@@ -159,10 +188,11 @@ jobs:
                 fi
               done
               echo '```'
-            } >> reports/donor-011-${GITHUB_RUN_ID}.md
+            } >> "$report"
           done
 
       - name: Commit compact donor audit to this working branch
+        if: always()
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
