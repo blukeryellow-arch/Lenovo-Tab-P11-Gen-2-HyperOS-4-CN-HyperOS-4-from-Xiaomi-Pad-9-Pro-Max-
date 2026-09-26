@@ -644,7 +644,11 @@ jobs:
             /usr/share/swift /usr/local/graalvm /home/runner/.gradle/caches || true
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
-            unzip file curl erofs-utils e2fsprogs baksmali default-jre-headless golang-go
+            unzip file curl erofs-utils e2fsprogs binutils golang-go
+          sudo apt-get install -y -qq --no-install-recommends baksmali || \
+            sudo apt-get install -y -qq --no-install-recommends libsmali-java
+          command -v fsck.erofs
+          command -v baksmali || test -f /usr/share/java/baksmali.jar
           df -h .
 
       - name: Download the user-supplied exact 4.0.11.0 recovery source
