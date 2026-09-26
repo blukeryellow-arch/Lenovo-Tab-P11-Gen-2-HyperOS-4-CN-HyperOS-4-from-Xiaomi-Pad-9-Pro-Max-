@@ -1,0 +1,69 @@
+name: build-hyperos-look
+
+on:
+  push:
+    paths:
+      - 'drive-probe.request'
+      - 'tools/drive_form_post.py'
+      - 'tools/raw_parts_on_runner.sh'
+      - 'tools/push_spool_branch.sh'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-system-to-spool:
+    # A push tagged [drive-probe] is deliberate: it transfers the public Drive
+    # asset to a temporary Git branch in <=90 MiB verified pieces, where this
+    # sandbox can fetch it through git.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[drive-probe]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download public Google Drive image and verify its identity
+        env:
+          DRIVE_ID: 1341C_UdIvdqgT4CdZ1V4VpbCHQcK5z-O
+          EXPECTED_SIZE: '920039464'
+          EXPECTED_SHA256: 8b71ea568dfb6043cfb3234372b3b672c30f9dfb2e81d11ed1bbae89e98dc14f
+        run: |
+          set -euo pipefail
+          chmod +x tools/drive_form_post.py tools/raw_parts_on_runner.sh tools/push_spool_branch.sh
+          mkdir -p input transfer
+          out=input/system_hyperos4_p11g2.img
+          cookie=$(mktemp)
+          warning=$(mktemp)
+          trap 'rm -f "$cookie" "$warning"' EXIT
+          for url in \
+            "https://drive.usercontent.google.com/download?id=$DRIVE_ID&export=download&confirm=t&authuser=0" \
+            "https://drive.google.com/uc?export=download&confirm=t&id=$DRIVE_ID"; do
+            rm -f "$out"
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 \
+              --cookie "$cookie" --cookie-jar "$cookie" -o "$out" "$url" || continue
+            size=$(stat -c%s "$out" 2>/dev/null || echo 0)
+            if [ "$size" -eq "$EXPECTED_SIZE" ]; then break; fi
+            cp "$out" "$warning" || true
+            rm -f "$out"
+          done
+          if [ ! -f "$out" ] && [ -s "$warning" ]; then
+            python3 tools/drive_form_post.py --html "$warning" --jar "$cookie" \
+              --out "$out" --id "$DRIVE_ID" --log input/download.log
+          fi
+          test -f "$out"
+          test "$(stat -c%s "$out")" = "$EXPECTED_SIZE"
+          echo "$EXPECTED_SHA256  $out" | sha256sum -c -
+
+      - name: Split verified source into Git-safe parts
+        run: |
+          set -euo pipefail
+          RUN_TAG="$GITHUB_RUN_ID" tools/raw_parts_on_runner.sh \
+            input/system_hyperos4_p11g2.img transfer 0 0
+          find transfer -type f -printf '%f %s bytes\n' | sort
+
+      - name: Publish parts to temporary transfer-spool branch
+        run: |
+          set -euo pipefail
+          tools/push_spool_branch.sh transfer transfer-spool
