@@ -119,3 +119,7 @@ przerobka vendora pod mt6789.
   FAIL-i -> pre-check na starcie; skip mkfs tylko przy dokladnej sumie (ucity
   obraz mialby dobry rozmiar). Bieg koncowy: builder od zera rc=0/73s, sha
   53dd7dfb, suite 173/181.
+- Replay #7 (final): /tmp do zera, blok z docs/08 doslownie z set -e, JEDEN strzał:
+  rc=0/413s, 3x ZGODNY, 8/8+8/8+9/9+10/10, builder, suite 181/0, szczyt ~8 GB przy
+  12 GB wolnych (higiena dysku dziala). Dist po replayu nietkniety. CI zielone na
+  fd789b2 (kody) - a90ec00 to samo docs.

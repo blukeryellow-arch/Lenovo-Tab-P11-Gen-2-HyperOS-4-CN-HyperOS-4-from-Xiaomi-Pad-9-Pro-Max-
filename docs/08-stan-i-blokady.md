@@ -532,3 +532,21 @@ tree-full) na zaśmieconym sandboxie dał EPIZOD, który domknął cały dzień:
 sha system_ext CLEAN = `53dd7dfb…`** (determinizm po raz kolejny). Suite po
 wszystkim: **173 PASS / 0 FAIL** i **181 / 0** (`--real`). Dist cały: 8/8, 8/8,
 9/9, 10/10.
+
+## Maraton 26 IX (zamkniecie, ~09:45 UTC): replay #7 — finalna receptura w jednym strzale
+
+Po wszystkich poprawkach dnia (set -e, idempotencja drzew, higiena ekstraktów,
+mid-run need_space, pre-check suity, higiena dysku: spool/tarball/rebuild dirs
+kasowane po skonsumowaniu) **replay #7**: /tmp wyczyszczone do zera (zostaje
+tylko toolchain erofs-c), blok receptury wycięty z TEGO pliku dosłownie
+(wraz z nagłówkiem set -e), wykonany bez żadnej ingerencji:
+
+- **rc=0, 413 s** (składanie 3× ZGODNY z runnerem → drzewa → 2 buildy → cp →
+  sumy 8/8, 8/8, 9/9 → build_clean_kit → 10/10 → **suite 181 PASS / 0 FAIL**),
+- szczyt zajętości ~8 GB przy 12 GB wolnego (higiena dysku w recepturze działa:
+  po biegu zostaje 3,7 GB wolnego zamiast ~0),
+- dist po replayu: 8/8, 8/8, 9/9, 10/10; sha system_ext CLEAN zbudowanego
+  od zera = `53dd7dfb…` (identyczny z wydaniem i Dyskiem).
+
+To jest stan, w jakim receptura ma być czytana przez kogokolwiek innego:
+jednym blokiem, na czystym /tmp, bez dopisywania kroków z pamięci.
