@@ -82,6 +82,14 @@ if ! unzip -tqq "$archive"; then
     grep -Eio '.{0,100}(download|presign|fileurl|api/).{0,180}' "$work"/filewale-js/*.js 2>/dev/null | \
       sort -u | head -120 || true
     echo '```'
+    echo
+    echo '### Filewale public-request parameters'
+    echo '```'
+    grep -Eio '.{0,220}(fileItemId|fileItem|request-download|TB350FU).{0,420}' "$work/filewale-page.html" | \
+      sort -u | head -60 || true
+    grep -Eio '.{0,220}(baseURL|axios\.create|uE=|apiUrl|api-url).{0,480}' "$work"/filewale-js/*.js 2>/dev/null | \
+      sort -u | head -80 || true
+    echo '```'
   } >> "$report"
   false
 fi
