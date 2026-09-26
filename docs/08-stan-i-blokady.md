@@ -205,9 +205,10 @@ test "$(md5sum /tmp/donor/drive-13e-*.img | awk '{print $1}')" = f879747f3f7ebb5
     || { echo "system_ext: md5 != suma Google"; exit 1; }
 
 # 2) cztery drzewa (artrytmyka wpisow sprawdza sie przy kazdym kroku)
-mkdir -p /tmp/donor
+rm -rf /tmp/donor/system_tree /tmp/tree2 /tmp/tree-full   # idempotencja: cp -al/cp -a na istniejacym
+mkdir -p /tmp/donor                                    # katalogu GNIEZDZI kopie (wewnatrz niego) - dlatego czyscimy
 cp -al /tmp/romkit/system_tree /tmp/donor/            # FULL system: 4568 (obraz: -3 komentarze = 4565)
-mkdir -p /tmp/tree2 && cp -al /tmp/romkit/system_tree /tmp/tree2/
+mkdir /tmp/tree2 && cp -al /tmp/romkit/system_tree /tmp/tree2/
 rm -f /tmp/tree2/system_tree/system/etc/vintf/compatibility_matrix.{4,5,6}.{xml,komentarz.txt}
                                                       # LEKKI system: 4562 (build doklada macierz 5 -> 4563)
 rm -rf /tmp/prod-lekki-extract && mkdir -p /tmp/prod-lekki-extract   # wyciag z LEKKIEGO product (z GITA). UWAGA: fsck.erofs
