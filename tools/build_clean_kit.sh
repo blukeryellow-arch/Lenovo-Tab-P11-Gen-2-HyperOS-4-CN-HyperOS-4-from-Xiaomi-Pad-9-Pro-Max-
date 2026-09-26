@@ -14,9 +14,19 @@ UUID_EXT=a11ce5a1-0000-4000-8000-5c1e4b7e9a64
 cd "$REPO"
 step() { echo; echo "=== $* ==="; }
 
-step "0) git restore (na wszelki wypadek)"
-git fetch -q origin 'refs/heads/arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4:refs/remotes/origin/arena' 2>/dev/null || true
-git reset --hard -q origin/arena 2>/dev/null || true
+# LEKCJA 26 IX: 'git reset --hard origin/arena' w kroku 0 zabilo niezacommitowana
+# prace (sekcje ZC suity) przy odpaleniu buildera w trakcie sesji. Od teraz reset
+# TYLKO na jawne --force-git-restore; domyslnie builder ani nie fetchuje, nie resetuje.
+step "0) stan gita (bez resetu; --force-git-restore aby wymusic)"
+if [ "${1:-}" = "--force-git-restore" ]; then
+  git fetch -q origin 'refs/heads/arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4:refs/remotes/origin/arena' 2>/dev/null || true
+  git reset --hard -q origin/arena 2>/dev/null || true
+  echo "  UWAGA: wykonano git reset --hard origin/arena (jawna flaga)"
+else
+  if [ -n "$(git status --porcelain 2>/dev/null | head -1)" ]; then
+    echo "  drzewo ma niezacommitowane zmiany - builder ich NIE rusza (bez flagi)"
+  fi
+fi
 git log --oneline -1
 
 step "1) toolchain"

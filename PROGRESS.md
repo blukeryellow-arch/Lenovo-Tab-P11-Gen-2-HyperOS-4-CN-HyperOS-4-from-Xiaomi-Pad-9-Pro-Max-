@@ -5,7 +5,10 @@ telemetrii w system_ext; MSA/bloat w obrazach nie wystepuje z konstrukcji — pr
 donora nigdy nie wgrywany). Kit `dist/clean-release/HyperOS4_P11Gen2-clean/`:
 system_ext 602 189 824 B (slot 744 968 192), verify 1:1, flash-all 5/5 na atrapie,
 SHA256SUMS 10/10. Builder: `tools/build_clean_kit.sh` (idempotentny). Suite --real:
-**161/0** (po odbudowie obrazow -full zniszczonych przez resety VM). Upload na Dysk:
+**161/0** (po odbudowie obrazow -full zniszczonych przez resety VM).
+**26 IX rano: sekcja ZC (wariant CLEAN, 13 kontroli anty-zamienna/anty-nadpis/oneway)**
+→ suita **166/0 (no-real) / 174/0 (--real)**; flake CI wyjasniony (tag-rerun zielony).
+Upload na Dysk:
 wstrzymany na sygnal usera („powiem ci kiedy"). Push gita: standardowy.
 
 # Licznik przebiegu — HyperOS 4 na Lenovo Tab P11 Gen 2 (TB350FU)

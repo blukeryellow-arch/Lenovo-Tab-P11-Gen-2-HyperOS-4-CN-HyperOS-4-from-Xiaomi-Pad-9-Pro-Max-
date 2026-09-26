@@ -73,20 +73,20 @@ Po re-clone sandboxa (`/tmp` pusty, `~/romtools` skasowane) łańcuch narzędzi 
 ```
 tools/build_comp_libs.sh /tmp/comp-build      # 11 s, od zera, bez cache: libz.a 150 244 B + liblz4.a 277 634 B
 tools/build_erofs_local.sh /tmp/erofs-c       # ~30 s: mkfs 588 376 B, fsck 580 496 B, dump 571 776 B
-tools/test_release.sh --erofs-dir /tmp/erofs-c        # 153 PASS / 0 FAIL (z sekcjami F2/F3/V/W/X/Y/Z)
+tools/test_release.sh --erofs-dir /tmp/erofs-c        # 166 PASS / 0 FAIL (sekcje F2/F3/V/W/X/Y/Z/ZC)
 ```
 
 To przebieg **niezależny od wszystkiego, co miałem wczoraj**: identyczne liczniki, jakich wymaga
 sekcja Q (16 pozycji kontraktu, `absent-skip 3`, wiersze `docs/07` 2/2) — czyli dokładnie ten kształt,
 który widzi runner, bo oba katalogi wydania mają na czystym checkoutcie tyle samo plików co u mnie.
-Z tą różnicą, że ciemna strona jest moja: **`--real` (161 PASS) wymaga drzew donora w `/tmp`
+Z tą różnicą, że ciemna strona jest moja: **`--real` (174 PASS) wymaga drzew donora w `/tmp`
 i `~/romtools/avb`, a te nie są w gicie i nie odtwarzają się same** — `system.img` (920 MB) i
 `product.img` wariantu `-full` (150 MB) przekraczają limit GitHuba. Dlatego po reboocie mam prawo
 napisać „88/0", a nie „96/0". **Aktualizacja 24 IX ~14:00 UTC: to prawo przestało być potrzebne.**
 Drugie mrugnięcie snapshotu zabrało właśnie te trzy nieśledzone obrazy, a odbudowa z
 `transfer-spool` odtworzyła je **bajt w bajt** w kwadrans (receptura: sekcja na końcu pliku).
 `--real` jest odtwarzalny w pełni: pełne PASS potwierdzone po odbudowie (96/0 w chwili odbudowy;
-161/0 po dodaniu sekcji F3, V, W, X, Y i Z jeszcze tego samego dnia — liczby historyczne niżej
+161/0 po dodaniu sekcji F3, V, W, X, Y i Z jeszcze tego samego dnia (noc 24/25 IX); 26 IX sekcja ZC (wariant CLEAN) podnosi do **166/174** — liczby historyczne niżej
 dotyczą suity sprzed F3/V/W/X/Y). `sha256sum -c`
 na czystym checkoutcie wychodzi
 7/8 (lekki) i 6/8 (`-full`), a każde `FAILED open or read` to właśnie ten brakujący duży obraz —
@@ -99,7 +99,7 @@ przechodzą `bash -n` i mają rozmiary zgodne z kontraktami README.
 ```
 tools/build_comp_libs.sh /tmp/comp-build            # zlib + lz4 (wymaga sieci na tarball)
 tools/build_erofs_local.sh /tmp/erofs-c             # mkfs/fsck/dump, selfcheck na 3 binarkach
-tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 161 PASS / 0 FAIL z drzewami sesji (bez --real: 153)
+tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 174 PASS / 0 FAIL z drzewami sesji (bez --real: 166)
 ```
 
 Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (patrz `.gitignore`):
@@ -241,7 +241,7 @@ cp dist/release/HyperOS4_P11Gen2/{system,product,vbmeta}_hyperos4_p11g2.img \
 (cd dist/coherent-release/HyperOS4_P11Gen2-coherent && sha256sum -c SHA256SUMS.txt)  # 9/9
 SYSTREE=/tmp/tree2/system_tree SYSTREE_FULL=/tmp/donor/system_tree \
 PRODTREE=/tmp/tree-product PRODTREE_FULL=/tmp/tree-full \
-    tools/test_release.sh --erofs-dir /tmp/erofs-c --real               # 161 PASS / 0 FAIL (replay 24 IX ~14:10 dal 96/0 - sprzed F3/V/W/X/Y)
+    tools/test_release.sh --erofs-dir /tmp/erofs-c --real               # 161 PASS / 0 FAIL (replay 24 IX ~14:10 dal 96/0 - sprzed F3/V/W/X/Y); 26 IX z ZC: 174
 ```
 
 Dwa szczególy, które kosztowaly najwiecej namyslu przy rekonstrukcji receptury:
@@ -273,7 +273,7 @@ pliku wykonany bez zmian: 189 s, rc=0, (4) trzy nowe sekcje suity w schemacie F2
 | X | `dist/modules` + `dist/rom-kit` — pozostałe ładunki w gicie, których suita nie dotykała: modul Magisk (trzy kopie sumy, struktura, CRC), rom-kit (`bash -n`, sumy gita 1:1), świadoma różnica vbmeta donor `3506d20e…` vs wydanie testkey `9cf2e7e4…`, oraz **wykonanie `rom-kit/flash.sh`**: bez `system.img` (stan z czystego gita) → czysta odmowa; z oboma → 4 flashy + 2 kopie `fetch`, bez `erase userdata`; z bootloadera → `reboot fastboot` + kontynuacja | 9 |
 | Y | `assemble_raw_parts.py` na syntetycznych cząstkach — narzędzie, od którego wisi receptura odzysku, do tej pory tylko w replayach sesyjnych: rc 0/1/2/3 + adopcja sierot (bieg 35892866524) | 6 |
 
-Liczniki suity: **88/96 → 129/137** (popołudnie, F3/V/W/X/Xb/Y) → **153/161** (noc, sekcja Z).
+Liczniki suity: **88/96 → 129/137** (popołudnie, F3/V/W/X/Xb/Y) → **153/161** (noc, sekcja Z) → **166/174** (26 IX, sekcja ZC wariantu CLEAN).
 CI zielone dla `4e3452e` (F2), `9437ffa` (F3), `33ecec0` (V)
 i `d4cebe2` (W), `d55ef27` (X), `f67b560` (Xb) — oba workflow; Y (`fb51263`..`fa24354`) dojechała
 na remote o 18:09, gdy token GH odżył po ~80 min przerwy (commity czekały lokalnie — drzewo
@@ -348,6 +348,7 @@ Dwie lekcje z tego przebiegu:
 Suite po odbudowie wszystkich wydaj (resety VM zabieraly nie sledgerowane obrazy
 duze; -full po odbudowie: absent-skip -> realne kontrole): **161 PASS / 0 FAIL**
 (--real, drzewa jak wyzej). Upload na Dysk Google: **WSTRZYMANY na sygnal usera**.
+26 IX: sekcja ZC podnosi liczniki do **166/174** (test negatywny anty-zamiennej sprawdzony).
 
 ## Dysk Google UKONCZONY (25 IX, ~19:40 UTC)
 
@@ -363,3 +364,26 @@ przerwanych prob + testowe pliki z kosza (bintest*/proba*/p0-test); pliki usera
 (SpinjitzuLegends_*, stary vbmeta.img) nietkniete. Stare foldery nocy (lekki/full/
 coherent) zniknely wczesniej (trwale, przez tamta sesje) - pelne wydania odbuduje
 receptura, na Dysku zostaje wariant CLEAN jako jedyny flashowalny komplet.
+
+## Noc 25/26 IX: sekcja ZC, flake CI, dwie lekcje infra
+
+1. **Czerwony release-selftest na b69ff4c = FLAKE runnera.** Logi biegu 36170136811
+   niepobieralne (EOF z results-receiver), GitHub odmawial rerunu ("workflow file may
+   be broken"), artefakt za zablokowanym Azure-blobem. Dowod przez tag: tag
+   `ci-repro-b69ff4c` na tym SAMYM commicie odpalil identyczny bieg (36218670479) —
+   **zielony, 1m27s**. Tag skasowany po eksperymencie.
+2. **Sekcja ZC** (13 kontroli wariantu CLEAN): bash -n ×3, sumy+kontrakt, ANTY-ZAMIENNA
+   (system_ext = 53dd7dfb CLEAN, nie 7340a836 donorski — test negatywny: podmiana sumy
+   daje FAIL), ANTY-NADPIS (naglowek WARIANT CLEAN w flash-all — wczorajszy bug krok 7),
+   build-info 7/7 pakietow, vbmeta/product cmp z lekkim, manifest 1:1, atrapa oneway
+   (bez zgody rc=1/0 flashow; ze zgoda 7 flashow, system_ext 1x bez sufiksu).
+   Liczniki: **166/174**.
+3. **Lekcja buildera**: krok 0 build_clean_kit.sh robil `git reset --hard origin/arena`
+   — odpalony przy niezacommitowanej pracy ZNIOSL niezacommitowana sekcje ZC z
+   test_release.sh (i to w nocy, przy pelnym dysku). Fix: reset tylko z jawna flaga
+   `--force-git-restore`. Trzecia lekcja tego buildera (po krok 7 i ENOSPC).
+4. **ENOSPC przy mkfs**: dysk 100% zabil build system_ext (407/602 MB) i selftest
+   suity ("brak linii determinizmu" = selftest padl w polowie na pelnym dysku).
+   Zasada: `df` przed kazdym mkfs/buildem; duplikaty obrazow w /tmp to pierwsze
+   do skasowania.
+5. **Zrodlo donora**: docs/04 (miuirom.org, yingtian/M367FC, build 260916 ~= 4.0.11.0).

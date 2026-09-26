@@ -763,6 +763,135 @@ else bad "Z: brak tools/postflash_triage.sh"; Z=$((Z+1)); fi
 if [ $Z -ge 14 ]; then ok "przeanalizowane pozycje wariantu coherent+triage: $Z"; else
   bad "tylko $Z pozycji coherent - kontrola padla w polowie"; fi
 
+# --------------------- ZC: wariant CLEAN (dist/clean-release) -------------------
+echo "== ZC     wariant CLEAN: struktura, sumy, anty-zamienna, atrapa oneway"
+# Czwarty wariant (25 IX) = donorski system_ext minus 7 pakietow diagnostyki.
+# Dwie rzeczy musi pilnowac ODRUBNIE od sekcji Z:
+#  1. ANTY-ZAMIENNA: system_ext CLEAN ma sha 53dd7dfb… (602 189 824 B). Gdyby ktos
+#     podmienil obraz na donorski (7340a836…, coherent) albo odwrotnie, wydanie
+#     wygladalby zdrowo, a mialoby zla zawartosc. Suma jest stala wariantu.
+#  2. ANTY-NADPIS: bug build_clean_kit.sh (25 IX) nadpisywal flash-all cleana wersja
+#     coherent (7662 B zamiast 8177 B). Pilnujemy naglowka WARIANT CLEAN w skrypcie.
+ZCD=$ROOT/dist/clean-release/HyperOS4_P11Gen2-clean
+ZC=0
+if [ -d "$ZCD" ]; then
+  for s in flash-all.sh rollback.sh device-probe.sh; do
+    if bash -n "$ZCD/$s"; then ok "ZC: bash -n $s czysty"; else bad "ZC: $s blad skladni"; fi
+    ZC=$((ZC+1))
+  done
+  # sumy + kontrakt (identyczna umowa jak Z: nieobecne tolerowane wylacznie >100 MiB)
+  if python3 - "$ZCD" <<'PYC'
+import os, re, sys, hashlib
+d = sys.argv[1]
+lim = 100*1024*1024
+readme = open(os.path.join(d,'README.md'), encoding='utf-8').read()
+blk = re.search(r'<!--\s*ROZMIARY-KONTRAKT([^>]*)-->', readme)
+roz = dict((m.group(1), int(m.group(2))) for m in re.finditer(r'([\w.-]+)=(\d+)', blk.group(1))) if blk else {}
+bad = []
+if 'system_ext_hyperos4_p11g2.img' not in roz:
+    bad.append('README bez rozmiaru system_ext w ROZMIARY-KONTRAKT')
+for ln in open(os.path.join(d,'SHA256SUMS.txt'), encoding='utf-8'):
+    p = ln.split()
+    if len(p) != 2: continue
+    h, name = p
+    fp = os.path.join(d, name)
+    if os.path.isfile(fp):
+        if hashlib.sha256(open(fp,'rb').read()).hexdigest() != h:
+            bad.append(f'{name}: suma nie zgadza sie')
+    else:
+        if name not in roz or roz[name] <= lim:
+            bad.append(f'{name}: nieobecny, a kontrakt nie tlumaczy (>100 MiB wymagane)')
+if bad: print('\n'.join(bad)); sys.exit(1)
+print('sumy: zgodne (nieobecne tylko >100 MiB, zgodnie z kontraktem)')
+PYC
+  then ok "ZC: SHA256SUMS + ROZMIARY-KONTRAKT spojne"; else bad "ZC: sumy/kontrakt clean niespojne"; fi
+  ZC=$((ZC+1))
+  # ANTY-ZAMIENNA: system_ext w SHA256SUMS = CLEAN (53dd7dfb…), NIE donorski (7340a836…)
+  zcx=$(awk '$2=="system_ext_hyperos4_p11g2.img" {print $1}' "$ZCD/SHA256SUMS.txt")
+  case "$zcx" in
+    53dd7dfb090153e6f1c939c8292d5149ab2f7e3aaf646094f91e416c9a737ccc)
+      ok "ZC: system_ext to CLEAN (53dd7dfb…), nie donorski coherent";;
+    7340a836*) bad "ZC: system_ext to DONORSKI obraz (coherent) - zamienny wariant!";;
+    *) bad "ZC: system_ext ma nieznana sume $zcx - ktory to wariant?";;
+  esac
+  ZC=$((ZC+1))
+  # ANTY-NADPIS: flash-all z naglowkiem CLEAN, nie coherent (bug build_clean_kit 25 IX)
+  if grep -q "WARIANT CLEAN" "$ZCD/flash-all.sh" && ! grep -q "WARIANT COHERENT (noc" "$ZCD/flash-all.sh"; then
+    ok "ZC: flash-all to wersja CLEAN (naglowek), nie nadpisany coherentem"
+  else bad "ZC: flash-all wydaje sie coherentem - bug krok7 buildera wrocil?"; fi
+  ZC=$((ZC+1))
+  # build-info wymienia usuniete pakiety (min 5 z 7)
+  n=$(grep -oE "EngineerMode|DebugLoggerUI|MiSightService|VsimCore|CameraMind|PowerInsight|RtMiCloudSDK" "$ZCD/build-info.txt" | sort -u | wc -l)
+  if [ "${n:-0}" -ge 5 ]; then ok "ZC: build-info dokumentuje $n/7 usunietych pakietow"; else bad "ZC: build-info nie wymienia usunietych pakietow ($n/7)"; fi
+  ZC=$((ZC+1))
+  # vbmeta i product identyczne z lekkim (te same bajty co w wydaniu lekkim)
+  if cmp -s "$ZCD/vbmeta_hyperos4_p11g2.img" "$ROOT/dist/release/HyperOS4_P11Gen2/vbmeta_hyperos4_p11g2.img"; then
+    ok "ZC: vbmeta identyczny z lekkim (9cf2e7e4…)"
+  else bad "ZC: vbmeta rozni sie od lekkiego - ktos zmienil polityke AVB?"; fi
+  ZC=$((ZC+1))
+  if cmp -s "$ZCD/product_hyperos4_p11g2.img" "$ROOT/dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img"; then
+    ok "ZC: product identyczny z lekkim (a961bec4…)"
+  else bad "ZC: product rozni sie od lekkiego - clean nie rusza product!"; fi
+  ZC=$((ZC+1))
+  # manifest 1:1 (umowa jak w Z)
+  if python3 - "$ZCD" <<'PYC'
+import os, sys, hashlib
+d = sys.argv[1]
+lim = 100*1024*1024
+sums = {}
+for ln in open(os.path.join(d,'SHA256SUMS.txt'), encoding='utf-8'):
+    p = ln.split()
+    if len(p) == 2: sums[p[1]] = p[0]
+bad = []; rows = 0
+for ln in open(os.path.join(d,'release-manifest.tsv'), encoding='utf-8'):
+    p = ln.rstrip('\n').split('\t')
+    if not p or p[0] in ('plik','') or p[0].startswith('#'): continue
+    rows += 1
+    name, want_sz, want_sha = p[0], p[1], (p[2] if len(p) > 2 else '')
+    fp = os.path.join(d, name)
+    if os.path.isfile(fp):
+        got = os.path.getsize(fp)
+        if str(got) != want_sz: bad.append(f'{name}: bajty {want_sz} vs {got}')
+        h = hashlib.sha256(open(fp,'rb').read()).hexdigest()
+        if want_sha and h != want_sha: bad.append(f'{name}: sha manifestu != plik')
+    else:
+        if int(want_sz) <= lim: bad.append(f'{name}: brak pliku ponizej limitu')
+        if want_sha and name in sums and sums[name] != want_sha:
+            bad.append(f'{name}: manifest vs SHA256SUMS rozjazd dla nieobecnego')
+if rows < 7: bad.append(f'za malo wierszy manifestu: {rows}')
+if bad: print('\n'.join(bad)); sys.exit(1)
+print(f'{rows} wierszy manifestu 1:1')
+PYC
+  then ok "ZC: release-manifest.tsv 1:1 (z tolerancja nieobecnych >100 MiB)"; else bad "ZC: manifest clean nie oddaje plikow"; fi
+  ZC=$((ZC+1))
+  # flash-all na atrapie: scenariusz SYSTEM_EXT BEZ SLOTOW (oneway)
+  ZCR=$WORK/zcrel; rm -rf "$ZCR"; mkdir -p "$ZCR"
+  cp "$ZCD/flash-all.sh" "$ZCD/rollback.sh" "$ZCR/"
+  : > "$ZCR/vbmeta_hyperos4_p11g2.img"
+  truncate -s 920039424 "$ZCR/system_hyperos4_p11g2.img" 2>/dev/null || dd if=/dev/zero of="$ZCR/system_hyperos4_p11g2.img" bs=1M count=878 status=none
+  truncate -s 602189824 "$ZCR/system_ext_hyperos4_p11g2.img" 2>/dev/null || true
+  truncate -s 75198464 "$ZCR/product_hyperos4_p11g2.img" 2>/dev/null || true
+  (cd "$ZCR" && sha256sum vbmeta_hyperos4_p11g2.img system_hyperos4_p11g2.img system_ext_hyperos4_p11g2.img product_hyperos4_p11g2.img > SHA256SUMS.txt)
+  zc_env="FB_SIZE_VBMETA_A=0x1000000 FB_SIZE_VBMETA_B=0x1000000 FB_SIZE_PRODUCT_A=0x1000000000 FB_SIZE_PRODUCT_B=0x1000000000 FB_SIZE_SYSTEM_A=0x1000000000 FB_SIZE_SYSTEM_B=0x1000000000 FB_SIZE_SYSTEM_EXT=0x40000000"
+  : > "$WORK/zcfb.log"
+  out=$(cd "$ZCR" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/zcfb.log" $zc_env bash flash-all.sh </dev/null 2>&1); zcrc=$?
+  zcfl=$(grep -c '^FASTBOOT: flash ' "$WORK/zcfb.log")
+  if [ "$zcrc" = "1" ] && [ "$zcfl" = "0" ] && printf '%s' "$out" | grep -q "I_ACCEPT_SYSTEM_EXT_ONEWAY"; then
+    ok "ZC: oneway bez zgody -> abort z instrukcja (rc=1, 0 flashow)"
+  else bad "ZC: oneway bez zgody: rc=$zcrc flashy=$zcfl - bramka nie pilnuje"; fi
+  ZC=$((ZC+1))
+  : > "$WORK/zcfb.log"
+  out=$(cd "$ZCR" && env PATH="$WORK/stub/bin:$PATH" FB_LOG="$WORK/zcfb.log" $zc_env I_ACCEPT_SYSTEM_EXT_ONEWAY=yes bash flash-all.sh </dev/null 2>&1); zcrc=$?
+  zcfl=$(grep -c '^FASTBOOT: flash ' "$WORK/zcfb.log")
+  zcse=$(grep -c '^FASTBOOT: flash system_ext ' "$WORK/zcfb.log")
+  if [ "$zcrc" = "0" ] && [ "$zcfl" = "7" ] && [ "$zcse" = "1" ]; then
+    ok "ZC: oneway ze zgoda -> 7 flashow, system_ext 1x bez sufiksu (rc=0)"
+  else bad "ZC: oneway ze zgoda: rc=$zcrc flashy=$zcfl system_ext=$zcse"; fi
+  ZC=$((ZC+1))
+else bad "ZC: brak katalogu dist/clean-release - wariant CLEAN zniknal z drzewa"; ZC=$((ZC+1)); fi
+if [ $ZC -ge 10 ]; then ok "przeanalizowane pozycje wariantu CLEAN: $ZC"; else
+  bad "tylko $ZC pozycji CLEAN - kontrola padla w polowie"; fi
+
 # ---------------------------------------------------------------- K: higiena tekstu
 echo "== K      pismo: zero znaków CJK/cyrylickich/emoji w tym, co trafia do wydania"
 # Nie 'przy okazji', tylko jako test: trzy razy wplotlem obce znaki i trzy razy nikt
