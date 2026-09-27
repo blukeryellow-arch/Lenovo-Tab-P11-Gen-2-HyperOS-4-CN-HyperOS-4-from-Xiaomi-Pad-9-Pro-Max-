@@ -283,6 +283,9 @@ jobs:
       - name: Build systemu v7 (EROFS, surowy obraz)
         run: |
           set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/reports"
+          exec > >(tee "$GITHUB_WORKSPACE/reports/v7-build-trace.log") 2>&1
+          set -x
           tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree \
             --vintf-level 5 --vintf-optional-missing --out /tmp/rebuild-v7 \
             --erofs-dir "$EROFS_DIR" --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
@@ -310,7 +313,7 @@ jobs:
           grep -q 'pm disable-user --user 0 com.android.dynsystem' \
             /tmp/imgcheck/system/bin/arena_v7_neutralize.sh
           echo "dynsystem: neutralizacja runtime udokumentowana w obrazie (arena_v7)"
-          if [ -n "$(find /tmp/imgcheck/system \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) ! -name '*.arena-disabled' 2>/dev/null)" ]; then
+          if [ -n "$(find /tmp/imgcheck/system \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) -prune ! -name '*.arena-disabled' -print 2>/dev/null)" ]; then
             echo "UWAGA: dynsystem obecny w /system bez wylaczenia - sprawdz FIX 0b"; exit 1
           fi
           if [ -n "$(find /tmp/imgcheck/system -name '*rkpd*' -o -name '*remoteprovision*' 2>/dev/null)" ] \
@@ -414,18 +417,22 @@ jobs:
           bash tools/public_links.sh /tmp/HyperOS4_P11Gen2_v7.tar.gz /tmp/links-v7-tgz.md || true
           bash tools/public_links.sh /tmp/HyperOS4_P11Gen2_v7.zip /tmp/links-v7-zip.md || true
 
-      - name: Raport z linkami do repo
+      - name: Raport z linkami + trace do repo
         if: always()
         run: |
-          set -uo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          set -u
+          git config user.name "github-actions[bot]" || true
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com" || true
           mkdir -p reports
-          { echo "### v7 links (run ${{ github.run_id }})"; echo "RAW_V7=$RAW_V7"; echo
+          F="reports/v7-links-${{ github.run_id }}.md"
+          { echo "### v7 links (run ${{ github.run_id }})"; echo "RAW_V7=${RAW_V7:-brak}"; echo
             echo "--- tar.gz ---"; cat /tmp/links-v7-tgz.md 2>/dev/null || echo "(brak)"
-            echo "--- zip ---"; cat /tmp/links-v7-zip.md 2>/dev/null || echo "(brak)"; } > "reports/v7-links-${{ github.run_id }}.md"
-          git add -f reports
-          git diff --cached --quiet || {
-            git commit -q -m "v7-links: run ${{ github.run_id }}"
-            git push -q origin "HEAD:${{ github.ref_name }}" && echo ok
-          }
+            echo "--- zip ---"; cat /tmp/links-v7-zip.md 2>/dev/null || echo "(brak)"; } > "$F" || true
+          cat "$F" || true
+          if [ -f reports/v7-build-trace.log ]; then
+            echo "trace builda: reports/v7-build-trace.log ($(stat -c%s reports/v7-build-trace.log) B)"
+          fi
+          git add -f reports || true
+          git commit -q -m "v7-links+trace: run ${{ github.run_id }}" || true
+          git push -q origin "HEAD:${{ github.ref_name }}" || echo "push nie wyszedl"
+          exit 0
