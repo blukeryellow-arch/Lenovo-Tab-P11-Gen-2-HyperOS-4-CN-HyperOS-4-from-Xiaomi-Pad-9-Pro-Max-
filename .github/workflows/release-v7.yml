@@ -272,10 +272,10 @@ jobs:
           grep -q 'ro.security.keystore.boot_bypass=true' /tmp/imgcheck/system/build.prop
           grep -q 'ro.security.keystore.provisioning_bypass=true' /tmp/imgcheck/system/build.prop
           grep -q 'persist.sys.keystore2.bypass_rkpd=true' /tmp/imgcheck/system/build.prop
-          if find /tmp/imgcheck/system -ipath '*dynsystem*' ! -name '*.arena-disabled' | grep -q .; then
+          if find /tmp/imgcheck/system \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) ! -name '*.arena-disabled' | grep -q .; then
             echo "::error::com.android.dynsystem ZYWY w obrazie"; exit 1
           fi
-          find /tmp/imgcheck/system -ipath '*dynsystem*' -name '*.arena-disabled' | head -3
+          find /tmp/imgcheck/system \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) -name '*.arena-disabled' | head -3
           if [ -n "$(find /tmp/imgcheck/system -name '*rkpd*' -o -name '*remoteprovision*' 2>/dev/null)" ] \
              && [ -z "$(find /tmp/imgcheck/system -name '*.arena-disabled')" ]; then
             echo "::error::RkpdApp zyje w obrazie bez wylaczenia"; exit 1
