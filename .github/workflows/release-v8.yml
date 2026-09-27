@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
   push:
     branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
-    paths: ['.github/workflows/release-v7.yml']
+    paths: ['.github/workflows/release-v8.yml']
 
 permissions:
   contents: write
