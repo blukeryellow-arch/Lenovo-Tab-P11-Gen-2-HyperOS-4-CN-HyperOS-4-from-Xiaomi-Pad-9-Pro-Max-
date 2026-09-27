@@ -221,3 +221,14 @@ przerobka vendora pod mt6789.
   grepem system + system_ext donora); z setenforce 0 lookup serwisu sie udaje ->
   manager != null -> NPE nie nastepuje; wariant coherent usuwa hook calkowicie.
   lokalny raw v3: 3a66aa23f1500d04f84554aedebf6ee68dde098a6a54e885f705ad0a0d29ccf3.
+- v4 (27 IX rano, zgloszenie usera: 3 wibracje = watchdog reset, crash natywny przed
+  frameworkiem, brak logcatu): (1) FBE off - strip fileencryption=/metadata_encryption=
+  /forceencrypt ze wszystkich fstab* w drzewie systemu (sed przetestowany na przykladach
+  z dokumentacji AOSP) + build.prop: ro.crypto.volume.contents_mode=footer,
+  filenames_mode=footer, metadata.encryption=none (zrodlo: AOSP encryption docs);
+  (2) linker.config.pb: inwentarz + marker komentarza - SWIADOMIE bez falszywych sekcji
+  dir.* (zla sekcja = crash linkerconfig we wczesnym init = dokladnie naprawiany tryb
+  awarii); (3) packaging: RAW niesparse'owany + tar.gz + zip (nie lz4hc-sparse), wg
+  zlecenia pod DSU Sideloader; (4) utrzymane v3: init.rc setenforce 0 + typepermissive.
+  Bramki CI: dowod FBE-off/rc/CIL extractem z gotowego obrazu + porazka buildu gdy
+  flagi przetrwaja. Reset #11 (27 IX 10:15): /tmp wyczyszczone, recovery fetch+checkout.
