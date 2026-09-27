@@ -398,3 +398,18 @@ przerobka vendora pod mt6789.
   audioserver zyje w obu sesjach portu - teoria "audio crash" obalona). REALIZOWALNE
   czesci: strip deklaracji features sprzetu nieobecnego na celu (uwb/iris) + usuniecie
   martwych wpisow Dolby/spatial z audio_policy/effects (DOM-validowane) => v8.
+- v8 WYDANE (27 IX noc, run 36328074783 ZIELONY) po 5. zleceniu "hardware isolation".
+  Najpierw remont CI: transform v7->v8 mial 2 bugi: (a) on.push.paths dalej wskazywal
+  release-v7.yml => GitHub NIGDY nie odpalil nowego workflow (push x2 = 0 runow, endpoint
+  404; nauka: przy generowaniu workflowu z wzorca sprawdzic tez blok on:); (b) "cd
+  /tmp/kit7" (token bez slasha) pozostal w Zestawie => kropka porazki na runnerze.
+  Po fixach: BUILD ZIELONY, ale WYNIK MERYTORYCZNY: RAW_V8 = 4fac5edb...90fd =
+  RAW_V7 BAJT W BAJT => FIX 4 (uwb/iris) i FIX 5 (audio) byly NO-OP: w /system donora
+  NIE MA zadnych deklaracji features uwb/iris ani wpisow Dolby/spatial/Xiaomi
+  (audio_effects.xml istnieje, ale bez wpisow dopasowanych - skoro obraz identyczny).
+  CI FORMALNIE UDOWODNILO: rzeczy z 5. zlecenia do stripowania NIE ISTNIEJA w obrazie.
+  Punkty 1 (SystemServer.java try-catch) i 3 (usuwanie logiki ladowania) pozostaja
+  niemozliwe (repack, brak zrodel). v8 = v7 + dokladna dokumentacja; kit rozni sie
+  tylko README. DELIVERY: transfer.archivete.am (zob. reports/v8-links-36328074783.md),
+  gofile lBqFadWx/m9b0lXrn, release GH hyperos4-p11g2-v8. NIEZMIENIE: brakujacy krok
+  to instalacja obrazu v7/v8 w DSU + pstore po twardym resecie.
