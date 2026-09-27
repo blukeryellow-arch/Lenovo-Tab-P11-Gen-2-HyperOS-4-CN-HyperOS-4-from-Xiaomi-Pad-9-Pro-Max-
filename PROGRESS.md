@@ -368,3 +368,17 @@ przerobka vendora pod mt6789.
   752218126 B, auto-download) | tgz https://transfer.archivete.am/NIlW/HyperOS4_P11Gen2.zip
   (752235527 B) | gofile rQUh2Kv0/6ieAIeKF | release GH hyperos4-p11g2-v7.
   Instrukcje: fastboot (permanentnie) ALBO DSU + sticky (adb shell gsi_tool enable).
+- 27 IX wieczor (3. zlecenie "strip FBE"): hipoteza usera "hardware cut power w milisekunde
+  po install fscrypt key" ODRUCZONA RECEIPTAMI z wlasnego pliku usera: po cytowanej linii
+  15:30:32.032 log zyje JESZCZE 18 117 LINII (do 15:31:35.022); 3 ms po niej:
+  "LockSettingsService: Unlocked CE storage for unsecured user 0" (= fscrypt SIE UDAL);
+  5x "Verified that /data... policy v2" ; 1112 linii normalnej aktywnosci Launcher/GMS/bateria.
+  Twardy reset jest realny, ale 63 s pozniej, przyczyna kernelowa (niewidoczna w logcat v4).
+  Zadany strip fstab/props: ZREALIZOWANY od v4 (w /system donora NIE MA fstab - fstab /data
+  zyje w vendorze hosta, z system.img nieosiagalny; dzwignie = propsy ro.crypto.volume.*
+  footer/none - w kazdym buildzie od v4, bramki CI to potwierdzaja). Decyzja: NIE buduje
+  "v8" o identycznej zawartosci - v7 JEST tym obrazem (dowod: raporty buildow v4-v7);
+  brakujacy krok = instalacja v7 (log #2 dowodzi: biegal v4, rkpdapp zywy, 0 znacznikow
+  arena) + pstore po resie. Wzorzec 3x z rzedu: diagnoza wklejona w prompcie sprzeczna
+  z wgranym plikiem (26 IX keystore/weaver "fatal"; 27 IX rano "watchdog final phase" =
+  reboot DSU; teraz "millisecond fscrypt panic" = 63 s pozniej hard reset).
