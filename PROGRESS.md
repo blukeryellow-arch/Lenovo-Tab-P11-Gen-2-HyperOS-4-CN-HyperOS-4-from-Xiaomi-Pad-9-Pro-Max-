@@ -250,3 +250,17 @@ przerobka vendora pod mt6789.
   byla bledna; (3) realny sygnal: errno 126 (EKEYREJECTED) na /data/user/0 - klucze CE
   odrzucone rowniez dla hosta => userdata kryptograficznie niespojne po eksperymentach.
   Nastepny krok: pstore/bugreport z bootu GSI + prawdopodobnie format userdata.
+- DOMKNIECIE wątków + OSTATECZNA DELIVERY v5 (27 IX popołudnie): (a) kwestia EROFS
+  ROZSTRZYGNIĘTA bez sekcji super.img - v4 bootował do launchera na naszym obrazie
+  EROFS, więc kernel Lenovo montuje EROFS z kompresją; /data f2fs w logu montuje
+  się poprawnie. (b) Folder TB350FU_USER_S231044 na Dysku = PEŁNY ZESTAW RATUNKOWY
+  (SP Flash Tool + super.img 8,3 GB + wszystkie partycje + scatter; scatter .t jest
+  szyfrowany formatem SP Flash Tool - normalne). (c) Egress sandboxu: teraz TYLKO
+  GitHub (github.com/api 200, cała reszta 000) => mirrory archivete/gofile padły
+  NIE z winy plików i nie da się ich stąd odświeżyć. (d) DELIVERY v5 = release GH
+  hyperos4-p11g2-v5 (asset id 592708914 zip / 592708916 tar.gz, rozmiary bajt-w-bajt
+  zgodne z buildem); zweryfikowano że asset endpoint przekierowuje do żywego
+  podpisanego URL z Content-Disposition: attachment => klik w przeglądarce
+  zalogowanego usera = AUTO-POBIERANIE (wzorzec spełniony). RAW sha256:
+  923c3d7d71154bff1a6dd21df1875d26282107f90b4710b4a25ec4d97f8d2ab9.
+  CZEKA NA: pstore.txt / bugreport na Dysku + backup i format userdata (errno 126).
