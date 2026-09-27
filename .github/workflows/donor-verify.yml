@@ -57,37 +57,42 @@ jobs:
             exit 0
           fi
           cp /tmp/resp /tmp/page.html
+          echo "=== dekoduje base64 z href (przyciski download) ==="
+          grep -oE '[A-Za-z0-9+/]{60,}={0,2}' /tmp/resp | sort -u | while read -r b; do
+            d=$(echo "$b" | base64 -d 2>/dev/null || true)
+            case "$d" in
+              https://*.zip) echo "$d" ;;
+            esac
+          done | sort -u > /tmp/decoded_urls.txt
+          cat /tmp/decoded_urls.txt
           echo "=== wszystkie URL/href w stronie (unikalne) ==="
           grep -oE 'https?://[^"'\'' <>\\)]+' /tmp/resp | sort -u | head -60 > /tmp/urls.txt
           grep -oE 'href="[^"]+"' /tmp/resp | cut -d'"' -f2 | sort -u | head -60 >> /tmp/urls.txt
-          cat /tmp/urls.txt
-          echo "=== szukam kandydatow pliku ==="
-          CAND=$(
-            {
-              grep -oE 'https?://[^"'\'' <>\\)]+\.zip' /tmp/resp
-              grep -oE 'https?://[^"'\'' <>\\)]*(bigota|hugeota|d\.miui|cdn)[^"'\'' <>\\)]*' /tmp/resp
-              grep -oE 'url=https?://[^"'\'' <>\\)]+' /tmp/resp | cut -d= -f2-
-              grep -oE '(href|src|data-[a-z-]+)="[^"]*(download|dl|load|ota)[^"]*"' /tmp/resp | cut -d'"' -f2
-            } 2>/dev/null | grep -v '^$' | sort -u | head -12
-          )
-          echo "kandydaci:"; echo "$CAND"
-          for u in $CAND; do
-            case "$u" in
-              /*) u="https://miuirom.org$u" ;;
-              http*) : ;;
-              *) u="https://miuirom.org/$u" ;;
-            esac
-            hdr=$(curl -sSIL -A "$UA" -e "https://miuirom.org/" --max-time 60 "$u" 2>&1)
+          echo "=== kandydaci: zdekodowane + hardcoded fallback ==="
+          CAND=$( { cat /tmp/decoded_urls.txt 2>/dev/null;
+            echo "https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip";
+            echo "https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip";
+            grep -oE 'https?://[^"'\'' <>\\)]+\.zip' /tmp/resp 2>/dev/null; } | grep -v '^$' | sort -u | head -12 )
+          echo "$CAND"
+          probe() {
+            local u=$1 hdr code cl
+            hdr=$(curl -sSIL -A "$UA" --max-time 60 "$u" 2>&1)
             code=$(printf '%s' "$hdr" | grep -iE '^HTTP' | tail -1 | tr -d '\r')
-            ct=$(printf '%s' "$hdr" | grep -i '^content-type' | tail -1 | tr -d '\r')
             cl=$(printf '%s' "$hdr" | grep -i '^content-length' | tail -1 | tr -dc 0-9)
-            echo "probe: $u -> ${code:-?} | ${ct:-?} | len=${cl:-?}"
-            if [ -n "$cl" ] && [ "$cl" -ge "$MIN_ZIP_BYTES" ]; then
+            if [ -z "$cl" ]; then
+              cl=$(curl -s -D - -o /dev/null --max-time 60 -r 0-0 -A "$UA" "$u" 2>/dev/null \
+                   | grep -i '^content-range' | grep -oE '[0-9]+$' | tail -1)
+            fi
+            echo "probe: $u -> ${code:-?} | len=${cl:-?}"
+            [ -n "$cl" ] && [ "$cl" -ge "$MIN_ZIP_BYTES" ]
+          }
+          for u in $CAND; do
+            if probe "$u"; then
               printf 'url=%s\n' "$u" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           done
-          echo "::error::nie znaleziono URL pliku ~10 GB - PELNY HTML w raporcie do analizy"
+          echo "::error::zaden kandydat nie wyglada na plik ~10 GB (HTML + zdekodowane URL w raporcie)"
           exit 1
 
       - name: Pobierz Recovery ROM (10,31 GB)
@@ -168,6 +173,10 @@ jobs:
             echo "#### naglowki /load z refererem (wszystkie skoki)"
             echo '```'
             cat /tmp/resolve_hdrs2.txt 2>/dev/null | grep -iE '^(HTTP|location|content-type)' | head -20
+            echo '```'
+            echo "#### zdekodowane base64 -> URL pliku"
+            echo '```'
+            cat /tmp/decoded_urls.txt 2>/dev/null || echo '(brak)'
             echo '```'
             echo "#### wszystkie URL wykryte w stronie download"
             echo '```'
