@@ -413,3 +413,20 @@ przerobka vendora pod mt6789.
   tylko README. DELIVERY: transfer.archivete.am (zob. reports/v8-links-36328074783.md),
   gofile lBqFadWx/m9b0lXrn, release GH hyperos4-p11g2-v8. NIEZMIENIE: brakujacy krok
   to instalacja obrazu v7/v8 w DSU + pstore po twardym resecie.
+- v9 WYDANE (27 IX noc, run 36330785911 ZIELONY) na podstawie PIERWSZEGO KERNELOWEGO
+  DOWODU z bugreportu usera (Dysk, bugreport.zip; analiza:
+  diagnostics/logs/ANALIZA-bugreport-2709.md, pstore: bugreport-2709_pstore-lastkmsg.txt).
+  PRZYCZYNA TWARDEGO RESETU (pstore/LAST KMSG): OOPS 96000145 w sciezce SUSPEND WiFi/BT
+  (mtk_sdio_pm_suspend -> halSetFWOwn 15x skip -> btmtk subsys reset fail -> whole-chip
+  reset -> SDIO paging fault ffffffffbfffffc0 -> ipanic [mrdump]). "63 sekundy" = screen
+  timeout (~60 s) -> suspend -> crash. Slot-switch potwierdzony (crashed kernel 5.10.177
+  != host 5.10.233). Claimsy zlecenia (beanpod binder mismatch, Dolby DMS crash) ODRUCONE
+  receiptsami z tego samego bugreportu: beanpodkeymaster zdrowy (104x, Enter/Exit
+  BeginOperation), vendor.dolby zywy w procesach (307x), w pstore zero ramek binder/audio.
+  Mock-stuby niewstawione (brak zrodel + brak dowodow). FIX 6 (v9): ANTI-SUSPEND z obrazu -
+  arena_nosuspend.rc (write /sys/power/wake_lock arena_nosuspend na early-init/boot/
+  boot_completed; bramka = 3x w obrazie) + settings stay_on_while_plugged_in=7 w skrypcie
+  neutralizujacym. Bez suspend sciezka crashu sie nie wykona. Koszt: zuzycie baterii.
+  DELIVERY: patrz reports/v9-links-36330785911.md + release GH hyperos4-p11g2-v9.
+  Test: DSU z v9; jesli crash mimo wakelocka => pstore znowu (wowczas sciezka inna niz
+  suspend); opcja B: DSU na slocie z kernel 5.10.233 (fastboot getvar current-slot).
