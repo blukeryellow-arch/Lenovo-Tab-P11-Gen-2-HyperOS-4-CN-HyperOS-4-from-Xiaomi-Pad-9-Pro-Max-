@@ -90,12 +90,20 @@ jobs:
           T=/tmp/tree2/system_tree/system
           echo "=== czy dynsystem jest w /system? ==="
           HITS=$(find "$T" \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) 2>/dev/null || true)
+          echo "$HITS" || true
           if [ -n "$HITS" ]; then
-            echo "$HITS" | while read -r p; do mv "$p" "$p.arena-disabled"; echo "wylaczono (plik): $p"; done
+            # -prune: nie schodzimy do srodka przemianowanych katalogow (dir+apk = jeden wpis;
+            # kaskada mv na przeniesionym rodzicu ubijala krok przez set -e)
+            find "$T" \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) -prune 2>/dev/null |
+              while IFS= read -r p; do mv "$p" "$p.arena-disabled"; echo "wylaczono (plik/katalog): $p"; done
             echo "dynsystem obecny w /system - wylaczony plikowo"
           else
-            echo "dynsystem NIEOBECNY w /system (zyje w system_ext hosta Lenovo - potwierdzone"
-            echo "logiem 27 IX: w DSU /system_ext pochodzi z hosta) => neutralizacja RUNTIME"
+            echo "dynsystem NIEOBECNY w /system => neutralizacja runtime tylko"
+          fi
+          # brak zywego pliku (-prune zapobiega falszywym trafieniom w srodku .arena-disabled):
+          if find "$T" \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) -prune \
+               ! -name '*.arena-disabled' -print 2>/dev/null | grep -q .; then
+            echo "::error::zywy plik dynsystem przetrwal"; exit 1
           fi
           # Neutralizacja runtime (dziala niezaleznie od partycji, w ktorej siedzi pakiet):
           SCRIPT="$T/bin/arena_v7_neutralize.sh"
