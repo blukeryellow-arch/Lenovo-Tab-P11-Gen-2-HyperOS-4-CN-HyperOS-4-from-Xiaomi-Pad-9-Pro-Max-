@@ -84,25 +84,49 @@ jobs:
           fi
           grep -ri 'rkpd' "$T/etc/permissions/" 2>/dev/null | head -3 || true
 
-      - name: FIX 0b (v7) - wylacz com.android.dynsystem (rebooty sesji DSU)
+      - name: FIX 0b (v7) - neutralizacja com.android.dynsystem (rebooty sesji DSU)
         run: |
           set -euo pipefail
           T=/tmp/tree2/system_tree/system
-          echo "=== szukam com.android.dynsystem w drzewie: ==="
-          HITS=$(find "$T" -ipath '*dynsystem*' 2>/dev/null || true)
-          echo "$HITS" || true
+          echo "=== czy dynsystem jest w /system? ==="
+          HITS=$(find "$T" \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) 2>/dev/null || true)
           if [ -n "$HITS" ]; then
-            echo "$HITS" | while read -r p; do mv "$p" "$p.arena-disabled"; echo "wylaczono: $p"; done
-            find "$T" -name '*.arena-disabled' -ipath '*dynsystem*' | wc -l | sed 's/^/wylaczonych dynsystem: /'
+            echo "$HITS" | while read -r p; do mv "$p" "$p.arena-disabled"; echo "wylaczono (plik): $p"; done
+            echo "dynsystem obecny w /system - wylaczony plikowo"
           else
-            echo "::error::nie znaleziono com.android.dynsystem w systemie - sprawdz sciezke"
-            exit 1
+            echo "dynsystem NIEOBECNY w /system (zyje w system_ext hosta Lenovo - potwierdzone"
+            echo "logiem 27 IX: w DSU /system_ext pochodzi z hosta) => neutralizacja RUNTIME"
           fi
-          # brak zywego apk priv-app:
-          if find "$T" -ipath '*dynsystem*' ! -name '*.arena-disabled' | grep -q .; then
-            echo "::error::zywy plik dynsystem przetrwal"; exit 1
+          # Neutralizacja runtime (dziala niezaleznie od partycji, w ktorej siedzi pakiet):
+          SCRIPT="$T/bin/arena_v7_neutralize.sh"
+          cat > "$SCRIPT" <<'SHEOF'
+          #!/system/bin/sh
+          # v7: com.android.dynsystem (AOSP, system_ext) konczy sesje DSU rebootem
+          # (ACTION_REBOOT_TO_DYN_SYSTEM -> "Rebooting, reason: dynsystem"; dowod:
+          # diagnostics/logs/ANALIZA-boot-2709.md). Wylaczamy pakiet po boocie.
+          log -t arena_v7 "neutralize: start"
+          if pm disable-user --user 0 com.android.dynsystem >/dev/null 2>&1; then
+            log -t arena_v7 "dynsystem: pm disable-user OK"
+          else
+            log -t arena_v7 "dynsystem: pm disable-user nieudane"
           fi
-          echo "dynsystem wylaczony z drzewa"
+          if pm hide com.android.dynsystem >/dev/null 2>&1; then
+            log -t arena_v7 "dynsystem: pm hide OK"
+          else
+            log -t arena_v7 "dynsystem: pm hide nieudane"
+          fi
+          log -t arena_v7 "neutralize: koniec"
+          SHEOF
+          chmod 755 "$SCRIPT"
+          grep -q 'pm disable-user --user 0 com.android.dynsystem' "$SCRIPT"
+          RC="$T/etc/init/arena_v7.rc"
+          cat > "$RC" <<'RCEOF'
+          # v7: po boot_completed wylacz com.android.dynsystem (koniec rebootow sesji DSU).
+          on property:sys.boot_completed=1
+              exec_background /system/bin/sh /system/bin/arena_v7_neutralize.sh
+          RCEOF
+          grep -q 'exec_background /system/bin/sh /system/bin/arena_v7_neutralize.sh' "$RC"
+          echo "arena_v7.rc + arena_v7_neutralize.sh zapisane"
 
       - name: FIX 1 - FBE off (fstab strip + propsy ro.crypto)
         run: |
@@ -272,10 +296,15 @@ jobs:
           grep -q 'ro.security.keystore.boot_bypass=true' /tmp/imgcheck/system/build.prop
           grep -q 'ro.security.keystore.provisioning_bypass=true' /tmp/imgcheck/system/build.prop
           grep -q 'persist.sys.keystore2.bypass_rkpd=true' /tmp/imgcheck/system/build.prop
-          if find /tmp/imgcheck/system \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) ! -name '*.arena-disabled' | grep -q .; then
-            echo "::error::com.android.dynsystem ZYWY w obrazie"; exit 1
+          # dowod neutralizacji dynsystem: rc + skrypt w obrazie (pakiet zyje w system_ext hosta)
+          grep -q 'exec_background /system/bin/sh /system/bin/arena_v7_neutralize.sh' \
+            /tmp/imgcheck/system/etc/init/arena_v7.rc
+          grep -q 'pm disable-user --user 0 com.android.dynsystem' \
+            /tmp/imgcheck/system/bin/arena_v7_neutralize.sh
+          echo "dynsystem: neutralizacja runtime udokumentowana w obrazie (arena_v7)"
+          if [ -n "$(find /tmp/imgcheck/system \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) ! -name '*.arena-disabled' 2>/dev/null)" ]; then
+            echo "UWAGA: dynsystem obecny w /system bez wylaczenia - sprawdz FIX 0b"; exit 1
           fi
-          find /tmp/imgcheck/system \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) -name '*.arena-disabled' | head -3
           if [ -n "$(find /tmp/imgcheck/system -name '*rkpd*' -o -name '*remoteprovision*' 2>/dev/null)" ] \
              && [ -z "$(find /tmp/imgcheck/system -name '*.arena-disabled')" ]; then
             echo "::error::RkpdApp zyje w obrazie bez wylaczenia"; exit 1
