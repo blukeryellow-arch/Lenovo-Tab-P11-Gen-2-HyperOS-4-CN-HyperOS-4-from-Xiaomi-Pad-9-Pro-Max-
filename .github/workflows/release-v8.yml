@@ -418,7 +418,7 @@ jobs:
           cp /tmp/rebuild-v8/system_hyperos4_p11g2.img /tmp/kit8/
           cp "$GITHUB_WORKSPACE/dist/release/HyperOS4_P11Gen2/vbmeta_hyperos4_p11g2.img" /tmp/kit8/
           echo "$VBMETA_SHA  /tmp/kit8/vbmeta_hyperos4_p11g2.img" | sha256sum -c -
-          cd /tmp/kit7
+          cd /tmp/kit8
           cat > sprawdz.sh <<'EOF'
           #!/usr/bin/env bash
           # Weryfikacja v8 (obraz NIESPARSE'OWANY - raw EROFS): suma wystarcza.
