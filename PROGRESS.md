@@ -282,3 +282,15 @@ przerobka vendora pod mt6789.
   "NIEUDANY -" w przyszlych raportach) - NIE poprawiac lekkorecznie: kazdy push tego
   pliku odpala nowy cykl uploadu 752 MB. Do wyczyszczenia przy okazji v6.
   CZEKA NA USERA: pstore.txt/bugreport po flashu v5 + backup i format userdata.
+- DONOR: link usera (27 IX popoludnie) = miuirom.org/load?o=xiaomi-pad-9-pro-max&
+  v=4.0.11.0.XBMCNXM&t=Recovery. Zweryfikowano przez fetch strony: to DOKLADNIE ten
+  donor, z ktorego zbudowane jest v1-v5 (docs/04 fingerprint 260916, yingtian/M367FC,
+  docs/10 dowod #12: miuirom.org/tablets/xiaomi-pad-9-pro-max; build 260916 ~= 4.0.11.0
+  z 2026-09-19, Recovery 10.31 GB). Nie trzeba nic ponownie pobierac: bajty donora sa
+  zachowane w repo (branch transfer-spool, czesci 100 MB, bramka sha 537eb4ea w CI) -
+  odbudowa nie zalezy od zywotnosci linku miuirom.
+- NOWE: na stronie donora dostepna HyperOS 4.0.13.0.XBMCNXM (2026-09-23, Recovery
+  10.34 GB) - nowsza niz nasz donor 4.0.11.0. Opcja na przyszlosc: rebase v6 na
+  4.0.13.0 (runner ma pelny egress, sciagniecie przez CI wykonalne), ALE plan bez
+  zmian: v6 dopiero po pstore/bugreport z bootu portu - watchdog i errno 126 na
+  userdata to nie kwestia wersji donora. Zdecyduje user.
