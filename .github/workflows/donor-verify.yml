@@ -1,0 +1,185 @@
+name: donor-verify-4.0.11.0
+
+# Doslowne wykonanie zlecenia usera (27 IX, 2x ten sam link): "tu masz img hyperosa 4".
+# Runner (pelny egress - sandbox agenta ma tylko GitHub) pobiera Recovery ROM
+# 4.0.11.0.XBMCNXM z linku usera (miuirom.org /load), wyciaga metadane OTA i TWARDYMI
+# bramkami udowadnia tozsamosc z donorem, z ktorego zbudowane jest v1-v5
+# (kit: sdk=37, release=17, security_patch=2026-08-01, incremental 17OS4.0.260916...).
+# Cel: zamiana "build 260916 ~= 4.0.11.0" (docs/08) na dowod "=" - albo wykrycie
+# rozjazdu wersji (wowczas decyzja o rebasie v6). Nie archiwizujemy zipa 10,3 GB
+# (limit assetu release 2 GB); bajty systemu donora sa juz w repo (transfer-spool,
+# bramka sha 537eb4ea przy kazdej odbudowie).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/donor-verify.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: donor-verify
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      LOAD_URL: 'https://miuirom.org/load?o=xiaomi-pad-9-pro-max&v=4.0.11.0.XBMCNXM&l=en&t=Recovery'
+      UA: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+      MIN_ZIP_BYTES: '9000000000'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rozwiaz link /load do bezposredniego pliku
+        id: resolve
+        run: |
+          set -uo pipefail
+          set +e
+          echo "=== lancuch przekierowan /load ==="
+          curl -sS -A "$UA" -o /dev/null -D /tmp/h1 --max-time 90 "$LOAD_URL"
+          grep -iE '^(HTTP|location|content-type|content-length)' /tmp/h1 | head -20
+          cp /tmp/h1 /tmp/resolve_hdrs.txt
+          echo "=== pobieram odpowiedz /load ==="
+          curl -sSL -A "$UA" -e "https://miuirom.org/tablets/xiaomi-pad-9-pro-max" --max-time 300 "$LOAD_URL" -o /tmp/resp
+          ft=$(file -b /tmp/resp)
+          sz=$(stat -c%s /tmp/resp 2>/dev/null)
+          echo "typ: $ft, rozmiar: ${sz:-?} B"
+          if echo "$ft" | grep -qi 'zip'; then
+            echo "/load prowadzi wprost do pliku"
+            printf 'url=%s\n' "$LOAD_URL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cp /tmp/resp /tmp/page.html
+          echo "=== HTML: pierwsze 300 B ==="
+          head -c 300 /tmp/resp; echo
+          echo "=== szukam bezposredniego URL pliku ==="
+          CAND=$(
+            {
+              grep -oE 'https?://[^"'\'' <>]+\.zip' /tmp/resp
+              grep -oE 'https?://[^"'\'' <>]*(bigota|hugeota|d\.miui)[^"'\'' <>]*' /tmp/resp
+              grep -oE 'url=https?://[^"'\'' <>]+' /tmp/resp | cut -d= -f2-
+              grep -oE 'href="[^"]*(download|dl|load)[^"]*"' /tmp/resp | cut -d'"' -f2
+            } 2>/dev/null | grep -v '^$' | sort -u | head -10
+          )
+          echo "kandydaci:"; echo "$CAND"
+          if [ -z "$CAND" ]; then
+            echo "::error::nie znaleziono URL pliku w odpowiedzi /load (HTML w raporcie)"
+            exit 1
+          fi
+          for u in $CAND; do
+            case "$u" in
+              /*) u="https://miuirom.org$u" ;;
+              http*) : ;;
+              *) u="https://miuirom.org/$u" ;;
+            esac
+            hdr=$(curl -sSIL -A "$UA" --max-time 60 "$u" 2>&1)
+            code=$(printf '%s' "$hdr" | grep -iE '^HTTP' | tail -1 | tr -d '\r')
+            ct=$(printf '%s' "$hdr" | grep -i '^content-type' | tail -1 | tr -d '\r')
+            cl=$(printf '%s' "$hdr" | grep -i '^content-length' | tail -1 | tr -dc 0-9)
+            echo "probe: $u -> ${code:-?} | ${ct:-?} | len=${cl:-?}"
+            if [ -n "$cl" ] && [ "$cl" -ge "$MIN_ZIP_BYTES" ]; then
+              printf 'url=%s\n' "$u" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "::error::zaden kandydat nie wyglada na plik ~10 GB (HTML w raporcie)"
+          exit 1
+
+      - name: Pobierz Recovery ROM (10,31 GB)
+        run: |
+          set -euo pipefail
+          U="${{ steps.resolve.outputs.url }}"
+          echo "pobieram: $U"
+          df -BG /tmp | tail -1
+          curl -L -A "$UA" --retry 5 --retry-delay 10 --retry-all-errors --max-time 2400 -o /tmp/donor.zip "$U"
+          sz=$(stat -c%s /tmp/donor.zip)
+          echo "rozmiar: $sz B"
+          if [ "$sz" -lt "$MIN_ZIP_BYTES" ]; then
+            echo "::error::za maly plik: $sz B (oczekiwane ~10,31 GB)"
+            exit 1
+          fi
+          if ! file -b /tmp/donor.zip | grep -qi zip; then
+            echo "::error::pobrany plik nie jest zipem"; head -c 200 /tmp/donor.zip; echo; exit 1
+          fi
+          sha256sum /tmp/donor.zip | tee /tmp/donor.zip.sha256
+
+      - name: Metadane OTA + bramki tozsamosci z kitem v1-v5
+        run: |
+          set -uo pipefail
+          set +e
+          cd /tmp
+          echo "=== zawartosc zipa (naglowek) ==="
+          unzip -l donor.zip > /tmp/ziplist.txt 2>&1
+          head -25 /tmp/ziplist.txt
+          grep -E 'payload\.bin|metadata|properties' /tmp/ziplist.txt | head -10
+          echo "=== wyciagam metadane ==="
+          unzip -o -j donor.zip 'META-INF/com/android/metadata' 'META-INF/com/android/metadata.pb' 'payload_properties.txt' -d /tmp/meta >/dev/null 2>&1
+          ls -la /tmp/meta 2>/dev/null
+          {
+            cat /tmp/meta/metadata 2>/dev/null
+            strings /tmp/meta/metadata.pb 2>/dev/null
+            cat /tmp/meta/payload_properties.txt 2>/dev/null
+          } > /tmp/meta_all.txt
+          echo "=== metadane (pelne) ==="
+          cat /tmp/meta_all.txt
+          echo
+          echo "=== BRAMKI TWARDE ==="
+          if grep -q 'XBMCNXM' /tmp/meta_all.txt; then
+            echo "GATE A OK: wersja XBMCNXM jest w metadanych (wlasnie ten plik)"
+          else
+            echo "::error::GATE A: w metadanych nie ma XBMCNXM - pobrany plik to inna wersja"
+            exit 1
+          fi
+          if grep -q '260916' /tmp/meta_all.txt; then
+            echo "GATE B OK: build 260916 (fingerprint kitu v1-v5) jest w metadanych"
+            echo "WERDYKT: zip usera = DOKLADNIE ten donor, z ktorego zbudowane jest v1-v5"
+          else
+            echo "::error::GATE B: w metadanych nie ma 260916 - kit v1-v5 pochodzi z INNEJ wersji donora!"
+            exit 1
+          fi
+          echo "=== SOFT (raportowe, nie blokuja) ==="
+          for s in 'yingtian' 'M367FC' ':17/' '2026-08-01'; do
+            if grep -qF "$s" /tmp/meta_all.txt; then echo "OK: $s obecne"; else echo "UWAGA: brak '$s' (sprawdz metadane powyzej)"; fi
+          done
+
+      - name: Raport na galaz
+        if: always()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports
+          F="reports/donor-verify-${{ github.run_id }}.md"
+          {
+            echo "### donor-verify 4.0.11.0.XBMCNXM (run ${{ github.run_id }})"
+            echo "- link usera (redirector): $LOAD_URL"
+            echo "- rozwiazany URL pliku: ${{ steps.resolve.outputs.url }}"
+            echo "- zip: $(stat -c%s /tmp/donor.zip 2>/dev/null || echo '?') B, sha256: $(awk '{print $1}' /tmp/donor.zip.sha256 2>/dev/null || echo '?')"
+            echo
+            echo "#### naglowki /load"
+            echo '```'
+            cat /tmp/resolve_hdrs.txt 2>/dev/null | grep -iE '^(HTTP|location|content-type)' | head -10
+            echo '```'
+            echo "#### metadane OTA (pelne)"
+            echo '```'
+            cat /tmp/meta_all.txt 2>/dev/null || echo '(brak - patrz logi runu)'
+            echo '```'
+            echo "#### listing zipa (fragment)"
+            echo '```'
+            head -25 /tmp/ziplist.txt 2>/dev/null || echo '(brak)'
+            echo '```'
+            echo "#### HTML /load (jezeli byl, pierwsze 1200 B)"
+            echo '```'
+            head -c 1200 /tmp/page.html 2>/dev/null || echo '(odpowiedz byla plikiem, nie HTML)'
+            echo '```'
+          } > "$F"
+          cat "$F"
+          git add -f "$F"
+          git diff --cached --quiet || {
+            git commit -q -m "donor-verify: run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo "raport wypchniety na galaz"
+          }
