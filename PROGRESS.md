@@ -337,3 +337,34 @@ przerobka vendora pod mt6789.
   archivete + gofile zywe. NASTEPNY KROK: user flashuje v6-diag, przy watchdog-resie
   zaczyta pstore + /data/misc/logd + ew. live logcat (adb bez autoryzacji) => wgraje
   na Dysk => v6-fix pod faktyczna przyczyne. nadal aktualne: backup + format userdata.
+- v7 WYDANE (27 IX wieczor, run 36320894933 ZIELONY) po ANALIZIE PIERWSZEGO PRAWDZIWEGO
+  LOGU Z PORTU (boot.log 4 MB na Dysku, zapisany tez jako diagnostics/logs/boot-2709_1419_DSU.log,
+  analiza: diagnostics/logs/ANALIZA-boot-2709.md). KLUCZOWE ODKRYCIE: HyperOS BOOTUJE W 100%
+  (touch, Taskbar, launcher, aplikacje, bateria 100%, ~3,5 min uptime, zero FATAL), a koniec
+  sesji = JAWNY REBOOT DSU: 14:23:20.300 com.android.dynsystem ACTION_REBOOT_TO_DYN_SYSTEM
+  -> 14:23:24.805 ShutdownThread "Rebooting, reason: dynsystem" (uporzadkowane zamykanie,
+  NIE watchdog/panic; keystore2 = WARN-szum; DSU ma wlasny czysty userdata 2GB => brak
+  errno 126). Tryb potwierdzony: DSU (dsu_mode 1 w MTK HAL; /product+/system_ext z hosta
+  Lenovo -> "Lenovo Launcher"). Obraz w DSU = v4 (rkpdapp zywy, zero znacznikow arena).
+  Wniosek usera o "Keymint provisioning panic" ODRUCZONY dowodem z logu.
+- v7 content: (1) FIX A: com.android.dynsystem - priv-app/DynamicSystemInstallationService
+  w /system donora przemianowany .arena-disabled (find -prune!) + neutralizacja runtime
+  (arena_v7.rc -> bin/arena_v7_neutralize.sh: pm disable-user/hide po boot_completed,
+  znaczniki arena_v7) = koniec rebootow sesji DSU z obrazu; (2) FIX B: propsy usera
+  DOSLOWNIE (ro.security.keystore.boot_bypass=true, ro.security.keystore.provisioning_bypass=true,
+  persist.sys.keystore2.bypass_rkpd=true - inertne, udokumentowane w build.prop);
+  ro.apex.updatable=false ODMOWIONE (boot dziala na aktywnych APEXach - dowod w logu);
+  "revert binarnych patchy init/keystore2" i "BatteryService.java" nie istnieja (nic nie
+  patchowano binarnie; NPE lgsi nieszkodliwy - analiza 26 IX); (3) utrzymane v6-diag w calosci.
+  RAW_V7 sha256 4fac5edb8925d84cc6584efeefcf8c4000920c33c7f25cad33ba32cae02890fd.
+- Marszrutowe naprawy CI przy okazji: (a) mv kaskada na dir+apk (DynamicSystemInstallationService
+  = KATALOG z apk; rename rodzica zabijal drugi mv przez set -e) => find -prune; (b) bramka
+  "zywego dynsystem" bez -prune dawala falszywe trafienia w .arena-disabled/ => Build fail;
+  (c) Raport padal na set -u z nieustawionym RAW_V7 => guard + || true + exit 0; (d) NAUKA:
+  edit_file czasem zglasza sukces a zmiana NIE ląduje w pliku (3 razy!) - PO KAZDEJ EDYCJI
+  weryfikowac grepem przed commitem; (e) logi runnera (results-receiver) nieosiagalne z
+  sandboxu => trace builda (set -x + tee) commitowany na galaz jako reports/v7-build-trace.log.
+- DELIVERY v7: ZIP https://transfer.archivete.am/MUTdx/HyperOS4_P11Gen2.zip (probe OK
+  752218126 B, auto-download) | tgz https://transfer.archivete.am/NIlW/HyperOS4_P11Gen2.zip
+  (752235527 B) | gofile rQUh2Kv0/6ieAIeKF | release GH hyperos4-p11g2-v7.
+  Instrukcje: fastboot (permanentnie) ALBO DSU + sticky (adb shell gsi_tool enable).
