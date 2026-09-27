@@ -241,3 +241,12 @@ przerobka vendora pod mt6789.
   arena_permissive' - nastepny log rozstrzygnie, czy rc sie wykonuje; (3) spblob ENOENT
   = normalny na swiezym /data, bez patcha (framework to obsluguje). Packaging: RAW +
   tar.gz (jak v4). Prosba do usera: wkleic z logu linie Watchdog/ANR/FATAL + kontekst.
+- PRZELOM (27 IX): user wgral na Dysk prawdziwy log hyperos_boot.txt (2,7 MB, pobrany
+  konektorem do diagnostics/logs/). Analiza w diagnostics/logs/ANALIZA-hyperos_boot.md:
+  (1) log = boot HOSTA Lenovo A14 (zero sladow HyperOS; fingerprint TB350FU:14,
+  LgsiEarlyInit, com.tblenovo.launcher) - log bootu portu NIE istnieje;
+  (2) NPE lgsi baterii = stockowy, NIEGROZNY (w tym samym logu system_server przechodzi
+  do OnBootPhase_1000 i launcher startuje) - przypisywana mu rola "przyczyny crashu"
+  byla bledna; (3) realny sygnal: errno 126 (EKEYREJECTED) na /data/user/0 - klucze CE
+  odrzucone rowniez dla hosta => userdata kryptograficznie niespojne po eksperymentach.
+  Nastepny krok: pstore/bugreport z bootu GSI + prawdopodobnie format userdata.
