@@ -232,3 +232,12 @@ przerobka vendora pod mt6789.
   zlecenia pod DSU Sideloader; (4) utrzymane v3: init.rc setenforce 0 + typepermissive.
   Bramki CI: dowod FBE-off/rc/CIL extractem z gotowego obrazu + porazka buildu gdy
   flagi przetrwaja. Reset #11 (27 IX 10:15): /tmp wyczyszczone, recovery fetch+checkout.
+- v5 (27 IX ~12:40 UTC): user zglosil watchdog reset NA KONCOWEJ fazie (system_server i
+  launcher wstaly, potem 3 wibracje) + "zalaczyl logcat" - PLIK NIE DOTARL do workspace
+  (uploads/ nie istnieje, jak wczoraj z PNG). Zrealizowane bez logu, uczciwie:
+  (1) RkpdApp wylaczany z drzewa (realna przyczyna OUT_OF_KEYS_TRANSIENT_ERROR = remote
+  provisioning; fikcyjny prop ro.security.keystore.boot_bypass NIE istnieje w AOSP -
+  odmowa wstawiania); (2) setenforce 0 na 6 triggerach + znaczniki 'log -t
+  arena_permissive' - nastepny log rozstrzygnie, czy rc sie wykonuje; (3) spblob ENOENT
+  = normalny na swiezym /data, bez patcha (framework to obsluguje). Packaging: RAW +
+  tar.gz (jak v4). Prosba do usera: wkleic z logu linie Watchdog/ANR/FATAL + kontekst.
