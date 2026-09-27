@@ -5,8 +5,10 @@ name: remirror-v5
 # pobiera GOTOWY asset zip z release hyperos4-p11g2-v5 (zero przebudowy), bramkuje
 # rozmiar bajt w bajt i wgrywa na hosty z BEZPOSREDNIM auto-downloadem.
 # Kryterium sukcesu = probe content-length rowny rozmiarowi pliku (nie sam HTTP 200,
-# ktory wolna strona posrednia tez zwroci). Hosty: transfer.archivete.am (wzorzec
-# auto-download), pixeldrain (?download), gofile (fallback, strona z przyciskiem).
+# ktory strona posrednia tez zwroci). Hosty: transfer.archivete.am (wzorzec
+# auto-download, bramka twarda) + gofile (fallback, strona z przyciskiem).
+# Uwaga shell: GH Actions domyslnie -e => w krokach uploadu set +e (porazki grep
+# w assignments nie moga ubijac kroku). Pixeldrain odpada: API wymaga teraz klucza.
 
 on:
   workflow_dispatch:
@@ -67,35 +69,11 @@ jobs:
             printf 'url=%s\nok=1\n' "$url" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: pixeldrain (auto-download przez ?download)
-        id: pd
-        run: |
-          set -uo pipefail
-          Z="/tmp/$ASSET"
-          out=$(curl -sS --max-time 1800 -T "$Z" "https://pixeldrain.com/api/file/HyperOS4_P11Gen2_v5.zip" 2>&1 || true)
-          printf '%s\n' "$out" > /tmp/pd.out
-          fid=$(printf '%s' "$out" | grep -oE '"id":"[^"]+"' | head -1 | cut -d'"' -f4)
-          if [ -z "$fid" ]; then
-            echo "pixeldrain: brak id w odpowiedzi: $(head -c 200 /tmp/pd.out)"
-            exit 0
-          fi
-          url="https://pixeldrain.com/api/file/$fid?download"
-          hdr=$(curl -sIL --max-time 120 "$url" 2>&1 || true)
-          code=$(printf '%s' "$hdr" | grep -iE '^HTTP' | tail -1 | tr -d '\r')
-          clen=$(printf '%s' "$hdr" | grep -i '^content-length' | tail -1 | tr -dc 0-9)
-          if [ -z "$clen" ]; then
-            clen=$(curl -s -D - -o /dev/null --max-time 60 -r 0-0 "$url" 2>/dev/null \
-                   | grep -i '^content-range' | grep -oE '[0-9]+$' | tail -1)
-          fi
-          echo "pixeldrain probe: ${code:-?} clen=${clen:-?} (oczekiwane $EXPECTED_ZIP_SIZE)"
-          if [ "$clen" = "$EXPECTED_ZIP_SIZE" ]; then
-            printf 'url=%s\nok=1\n' "$url" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: gofile (fallback - strona z przyciskiem)
         id: gf
         run: |
           set -uo pipefail
+          set +e  # jw.: porazki grep/sed w assignments nie moga ubijac kroku
           Z="/tmp/$ASSET"
           SRV=$(curl -sS --max-time 30 https://api.gofile.io/servers 2>/dev/null \
                 | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | head -1)
@@ -113,17 +91,14 @@ jobs:
             echo "gofile: brak url: $(head -c 200 /tmp/gf.out)"
           fi
 
-      - name: Bramka - min. 1 zweryfikowany auto-download
+      - name: Bramka - zweryfikowany auto-download na archivete
         run: |
           set -euo pipefail
-          ok=0
-          if [ "${{ steps.arch.outputs.ok }}" = "1" ]; then ok=1; fi
-          if [ "${{ steps.pd.outputs.ok }}" = "1" ]; then ok=1; fi
-          if [ "$ok" != "1" ]; then
-            echo "::error::Ani archivete, ani pixeldrain nie przeszly probe'a content-length=$EXPECTED_ZIP_SIZE"
+          if [ "${{ steps.arch.outputs.ok }}" != "1" ]; then
+            echo "::error::archivete nie przeszlo probe'a content-length=$EXPECTED_ZIP_SIZE"
             exit 1
           fi
-          echo "OK: przynajmniej jeden link auto-download zweryfikowany content-length"
+          echo "OK: link auto-download zweryfikowany content-length na archivete"
 
       - name: Raport linkow na galaz
         if: always()
