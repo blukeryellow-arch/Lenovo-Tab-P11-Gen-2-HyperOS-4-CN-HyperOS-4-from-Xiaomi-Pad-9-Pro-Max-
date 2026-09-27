@@ -318,3 +318,22 @@ przerobka vendora pod mt6789.
   vendor/system_ext/odm_dlkm starsze (OS4.0.11.0.XBMCN, CP2A.260605.005) - normalne
   w pelnym OTA. Plan bez zmian: v5 flash -> pstore/bugreport -> v6; opcja rebasy na
   4.0.13.0 nadal otwarta.
+- v6-DIAG (27 IX wieczor, "to dokonczysz"): bloker v6-fix = brak logu z bootu portu
+  (jedyne co mialismy to boot HOSTA A14). Zbudowano release-v6.yml: v5 w calosci
+  (FIX 0 RkpdApp off, FIX 1 FBE off, FIX 2 linker, FIX 2b permissive 6x + CIL) plus
+  instrumentacja: (1) logd PERSISTENT - logcat ladowany na /data/misc/logd, przezywa
+  watchdog-reset; bufory 16 MB; (2) ro.debuggable=1 + ro.adb.secure=0 +
+  persist.sys.usb.config=mtp,adb => adb od pierwszego bootu BEZ autoryzacji RSA,
+  dziala adb root; (3) service.adb.tcp.port=5555 (adb over TCP); (4) znaczniki
+  arena_diag na 6 fazach inita (obok arena_permissive). Bramki: dowody w obrazie
+  extractem (rc 6+6, CIL, propsy FBE+diag, RkpdApp .arena-disabled).
+  Run 36316438511 ZIELONY (~4 min po wznowieniu; watch przerwany przez usera wczesniej
+  - to NIE porazka runu). RAW_V6 sha256 75a200e9b154f868437a9831d1bde776db1952905a3957164c4b9163b2b180b8.
+  DELIVERY v6-diag: ZIP https://transfer.archivete.am/11ihnx/HyperOS4_P11Gen2.zip
+  (probe OK 752225309 B, auto-download) | tar.gz https://transfer.archivete.am/TFkMy/HyperOS4_P11Gen2.zip
+  (probe OK 752245649 B) | gofile 79pHcE23 (zip) / RFnXdGe7 (tgz) | release GH
+  hyperos4-p11g2-v6 (asset 752225309/752245649 B). Hosty paddly przy okazji:
+  litterbox (timeout), filebin (json error), bashupload/tempsh (DNS/404) - tylko
+  archivete + gofile zywe. NASTEPNY KROK: user flashuje v6-diag, przy watchdog-resie
+  zaczyta pstore + /data/misc/logd + ew. live logcat (adb bez autoryzacji) => wgraje
+  na Dysk => v6-fix pod faktyczna przyczyne. nadal aktualne: backup + format userdata.
