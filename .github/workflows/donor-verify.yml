@@ -39,44 +39,45 @@ jobs:
         run: |
           set -uo pipefail
           set +e
-          echo "=== lancuch przekierowan /load ==="
+          echo "=== probe bez referera (dla porownania) ==="
           curl -sS -A "$UA" -o /dev/null -D /tmp/h1 --max-time 90 "$LOAD_URL"
-          grep -iE '^(HTTP|location|content-type|content-length)' /tmp/h1 | head -20
           cp /tmp/h1 /tmp/resolve_hdrs.txt
-          echo "=== pobieram odpowiedz /load ==="
-          curl -sSL -A "$UA" -e "https://miuirom.org/tablets/xiaomi-pad-9-pro-max" --max-time 300 "$LOAD_URL" -o /tmp/resp
+          grep -iE '^(HTTP|location|content-type|content-length)' /tmp/h1 | head -20
+          echo "=== pelne zapytanie Z refererem (WSZYSTKIE skoki) ==="
+          curl -sSL -A "$UA" -e "https://miuirom.org/tablets/xiaomi-pad-9-pro-max" \
+            -D /tmp/resolve_hdrs2.txt --max-time 300 "$LOAD_URL" -o /tmp/resp \
+            -w 'final_url: %{url_effective} | kod: %{http_code} | typ: %{content_type}\n'
+          grep -iE '^(HTTP|location|content-type|content-length)' /tmp/resolve_hdrs2.txt | head -30
           ft=$(file -b /tmp/resp)
           sz=$(stat -c%s /tmp/resp 2>/dev/null)
           echo "typ: $ft, rozmiar: ${sz:-?} B"
           if echo "$ft" | grep -qi 'zip'; then
-            echo "/load prowadzi wprost do pliku"
+            echo "/load z refererem prowadzi wprost do pliku"
             printf 'url=%s\n' "$LOAD_URL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           cp /tmp/resp /tmp/page.html
-          echo "=== HTML: pierwsze 300 B ==="
-          head -c 300 /tmp/resp; echo
-          echo "=== szukam bezposredniego URL pliku ==="
+          echo "=== wszystkie URL/href w stronie (unikalne) ==="
+          grep -oE 'https?://[^"'\'' <>\\)]+' /tmp/resp | sort -u | head -60 > /tmp/urls.txt
+          grep -oE 'href="[^"]+"' /tmp/resp | cut -d'"' -f2 | sort -u | head -60 >> /tmp/urls.txt
+          cat /tmp/urls.txt
+          echo "=== szukam kandydatow pliku ==="
           CAND=$(
             {
-              grep -oE 'https?://[^"'\'' <>]+\.zip' /tmp/resp
-              grep -oE 'https?://[^"'\'' <>]*(bigota|hugeota|d\.miui)[^"'\'' <>]*' /tmp/resp
-              grep -oE 'url=https?://[^"'\'' <>]+' /tmp/resp | cut -d= -f2-
-              grep -oE 'href="[^"]*(download|dl|load)[^"]*"' /tmp/resp | cut -d'"' -f2
-            } 2>/dev/null | grep -v '^$' | sort -u | head -10
+              grep -oE 'https?://[^"'\'' <>\\)]+\.zip' /tmp/resp
+              grep -oE 'https?://[^"'\'' <>\\)]*(bigota|hugeota|d\.miui|cdn)[^"'\'' <>\\)]*' /tmp/resp
+              grep -oE 'url=https?://[^"'\'' <>\\)]+' /tmp/resp | cut -d= -f2-
+              grep -oE '(href|src|data-[a-z-]+)="[^"]*(download|dl|load|ota)[^"]*"' /tmp/resp | cut -d'"' -f2
+            } 2>/dev/null | grep -v '^$' | sort -u | head -12
           )
           echo "kandydaci:"; echo "$CAND"
-          if [ -z "$CAND" ]; then
-            echo "::error::nie znaleziono URL pliku w odpowiedzi /load (HTML w raporcie)"
-            exit 1
-          fi
           for u in $CAND; do
             case "$u" in
               /*) u="https://miuirom.org$u" ;;
               http*) : ;;
               *) u="https://miuirom.org/$u" ;;
             esac
-            hdr=$(curl -sSIL -A "$UA" --max-time 60 "$u" 2>&1)
+            hdr=$(curl -sSIL -A "$UA" -e "https://miuirom.org/" --max-time 60 "$u" 2>&1)
             code=$(printf '%s' "$hdr" | grep -iE '^HTTP' | tail -1 | tr -d '\r')
             ct=$(printf '%s' "$hdr" | grep -i '^content-type' | tail -1 | tr -d '\r')
             cl=$(printf '%s' "$hdr" | grep -i '^content-length' | tail -1 | tr -dc 0-9)
@@ -86,7 +87,7 @@ jobs:
               exit 0
             fi
           done
-          echo "::error::zaden kandydat nie wyglada na plik ~10 GB (HTML w raporcie)"
+          echo "::error::nie znaleziono URL pliku ~10 GB - PELNY HTML w raporcie do analizy"
           exit 1
 
       - name: Pobierz Recovery ROM (10,31 GB)
@@ -160,9 +161,17 @@ jobs:
             echo "- rozwiazany URL pliku: ${{ steps.resolve.outputs.url }}"
             echo "- zip: $(stat -c%s /tmp/donor.zip 2>/dev/null || echo '?') B, sha256: $(awk '{print $1}' /tmp/donor.zip.sha256 2>/dev/null || echo '?')"
             echo
-            echo "#### naglowki /load"
+            echo "#### naglowki /load bez referera"
             echo '```'
             cat /tmp/resolve_hdrs.txt 2>/dev/null | grep -iE '^(HTTP|location|content-type)' | head -10
+            echo '```'
+            echo "#### naglowki /load z refererem (wszystkie skoki)"
+            echo '```'
+            cat /tmp/resolve_hdrs2.txt 2>/dev/null | grep -iE '^(HTTP|location|content-type)' | head -20
+            echo '```'
+            echo "#### wszystkie URL wykryte w stronie download"
+            echo '```'
+            cat /tmp/urls.txt 2>/dev/null || echo '(brak)'
             echo '```'
             echo "#### metadane OTA (pelne)"
             echo '```'
@@ -172,9 +181,9 @@ jobs:
             echo '```'
             head -25 /tmp/ziplist.txt 2>/dev/null || echo '(brak)'
             echo '```'
-            echo "#### HTML /load (jezeli byl, pierwsze 1200 B)"
+            echo "#### HTML /load (pelny zrzut do analizy, max 30 kB)"
             echo '```'
-            head -c 1200 /tmp/page.html 2>/dev/null || echo '(odpowiedz byla plikiem, nie HTML)'
+            head -c 30000 /tmp/page.html 2>/dev/null || echo '(odpowiedz byla plikiem, nie HTML)'
             echo '```'
           } > "$F"
           cat "$F"
