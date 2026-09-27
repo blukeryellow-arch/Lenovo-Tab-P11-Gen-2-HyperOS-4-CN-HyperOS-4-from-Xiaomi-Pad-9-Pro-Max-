@@ -294,3 +294,27 @@ przerobka vendora pod mt6789.
   4.0.13.0 (runner ma pelny egress, sciagniecie przez CI wykonalne), ALE plan bez
   zmian: v6 dopiero po pstore/bugreport z bootu portu - watchdog i errno 126 na
   userdata to nie kwestia wersji donora. Zdecyduje user.
+- DONOR-VERIFY (27 IX wieczor, "tu masz img hyperosa 4" 2x): user 2x podal ten sam link
+  miuirom.org/load?...4.0.11.0.XBMCNXM&t=Recovery => wykonano doslownie: workflow
+  .github/workflows/donor-verify.yml pobral NA RUNNERZE caly Recovery ROM (sandbox ma
+  egress tylko-GitHub). Przebieg iteracji: v1 padl na resolverze (/load bez referera
+  -> 302 na katalog); v2: z refererem /load = 200 "File Download Page", przyciski
+  download maja href w BASE64 (anty-scrape, JS dekoduje) -> zdekodowano 4 oficjalne
+  mirrory CDN Xiaomi; v3 padl na rc curl (aliyuncs SGP zamyka strumien niechlubnie,
+  plik kompletny 10 313 202 368 B); v4: rc curl przestalo byc kryterium, twardy test
+  integralnosci zipa pythonem (central directory) -> run 36315716262 ZIELONY.
+  POBRANO: yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip,
+  10 313 202 368 B, sha256 7b8c7f002abfeebae302961b73030984e5a065ec9f9e73976c0cc818349c8cce,
+  z bn.d.miui.com (oficjalny CDN Xiaomi; tez cdnorg/hugeota.d.miui.com + aliyuncs SGP).
+  WERDYKT BRAMEK (oba zdane): metadane OTA zawieraja XBMCNXM ORAZ 260916, przy czym:
+  post-build=Xiaomi/yingtian/yingtian:17/CP2A.260605.016/17OS4.0.260916.103155210.XRPDCN.S:user/release-keys,
+  post-sdk-level=37, post-security-patch-level=2026-08-01 - WSZYSTKIE 4 znaczniki kitu
+  (docs/05: sdk=37, release=17, sp=2026-08-01, incremental 17OS4.0.260916...XRPDCN.S)
+  identyczne => "build 260916 ~= 4.0.11.0" (docs/08) jest od teraz twardym "=".
+  OBRAZ USERA = DOKLADNIE donor v1-v5. Nie archiwizowano zipa 10,31 GB (limit assetu
+  2 GB); bajty systemu donora sa w repo (transfer-spool, bramka 537eb4ea). Rejestr:
+  payload.bin FILE_SIZE=10313193325, FILE_HASH=MP5jF21QGrPwhY01AgU3BLFc+7Ip0FrPyZwH/1NptNM=.
+  Ciekawostka z metadata.pb: partition system = "missi" z fingerprintem 260916;
+  vendor/system_ext/odm_dlkm starsze (OS4.0.11.0.XBMCN, CP2A.260605.005) - normalne
+  w pelnym OTA. Plan bez zmian: v5 flash -> pstore/bugreport -> v6; opcja rebasy na
+  4.0.13.0 nadal otwarta.
