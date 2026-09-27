@@ -1,5 +1,6 @@
 name: release-v8
 
+# retrigger: GitHub nie zarejestrowal eventu push dla nowego pliku (patrz PROGRESS)
 # v8 (27 IX noc, 5. zlecenie "hardware isolation"): realizacja CZESCI REALIZOWALNEJ.
 # Punkty niemozliwe w repacku (brak zrodel frameworku - mamy tylko drzewo binarne):
 #   - try-catch w SystemServer.java (punkt 1 zlecenia),
