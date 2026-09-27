@@ -352,8 +352,9 @@ jobs:
           (com.android.dynsystem ACTION_REBOOT_TO_DYN_SYSTEM -> "Rebooting, reason:
           dynsystem"). NIE byl to watchdog ani keystore (te linie to poziom WARN).
           Dlatego v7:
-          - com.android.dynsystem WYLACZONY z obrazu (.arena-disabled) - koniec rebootow
-            sesyjnych inicjowanych z obrazu,
+          - com.android.dynsystem NEUTRALIZOWANY RUNTIME: po boot_completed nasz skrypt
+            wylacza pakiet (pm disable-user / pm hide) - koniec rebootow sesyjnych
+            inicjowanych z obrazu; znaczniki 'arena_v7' w logcat potwierdzaja wykonanie,
           - propsy usera wg zlecenia (doslownie): ro.security.keystore.boot_bypass=true,
             ro.security.keystore.provisioning_bypass=true, persist.sys.keystore2.bypass_rkpd=true
             (inertne w AOSP - udokumentowane), ro.apex.updatable=false ODMOWIONE
