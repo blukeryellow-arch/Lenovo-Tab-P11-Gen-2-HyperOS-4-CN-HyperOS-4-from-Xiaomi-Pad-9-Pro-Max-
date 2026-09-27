@@ -1,0 +1,481 @@
++ tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree --vintf-level 5 --vintf-optional-missing --out /tmp/rebuild-v8 --erofs-dir /tmp/erofs-c --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
+=== make_release  2026-09-27T14:59:36Z ===
+  OUT=/tmp/rebuild-v8  EROFS=/tmp/erofs-c
+  mkfs.erofs: Usage: /tmp/erofs-c/mkfs.erofs [OPTIONS]
+  kompresja: lz4hc,9 (sonda budowy przeszla)
+--- 1/6  drzewo product
+  plikow: 65  bajtow: 87940798
+--- 2/6  mkfs.erofs (T=0, uuid stale -> deterministycznie)
+  product.img: 75198464 B  sha256=a961bec46085883d...
+--- 3/6  fsck.erofs (upstream checker, nie moj parser)
+  fsck: czysto
+--- 4/6  round-trip: wyciagnij z obrazu i porownaj KAZDY wpis (plik/symlink/katalog)
+  == 1/4 fsck.erofs /tmp/rebuild-v8/product_hyperos4_p11g2.img
+     czysto (0 linii raportu)
+  == 2/4 ekstrakcja z obrazu
+  == 3/4 porownanie z /tmp/tree-product
+    wykluczenia: ['\\.komentarz\\.txt$']
+    zrodlo: 67 wpisów (pliki 65, symlinki 0, katalogi 2)
+    z obrazu: 67 wpisów (pliki 65, symlinki 0, katalogi 2)
+    ZGODNE: 67   rozbiezne: 0   brak z obrazu: 0   dodatkowe: 0
+  WERYFIKACJA OK: obraz oddaje drzewo 1:1 (pliki+symlinki+katalogi)
+  == 4/4 wlasciciel obrazu (DAC)
+    korzen obrazu (nid 36): 0:0   oczekiwano 0:0
+    OK: wlasciciel zgodny z AOSP (korzen); try plikow porownane wyzej 1:1
+  weryfikacja product: OK
+--- 5/6  vbmeta (Flags: 3 = verification + verity wylaczone)
+  POMINIETE (brak --avb/--key) - bez vbmeta nie da sie tego wgrac, to nie jest opcja
+  jak zbudowac: git clone --depth 1 https://github.com/LineageOS/android_external_avb.git
+  --allow-no-vbmeta: dolozony PUSTY vbmeta, zebys mogl przetestowac instalator.
+  TO NIE JEST WYDANIE - na urzadzeniu taki plik znaczy brak sledzenia AVB i brak rollbacku.
+--- 6/6  flash-all.sh + rollback.sh + manifest
+  UWAGA: --vintf-optional-missing bez --vintf-vendor-manifest = optional NA SZEROKO
+         (brak danych z urzadzenia; wymagania znikna nawet tam, gdzie vendor je spelnia)
+  VINTF: level 5: WYGENEROWANY i dokladany do /etc/vintf/ na czas budowy (19197 B, sha256 9ada17034a4880b5..., wariant: miękki NA SZEROKO (brak --vintf-vendor-manifest)) - po budowie usuniety z drzewa
+  system.img BUDOWANY z drzewa /tmp/tree2/system_tree (kompresja: lz4hc,9)
+  system.img: 920047616 B
+  weryfikuje system (fsck + 1:1 z drzewem) - to potrwa, bo to 4 568 wpisow
+    WERYFIKACJA OK: obraz oddaje drzewo 1:1 (pliki+symlinki+katalogi)
+    == 4/4 wlasciciel obrazu (DAC)
+      korzen obrazu (nid 36): 0:0   oczekiwano 0:0
+      OK: wlasciciel zgodny z AOSP (korzen); try plikow porownane wyzej 1:1
+  system zweryfikowany: pelny raport w system-verify.log
+  VINTF: dokladany plik usuniety z drzewa (etc/vintf/compatibility_matrix.5.xml); w obrazie zostal
+  device-probe.sh dolaczony do wydania (uruchom go PRZED flash-all.sh)
+  manifest: 6 pozycji; sumy na koncu: 8
+== KONIEC: /tmp/rebuild-v8
++ cd /tmp/rebuild-v8
++ echo 'a961bec46085883d6d9c3737b804afdf9dcdf2f512cbedad6f161177705ad1b7  product_hyperos4_p11g2.img'
++ sha256sum -c -
+product_hyperos4_p11g2.img: OK
++ mkdir -p /tmp/imgcheck
++ rm -rf '/tmp/imgcheck/*'
++ /tmp/erofs-c/fsck.erofs --extract=/tmp/imgcheck system_hyperos4_p11g2.img
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/adb_keys
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/bin
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/bugreports
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/cache
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/d
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/etc
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/init
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/apex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/app
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/bin
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/etc
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/firmware
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/framework
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/lib
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/lib64
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/overlay
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/priv-app
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm/usr
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/odm_dlkm/etc
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/sdcard
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/[
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/acpi
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/app_process
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/base64
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/basename
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/blkdiscard
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/blockdev
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/brctl
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/bunzip2
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/bzcat
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/cal
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/cat
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/chattr
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/chcon
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/chgrp
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/chmod
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/chown
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/chroot
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/chrt
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/cksum
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/clean_scratch_files
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/clear
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/cmp
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/comm
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/cp
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/cpio
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/cut
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/date
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/dd
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/defrag.f2fs
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/devmem
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/df
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/diff
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/dirname
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/disable-verity
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/dmesg
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/dos2unix
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/du
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/dump.f2fs
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/echo
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/egrep
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/enable-verity
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/env
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ethtool
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/expand
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/expr
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/fallocate
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/false
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/fgrep
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/file
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/find
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/flock
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/fmt
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/free
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/fsync
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/getconf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/getenforce
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/getevent
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/getfattr
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/getopt
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/getprop
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/gpiodetect
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/gpiofind
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/gpioget
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/gpioinfo
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/gpioset
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/grep
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/groups
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/gunzip
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/gzip
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/head
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/hostname
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/hwclock
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/hwservicemanager
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/i2cdetect
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/i2cdump
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/i2cget
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/i2cset
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/i2ctransfer
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/iconv
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/id
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ifconfig
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/inotifyd
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/insmod
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/install
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ionice
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/iorenice
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ip-wrapper-1.0
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ip6tables
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ip6tables-restore
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ip6tables-save
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ip6tables-wrapper-1.0
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/iptables-wrapper-1.0
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/kill
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/killall
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/linker
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/linker64
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/linker_asan
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/linker_asan64
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/linker_hwasan64
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ln
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/load_policy
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/log
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/logger
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/logname
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/losetup
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ls
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/lsattr
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/lsmod
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/lsof
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/lspci
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/lsusb
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/md5sum
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/memeater
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/microcom
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/mkdir
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/mkfifo
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/mknod
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/mkswap
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/mktemp
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/modinfo
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/modprobe
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/more
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/mount
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/mountpoint
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/mv
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/nc
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ndc-wrapper-1.0
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/netcat
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/netstat
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/nice
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/nl
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/nohup
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/nproc
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/nsenter
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/od
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/paste
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/patch
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/pgrep
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/pidof
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/pkill
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/pmap
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/printenv
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/printf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/ps
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/pwd
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/readelf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/readlink
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/realpath
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/renice
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/restorecon
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/rm
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/rmdir
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/rmmod
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/rtcwake
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/runcon
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sed
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sendevent
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/seq
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/setenforce
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/setfattr
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/setprop
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/setsid
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sha1sum
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sha224sum
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sha256sum
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sha384sum
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sha512sum
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sleep
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sort
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/split
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/start
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/stat
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/stop
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/strings
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/stty
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/swapoff
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/swapon
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sync
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/sysctl
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/tac
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/tail
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/tar
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/taskset
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/tee
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/test
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/time
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/timeout
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/top
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/touch
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/unzip
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/wificond
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/bin/zipinfo
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/etc/font_fallback.xml
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/etc/fonts.xml
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/etc/init/hw/init.boringssl.no_zygote.rc
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/etc/init/hw/init.boringssl.zygote32.rc
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/DroidSans-Bold.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/DroidSans.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansArabicVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansBengaliVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansDevanagariVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansGujaratiVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansGurmukhiVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansJapaneseVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansKannadaVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansKhmerVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansKoreanVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansL3.otf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansLaoVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansLatinVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansMalayalamVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansMyanmarVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansOdiaVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansTCVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansTamilVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansTeluguVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansThaiVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansTibetanVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansVF.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/fonts/MiSansVF_Overlay.ttf
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/MiuiBooster.jar
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-apache-xml.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-apache-xml.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-bouncycastle.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-bouncycastle.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-core-icu4j.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-core-icu4j.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-core-libart.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-core-libart.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-ext.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-ext.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-adservices.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-adservices.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-graphics.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-graphics.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-location.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-location.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-nfc.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-nfc.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-ondeviceintelligence-platform.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-ondeviceintelligence-platform.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-telecom.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework-telecom.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-framework.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-ims-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-ims-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-mediatek-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-mediatek-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-mediatek-framework.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-mediatek-framework.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-miui-enterprise-sdk.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-miui-enterprise-sdk.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-miui-framework-pointer-pad.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-miui-framework-pointer-pad.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-miui-framework.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-miui-framework.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-miui-telephony-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-miui-telephony-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-okhttp.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-okhttp.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-telephony-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-telephony-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-vendor.xiaomi.hardware.videoservice-V9-java.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-vendor.xiaomi.hardware.videoservice-V9-java.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-voip-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-voip-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-xiaomi-framework.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-xiaomi-framework.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-xm-telephony-base.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-xm-telephony-base.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-xm-telephony-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot-xm-telephony-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm/boot.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-apache-xml.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-apache-xml.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-bouncycastle.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-bouncycastle.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-core-icu4j.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-core-icu4j.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-core-libart.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-core-libart.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-ext.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-ext.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-adservices.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-adservices.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-graphics.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-graphics.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-location.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-location.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-nfc.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-nfc.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-ondeviceintelligence-platform.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-ondeviceintelligence-platform.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-telecom.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework-telecom.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-framework.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-ims-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-ims-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-mediatek-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-mediatek-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-mediatek-framework.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-mediatek-framework.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-miui-enterprise-sdk.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-miui-enterprise-sdk.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-miui-framework-pointer-pad.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-miui-framework-pointer-pad.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-miui-framework.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-miui-framework.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-miui-telephony-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-miui-telephony-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-okhttp.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-okhttp.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-telephony-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-telephony-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-vendor.xiaomi.hardware.videoservice-V9-java.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-vendor.xiaomi.hardware.videoservice-V9-java.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-voip-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-voip-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-xiaomi-framework.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-xiaomi-framework.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-xm-telephony-base.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-xm-telephony-base.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-xm-telephony-common.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot-xm-telephony-common.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot.vdex
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/framework/arm64/boot.vdex.fsv_meta
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib/libc.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib/libdl.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib/libdl_android.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib/libm.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib/modules
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib64/hwasan/libc.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib64/libc.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib64/libclang_rt.hwasan-aarch64-android.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib64/libdl.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib64/libdl_android.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/lib64/libm.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/media
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/priv-app/BuiltInPrintService/lib/arm64/libcups.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/priv-app/BuiltInPrintService/lib/arm64/libwfds.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/priv-app/DeviceAsWebcam/lib/arm64/libjni_deviceAsWebcam.so
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/product
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/system_ext
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/usr/icu
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/system/vendor
+<W> erofs: erofsfsck_set_attributes() Line[333] failed to set times: /tmp/imgcheck/vendor_dlkm/etc
+++ grep -cE '^[[:space:]]+setenforce 0' /tmp/imgcheck/system/etc/init/arena_permissive.rc
++ test 6 = 6
+++ grep -c 'log -t arena_diag' /tmp/imgcheck/system/etc/init/arena_diag.rc
++ test 6 = 6
++ grep -q '(typepermissive system_server)' /tmp/imgcheck/system/etc/selinux/plat_sepolicy.cil
++ grep -q ro.crypto.volume.contents_mode=footer /tmp/imgcheck/system/build.prop
++ grep -q ro.crypto.volume.metadata.encryption=none /tmp/imgcheck/system/build.prop
++ grep -q ro.logd.persistent=true /tmp/imgcheck/system/build.prop
++ grep -q ro.logd.size=16m /tmp/imgcheck/system/build.prop
++ grep -q ro.debuggable=1 /tmp/imgcheck/system/build.prop
++ grep -q ro.adb.secure=0 /tmp/imgcheck/system/build.prop
++ grep -q persist.sys.usb.config=mtp,adb /tmp/imgcheck/system/build.prop
++ grep -q ro.security.keystore.boot_bypass=true /tmp/imgcheck/system/build.prop
++ grep -q ro.security.keystore.provisioning_bypass=true /tmp/imgcheck/system/build.prop
++ grep -q persist.sys.keystore2.bypass_rkpd=true /tmp/imgcheck/system/build.prop
++ grep -q 'exec_background /system/bin/sh /system/bin/arena_v7_neutralize.sh' /tmp/imgcheck/system/etc/init/arena_v7.rc
++ grep -q 'pm disable-user --user 0 com.android.dynsystem' /tmp/imgcheck/system/bin/arena_v7_neutralize.sh
++ echo 'dynsystem: neutralizacja runtime udokumentowana w obrazie (arena_v7)'
+dynsystem: neutralizacja runtime udokumentowana w obrazie (arena_v7)
+++ find /tmp/imgcheck/system '(' -ipath '*dynsystem*' -o -iname '*DynamicSystem*' ')' -prune '!' -name '*.arena-disabled' -print
++ '[' -n '' ']'
+++ find /tmp/imgcheck/system -name '*rkpd*' -o -name '*remoteprovision*'
++ '[' -n '/tmp/imgcheck/system/framework/oat/arm64/apex@com.android.rkpd@javalib@service-rkp.jar@classes.vdex.arena-disabled
+/tmp/imgcheck/system/framework/oat/arm64/apex@com.android.rkpd@javalib@service-rkp.jar@classes.odex.arena-disabled
+/tmp/imgcheck/system/framework/oat/arm64/apex@com.android.rkpd@javalib@service-rkp.jar@classes.vdex.fsv_meta.arena-disabled
+/tmp/imgcheck/system/framework/oat/arm64/apex@com.android.rkpd@javalib@service-rkp.jar@classes.odex.fsv_meta.arena-disabled
+/tmp/imgcheck/system/apex/com.android.rkpd.apex.arena-disabled' ']'
+++ find /tmp/imgcheck/system -name '*.arena-disabled'
++ '[' -z '/tmp/imgcheck/system/priv-app/DynamicSystemInstallationService.arena-disabled
+/tmp/imgcheck/system/framework/oat/arm64/apex@com.android.rkpd@javalib@service-rkp.jar@classes.vdex.arena-disabled
+/tmp/imgcheck/system/framework/oat/arm64/apex@com.android.rkpd@javalib@service-rkp.jar@classes.odex.arena-disabled
+/tmp/imgcheck/system/framework/oat/arm64/apex@com.android.rkpd@javalib@service-rkp.jar@classes.vdex.fsv_meta.arena-disabled
+/tmp/imgcheck/system/framework/oat/arm64/apex@com.android.rkpd@javalib@service-rkp.jar@classes.odex.fsv_meta.arena-disabled
+/tmp/imgcheck/system/apex/com.android.rkpd.apex.arena-disabled' ']'
++ find /tmp/imgcheck/system -name 'fstab*'
++ grep -q .
++ grep -rE 'fileencryption=|metadata_encryption=|forceencrypt' '--include=fstab*' /tmp/imgcheck/system
++ echo 'fstab: flagi wyczyszczone w obrazie'
+fstab: flagi wyczyszczone w obrazie
++ ls /tmp/imgcheck/system/etc/permissions
++ grep -iE 'uwb|iris'
++ grep -qv arena-disabled
++ for ax in /tmp/imgcheck/system/etc/audio_*.xml
++ '[' -f /tmp/imgcheck/system/etc/audio_effects.xml ']'
++ python3 -c 'import sys, xml.dom.minidom as m; m.parse(sys.argv[1])' /tmp/imgcheck/system/etc/audio_effects.xml
++ echo 'audio xml w obrazie: wszystkie parsuja sie po stripie'
+audio xml w obrazie: wszystkie parsuja sie po stripie
++ head -c 4 system_hyperos4_p11g2.img
++ od -An -tx1
+ 00 00 00 00
++ echo 'DOWOD v8: rc(permissive+diag) + CIL + FBE-off + diag-propsy + propsy usera + dynsystem/rkpd off w obrazie'
+DOWOD v8: rc(permissive+diag) + CIL + FBE-off + diag-propsy + propsy usera + dynsystem/rkpd off w obrazie
++ sha256sum system_hyperos4_p11g2.img
++ tee /tmp/v8.sha
+4fac5edb8925d84cc6584efeefcf8c4000920c33c7f25cad33ba32cae02890fd  system_hyperos4_p11g2.img
++ rm -rf /tmp/imgcheck
+++ awk '{print $1}' /tmp/v8.sha
++ echo RAW_V8=4fac5edb8925d84cc6584efeefcf8c4000920c33c7f25cad33ba32cae02890fd
