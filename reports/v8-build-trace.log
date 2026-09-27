@@ -1,5 +1,5 @@
 + tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree --vintf-level 5 --vintf-optional-missing --out /tmp/rebuild-v8 --erofs-dir /tmp/erofs-c --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
-=== make_release  2026-09-27T14:59:36Z ===
+=== make_release  2026-09-27T15:06:20Z ===
   OUT=/tmp/rebuild-v8  EROFS=/tmp/erofs-c
   mkfs.erofs: Usage: /tmp/erofs-c/mkfs.erofs [OPTIONS]
   kompresja: lz4hc,9 (sonda budowy przeszla)
@@ -45,8 +45,8 @@
   manifest: 6 pozycji; sumy na koncu: 8
 == KONIEC: /tmp/rebuild-v8
 + cd /tmp/rebuild-v8
-+ echo 'a961bec46085883d6d9c3737b804afdf9dcdf2f512cbedad6f161177705ad1b7  product_hyperos4_p11g2.img'
 + sha256sum -c -
++ echo 'a961bec46085883d6d9c3737b804afdf9dcdf2f512cbedad6f161177705ad1b7  product_hyperos4_p11g2.img'
 product_hyperos4_p11g2.img: OK
 + mkdir -p /tmp/imgcheck
 + rm -rf '/tmp/imgcheck/*'
