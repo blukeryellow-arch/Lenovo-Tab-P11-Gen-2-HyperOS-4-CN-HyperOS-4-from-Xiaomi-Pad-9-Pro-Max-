@@ -1,5 +1,5 @@
 + tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree --vintf-level 5 --vintf-optional-missing --out /tmp/rebuild-v11 --erofs-dir /tmp/erofs-c --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
-=== make_release  2026-09-27T17:57:11Z ===
+=== make_release  2026-09-27T18:02:41Z ===
   OUT=/tmp/rebuild-v11  EROFS=/tmp/erofs-c
   mkfs.erofs: Usage: /tmp/erofs-c/mkfs.erofs [OPTIONS]
   kompresja: lz4hc,9 (sonda budowy przeszla)
@@ -451,4 +451,35 @@ rkpd: com.android.rkpd.apex zywy w obrazie - revert FIX 0 OK (v10)
 + grep -q ro.remote_provisioning.strongbox.enable=false /tmp/imgcheck/system/build.prop
 + echo 'propsy v10 (RKPD, doslownie wg zlecenia): w obrazie'
 propsy v10 (RKPD, doslownie wg zlecenia): w obrazie
-+ grep -q '/sys/bus/sdio/devices/*/power/control' /tmp/imgcheck/system/bin/arena_v11_wifi.sh
++ grep -qF '/sys/bus/sdio/devices/*/power/control' /tmp/imgcheck/system/bin/arena_v11_wifi.sh
++ grep -qF 'svc wifi disable' /tmp/imgcheck/system/bin/arena_v11_wifi.sh
++ grep -q 'exec_background /system/bin/sh /system/bin/arena_v11_wifi.sh' /tmp/imgcheck/system/etc/init/arena_v11.rc
++ echo 'v11: wifi-guard (sdio control=on + wifi off) w obrazie'
+v11: wifi-guard (sdio control=on + wifi off) w obrazie
++ find /tmp/imgcheck/system -name 'fstab*'
++ grep -q .
++ grep -rE 'fileencryption=|metadata_encryption=|forceencrypt' '--include=fstab*' /tmp/imgcheck/system
++ echo 'fstab: flagi wyczyszczone w obrazie'
+fstab: flagi wyczyszczone w obrazie
++ ls /tmp/imgcheck/system/etc/permissions
++ grep -iE 'uwb|iris'
++ grep -qv arena-disabled
++ for ax in /tmp/imgcheck/system/etc/audio_*.xml
++ '[' -f /tmp/imgcheck/system/etc/audio_effects.xml ']'
++ python3 -c 'import sys, xml.dom.minidom as m; m.parse(sys.argv[1])' /tmp/imgcheck/system/etc/audio_effects.xml
++ echo 'audio xml w obrazie: wszystkie parsuja sie po stripie'
+audio xml w obrazie: wszystkie parsuja sie po stripie
+++ grep -c 'wake_lock arena_nosuspend' /tmp/imgcheck/system/etc/init/arena_nosuspend.rc
++ test 3 = 3
++ grep -q 'stay_on_while_plugged_in 7' /tmp/imgcheck/system/bin/arena_v7_neutralize.sh
++ od -An -tx1
++ head -c 4 system_hyperos4_p11g2.img
+ 00 00 00 00
++ echo 'DOWOD v11: rc(permissive+diag) + CIL + FBE-off + diag-propsy + propsy v7 + propsy v10 + dynsystem off + rkpd PRZYWROCONY + nosuspend + wifi-guard v11'
+DOWOD v11: rc(permissive+diag) + CIL + FBE-off + diag-propsy + propsy v7 + propsy v10 + dynsystem off + rkpd PRZYWROCONY + nosuspend + wifi-guard v11
++ sha256sum system_hyperos4_p11g2.img
++ tee /tmp/v11.sha
+18491d9cd49ed7a8182cd9a72e185256e46a1321acd6d747a9f965701ee5760f  system_hyperos4_p11g2.img
++ rm -rf /tmp/imgcheck
+++ awk '{print $1}' /tmp/v11.sha
++ echo RAW_V11=18491d9cd49ed7a8182cd9a72e185256e46a1321acd6d747a9f965701ee5760f
