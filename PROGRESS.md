@@ -382,3 +382,19 @@ przerobka vendora pod mt6789.
   arena) + pstore po resie. Wzorzec 3x z rzedu: diagnoza wklejona w prompcie sprzeczna
   z wgranym plikiem (26 IX keystore/weaver "fatal"; 27 IX rano "watchdog final phase" =
   reboot DSU; teraz "millisecond fscrypt panic" = 63 s pozniej hard reset).
+- 27 IX noc (4. zlecenie "vendor-targeted optimizations"): mapowanie na stan faktyczny:
+  (1) HAL compat A14 MTK - JUZ DZIALA (logi portu: display/SF/power HAL zywe; VINTF level-5
+  soft + permissive od v1-v3); (2) strip szyfrowania - w obrazie od v4 (fstab w /system
+  nie istnieje; propsy ro.crypto od v4); log dowiodl ze fscrypt DZIALA (CE unlocked, 5x
+  Verified) - reset przychodzi 63 s pozniej, kernelowo. (3) BatteryService/lgsi - brak
+  zrodel frameworku, hook w system_ext hosta, NPE udowodniony nieszkodliwy. Decyzja:
+  v7 jest pelna realizowalna realizacja; identyczny v8 nie budowany.
+- SANDBOX RE-KLON w trakcie tury (reflog: clone) - gaalez lokalna wrocila do bazy; praca
+  cala na zdalnym; odzyskano checkout -f -B FETCH_HEAD (238dd7c). Nauczka: po kazdym
+  starcie tury sprawdzac git reflog/log przed poleceniami zapisujacymi.
+- 27 IX noc (5. zlecenie "hardware isolation"): punkty (1) SystemServer.java try-catch
+  i (3) usuwanie logiki ladowania = NIEMOZLIWE w repacku (brak zrodel; hooki w system_ext
+  hosta) + sprzeczne z logami (biometric/sensor/battery uslugi startuja, zero FATAL;
+  audioserver zyje w obu sesjach portu - teoria "audio crash" obalona). REALIZOWALNE
+  czesci: strip deklaracji features sprzetu nieobecnego na celu (uwb/iris) + usuniecie
+  martwych wpisow Dolby/spatial z audio_policy/effects (DOM-validowane) => v8.
