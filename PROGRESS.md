@@ -430,3 +430,35 @@ przerobka vendora pod mt6789.
   DELIVERY: patrz reports/v9-links-36330785911.md + release GH hyperos4-p11g2-v9.
   Test: DSU z v9; jesli crash mimo wakelocka => pstore znowu (wowczas sciezka inna niz
   suspend); opcja B: DSU na slocie z kernel 5.10.233 (fastboot getvar current-slot).
+
+## v10 (27/28 IX noc) - przywrocony rkpd apex + propsy RKPD wg zlecenia
+- Zlecenie v10: bootloop DSU v9; zacytowano keystore2 "Failed to handle super encryption" /
+  "User ECDH key missing" / "rkpd_client: Waiting for RKPD key timed out" /
+  "Error::Rc(r#OUT_OF_KEYS_TRANSIENT_ERROR)" + zrzut win na beanpod + 2 punkty naprawcze
+  (propsy ro.remote_provisioning.(strongbox.)enable=false w "product build.prop matrix",
+  patch binder keystore2 na mock-null).
+- Zalacznik dsu_boot_log.txt NIE DOTARL (5. raz; Drive bez nowych plikow - bugreport.zip
+  15:38 UTC = stary). ALE: receipts z BINARKI donora (strings /system/bin/keystore2,
+  2541456 B) potwierdzily wszystkie zacytowane stringi jako realne (super_key.rs:653,
+  security_level.rs:318, rkpd_client lib.rs:227, r#OUT_OF_KEYS_TRANSIENT_ERROR).
+  Pelny zapis: diagnostics/logs/keystore2-strings-v10-receipts.txt + ANALIZA-zlecenie-v10-keystore2.md.
+- PRZYCZYNA (dominanta): FIX 0 (od v7) USUWAL com.android.rkpd.apex => keystore2 bez
+  kluczy RKP => zacytowana sekwencja; keystore2.rc donora "critical window=0" (crash-loop
+  = reboot inita = bootloop). v4 z apexem bootowal w 100%. Werdykt: nasza regresja, nie
+  beanpod (HAL hosta zdrowy - 104 operacje w bugreporcie).
+- FIX 7 (v10): revert FIX 0 - com.android.rkpd.apex PRZYWROCONY (zasada "nie tnij"),
+  bramka: apex zywy w obrazie + zero .arena-disabled pod rkpd.
+- FIX 7b: propsy zlecenia DOSLOWNIE do /system/build.prop ("product build.prop matrix"
+  nie istnieje w DSU - product hosta; nasz product.img nie jest shipowany). Inertne wg
+  strings (czytana rodzina: remote_provisioning.tee.rkp_only/.strongbox.rkp_only/.hostname/
+  .use_cert_processor/.connect_timeout_millis/.skip_network_consent_check).
+- Patch binarki keystore2: ODMOWA (Rust binary, brak zrodel, brak konfigu semantyki bledow).
+- Dry-run lokalny na pelnym drzewie kitu przed CI: wszystkie kroki FIX zielone.
+- CI: run 36335019110 ZIELONY. RAW_V10=53351255e8ac4fb82293e0f2ca01673ffbb044c15ce8becad2a7618daae19b95.
+  Trace potwierdza: rkpd apex zywy w obrazie, propsy v10 w obrazie, nosuspend 3x, DOWOD v10.
+- Delivery: tgz https://transfer.archivete.am/fGpSn/HyperOS4_P11Gen2.zip |
+  zip https://transfer.archivete.am/Af1Tn/HyperOS4_P11Gen2.zip | litter(72h)
+  https://litter.catbox.moe/qlehtv.zip | gofile 1Ypd3Pjf (tgz) / M4Ofim7L (zip) |
+  release GH hyperos4-p11g2-v10 (tar.gz 752221641 B + zip 752232245 B).
+- Test: DSU v10 -> obserwowac boot (logcat z petli) -> jesli padnie: LOG NA GOOGLE DRIVE
+  (kanal czatu nie dowozi; komenda: adb wait-for-device logcat -d -b all > dsu_boot_log.txt).
