@@ -68,11 +68,10 @@ jobs:
           echo "=== wszystkie URL/href w stronie (unikalne) ==="
           grep -oE 'https?://[^"'\'' <>\\)]+' /tmp/resp | sort -u | head -60 > /tmp/urls.txt
           grep -oE 'href="[^"]+"' /tmp/resp | cut -d'"' -f2 | sort -u | head -60 >> /tmp/urls.txt
-          echo "=== kandydaci: zdekodowane + hardcoded fallback ==="
-          CAND=$( { cat /tmp/decoded_urls.txt 2>/dev/null;
-            echo "https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip";
-            echo "https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip";
-            grep -oE 'https?://[^"'\'' <>\\)]+\.zip' /tmp/resp 2>/dev/null; } | grep -v '^$' | sort -u | head -12 )
+          echo "=== kandydaci: d.miui.com (CDN Xiaomi) przed aliyuncs ==="
+          MIUI_CDN=$(grep -E 'https://[a-z]+\.d\.miui\.com/.*\.zip$' /tmp/decoded_urls.txt 2>/dev/null | sort -u)
+          OTHERS=$(grep -vE 'https://[a-z]+\.d\.miui\.com/' /tmp/decoded_urls.txt 2>/dev/null | grep '\.zip$' | sort -u)
+          CAND=$( { echo "$MIUI_CDN"; echo "$OTHERS"; } | grep -v '^$' | awk '!seen[$0]++' | head -8 )
           echo "$CAND"
           probe() {
             local u=$1 hdr code cl
@@ -97,21 +96,38 @@ jobs:
 
       - name: Pobierz Recovery ROM (10,31 GB)
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          set +e
           U="${{ steps.resolve.outputs.url }}"
           echo "pobieram: $U"
-          df -BG /tmp | tail -1
+          : > /tmp/dl_trace.txt
+          echo "url: $U" >> /tmp/dl_trace.txt
+          df -BG /tmp | tail -1 >> /tmp/dl_trace.txt
           curl -L -A "$UA" --retry 5 --retry-delay 10 --retry-all-errors --max-time 2400 -o /tmp/donor.zip "$U"
-          sz=$(stat -c%s /tmp/donor.zip)
-          echo "rozmiar: $sz B"
-          if [ "$sz" -lt "$MIN_ZIP_BYTES" ]; then
-            echo "::error::za maly plik: $sz B (oczekiwane ~10,31 GB)"
+          rc=$?
+          echo "curl_rc=$rc" >> /tmp/dl_trace.txt
+          df -BG /tmp | tail -1 >> /tmp/dl_trace.txt
+          echo "file_magic: $(file -b /tmp/donor.zip 2>/dev/null)" >> /tmp/dl_trace.txt
+          sz=$(stat -c%s /tmp/donor.zip 2>/dev/null)
+          echo "size: ${sz:-brak} B" >> /tmp/dl_trace.txt
+          cat /tmp/dl_trace.txt
+          if [ -z "${sz:-}" ] || [ "$sz" -lt "$MIN_ZIP_BYTES" ]; then
+            echo "::error::plik niepelny: ${sz:-brak} B (oczekiwane ~10,31 GB)"
             exit 1
           fi
-          if ! file -b /tmp/donor.zip | grep -qi zip; then
-            echo "::error::pobrany plik nie jest zipem"; head -c 200 /tmp/donor.zip; echo; exit 1
+          echo "=== twardy test spojnosci zipa (central directory) - rc curl NIE jest kryterium ==="
+          python3 -c "import zipfile; z=zipfile.ZipFile('/tmp/donor.zip'); n=z.namelist(); print('zip OK, plikow:', len(n)); print('kluczowe:', [x for x in n if 'payload' in x or 'metadata' in x or 'properties' in x][:12])"
+          pz=$?
+          echo "zipcheck_rc=$pz" >> /tmp/dl_trace.txt
+          if [ "$pz" -ne 0 ]; then
+            echo "::error::pobrany plik nie jest poprawnym zipem (patrz trace w raporcie)"
+            exit 1
           fi
           sha256sum /tmp/donor.zip | tee /tmp/donor.zip.sha256
+          if [ ! -s /tmp/donor.zip.sha256 ]; then
+            echo "::error::sha256 nie zostalo wyliczone"
+            exit 1
+          fi
 
       - name: Metadane OTA + bramki tozsamosci z kitem v1-v5
         run: |
@@ -173,6 +189,10 @@ jobs:
             echo "#### naglowki /load z refererem (wszystkie skoki)"
             echo '```'
             cat /tmp/resolve_hdrs2.txt 2>/dev/null | grep -iE '^(HTTP|location|content-type)' | head -20
+            echo '```'
+            echo "#### trace pobierania"
+            echo '```'
+            cat /tmp/dl_trace.txt 2>/dev/null || echo '(brak)'
             echo '```'
             echo "#### zdekodowane base64 -> URL pliku"
             echo '```'
