@@ -542,8 +542,8 @@ jobs:
           grep -q 'ro.remote_provisioning.enable=false' /tmp/imgcheck/system/build.prop
           grep -q 'ro.remote_provisioning.strongbox.enable=false' /tmp/imgcheck/system/build.prop
           echo "propsy v10 (RKPD, doslownie wg zlecenia): w obrazie"
-          grep -q '/sys/bus/sdio/devices/*/power/control' /tmp/imgcheck/system/bin/arena_v11_wifi.sh
-          grep -q 'svc wifi disable' /tmp/imgcheck/system/bin/arena_v11_wifi.sh
+          grep -qF '/sys/bus/sdio/devices/*/power/control' /tmp/imgcheck/system/bin/arena_v11_wifi.sh
+          grep -qF 'svc wifi disable' /tmp/imgcheck/system/bin/arena_v11_wifi.sh
           grep -q 'exec_background /system/bin/sh /system/bin/arena_v11_wifi.sh' \
             /tmp/imgcheck/system/etc/init/arena_v11.rc
           echo "v11: wifi-guard (sdio control=on + wifi off) w obrazie"
