@@ -462,3 +462,33 @@ przerobka vendora pod mt6789.
   release GH hyperos4-p11g2-v10 (tar.gz 752221641 B + zip 752232245 B).
 - Test: DSU v10 -> obserwowac boot (logcat z petli) -> jesli padnie: LOG NA GOOGLE DRIVE
   (kanal czatu nie dowozi; komenda: adb wait-for-device logcat -d -b all > dsu_boot_log.txt).
+
+## v11 (27/28 IX) - wifi-guard wg pstore z bugreport_v10 (Drive)
+- Dane: bugreport_v10.zip (Drive 17:25 UTC; sha dbfce3f9...). Analiza:
+  diagnostics/logs/ANALIZA-bugreport-v10.md + kopia pstore (bugreport-v10_pstore-lastkmsg.txt).
+- WERDYKT: petla KERNEL PANIC w sciezce suspend WiFi/BT na slocie _b (kernel 5.10.177):
+  mtk_sdio_pm_suspend -> halSetFWOwn (358x skip) -> btmtk "do whole chip reset!" -> Oops 96000145
+  -> ipanic. Booty 16:23/17:35/17:36/18:28/19:24 lokalne, 3x kernel_panic w
+  boot.reason.history, sesje 52-72 min; rekord pstore z sesji 4h35m (start ~14:49).
+  Host uciekl na slot _a (5.10.233). Wakelock v9 nie blokuje suspend URZADZENIA SDIO
+  (275 linii suspend/resume wlan w oknie smierci) => v9 fix niewystarczajacy w praktyce.
+- RECEIPTSY vs zlecenie v11: keystore2/keymint/beanpod/Dolby = 0 ramek w pstore;
+  servicemanager = 12 lagodnych VINTF-warningow (mtkradioex, kazdy zdrowy boot);
+  Family Link/parental/Second Space NIE ISTNIEJA w donorze CN (listing kitu).
+  V10 NIETESTOWANE (linki 19:11 lokalnego, sesje crashowe start 14:49/18:28, bugreport 19:24:43).
+- v11 (FIX 8): arena_v11_wifi.sh (boot_completed): SDIO power/control=on + wakeup=enabled
+  + svc wifi disable DOMYSLNIE (wlaczenie: svc wifi enable) + arena_v11.rc hook; bramki -qF.
+  Utrzymane WSZYSTKO z v10 (rkpd apex!, propsy RKPD) i wczesniejszych.
+- ODMOWY (udokumentowane): binarne patche servicemanager/hwservicemanager (brak zrodel,
+  VINTF softening istnieje w obrazie od wczesnych wersji); patch Rust keystore2 (binarka,
+  realna odpowiedz = rkpd apex v10); suppress Second Space/700MB RAM (system_server, brak
+  zrodel); wipe Family Link (no-op - nie istnieja w donorze).
+- Bug runu 36338607528: bramka grep -q '/sys/bus/sdio/devices/*/power/control' (BRE: * =
+  kwantyfikator, nie literal) => fix grep -qF; run 36338915401 ZIELONY.
+- RAW_V11=18491d9cd49ed7a8182cd9a72e185256e46a1321acd6d747a9f965701ee5760f.
+- Delivery: tgz https://transfer.archivete.am/VL8xB/HyperOS4_P11Gen2.zip |
+  zip https://transfer.archivete.am/guPoY/HyperOS4_P11Gen2.zip | gofile T3dr8A8t (tgz) /
+  HmT1veXe (zip) | release GH hyperos4-p11g2-v11 (tar.gz 752230604 B + zip 752221331 B).
+- INSTRUKCJA KRYTYCZNA dla usera: instalowac DSU bedac na slocie _a (kernel 5.10.233 -
+  bez buga wlan; urzadzenie jest na _a od paniki 19:24). Sprawdzenie:
+  adb shell getprop ro.boot.slot_suffix. WiFi w v11 domyslnie OFF (svc wifi enable aby wlaczyc).
