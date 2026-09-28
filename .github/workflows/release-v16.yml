@@ -1,4 +1,6 @@
 name: release-v16
+# retrigger: 28 IX 15:30 UTC - transferarch wygasl (TTL ~4 h); rebuild deterministyczny
+# = te same bajty (RAW_V16 bez zmian), SWIEZE linki publiczne + nowy raport linkow.
 # v16 = FULL COMPATIBILITY MATRIX FOR DSU GUEST LAYER VIA LOG EXTRACTION
 # (zlecenie usera 28 IX bis; v15 = WHITE-SCREEN FIX wydany wczesniej - patrz nizej).
 #
