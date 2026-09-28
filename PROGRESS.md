@@ -767,3 +767,14 @@ przerobka vendora pod mt6789.
 - Run 36469639937 (UUID fix) doczytal do Release (Linki publiczne in_progress w
   momencie sprawdzenia); nowy push (Tier 2) retriggeruje build z pelnym transplantem
   MiuiHome/Gallery/Music/FileManager + fontami Mi.
+
+## Noc 28/29 IX (okno do 5:00 czasu PL = 3:00 UTC): Tier 2 w locie
+- 21:26 UTC: run 36474547084 (Tier 2, timeout 100 min) zakonczyl sie TIMEOUTEM -
+  stream fastboot ROM 12,6 GB z CDN Xiaomi biegł 85+ min przy ~2,5 MB/s i nie
+  zmiescil sie z ~25 min reszty pipeline'u.
+- Przygotowane fixy (commity lokalne, czekaja na token GH - padl drugi raz
+  ~21:26 UTC): a271b10 timeout 180 min; 57abd4e wybor NAJSZYBSZEGO mirrora CDN
+  (pomiar 10 MB range + sort wg speed_download) - ma skrocic stream do ~20-40 min.
+- Run 36469639937 (bez apk MIUI) GREEN i wydany: linki w reports/GSI1-DOSTAWA-
+  28IX-2155.md (gofile BGovoMDl tgz / 6Nd6Ztwa zip + transferarch R3sjS/10dmn0).
+- Po powrocie tokenu: push fixow -> run -> monitoring -> dostawa przed 5:00 PL.
