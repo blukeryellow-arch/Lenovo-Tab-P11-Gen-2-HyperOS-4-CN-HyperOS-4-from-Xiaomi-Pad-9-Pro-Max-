@@ -666,21 +666,25 @@ jobs:
           # airplane mode trzyma wifi/bt wylaczone na poziomie frameworku; svc disable
           # dodatkowo wylacza serwisy. Ten skrypt odpala sie przy boot ORAZ przy KAZDEJ
           # probie wznowienia serwisu wifi/bt (re-arm z arena_v14.rc).
-          log -t arena_v14 "slot-b guard: start"
+          echo "arena_v14: slot-b guard: start" > /dev/kmsg
           if settings put global airplane_mode_on 1 >/dev/null 2>&1; then
-            log -t arena_v14 "airplane_mode_on=1 OK"
+            echo "arena_v14: airplane_mode_on=1 OK" > /dev/kmsg
           else
-            log -t arena_v14 "airplane_mode: nieudane (kontynuuje)"
+            echo "arena_v14: airplane_mode: nieudane (kontynuuje)" > /dev/kmsg
           fi
           am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true >/dev/null 2>&1 \
-            && log -t arena_v14 "AIRPLANE_MODE broadcast OK" || log -t arena_v14 "broadcast: pominiety"
+            && echo "arena_v14: AIRPLANE_MODE broadcast OK" > /dev/kmsg \
+            || echo "arena_v14: broadcast: pominiety" > /dev/kmsg
           svc wifi disable >/dev/null 2>&1 \
-            && log -t arena_v14 "wifi: DISABLED" || log -t arena_v14 "wifi disable: nieudane"
+            && echo "arena_v14: wifi: DISABLED" > /dev/kmsg \
+            || echo "arena_v14: wifi disable: nieudane" > /dev/kmsg
           svc bluetooth disable >/dev/null 2>&1 \
-            && log -t arena_v14 "bluetooth: DISABLED" || log -t arena_v14 "bluetooth disable: nieudane"
+            && echo "arena_v14: bluetooth: DISABLED" > /dev/kmsg \
+            || echo "arena_v14: bluetooth disable: nieudane" > /dev/kmsg
           settings put global ble_scan_always_on 0 >/dev/null 2>&1 \
-            && log -t arena_v14 "ble_scan_always_on=0 OK" || log -t arena_v14 "ble_scan: nieudane"
-          log -t arena_v14 "slot-b guard: koniec"
+            && echo "arena_v14: ble_scan_always_on=0 OK" > /dev/kmsg \
+            || echo "arena_v14: ble_scan: nieudane" > /dev/kmsg
+          echo "arena_v14: slot-b guard: koniec" > /dev/kmsg
           SHEOF
           chmod 755 "$SCR"
           grep -q 'airplane_mode_on 1' "$SCR"
