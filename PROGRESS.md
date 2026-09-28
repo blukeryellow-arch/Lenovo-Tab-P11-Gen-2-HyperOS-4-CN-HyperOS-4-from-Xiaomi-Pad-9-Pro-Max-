@@ -679,3 +679,43 @@ przerobka vendora pod mt6789.
 - NASTEPNY KROK (bez builda): protokol zlapania logu goscia (root-adb przez
   ro.debuggable=1 + kumulujacy sie plik /data/misc/logd/logcat z czarnej skrzynki)
   -> Drive -> dopiero wtedy zakres v17.
+
+## MysticalOS GSI-1 (28 IX, wieczor) - "V16 GSI REPACK": nowa linia zlecenia
+- Zlecenie usera (doslowne): NIE kompilowac AOSP - pobrac Oficjalny prekompilowany
+  AOSP Android 17 GSI (Treble system.img), PURGE GMS/SetupWizard, INJECT microG
+  (GmsCore + FakeStore) + Aurora Store (+ uprawnienia out-of-the-box), TRANSPLANT
+  interfejsu HyperOS z donora, pack + fix ext4 file contexts/permissions. Bez
+  compile-loopow. Linia HyperOS ZAMROZONA na 9fe92fe do czasu v15_guest.log.
+- Skladniki (piny): GSI aosp_arm64-exp-CP41.260831.007-16416850-5e61c946.zip
+  (Android 17 QPR2-beta, 24 IX 2026, SPL Sep 2026, sha256 Google), microG
+  v0.3.16.252432 (GmsCore 108 051 947 B + FakeStore 4 205 370 B), Aurora Store
+  4.8.4 preload. Dowod donor: MiuiHome/Gallery/Music/FileManager TYLKO w pelnym
+  product.img; product-assets.tar.gz = fonty Mi/overlaye/permissions (ZERO apk).
+- Toolchain (zwalidowany w sandboxie): tools/simg2img.py (round-trip OK),
+  tools/fc_fixup.py (dry-run na drzewie donora: 4569 trafien / 0 miss),
+  tools/selinux_shim + tools/build_erofs_local.sh -> mkfs.erofs --file-contexts
+  DZIALA bez systemowej libselinux (etykiety w obrazie potwierdzone grepem
+  bajtowym; determinizm 2/2 identyczne). To zamyka klase awarii "unlabeled image
+  na ENFORCING GSI" (ekstrakcja ext4 gubi xattr).
+- KLUCZOWE ODKRYCIE 28 IX (przed pushem, na drodze list_files): pelny product.img
+  (6 445 187 072 B, md5 2b8d3934...) ZNIKNAL z Drive - get_file(1IjQeuV...)=404,
+  kosz pusty (15 itemow: bugreporty/Spinjitzu/vbmeta), top-30 rozmiarow bez niego
+  (super.img 8,3 GB = dump LENOVO, system_hyperos4 0,92 GB = donor system). Spool
+  (transfer-spool) tez go nie ma (system+system_ext+assets+rom-kit = 2,9 GB).
+  Wniosek: apk MIUI nieosiagalne -> FALLBACK = fonty Mi z product-assets.tar.gz
+  (spool, sha256 a53ff508... zweryfikowany po zlozeniu; 25 fontow >100 KB).
+  Po ponownym wgraniu product.img na Drive wystarczy podac nowe ID w env
+  PRODUCT_DRIVE_ID (size+md5 walidowane) i re-run.
+- Workflow .github/workflows/release-mystical1.yml (14 krokow): checkout spoola
+  (transfer-spool -> fallback fontow) -> toolchain+shim -> DONOR (Drive 6,4 GB
+  loop-mount EROFS przez sudo dla oszczednosci dysku / fallback assets) ->
+  skladniki (piny sha256/size) -> GSI->drzewo (simg2img + debugfs rdump) ->
+  PURGE GMS (audyt: oczekiwane 0) -> INJECT (privapp-permissions FAKE_PACKAGE_
+  SIGNATURE inertnie + default-permissions lokalizacja/powiadomienia) ->
+  pre-flight fc (0 miss) -> Build EROFS+lz4+--file-contexts (deterministyczny
+  UUID) -> zestaw (tar.gz+zip+RAW) -> release + linki -> raport.
+  Kompromisy udokumentowane w yml/README/release-notes: sigspoof niedostepny bez
+  patcha frameworku; apk MIUI moga padac bez frameworku (Launcher3 AOSP fallback);
+  transplant best-effort z receiptem przyczyny.
+- v15_guest.log na Drive: NADAL BRAK (list_files 28 IX ~20:4x UTC) -> HyperOS
+  pozostaje zamrozony na 9fe92fe.

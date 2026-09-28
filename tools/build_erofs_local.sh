@@ -14,6 +14,9 @@
 #
 # Uzycie: tools/build_erofs_local.sh [katalog-docelowy]      (domyslnie ./tools/vendor/erofs)
 set -uo pipefail
+# Katalog skryptu (ABSOLUTNIE, przed kazdym 'cd' - skrypt robi cd $SRC przy
+# kompilacji i wzledny BASH_SOURCE przestaje wskazywac tools/).
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Sciezka docelowa MUSI byc absolutna. Kompilacja robi 'cd $SRC', a wczesniejszy
 # wzorzec '$OLDPWD/$DST' dla argumentu '/tmp/x' sklecal '/tmp/erofs-src/tmp/x/...'
 # - budowanie konczylo sie 'OK', a selfcheck nie znalaz pliku (zmierzone 2026-09-23).
@@ -96,6 +99,10 @@ probe HAVE_PREAD64 'pread64' unistd.h; probe HAVE_PWRITE64 'pwrite64' unistd.h
 probe HAVE_FSTATFS 'fstatfs' sys/statfs.h; probe HAVE_STATVFS 'statvfs' sys/statvfs.h
 probe HAVE_COPY_FILE_RANGE 'copy_file_range' unistd.h; probe HAVE_GETRANDOM 'getrandom' sys/random.h
 probe HAVE_FGETXATTR 'fgetxattr' sys/xattr.h; probe HAVE_MEMRCHR 'memrchr' string.h
+# v-gsi: bez tych trzech mkfs czyta ZERO xattr ze zrodel (lib/xattr.c: HAVE_LLISTXATTR
+# itd. sa jedyna brama na Linuksie; mialo to miejsce w pierwszym buildzie GSI).
+probe HAVE_LLISTXATTR 'llistxattr' sys/xattr.h; probe HAVE_LGETXATTR 'lgetxattr' sys/xattr.h
+probe HAVE_LSETXATTR 'lsetxattr' sys/xattr.h
 probe HAVE_FDATASYNC 'fdatasync' unistd.h; probe HAVE_STRNLEN 'strnlen' string.h
 probe HAVE_ASPRINTF 'asprintf' stdio.h; probe HAVE_STRCHRNUL 'strchrnul' string.h
 probe HAVE_EXPLICIT_BZERO 'explicit_bzero' stdio.h
@@ -121,6 +128,24 @@ probe_lib LZ4HC_ENABLED    LZ4_compress_HC_destSize lz4hc.h lz4
   echo '#define EROFS_PACKAGED_VERSION "1.8.2-local"'; echo '#define HAVE_BYTESWAP_H 1'
   echo '#define STDC_HEADERS 1'; } >> config.h
 say "  config.h: $(grep -c define config.h) definicji"
+
+# v-gsi: HAVE_LIBSELINUX z SHIMEM (tools/selinux_shim) - odblokowuje mkfs.erofs
+# --file-contexts (wypiekanie etykiet SELinux do obrazu) bez systemowej libselinux.
+# Systemowa biblioteka jest nieosiagalna (sandbox bez apt), a erofs-utils kompiluje
+# opcje pod #ifdef HAVE_LIBSELINUX i linkuje selabel_open/selabel_lookup/freecon.
+# SHIM_DIR liczony z lokalizacji SKRYPTU (ten robi 'cd $SRC' przed kompilacja).
+SHIM_DIR="$SCRIPT_DIR/selinux_shim"
+if [ -f "$SHIM_DIR/selinux_shim.c" ] && [ -f "$SHIM_DIR/include/selinux/label.h" ]; then
+  gcc -O2 -c -o /tmp/selinux_shim.o "$SHIM_DIR/selinux_shim.c" \
+    -I"$SHIM_DIR/include" || die "shim libselinux sie nie skompilowal"
+  echo '#define HAVE_LIBSELINUX 1' >> config.h
+  CMPLINC="$CMPLINC -I$SHIM_DIR/include"
+  SELINUX_SHIM_OBJ=/tmp/selinux_shim.o
+  say "  + HAVE_LIBSELINUX (shim $SHIM_DIR -> mkfs --file-contexts aktywny)"
+else
+  SELINUX_SHIM_OBJ=""
+  say "  - HAVE_LIBSELINUX (brak shima w tools/ - mkfs bez --file-contexts)"
+fi
 
 say "== 3/4  kompilacja (kompresja wlaczona, jesli 1.5/4 znalazla biblioteki) =="
 # Uwaga historyczna: pierwsza wersja tego skryptu budowala WYLACZNIE bez kompresji, co
@@ -153,7 +178,7 @@ for tool in mkfs fsck dump; do
     say "      dostalby 127 w najgorszym momencie"; fail=1; continue
   fi
   # shellcheck disable=SC2086
-  if gcc $CFLAGS -o "$DST/$tool.erofs" $LIB $srcs $CMPLIB -lpthread -lm 2>/tmp/egcc.log; then
+  if gcc $CFLAGS -o "$DST/$tool.erofs" $LIB $srcs $CMPLIB $SELINUX_SHIM_OBJ -lpthread -lm 2>/tmp/egcc.log; then
     say "  OK $tool.erofs"
   else
     say "  BLAD $tool.erofs (pierwsze 3 bledy):"; grep -m3 'error' /tmp/egcc.log | sed 's/^/     /'; fail=1
