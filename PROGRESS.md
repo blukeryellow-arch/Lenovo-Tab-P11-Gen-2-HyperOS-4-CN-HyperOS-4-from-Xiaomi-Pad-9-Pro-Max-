@@ -492,3 +492,35 @@ przerobka vendora pod mt6789.
 - INSTRUKCJA KRYTYCZNA dla usera: instalowac DSU bedac na slocie _a (kernel 5.10.233 -
   bez buga wlan; urzadzenie jest na _a od paniki 19:24). Sprawdzenie:
   adb shell getprop ro.boot.slot_suffix. WiFi w v11 domyslnie OFF (svc wifi enable aby wlaczyc).
+
+## v12 (28 IX) - slot-agnostic audit + znaczki diagnostyczne (zgloszenie: white-screen v11)
+- Zlecenie: teoria "statyczny lock slotu _a w drzewie" + "fstab.postboot" + "usun AVB slot binding".
+- RECEIPTS (drzewo donora, zweryfikowane na prawdziwym kicie po re-klonie sandboxa):
+  * fstab.postboot NIE ISTNIEJE; jedyny fstab w /system to etc/fstab.postinstall - a on jest
+    slot-DYNAMICZNY: wpisy "slotselect_other,logical" + sciezki BEZ suffiksow
+    (/dev/block/by-name/system, /dev/block/mapper/system) = init sam rozwiazuje aktywny slot,
+  * twardych referencji _a/_b w /etc: 0; system_a/vendor_a/... w etc/init+permissions: 0;
+    'slot' w rc: 0 => OBAZ BYL SLOT-AGNOSTYCZNY OD POCZATKU; sloty montuje binarny init
+    hosta wg androidboot.slot_suffix (poza goscia). Dowod v4: ten sam system bootowal przez
+    DSU z pelnym UI niezaleznie od slotu hosta,
+  * white-screen v11 = PIERWSZY potwierdzony boot linii v7+; bez logu (Dysk bez nowych plikow).
+- FIX 9 (v12): audyt slot-agnostic jako BRAMKA CI (0 twardych referencji w obrazie) +
+  arena_v12_slot.sh (po boot_completed loguje slot_suffix, gsid.image_installed/running,
+  bootreason, veritymode, verifiedbootstate, mCurrentFocus) + arena_v12.rc.
+- FIX 9b (v12): propsy AVB zlecenia DOSLOWNIE (ro.boot.veritymode=disabled,
+  ro.boot.verifiedbootstate=orange) - INERTNE (ro.boot.* z cmdline bootloadera wygrywa;
+  udokumentowane). Receipts: vbmeta kitu ma Flags=3 od v1; sciezka DSU nie konsumuje vbmeta
+  goscia. Odmow NIE dotyczy propsow - wstawione; patchowanie binarkach init/AVB = brak substratu.
+- Sandbox: re-klon w trakcie tury ( recovered: checkout -f -B FETCH_HEAD; /tmp wyczyszczone =>
+  audyt poczatkowy byl na pustym drzewie - PONOWIONY na prawdziwym: kit re-fetch ze spoola,
+  reczne cat czastek rom-kit (sha 537eb4ea OK); UWAGA: assemble_raw_parts.py z --parts
+  /tmp/spool/transfer moze dobrac zly manifest (4 RAW_MANIFEST*.tsv na spoolu) - zlaczac
+  recznie cat rom-kit.tar.gz.part.* albo podawac manifest jawno).
+- CI: run 36376415590 ZIELONY. RAW_V12=d3a0a92a3f5b7a105c165d81ad86d9f05d2080cb3d11e2dffc03bf6d3faadfb9.
+- Delivery: tgz https://transfer.archivete.am/Txhae/HyperOS4_P11Gen2.zip |
+  zip https://transfer.archivete.am/nyGO4/HyperOS4_P11Gen2.zip | litter(72h)
+  https://litter.catbox.moe/hczkkj.gz | gofile hAfXapo9 (tgz) + sekcja zip w raporcie |
+  release GH hyperos4-p11g2-v12 (tar.gz 752234653 B + zip 752240338 B).
+- Prosba do usera: przy white-screen ZLAP LOG (adb zyje: ro.adb.secure=0, mtp,adb, logd
+  persistent): adb wait-for-device && adb logcat -d -b all > ws.log -> NA GOOGLE DRIVE.
+  Bez logu white-screen jest niezdiagnozowalny; znaczniki arena_v12 dadza kontekst slotu/DSU.
