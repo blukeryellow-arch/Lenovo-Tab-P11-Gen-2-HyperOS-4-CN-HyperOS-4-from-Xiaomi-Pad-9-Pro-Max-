@@ -657,3 +657,8 @@ przerobka vendora pod mt6789.
   gofile Q0vhM1jp (tgz) / N0iI3wxR (zip) - oba zweryfikowane zywe; release GH
   hyperos4-p11g2-v16. Bramki z trace: macierze 4/5/6 w obrazie (71 hal, optional,
   composer+allocator+keymint) + provenance bugreport_v14 w naglowku matrix.5.
+- Re-send zlecenia v15/v16 (duplikat, 15:27 UTC): Drive bez nowych plikow (test v15/v16
+  nie odbyl sie jeszcze). Transferarch z retriggeru 36440952486 wygasl (TTL ~4 h) ->
+  retrigger odswiezajacy 36443791417 ZIELONY; RAW_V16 IDENTYCZNY (c2a0c74d... -
+  determinizm). Swieze linki: transferarch VaJmr (tgz) / BycKn (zip), gofile
+  GU3JuwEu (tgz) / ICcA2mfM (zip) - gofile zweryfikowane zywe; GH release bez zmian.
