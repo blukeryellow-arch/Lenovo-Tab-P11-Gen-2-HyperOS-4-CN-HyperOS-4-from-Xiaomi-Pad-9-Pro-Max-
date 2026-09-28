@@ -1,5 +1,5 @@
 + tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree --vintf-level 5 --vintf-optional-missing --out /tmp/rebuild-v13 --erofs-dir /tmp/erofs-c --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
-=== make_release  2026-09-28T04:54:50Z ===
+=== make_release  2026-09-28T05:04:58Z ===
   OUT=/tmp/rebuild-v13  EROFS=/tmp/erofs-c
   mkfs.erofs: Usage: /tmp/erofs-c/mkfs.erofs [OPTIONS]
   kompresja: lz4hc,9 (sonda budowy przeszla)
