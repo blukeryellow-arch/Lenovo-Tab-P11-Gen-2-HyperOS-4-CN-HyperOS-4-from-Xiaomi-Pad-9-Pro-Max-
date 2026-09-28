@@ -718,6 +718,12 @@ jobs:
             done
           done
           echo "FIX 12: 16 libek SF z system_ext donora w /system/{lib,lib64} + manifest z sumami"
+          # higiena dysku runnera (v15 doklada ~2,1 GB posrednikow; bez tego Zestaw
+          # tonie na ENOSPC): czesci spoolu, obraz system_ext i ekstrakcja sa juz
+          # skonsumowane; kit-image nie jest wejsciem make_release (tylko drzewa).
+          rm -rf /tmp/spool /tmp/se-root
+          rm -f /tmp/system_ext.img /tmp/romkit/system_hyperos4_p11g2.img
+          df -h /tmp | tail -1
 
       - name: Build systemu v15 (EROFS, surowy obraz)
         run: |
