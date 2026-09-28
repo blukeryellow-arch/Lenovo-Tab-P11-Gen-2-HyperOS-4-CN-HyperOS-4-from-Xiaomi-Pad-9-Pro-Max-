@@ -1,4 +1,6 @@
 name: release-v14
+# retrigger: 28 IX - transferarch wygasl (TTL); rebuild deterministyczny = te same bajty,
+# SWIEZE linki publiczne (gofile + transferarch) + nowy raport linkow. RAW_V14 bez zmian.
 
 # v14 = SLOT B EDITION (zlecenie usera 28 IX: "napisz tylko wersje na ten starszy
 # kernel na slot b"). Dedykowana budowa dla NIEAKTUALNEGO slotu _b (kernel
