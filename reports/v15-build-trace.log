@@ -1,5 +1,5 @@
 + tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree --vintf-level 5 --vintf-optional-missing --out /tmp/rebuild-v15 --erofs-dir /tmp/erofs-c --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
-=== make_release  2026-09-28T14:20:09Z ===
+=== make_release  2026-09-28T14:39:27Z ===
   OUT=/tmp/rebuild-v15  EROFS=/tmp/erofs-c
   mkfs.erofs: Usage: /tmp/erofs-c/mkfs.erofs [OPTIONS]
   kompresja: lz4hc,9 (sonda budowy przeszla)
@@ -516,8 +516,8 @@ v15: czarna skrzynka (arena_logcatd -> /data/misc/logd + 9 markerow kmsg)
 + grep -rE 'fileencryption=|metadata_encryption=|forceencrypt' '--include=fstab*' /tmp/imgcheck/system
 + echo 'fstab: flagi wyczyszczone w obrazie'
 fstab: flagi wyczyszczone w obrazie
-+ ls /tmp/imgcheck/system/etc/permissions
 + grep -iE 'uwb|iris'
++ ls /tmp/imgcheck/system/etc/permissions
 + grep -qv arena-disabled
 + for ax in /tmp/imgcheck/system/etc/audio_*.xml
 + '[' -f /tmp/imgcheck/system/etc/audio_effects.xml ']'
@@ -527,8 +527,8 @@ audio xml w obrazie: wszystkie parsuja sie po stripie
 ++ grep -c 'wake_lock arena_nosuspend' /tmp/imgcheck/system/etc/init/arena_nosuspend.rc
 + test 3 = 3
 + grep -q 'stay_on_while_plugged_in 7' /tmp/imgcheck/system/bin/arena_v7_neutralize.sh
-+ head -c 4 system_hyperos4_p11g2.img
 + od -An -tx1
++ head -c 4 system_hyperos4_p11g2.img
  00 00 00 00
 + echo 'DOWOD v15: rc(permissive+diag-naprawiony) + CIL + FBE-off + propsy v7/v10/v12 + dynsystem off + rkpd PRZYWROCONY + nosuspend + wifi-guard + bt-guard + slot-agnostic + SLOT-B sticky-radio + SF-LIBS z system_ext + czarna skrzynka'
 DOWOD v15: rc(permissive+diag-naprawiony) + CIL + FBE-off + propsy v7/v10/v12 + dynsystem off + rkpd PRZYWROCONY + nosuspend + wifi-guard + bt-guard + slot-agnostic + SLOT-B sticky-radio + SF-LIBS z system_ext + czarna skrzynka
