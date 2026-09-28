@@ -652,3 +652,8 @@ przerobka vendora pod mt6789.
   AIDL zyje na vendorze - do rewizji po receipcie z czarnej skrzynki v15).
 - v15 wydany wczesniej (run 36435943135 ZIELONY): RAW_V15=3bf5462a...,
   transferarch gadYS (tgz) / nDW44 (zip), gofile ShjHVn9U / pt1xftv9.
+- DELIVERY v16: run 36440952486 ZIELONY. RAW_V16=c2a0c74d1d7d4f740dfccc0ae8f54b2202397e7780ab381ebe021c82fdfccb0c.
+  transferarch 12HcUi (tgz 765 857 997 B, probe 200) / 7yyxS (zip 765 847 772 B);
+  gofile Q0vhM1jp (tgz) / N0iI3wxR (zip) - oba zweryfikowane zywe; release GH
+  hyperos4-p11g2-v16. Bramki z trace: macierze 4/5/6 w obrazie (71 hal, optional,
+  composer+allocator+keymint) + provenance bugreport_v14 w naglowku matrix.5.
