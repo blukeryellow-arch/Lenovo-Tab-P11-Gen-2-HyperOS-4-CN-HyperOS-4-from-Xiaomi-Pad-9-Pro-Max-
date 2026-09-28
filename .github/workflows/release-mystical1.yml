@@ -198,6 +198,16 @@ jobs:
             else
               echo "TIER2 mirrory z HTML: $MIRRORS" | tee -a /tmp/urlprobe.log
             fi
+            # wybor NAJSZYBSZEGO mirrora: pomiar 10 MB (range) z kazdego; run
+            # 36474547084 jechal 85+ min bo bral pierwszy z brzegu (~2,5 MB/s)
+            if [ -n "$MIRRORS" ]; then
+              MIRRORS=$(for U in $MIRRORS; do
+                SPD=$(curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 "$U" 2>/dev/null || echo 0)
+                echo "TIER2 speed ${SPD%.*} B/s: $U" | tee -a /tmp/urlprobe.log
+                printf '%012.0f %s\n' "${SPD:-0}" "$U" 2>/dev/null || echo "000000000000 $U"
+              done | sort -rn | cut -d' ' -f2-)
+              echo "TIER2 kolejność wg szybkosci: $MIRRORS" | tee -a /tmp/urlprobe.log
+            fi
             echo "TIER2 mirrory CDN: ${MIRRORS:-BRAK (receipt)}" | tee -a /tmp/urlprobe.log
             if [ -z "$MIRRORS" ]; then
               REASON="TIER2: brak mirrorow CDN w HTML strony pobrania"
