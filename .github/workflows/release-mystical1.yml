@@ -64,7 +64,11 @@ jobs:
     env:
       EROFS_DIR: /tmp/erofs-c
       COMP_DIR: /tmp/comp-build
-      # --- GSI (oficjalny Google, Android 17 QPR2-beta, AOSP arm64 bez GMS) ---
+      # --- GSI (oficjalny Google, Android 17, AOSP arm64 bez GMS) ---
+      # Priorytet 1 (QPR2-beta, 24 IX 2026). Google nie ujawnia href-ow pobrania
+      # (licencja/flash-tool), a wzorzec sciezki niepewny (run 36467193303: 404 w <1 s)
+      # -> krok Skladniki SONDUJE 3 buildy x 3 wzorce i bierze pierwszy z HTTP 200
+      # (kandydaci QPR1-stable CP3A i stable CP2A z pełnymi sha z tabel Google).
       GSI_URL: https://dl.google.com/android/gsi/aosp_arm64-exp-CP41.260831.007-16416850-5e61c946.zip
       GSI_SHA256: 5e61c946ee45680365336968827bf62509d90f66ed78938f88e4deedda40a7fe
       # --- microG v0.3.16.252432 (GmsCore + FakeStore/Companion) ---
@@ -243,9 +247,32 @@ jobs:
       - name: Skladniki (GSI + microG + Aurora) - pobranie z pinami
         run: |
           set -euo pipefail
-          echo "== GSI (oficjalny Google AOSP 17 arm64 bez GMS) =="
-          curl -fSL --retry 3 --connect-timeout 30 -o /tmp/gsi.zip "$GSI_URL"
-          echo "$GSI_SHA256  /tmp/gsi.zip" | sha256sum -c -
+          # DIAGNOZA run 36467193303: krok padl w <1 s => natychmiastowy 404/403 na
+          # pierwszym curlu. Google nie publikuje jawnie href-ow (pobranie za
+          # licencja / przez Android Flash Tool), wiec wzorzec sciezki niepewny.
+          # Sonda: 3 buildy Android 17 (sha256 z oficjalnych tabel Google) x 3
+          # wzorce sciezek dl.google.com; pierwszy odpowiadajacy 200 = wybierany.
+          probe() { curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$1" 2>/dev/null || echo ERR; }
+          : > /tmp/urlprobe.log
+          GSI_PICK=""; GSI_PICK_SHA=""
+          while IFS='|' read -r F SHA; do
+            [ -n "$F" ] || continue
+            for B in "https://dl.google.com/android/gsi" "https://dl.google.com/android/repository/gsi" "https://dl.google.com/android/repository"; do
+              U="$B/$F"
+              C=$(probe "$U")
+              echo "SONDA $C $U" | tee -a /tmp/urlprobe.log
+              if [ "$C" = "200" ] && [ -z "$GSI_PICK" ]; then GSI_PICK="$U"; GSI_PICK_SHA="$SHA"; fi
+            done
+          done <<'CAND'
+          aosp_arm64-exp-CP41.260831.007-16416850-5e61c946.zip|5e61c946ee45680365336968827bf62509d90f66ed78938f88e4deedda40a7fe
+          aosp_arm64-exp-CP3A.260905.010-16176746-4a869a69.zip|4a869a6959a50fee15ff871ce378853ced4485f2aa456eb64dbdbf7a2c0408aa
+          aosp_arm64-exp-CP2A.260605.012-15430684-8e545e1e.zip|8e545e1e1e977c3b43b4e54a3af463f3e7d1c3177b120e772138334e15f48f75
+          CAND
+          test -n "$GSI_PICK" || { echo "::error::zaden kandydat GSI URL nie odpowiada 200 (sondy w /tmp/urlprobe.log)"; exit 1; }
+          echo "GSI WYBRANY: $GSI_PICK"
+          echo "GSI SHA256:  $GSI_PICK_SHA"
+          curl -fSL --retry 3 --connect-timeout 30 -o /tmp/gsi.zip "$GSI_PICK"
+          echo "$GSI_PICK_SHA  /tmp/gsi.zip" | sha256sum -c -
           cd /tmp && unzip -q gsi.zip -d gsi-unpack
           GSI_IMG=$(find gsi-unpack -name '*.img' | head -1)
           test -n "$GSI_IMG"
@@ -257,8 +284,15 @@ jobs:
           test "$(stat -c%s /tmp/gmscore.apk)" = "$GMS_APK_SIZE"
           curl -fSL --retry 3 -o /tmp/fakestore.apk "$VENDING_APK_URL"
           test "$(stat -c%s /tmp/fakestore.apk)" = "$VENDING_APK_SIZE"
-          echo "== Aurora Store 4.8.4 (preload) =="
-          curl -fSL --retry 3 -o /tmp/aurora.apk "$AURORA_URL"
+          echo "== Aurora Store 4.8.4 (preload) - sonda wzorcow URL =="
+          AURORA_PICK=""
+          for U in "$AURORA_URL" "https://gitlab.com/AuroraOSS/AuroraStore/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk"; do
+            C=$(probe "$U")
+            echo "SONDA $C $U" | tee -a /tmp/urlprobe.log
+            if [ "$C" = "200" ] && [ -z "$AURORA_PICK" ]; then AURORA_PICK="$U"; fi
+          done
+          test -n "$AURORA_PICK" || { echo "::error::AuroraStore preload: zaden URL nie odpowiada 200"; exit 1; }
+          curl -fSL --retry 3 -o /tmp/aurora.apk "$AURORA_PICK"
           test "$(stat -c%s /tmp/aurora.apk)" -gt 3000000
           sha256sum /tmp/gsi-system.img /tmp/gmscore.apk /tmp/fakestore.apk /tmp/aurora.apk | tee /tmp/assets.sha
           df -h / | tail -1
@@ -539,7 +573,8 @@ jobs:
             echo "transplant: $(cat /tmp/transplant.status 2>/dev/null | head -1 || echo '?')"
             echo
             echo "--- tar.gz ---"; cat /tmp/links-m1-tgz.md 2>/dev/null || echo "(brak)"
-            echo "--- zip ---"; cat /tmp/links-m1-zip.md 2>/dev/null || echo "(brak)"; } > "$F" || true
+            echo "--- zip ---"; cat /tmp/links-m1-zip.md 2>/dev/null || echo "(brak)"
+            echo "--- sondy URL (diagnoza dostepnosci skladnikow) ---"; cat /tmp/urlprobe.log 2>/dev/null || echo "(brak)"; } > "$F" || true
           cat "$F" || true
           if [ -f reports/mystical1-build-trace.log ]; then
             echo "trace builda: reports/mystical1-build-trace.log ($(stat -c%s reports/mystical1-build-trace.log) B)"
