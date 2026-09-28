@@ -4,7 +4,37 @@ Repozytorium procesu, nie repozytorium ROM-u. Trzyma skrypty, moduł, wydania i 
 Duże obrazy (>100 MB) żyją w gałęzi `transfer-spool` (odbudowa recepturą z docs/08)
 i na Google Drive użytkownika; runner Actions to jedyna maszyna z trasą do Dysku.
 
+## Aktualny stan (28 IX 2026): seria v1–v12 — RAW system pod DSU
+
+Aktualna linia produktu to **surowe (niesparse) `system.img` EROFS z donora CN 4.0.11.0**
+(`Xiaomi/Pad9ProMax`, sha kitu `537eb4ea…`) + surowy vbmeta (`Flags=3`), testowane przez
+**DSU Sideloader** (user nie flashuje fastbootem na etapie testów; BL odblokowany, bez roota).
+Każda wersja powstaje w CI (`.github/workflows/release-v*.yml`) z bramkami dowodowymi
+(po buildzie obraz jest odpakowywany i sprawdzany grep-em, zanim dostanie linki).
+
+| wersja | co weszło | podstawa |
+|---|---|---|
+| v1–v6 | macierz VINTF L5, permissive+CIL, FBE-off propsy, logd persistent, adb bez RSA, `arena_diag` | analiza docs/05 |
+| v7 | neutralizacja `com.android.dynsystem` (rebooty sesji DSU) + propsy usera dosłownie | log 27 IX: „Rebooting, reason: dynsystem" |
+| v8 | izolacja uwb/iris + strip Dolby z audio_*.xml (okazał się no-op) | zlecenie (teoria obalona receiptsami) |
+| v9 | wakelock `arena_nosuspend` (anti-suspend) | pstore: OOPS wifi w suspend (v4) |
+| v10 | **przywrocony `com.android.rkpd.apex`** (revert FIX 0 — nasza regresja) + propsy RKPD | strings binarki keystore2 donora |
+| v11 | wifi-guard: SDIO `power/control=on` + WiFi domyślnie off | pstore z bugreport_v10: pętla paniki wlan |
+| v12 | slot-agnostic audit jako bramka CI + znaczniki `arena_v12` + propsy AVB (inertne) | audyt: `fstab.postinstall` z `slotselect`, 0 twardych `_a/_b` |
+
+**Dostawa v12** (run 36376415590, RAW sha `d3a0a92a…dfb9`): release GH `hyperos4-p11g2-v12`
++ gofile `ysOgDWMd` (zip) / `hAfXapo9` (tar.gz) + linki w `reports/v12-links-*.md`.
+Rejestr runów, sha i wszystkie linki historyczne: `PROGRESS.md`.
+
+**Procedura testu (DSU):** tablet na slocie `_a` (`getprop ro.boot.slot_suffix`) →
+instalacja obrazu przez DSU Sideloader → po boocie `adb shell getprop ro.debuggable` (=1)
+i `gsi_tool enable` (sticky). WiFi w v11+ domyślnie wyłączone (`svc wifi enable`).
+**Złapanie logu przy awarii** (ADB żyje, logd persistent): `adb wait-for-device && adb
+logcat -d -b all > ws.log` → na Google Drive (załączniki czatu nie docierają — ×5).
+Diagnozy: `diagnostics/logs/ANALIZA-*.md` (pstore/bugreport/logi z receiptsami).
+
 ## Status: co jest wykonalne, a co nie
+
 
 Zmierzone, nie ocenione na oko.
 
@@ -35,7 +65,7 @@ Style, fonty, tapety, dźwięki, krzywe animacji, launcher i gotowe overlaye RRO
 na stockowym firmware Lenovo. Zero ruszenia `vendor`, kernela i tablicy partycji, więc
 ryzyko sprowadza się do „wyłącz moduł i zrestartuj".
 
-## Wydania ROM — cztery warianty (stan 26 IX 2026)
+## Wydania ROM — cztery warianty (era partycji/fastboot, stan 26 IX 2026)
 
 | wariant | katalog | czym się różni | szanse (docs/09 §5) |
 |---|---|---|---|
