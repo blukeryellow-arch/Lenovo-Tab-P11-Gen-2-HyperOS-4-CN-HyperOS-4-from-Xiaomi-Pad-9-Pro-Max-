@@ -541,3 +541,18 @@ przerobka vendora pod mt6789.
   czastka -> rc 1; Y3 niekompletny zakres -> rc 3; Y4 brak manifestu -> rc 2; repro incydentu
   (rom-kit2 + expect) -> wybiera rom-kit po sha, sha 537eb4ea OK; negatyw (bogus expect)
   -> rc 2 + pelna lista baz. 7/7 zielonych.
+
+## 28 IX (kontynuacja): dsu_boot_log.txt z Drive = log HOSTA, nie goscia; teoria slotu potwierdzona
+- User dolozyl na Drive dsu_boot_log.txt (2,7 MB; okno 18:28:32-18:30:25). Analiza:
+  diagnostics/logs/ANALIZA-dsu-boot-log-2709.md + kopia logu. WERDYKT: to boot hosta ZUI
+  ~7 s po panice 18:28:25 (zui: 231 / com.google: 2094 / miui: 0 / arena: 0; dynsystem
+  NOTIFY_IF_IN_USE = DSU installed, not running). Host na _a bootuje zdrowo.
+- Teoria slotu usera (stock pada na _b, ratuje go --set-active=a) ZGODNA z pstore x2:
+  paniki biegly na 5.10.177 (_b); ucieczka na _a i zdrowy boot. Slot _b ma zepsuty
+  lancuch boot ponizej warstwy system.img.
+- Zadanany patch (servicemanager/binder/init hard-code SLOT A) nieistniejacy: slot wybiera
+  bootloader przed gosciem; binder bez routingu slotu; brak bootctl w donorze; raw BCB =
+  odmowa (brick risk). REALNE: fastboot --set-active=a / host-side bootctl.
+- NIE buduje v13: v12 zawiera juz wifi-guard (usuwa zrodlo panik = rotacji slotow) i
+  markery arena_v12 (slot/gsid/focus). Nowy build bez realnej zmiany = rotacja kodu,
+  ktorej user zakazal.
