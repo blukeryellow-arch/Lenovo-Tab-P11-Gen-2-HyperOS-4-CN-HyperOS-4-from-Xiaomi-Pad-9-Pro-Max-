@@ -569,3 +569,24 @@ przerobka vendora pod mt6789.
   ponizej system.img; fstab slotselect w vendor_boot hosta. Hard-code SLOT A w obrazie
   goscia = brak substratu (utrzymana odmowa). REALNE: --set-active=a / bootctl / SPFT.
 - Nie buduje v13 (zakaz rotacji; v12 zawiera wszystko, co realne: wifi-guard + markery slotu).
+
+## v13 (28 IX, marathon) - BT-GUARD: adaptacja obrazu do nieaktualnego slotu _b
+- Cel usera: "podpasuj obraz pod starszy kernel na slocie _b". Receipts: slot _b = starsza OTA
+  (5.10.177 vs fabryczny 5.10.233 z boot.img zestawu ratunkowego); pstore okna smierci:
+  952 linii btmtk ("BT mcu pc: 0x0000000000") + "do whole chip reset!" -> SDIO Oops.
+  v11 wylaczyl WiFi, ale BT zostal aktywny na starym driverze.
+- FIX 10 (v13): arena_v13_bt.sh (boot_completed): svc bluetooth disable +
+  settings put global ble_scan_always_on 0 + arena_v13.rc; bramki w Build. Koszt: brak BT
+  do recznego wlaczenia (na _a: svc bluetooth enable). Tryb przetrwania na _b KOMPLETNY:
+  wifi off + bt off + sdio runtime-PM on + wakelock.
+- Odmowy marathon (bez zmian w danych): binarne patche keystore2/servicemanager (brak
+  zrodel; keystore2 naprawiony rkpd apexem v10), override slot_suffix w init.rc (decyzja
+  w LK+misc przed kernelem; w guest rc 0 obslugi slotow), parental/700MB/LiquidBlur
+  (brak substratu: pakiety nie istnieja w donorze CN; system_server bez zrodel).
+- PTLA CI (cel 3): run 36379440773 CZERWONY -> diagnose z trace: krok Release exit 126 =
+  utracony backslash kontynuacji po --notes (tar.gz odpalany jako program!) -> fix ->
+  run 36380103978 ZIELONY. Jednoczesnie pelna suite lokalna: pierwszy bieg 172/1 FAIL
+  (lint CJK w surowych logach urzadzenia) -> fix zakresu lint_pismo (diagnostics/logs/
+  *.log|*.txt = surowe zrzuty, .md nadal lintowane) -> 173/173 PASS.
+- RAW_V13=b4b80afc4c1677f0b8b36ffdb13b1423489aaeb8a635006e2961d363a3802c9b.
+- Delivery: reports/v13-links-36380103978.md + release GH hyperos4-p11g2-v13.
