@@ -312,7 +312,7 @@ jobs:
               disabled
           RCEOF
           test -f "$T/bin/logcat"
-          test "$(grep -c 'write /dev/kmsg' "$RC")" = "9"
+          test "$(grep -cE '^[[:space:]]*write /dev/kmsg' "$RC")" = "9"
           test "$(grep -c 'log -t ' "$RC")" = "0"
           grep -q 'start arena_logcatd' "$RC"
           grep -q 'surfaceflinger RUNNING' "$RC"
@@ -808,7 +808,7 @@ jobs:
           SFL=$(sha256sum /tmp/imgcheck/system/lib64/libsurfaceflinger.so | awk '{print $1}')
           grep -q "$SFL" /tmp/imgcheck/system/etc/arena-v15-sflibs.txt
           echo "v15: SF-LIBS (16 plikow z system_ext donora; manifest z sumami w obrazie)"
-          test "$(grep -c 'write /dev/kmsg' /tmp/imgcheck/system/etc/init/arena_diag.rc)" = "9"
+          test "$(grep -cE '^[[:space:]]*write /dev/kmsg' /tmp/imgcheck/system/etc/init/arena_diag.rc)" = "9"
           test "$(grep -c 'log -t ' /tmp/imgcheck/system/etc/init/arena_diag.rc)" = "0"
           grep -q 'service arena_logcatd' /tmp/imgcheck/system/etc/init/arena_diag.rc
           grep -q '/data/misc/logd/logcat' /tmp/imgcheck/system/etc/init/arena_diag.rc
