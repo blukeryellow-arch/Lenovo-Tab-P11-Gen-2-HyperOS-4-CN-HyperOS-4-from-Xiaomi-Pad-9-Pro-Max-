@@ -590,3 +590,18 @@ przerobka vendora pod mt6789.
   *.log|*.txt = surowe zrzuty, .md nadal lintowane) -> 173/173 PASS.
 - RAW_V13=b4b80afc4c1677f0b8b36ffdb13b1423489aaeb8a635006e2961d363a3802c9b.
 - Delivery: reports/v13-links-36380103978.md + release GH hyperos4-p11g2-v13.
+
+## v14 (28 IX) - SLOT B EDITION (dedykowana wersja dla starszego kernela 5.10.177 na _b)
+- Zlecenie usera: "napisz tylko wersje na ten starszy kernel na slot b". FIX 11: sticky
+  radio-off - arena_v14_slotb.sh: airplane_mode_on=1 + AIRPLANE_MODE broadcast +
+  svc wifi/bluetooth disable + ble_scan_always_on=0; RE-ARM w arena_v14.rc:
+  on property:init.svc.wifi=running i init.svc.bluetooth=running -> natychmiastowe
+  ponowne wylaczenie (3x exec: boot + 2x re-arm). Radia martwe na stale (zamierzone
+  dla _b; na _a dziala z pelnia po recznym wlaczeniu).
+- Fix zgloszony przez usera: `log` niedostepny w sciezkach wczesnego shell-a ->
+  12 linii przepisanych na `echo "arena_v14: ..." > /dev/kmsg` (logika Slot B/airplane
+  bez zmian; sh -n czysty). Run fixowy 36424892337 ZIELONY (pierwszy run v14
+  36423897653 anulowany przez concurrency).
+- RAW_V14 patrz reports/v14-links-36424892337.md; release GH hyperos4-p11g2-v14.
+- Test na _b: instalacja DSU -> idle >1h (dawniej smierc 52-72 min). Bialy ekran:
+  getprop ro.product.brand (Xiaomi=gosc) -> logcat -d -b all -> Dysk.
