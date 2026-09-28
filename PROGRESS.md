@@ -631,3 +631,24 @@ przerobka vendora pod mt6789.
 - Odmowy receiptowe: wrappery servicemanager (framework goscia zyl), patch keystore2
   (bez zrodel, keymint HIDL 1.0 beanpod zyje), binarny patch SF (vendoring rozwiazuje
   realna lake). Analiza: diagnostics/logs/ANALIZA-bugreport-v14.md.
+
+## v16 (28 IX) - FULL COMPATIBILITY MATRIX z inwentarza hosta (zlecenie "FORCE ... VIA LOG EXTRACTION")
+- Re-parse bugreport_v14 pod literalne wzorce zlecenia: ZERO trafien na binder
+  deadlock / graphic buffer allocation failed / watchdog timeout / Failed to
+  initialize VINTF w calym zrzucie; gosc v14 zyl 42,8 min (wspolny dropbox:
+  tylko SYSTEM_BOOT + SYSTEM_LAST_KMSG + SYSTEM_AUDIT).
+- Ekstrakcja inwentarza HAL hosta: lshal 'HARDWARE HALS' (127 HIDL) + service
+  list (32 AIDL) -> diagnostics/logs/host-hal-inventory-v14.tsv (76 wpisow,
+  71 grup HAL). NOWY receipt: vendor wystawia AIDL keymint (IKeyMintDevice +
+  IRemotelyProvisionedComponent + ISecureClock + ISharedSecret).
+- FIX 14: tools/make_host_matrix.py buduje compatibility_matrix.{4,5,6}.xml
+  z inwentarza; kazdy wpis optional="true" (pelna macierz informacyjnie, zero
+  egzekwoty = bypass strict VINTF matching bez ryzyka sciany inita). make_release
+  szanuje pre-placed plik ('nie dotkniety') - pelny build lokalny + ekstrakcja
+  obrazu potwierdzily macierze 4/5/6 w obrazie (71 hal, composer+allocator+
+  keymint obecne).
+- Odmowy utrzymane (receipty): binarne wrappery servicemanager/hwservicemanager
+  (brak zrodel; framework goscia zyl), patch keystore2 (brak zrodel Rust; keymint
+  AIDL zyje na vendorze - do rewizji po receipcie z czarnej skrzynki v15).
+- v15 wydany wczesniej (run 36435943135 ZIELONY): RAW_V15=3bf5462a...,
+  transferarch gadYS (tgz) / nDW44 (zip), gofile ShjHVn9U / pt1xftv9.

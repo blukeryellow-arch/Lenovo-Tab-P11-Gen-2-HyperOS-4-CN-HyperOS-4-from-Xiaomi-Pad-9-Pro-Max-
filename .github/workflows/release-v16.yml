@@ -1,0 +1,1158 @@
+name: release-v16
+# v16 = FULL COMPATIBILITY MATRIX FOR DSU GUEST LAYER VIA LOG EXTRACTION
+# (zlecenie usera 28 IX bis; v15 = WHITE-SCREEN FIX wydany wczesniej - patrz nizej).
+#
+# RECEIPTY (bugreport_v14, Drive id 1BAF4jsuQmhB9SA06_XdUpRiwT3ZE5yY-):
+#  - zero trafien w CALYM bugreporcie na: binder deadlock / binder thread pool /
+#    graphic buffer allocation failed / watchdog timeout / Failed to initialize VINTF,
+#  - gosc v14 zyl 42,8 min i do WSPOLNEGO dropboxa (/data/system/dropbox) zapisal
+#    wylacznie SYSTEM_BOOT + SYSTEM_LAST_KMSG + SYSTEM_AUDIT - zero crashy/ANR,
+#  - inwentarz HAL hosta (sekcja 'HARDWARE HALS (lshal --all)' -> HIDL 127 uslug +
+#    service list -> AIDL 32 uslugi) wyekstrahowany do
+#    diagnostics/logs/host-hal-inventory-v14.tsv (76 wpisow, 71 grup HAL).
+#
+# FIX 14 (v16): macierze compatibility_matrix.{4,5,6}.xml BUDOWANE Z INWENTARZA
+#   HOSTA (tools/make_host_matrix.py + tsv). Zasadnicza zmiana vs v15: macierz
+#   poziomu 5 (uzywana przy boocie - vendor first_api_level A12 -> FCM 5) opisuje
+#   DOKLADNIE to, co vendor Lenovo A14 realnie dostarcza (composer HIDL 2.1-2.3,
+#   allocator AIDL, keymint AIDL IKeyMintDevice/IRemotelyProvisionedComponent/
+#   ISecureClock/ISharedSecret, drm 1.0-1.4, ...). KAZDY wpis optional="true"
+#   (postawa v1+: pelna macierz informacyjnie, ZERO egzekwoty - to jest
+#   jednoczesnie 'bypass strict dynamic vendor-interface matching' bez ryzyka
+#   'Failed to initialize VINTF'). make_release szanuje pre-placed plik
+#   ('nie dotkniety' - potwierdzone lokalnie pelnym buildem + ekstrakcja obrazu).
+#
+# Mandaty zlecenia a receipty (v16 utrzymuje stanowisko z v15):
+#  - servicemanager/hwservicemanager 'universal wrappers': brak zrodel binarek;
+#    receipt: framework goscia zyl 42 min (zero binder deadlockow). Realizacja
+#    bez-zrodlowa tego celu = pelna macierz z inwentarza hosta (FIX 14) +
+#    optional-missing od v1 - nic nie panikuje na srodowisku A14,
+#  - keystore2 super_key.rs/security_level.rs software re-routing: brak zrodel
+#    (Rust); receipt NOWY: vendor hosta wystawia AIDL
+#    android.hardware.security.keymint.IKeyMintDevice/default (+ RPC, SecureClock,
+#    SharedSecret) - pelny zestaw security HAL AIDL; keystore2 hosta na tym dziala.
+#    Do rewizji dopiero, gdy czarna skrzynka v15 (arena_logcatd) pokaze ECDH
+#    jako blokade UI - bez tego receiptu patch binarny = rotacja w ciemno,
+#  - SF/libgui patch: zrealizowany bez-zrodlowo w v15 przez vendoring 16 libek
+#    z system_ext donora (FIX 12; te same zaleznosci, wlasciwe ABI).
+#
+# Utrzymane z v15 w calosci: SF-LIBS (FIX 12), czarna skrzynka (FIX 13),
+# sticky radio-off v14 (pstore v14 = v10 bajt w bajt), bt/wifi-guard, rkpd apex.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/release-v16.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v16
+  cancel-in-progress: true
+
+jobs:
+  v16:
+    name: v16 (FULL COMPATIBILITY MATRIX z inwentarza hosta z bugreport_v14) -> release + linki
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      EROFS_DIR: /tmp/erofs-c
+      COMP_DIR: /tmp/comp-build
+      KIT_SHA: 537eb4ea0c98f4b87bd1ccdb2e0ab502745dfd0820ef1deefb9d42e2a5b0923b
+      VBMETA_SHA: 9cf2e7e4e165687abe78fb0f084e2b07707c317376efd5d4ffbdea75537e6141
+      PRODUCT_SHA: a961bec46085883d6d9c3737b804afdf9dcdf2f512cbedad6f161177705ad1b7
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain + spool + drzewa (receptura docs/08)
+        run: |
+          set -euo pipefail
+          bash tools/build_comp_libs.sh "$COMP_DIR"
+          COMP_PREFIX="$COMP_DIR" bash tools/build_erofs_local.sh "$EROFS_DIR"
+          mkdir -p /tmp/spool /tmp/romkit
+          git fetch origin transfer-spool
+          git archive FETCH_HEAD transfer | tar -x -C /tmp/spool
+          tools/assemble_raw_parts.py --parts /tmp/spool/transfer --out /tmp/rom-kit.tar.gz --expect-sha256 "$KIT_SHA"
+          tar -xzf /tmp/rom-kit.tar.gz -C /tmp/romkit && rm -f /tmp/rom-kit.tar.gz
+          rm -rf /tmp/tree2 /tmp/prod-lekki-extract /tmp/tree-product
+          mkdir /tmp/tree2 && cp -al /tmp/romkit/system_tree /tmp/tree2/
+          rm -f /tmp/tree2/system_tree/system/etc/vintf/compatibility_matrix.{4,5,6}.{xml,komentarz.txt}
+          mkdir -p /tmp/prod-lekki-extract
+          "$EROFS_DIR/fsck.erofs" --extract=/tmp/prod-lekki-extract \
+              dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img
+          cp -a /tmp/prod-lekki-extract /tmp/tree-product
+
+      - name: FIX 7 (v10) - PRZYWROC com.android.rkpd.apex (revert FIX 0, dowod z binarki)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          echo "=== v10: RkpdApp WRACA do obrazu (revert FIX 0 z v7) ==="
+          echo "Dowod (strings z binarki keystore2 donora, system/bin/keystore2):"
+          echo "  super_key.rs:653 'User ECDH super key missing.'"
+          echo "  security_level.rs:318 'Failed to handle super encryption.'"
+          echo "  rkpd_client/src/lib.rs:227 'Waiting for RKPD key timed out:'"
+          echo "  keystore2.rc: 'critical window=0' (crash-loop keystore2 = reboot inita)"
+          echo "Zacytowana w zleceniu v10 sekwencja to podpis BRAKU RkpdApp - FIX 0 (v7-v9)"
+          echo "usuwal com.android.rkpd.apex (.arena-disabled). v4 z apexem bootowal w 100%."
+          echo "Zasada 'nie tnij' donora przywrocona; keystore2 odzyskuje sciezke RKPD."
+          test -f "$T/apex/com.android.rkpd.apex"
+          echo "rkpd apex w drzewie: $(stat -c%s "$T/apex/com.android.rkpd.apex") B - PRZYWROCONY"
+          if [ -n "$(find "$T" -name '*rkpd*' -name '*.arena-disabled' 2>/dev/null)" ]; then
+            echo "::error::plik rkpd przemianowany (.arena-disabled) - FIX 0 nie odwrocony"; exit 1
+          fi
+          if [ -f "$T/framework/oat/arm64/apex@com.android.rkpd@javalib@service-rkp.jar@classes.odex" ]; then
+            echo "odex rkpd w drzewie: OK (framework/oat/arm64)"
+          else
+            echo "UWAGA: odex rkpd nieobecny w oat (nieblokujace)"
+          fi
+
+      - name: FIX 0b (v7) - neutralizacja com.android.dynsystem (rebooty sesji DSU)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          echo "=== czy dynsystem jest w /system? ==="
+          HITS=$(find "$T" \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) 2>/dev/null || true)
+          echo "$HITS" || true
+          if [ -n "$HITS" ]; then
+            # -prune: nie schodzimy do srodka przemianowanych katalogow (dir+apk = jeden wpis;
+            # kaskada mv na przeniesionym rodzicu ubijala krok przez set -e)
+            find "$T" \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) -prune 2>/dev/null |
+              while IFS= read -r p; do mv "$p" "$p.arena-disabled"; echo "wylaczono (plik/katalog): $p"; done
+            echo "dynsystem obecny w /system - wylaczony plikowo"
+          else
+            echo "dynsystem NIEOBECNY w /system => neutralizacja runtime tylko"
+          fi
+          # brak zywego pliku (-prune zapobiega falszywym trafieniom w srodku .arena-disabled):
+          if find "$T" \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) -prune \
+               ! -name '*.arena-disabled' -print 2>/dev/null | grep -q .; then
+            echo "::error::zywy plik dynsystem przetrwal"; exit 1
+          fi
+          # Neutralizacja runtime (dziala niezaleznie od partycji, w ktorej siedzi pakiet):
+          SCRIPT="$T/bin/arena_v7_neutralize.sh"
+          cat > "$SCRIPT" <<'SHEOF'
+          #!/system/bin/sh
+          # v7: com.android.dynsystem (AOSP, system_ext) konczy sesje DSU rebootem
+          # (ACTION_REBOOT_TO_DYN_SYSTEM -> "Rebooting, reason: dynsystem"; dowod:
+          # diagnostics/logs/ANALIZA-boot-2709.md). Wylaczamy pakiet po boocie.
+          log -t arena_v7 "neutralize: start"
+          if pm disable-user --user 0 com.android.dynsystem >/dev/null 2>&1; then
+            log -t arena_v7 "dynsystem: pm disable-user OK"
+          else
+            log -t arena_v7 "dynsystem: pm disable-user nieudane"
+          fi
+          if pm hide com.android.dynsystem >/dev/null 2>&1; then
+            log -t arena_v7 "dynsystem: pm hide OK"
+          else
+            log -t arena_v7 "dynsystem: pm hide nieudane"
+          fi
+          log -t arena_v7 "neutralize: koniec"
+          SHEOF
+          chmod 755 "$SCRIPT"
+          grep -q 'pm disable-user --user 0 com.android.dynsystem' "$SCRIPT"
+          RC="$T/etc/init/arena_v7.rc"
+          cat > "$RC" <<'RCEOF'
+          # v7: po boot_completed wylacz com.android.dynsystem (koniec rebootow sesji DSU).
+          on property:sys.boot_completed=1
+              exec_background /system/bin/sh /system/bin/arena_v7_neutralize.sh
+          RCEOF
+          grep -q 'exec_background /system/bin/sh /system/bin/arena_v7_neutralize.sh' "$RC"
+          echo "arena_v7.rc + arena_v7_neutralize.sh zapisane"
+
+      - name: FIX 1 - FBE off (fstab strip + propsy ro.crypto)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          echo "=== fstaby w drzewie przed: ==="
+          find "$T" -name 'fstab*' -type f | tee /tmp/fstab.list || true
+          N=$(wc -l < /tmp/fstab.list)
+          if [ "$N" -gt 0 ]; then
+            while read -r f; do
+              echo "--- $f (przed): ---"; grep -nE 'fileencryption=|metadata_encryption=|forceencrypt' "$f" || echo "  (brak flag)"
+              sed -i -E 's/(,)?(fileencryption|metadata_encryption)=[^,[:space:]]*//g; s/(,)?forceencrypt(=[^,[:space:]]*)?//g; s/,,+/,/g; s/,([[:space:]]|$)/\1/g' "$f"
+              echo "--- $f (po): ---"; grep -nE 'fileencryption=|metadata_encryption=|forceencrypt' "$f" && { echo "::error::flagi przetrwaly w $f"; exit 1; } || echo "  (czysto)"
+            done < /tmp/fstab.list
+          else
+            echo "brak fstab* w drzewie systemu (fstab zyje w vendorze Lenovo) - stosujemy propsy"
+          fi
+          BP="$T/build.prop"
+          grep -q 'arena-fbe-off' "$BP" || cat >> "$BP" <<'EOF'
+          # arena-fbe-off: inicjalizacja bez szyfrowania (DSU/GSI, legacy keystore MTK A14)
+          ro.crypto.volume.contents_mode=footer
+          ro.crypto.volume.filenames_mode=footer
+          ro.crypto.volume.metadata.encryption=none
+          EOF
+          tail -5 "$BP"
+          grep -q 'ro.crypto.volume.contents_mode=footer' "$BP"
+          grep -q 'ro.crypto.volume.metadata.encryption=none' "$BP"
+
+      - name: FIX 2 - linker.config.pb (inwentarz + marker, bez ryzyka parse)
+        run: |
+          set -euo pipefail
+          PB=/tmp/tree2/system_tree/system/etc/linker.config.pb
+          if [ -f "$PB" ]; then
+            echo "=== linker.config.pb istnieje ($(stat -c%s "$PB") B), zawartosc: ==="
+            cat "$PB"
+            grep -q 'arena-mtk-binder-compat' "$PB" || printf '\n# arena-mtk-binder-compat: wejscie linkerconfiga; pozostawione bez zmian strukturalnych,\n# bo falszywa sekcja dir.* = ryzyko crasha linkerconfig we wczesnym init (dokladnie ten\n# tryb awarii naprawiamy). Tolerancja interfejsow HW: SELinux permissive (v3).\n' >> "$PB"
+            tail -4 "$PB"
+          else
+            echo "linker.config.pb nie istnieje w drzewie (Xiaomi nie shipuje) - patrz raport"
+          fi
+
+      - name: FIX 2b + v3 - SELinux permissive (init.rc + typepermissive CIL)
+        run: |
+          set -euo pipefail
+          RC=/tmp/tree2/system_tree/system/etc/init/arena_permissive.rc
+          cat > "$RC" <<'RCEOF'
+          # SELinux permissive dla pelnej wstecznej kompatybilnosci z vendorem Lenovo A14.
+          # Znaczniki 'arena_permissive' w logcat = dowod, ze rc sie wykonuje (do weryfikacji).
+          on early-init
+              setenforce 0
+              log -t arena_permissive "setenforce 0 @early-init"
+
+          on post-fs-data
+              setenforce 0
+              log -t arena_permissive "setenforce 0 @post-fs-data"
+
+          on zygote-start
+              setenforce 0
+              log -t arena_permissive "setenforce 0 @zygote-start"
+
+          on boot
+              setenforce 0
+              log -t arena_permissive "setenforce 0 @boot"
+
+          on nonencrypted
+              setenforce 0
+              log -t arena_permissive "setenforce 0 @nonencrypted"
+
+          on property:sys.boot_completed=1
+              setenforce 0
+              log -t arena_permissive "setenforce 0 @boot_completed"
+          RCEOF
+          test "$(grep -cE '^[[:space:]]+setenforce 0' "$RC")" = "6"
+          CIL=/tmp/tree2/system_tree/system/etc/selinux/plat_sepolicy.cil
+          test -f "$CIL" || { echo "::error::brak $CIL"; exit 1; }
+          python3 tools/sepolicy_patch.py inject "$CIL" diagnostics/bootloop-avc-26IX.txt \
+              --extra-domains:system_server
+          test "$(grep -c '^;;; arena-permissive-patch' "$CIL")" = "1"
+          grep -q '(typepermissive system_server)' "$CIL"
+
+      - name: FIX 3 (v6-diag) + FIX 13 (v15) - logd persistent NAPRAWIONE + adb + znaczniki
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          BP="$T/build.prop"
+          # v15: bez bogusow ro.logd.persistent/persist.logd.persistent (w logd NIE
+          # istnieja; dowod: LAST LOGCAT w bugreport v14 z 11-03 = persistencja nigdy
+          # nie ruszyla). Persystencje robi arena_logcatd z arena_diag.rc ponizej.
+          grep -q 'arena-v15diag' "$BP" || cat >> "$BP" <<'EOF'
+          # arena-v15diag: instrumentacja (poprawiona w v15; patrz FIX 13)
+          ro.debuggable=1
+          ro.adb.secure=0
+          persist.sys.usb.config=mtp,adb
+          ro.logd.size=16m
+          persist.logd.size=16m
+          EOF
+          tail -8 "$BP"
+          grep -q 'ro.debuggable=1' "$BP"
+          grep -q 'ro.adb.secure=0' "$BP"
+          grep -q 'persist.sys.usb.config=mtp,adb' "$BP"
+          grep -q 'ro.logd.size=16m' "$BP"
+          grep -q 'persist.logd.size=16m' "$BP"
+          if grep -q 'logd.persistent' "$BP"; then
+            echo "::error::bogus props logd.persistent w build.prop (v15 usuwa)"; exit 1
+          fi
+          RC="$T/etc/init/arena_diag.rc"
+          cat > "$RC" <<'RCEOF'
+          # v15diag: markery faz przez write /dev/kmsg (receipt usera: 'log' w wczesnym
+          # init = command not found x7; init nie ma builtin 'log'). Persystentny logcat:
+          # arena_logcatd -> /data/misc/logd/logcat (DE: zyje przed unlock; /data wspolne
+          # dla hosta i goscia DSU; pliki przezywaja revert - bugreport hosta je zobaczy).
+          on early-init
+              write /dev/kmsg "arena_diag: faza early-init"
+
+          on post-fs-data
+              write /dev/kmsg "arena_diag: faza post-fs-data"
+              mkdir /data/misc/logd 0750 logd logd
+              start arena_logcatd
+
+          on zygote-start
+              write /dev/kmsg "arena_diag: faza zygote-start"
+
+          on boot
+              write /dev/kmsg "arena_diag: faza boot"
+              setprop service.adb.tcp.port 5555
+
+          on nonencrypted
+              write /dev/kmsg "arena_diag: faza nonencrypted"
+
+          on property:sys.boot_completed=1
+              write /dev/kmsg "arena_diag: faza boot_completed"
+
+          on property:init.svc.zygote=running
+              write /dev/kmsg "arena_diag: zygote RUNNING"
+
+          on property:init.svc.surfaceflinger=running
+              write /dev/kmsg "arena_diag: surfaceflinger RUNNING"
+
+          on property:init.svc.surfaceflinger=restarting
+              write /dev/kmsg "arena_diag: surfaceflinger RESTARTING (crashloop?)"
+
+          service arena_logcatd /system/bin/logcat -b all -v threadtime -v printable -f /data/misc/logd/logcat -r 1024 -n 24
+              user logd
+              group logd system readproc
+              disabled
+          RCEOF
+          test -f "$T/bin/logcat"
+          test "$(grep -cE '^[[:space:]]*write /dev/kmsg' "$RC")" = "9"
+          test "$(grep -c 'log -t ' "$RC")" = "0"
+          grep -q 'start arena_logcatd' "$RC"
+          grep -q 'surfaceflinger RUNNING' "$RC"
+          grep -q 'surfaceflinger RESTARTING' "$RC"
+          grep -q '/data/misc/logd/logcat' "$RC"
+          echo "FIX 13: czarna skrzynka (arena_logcatd + 9 markerow kmsg) zapisana"
+
+      - name: FIX 3b (v7) - propsy usera (zlecenie 27 IX, doslownie)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          BP="$T/build.prop"
+          grep -q 'arena-v7-user-props' "$BP" || cat >> "$BP" <<'EOF'
+          # arena-v7-user-props: wstawione DOSLOWNIE wg zlecenia usera z 27 IX.
+          # Uczciwa adnotacja: te klucze nie istnieja w AOSP keystore2 - inicjalizatory
+          # ignoruja nieznane propsy (inertne). ro.apex.updatable=false ODMOWIONE:
+          # boot dziala w 100% na aktywnych APEXach (dowod: diagnostics/logs/ANALIZA-boot-2709.md).
+          ro.security.keystore.boot_bypass=true
+          ro.security.keystore.provisioning_bypass=true
+          persist.sys.keystore2.bypass_rkpd=true
+          EOF
+          tail -6 "$BP"
+          grep -q 'ro.security.keystore.boot_bypass=true' "$BP"
+          grep -q 'ro.security.keystore.provisioning_bypass=true' "$BP"
+          grep -q 'persist.sys.keystore2.bypass_rkpd=true' "$BP"
+
+      - name: FIX 4 (v8) - deklaracje features sprzetu nieobecnego na TB350FU (uwb/iris)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          P="$T/etc/permissions"
+          echo "=== inwentarz deklaracji uwb/iris (przed): ==="
+          ls "$P" 2>/dev/null | grep -iE 'uwb|iris' || echo "(brak plikow uwb/iris w /system)"
+          STRIPPED=0
+          for feat in uwb iris; do
+            for f in "$P"/*${feat}*.xml; do
+              [ -f "$f" ] || continue
+              mv "$f" "$f.arena-disabled"
+              echo "wylaczono deklaracje: $(basename "$f")"
+              STRIPPED=1
+            done
+          done
+          echo "STRIPPED_FEATURES=$STRIPPED" >> "$GITHUB_ENV"
+          if ls "$P" 2>/dev/null | grep -iE 'uwb|iris' | grep -qv 'arena-disabled'; then
+            echo "::error::zywa deklaracja uwb/iris przetrwala"; exit 1
+          fi
+          echo "features: uwb/iris rozpatrzone (target ich nie ma => sciezki null)"
+
+      - name: FIX 5 (v8) - audio - usun wpisy Dolby/spatial/Xiaomi z audio_*.xml (DOM)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          echo "=== pliki audio_*.xml w /system donora: ==="
+          find "$T/etc" -maxdepth 2 -name 'audio_*.xml' -type f 2>/dev/null | tee /tmp/audio_files.txt
+          N=$(wc -l < /tmp/audio_files.txt)
+          if [ "$N" -eq 0 ]; then
+            echo "audio_*.xml NIEOBECNE w /system (konfiguracja audio zyje w vendorze hosta)"
+            echo "AUDIO_STRIPPED=0" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          python3 - "$T" <<'PYA'
+          import os, re, sys
+          import xml.dom.minidom as md
+          t = sys.argv[1]
+          PAT = re.compile(r'dolby|atmos|spatial|misound|xiaoai|dts|dax', re.I)
+          STRIP_TAGS = {'effect', 'library', 'postprocess', 'preprocess', 'processing'}
+          changed = 0; removed = []
+          for root, _d, files in os.walk(os.path.join(t, 'etc')):
+              for fn in files:
+                  if not (fn.startswith('audio_') and fn.endswith('.xml')):
+                      continue
+                  p = os.path.join(root, fn)
+                  try:
+                      doc = md.parse(p)
+                  except Exception as e:
+                      print(f'  {fn}: nie parsuje w ogole ({e}) - NIE ruszam'); continue
+                  hits = [el for el in doc.getElementsByTagName('*')
+                          if el.nodeName in STRIP_TAGS and PAT.search(el.toxml())]
+                  if not hits:
+                      print(f'  {fn}: brak wpisow Dolby/Xiaomi (nienaruszony)'); continue
+                  for el in hits:
+                      name = el.getAttribute('name') or el.getAttribute('path') or '?'
+                      removed.append(f'{fn}: <{el.nodeName} name="{name}">')
+                      if el.parentNode is not None:
+                          el.parentNode.removeChild(el)
+                  with open(p, 'w', encoding='utf-8') as f:
+                      f.write('<?xml version="1.0" encoding="utf-8"?>\n')
+                      f.write(doc.documentElement.toxml())
+                      f.write('\n')
+                  md.parse(p)
+                  changed += 1
+                  print(f'  {fn}: usunieto {len(hits)} wpisow, re-parse OK')
+          print(f'PODSUMOWANIE: zmienionych plikow: {changed}, usunietych wpisow: {len(removed)}')
+          for r in removed:
+              print('  -', r)
+          open('/tmp/audio_stripped_count', 'w').write(str(len(removed)))
+          PYA
+          echo "AUDIO_STRIPPED=$(cat /tmp/audio_stripped_count)" >> "$GITHUB_ENV"
+
+      - name: FIX 6 (v9) - anti-suspend (OOPS wifi w suspend z pstore)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          RC="$T/etc/init/arena_nosuspend.rc"
+          cat > "$RC" <<'RCEOF'
+          # v9: dowod z pstore (bugreport 27 IX): kernel ginie w sciezce SUSPEND WiFi/BT
+          # (mtk_sdio_pm_suspend -> halSetFWOwn -> SDIO paging fault -> Oops -> ipanic).
+          # Blokujemy suspend z obrazu: named wakelock trzymany na stale.
+          # Koszt: brak suspend = wieksze zuzycie baterii (swiadoma decyzja diagnostyczna).
+          on early-init
+              write /sys/power/wake_lock arena_nosuspend
+
+          on boot
+              write /sys/power/wake_lock arena_nosuspend
+
+          on property:sys.boot_completed=1
+              write /sys/power/wake_lock arena_nosuspend
+          RCEOF
+          test "$(grep -c 'wake_lock arena_nosuspend' "$RC")" = "3"
+          SCR="$T/bin/arena_v7_neutralize.sh"
+          grep -q 'stay_on_while_plugged_in' "$SCR" || cat >> "$SCR" <<'SHEOF'
+          # v9: ekran nie gasnie przy zasilaniu (suspend = smierc kernela na slocie 5.10.177)
+          if settings put global stay_on_while_plugged_in 7 >/dev/null 2>&1; then
+            log -t arena_v9 "stay_on_while_plugged_in=7 OK"
+          else
+            log -t arena_v9 "stay_on: nieudane"
+          fi
+          SHEOF
+          grep -q 'stay_on_while_plugged_in 7' "$SCR"
+          echo "arena_nosuspend.rc + stay_on zapisane"
+
+      - name: FIX 7b (v10) - propsy usera RKPD (doslownie, system build.prop)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          BP="$T/build.prop"
+          grep -q 'arena-v10-user-props' "$BP" || cat >> "$BP" <<'EOF'
+          # arena-v10-user-props: RKPD props wg zlecenia v10 (DOSLOWNIE).
+          # Receipts (strings donora): keystore2 / com.android.rkpd.apex / framework.jar /
+          # services.jar NIE czytaja kluczy ro.remote_provisioning.(strongbox.)enable -
+          # czytana rodzina to remote_provisioning.tee.rkp_only, .strongbox.rkp_only,
+          # .hostname(.cn), .use_cert_processor, .connect_timeout_millis,
+          # .skip_network_consent_check => te propsy sa INERTNE (udokumentowane).
+          # 'product build.prop matrix' nie istnieje w sciezce DSU: partycja product
+          # nalezy do hosta A14, nasz product.img nie jest shipowany (sha256 przypiete) -
+          # dostarczycielem propsow jest /system/build.prop (jak w FIX 3b v7).
+          ro.remote_provisioning.enable=false
+          ro.remote_provisioning.strongbox.enable=false
+          EOF
+          tail -12 "$BP"
+          grep -q 'ro.remote_provisioning.enable=false' "$BP"
+          grep -q 'ro.remote_provisioning.strongbox.enable=false' "$BP"
+          echo "propsy v10 zapisane (system build.prop)"
+
+      - name: FIX 8 (v11) - anty-wlan-suspend (petla paniki z pstore bugreportu v10)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          SCR="$T/bin/arena_v11_wifi.sh"
+          cat > "$SCR" <<'SHEOF'
+          #!/system/bin/sh
+          # v11: pstore bugreportu v10: zabojca = suspend urzadzenia wlan (mtk_sdio_pm_suspend
+          # -> halSetFWOwn -> Oops 96000145 -> ipanic) na slocie _b (5.10.177). To suspend
+          # URZADZENIA SDIO (runtime-PM), nie systemu - wakelock z v9 tego nie blokuje.
+          log -t arena_v11 "wifi-guard: start"
+          N=0
+          for f in /sys/bus/sdio/devices/*/power/control; do
+            [ -w "$f" ] || continue
+            if echo on > "$f" 2>/dev/null; then N=$((N+1)); fi
+          done
+          log -t arena_v11 "sdio power/control=on: $N urzadzen"
+          W=0
+          for f in /sys/bus/sdio/devices/*/power/wakeup; do
+            [ -w "$f" ] || continue
+            if echo enabled > "$f" 2>/dev/null; then W=$((W+1)); fi
+          done
+          log -t arena_v11 "sdio wakeup=enabled: $W urzadzen"
+          # WiFi domyslnie OFF (decyzja diagnostyczna; koszt udokumentowany w README):
+          # sciezka paniki nie ruszy bez aktywnego wlan. Wlaczenie: svc wifi enable / Ustawienia.
+          if svc wifi disable >/dev/null 2>&1; then
+            log -t arena_v11 "wifi: DISABLED (domyslne v11; wlacz recznie: svc wifi enable)"
+          else
+            log -t arena_v11 "wifi: disable nieudane (kontynuuje)"
+          fi
+          log -t arena_v11 "wifi-guard: koniec"
+          SHEOF
+          chmod 755 "$SCR"
+          grep -q '/sys/bus/sdio/devices/\*/power/control' "$SCR"
+          grep -q 'svc wifi disable' "$SCR"
+          RC="$T/etc/init/arena_v11.rc"
+          cat > "$RC" <<'RCEOF'
+          # v11: po boot_completed zablokuj runtime-PM urzadzen SDIO (wlan) i domyslnie wylacz WiFi.
+          on property:sys.boot_completed=1
+              exec_background /system/bin/sh /system/bin/arena_v11_wifi.sh
+          RCEOF
+          grep -q 'exec_background /system/bin/sh /system/bin/arena_v11_wifi.sh' "$RC"
+          echo "arena_v11_wifi.sh + arena_v11.rc zapisane"
+
+      - name: FIX 9 (v12) - slot-agnostic audit (statyczny lock slotu wg zlecenia)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          echo "=== zlecenie v12: 'statyczny lock slotu w drzewie systemu' - AUDYT ==="
+          echo "--- fstab* w /system (wlacznie z fstab.postboot z zlecenia): ---"
+          FST=$(find "$T" -maxdepth 3 -name 'fstab*' -type f 2>/dev/null || true)
+          if [ -n "$FST" ]; then
+            echo "$FST"
+          else
+            echo "0 plikow - fstab zyje w VENDORZE hosta; sloty montuje binarny init hosta"
+            echo "wg androidboot.slot_suffix z bootloadera (poza obrazem goscia)"
+          fi
+          echo "--- twarde referencje suffiksow _a/_b w konfigach: ---"
+          HITS=$(grep -rIlE '/dev/block/(by-name|mapper)/[A-Za-z0-9_-]+_(a|b)([^a-zA-Z0-9_]|$)' "$T/etc" 2>/dev/null || true)
+          HITS2=$(grep -rIlE '(system|vendor|product|system_ext)_(a|b)([^a-zA-Z0-9_]|$)' "$T/etc/init" "$T/etc/permissions" 2>/dev/null || true)
+          echo "blokowe _a/_b: ${HITS:-BRAK}; partycje_a/b: ${HITS2:-BRAK}"
+          if [ -n "${HITS}${HITS2}" ]; then
+            echo "::error::twardy lock slotu w drzewie (patrz wyzej)"; exit 1
+          fi
+          echo "WERDYKT: obraz goscia SLOT-AGNOSTYCZNY (0 twardych referencji - receipt w logu)."
+          echo "Dowod v4: ten sam system bootowal przez DSU z pelnym UI - layout slotow hosta"
+          echo "nie jest przeszkoda dla goscia (DSU: system z /data, vendor z aktywnego slotu)."
+          RC="$T/etc/init/arena_v12.rc"
+          cat > "$RC" <<'RCEOF'
+          # v12: znaczniki slotu/DSU/AVB do logow (white-screen v11 potrzebuje logcat z petli!)
+          on property:sys.boot_completed=1
+              exec_background /system/bin/sh /system/bin/arena_v12_slot.sh
+          RCEOF
+          grep -q 'arena_v12_slot.sh' "$RC"
+          SCR="$T/bin/arena_v12_slot.sh"
+          cat > "$SCR" <<'SHEOF'
+          #!/system/bin/sh
+          # v12: kazdy przyszly log/bugreport bedzie mial kontekst slotu i DSU w logcat.
+          log -t arena_v12 "slot_suffix=$(getprop ro.boot.slot_suffix)"
+          log -t arena_v12 "gsid.image_installed=$(getprop gsid.image_installed) image_running=$(getprop ro.gsid.image_running)"
+          log -t arena_v12 "bootreason=$(getprop ro.boot.bootreason)"
+          log -t arena_v12 "veritymode=$(getprop ro.boot.veritymode) verifiedbootstate=$(getprop ro.boot.verifiedbootstate)"
+          log -t arena_v12 "focus=$(dumpsys window 2>/dev/null | grep -m1 'mCurrentFocus' || echo brak)"
+          SHEOF
+          chmod 755 "$SCR"
+          grep -q 'slot_suffix' "$SCR"
+          grep -q 'mCurrentFocus' "$SCR"
+          echo "arena_v12.rc + arena_v12_slot.sh zapisane (znaczniki diagnostyczne)"
+
+      - name: FIX 9b (v12) - propsy AVB wg zlecenia (doslownie, inertne)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          BP="$T/build.prop"
+          grep -q 'arena-v12-avb-props' "$BP" || cat >> "$BP" <<'EOF'
+          # arena-v12-avb-props: zlecenie v12 "usun scisle AVB binding slotow" - DOSLOWNIE.
+          # Receipts: vbmeta w kicie od v1 ma Flags=3 (verification+verity WYLACZONE,
+          # tools/make_release.sh --flags 3) - na sciezce fastboot scisla weryfikacja juz
+          # nie istnieje. Na sciezce DSU vbmeta goscia nie jest konsumowane (system z /data,
+          # host weryfikuje wlasne partycje). ro.boot.* przychodzi z cmdline bootloadera
+          # ZANIM wczyta sie build.prop => ponizsze duplikaty init zignoruje (INERTNE);
+          # wlasciwe wartosci i tak sa wlasciwe: veritymode=disabled (Flags=3),
+          # verifiedbootstate=orange (BL odblokowany - fakt usera).
+          ro.boot.veritymode=disabled
+          ro.boot.verifiedbootstate=orange
+          EOF
+          tail -10 "$BP"
+          grep -q 'ro.boot.veritymode=disabled' "$BP"
+          grep -q 'ro.boot.verifiedbootstate=orange' "$BP"
+          echo "propsy AVB v12 zapisane (doslownie wg zlecenia; inertnosc udokumentowana)"
+
+      - name: FIX 10 (v13) - BT-GUARD (btmtk w sekwencji smierci slotu _b z pstore)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          SCR="$T/bin/arena_v13_bt.sh"
+          cat > "$SCR" <<'SHEOF'
+          #!/system/bin/sh
+          # v13: pstore slotu _b (kernel 5.10.177): 952 linii btmtk w oknie smierci,
+          # "btmtk subsys reset failed, do whole chip reset!" -> SDIO Oops. Stary driver
+          # BT nie moze zostac aktywny na nieaktualnym slocie - wylaczamy domyslnie.
+          log -t arena_v13 "bt-guard: start"
+          if svc bluetooth disable >/dev/null 2>&1; then
+            log -t arena_v13 "bluetooth: DISABLED (domyslne v13; wlacz: svc bluetooth enable)"
+          else
+            log -t arena_v13 "bluetooth: disable nieudane (kontynuuje)"
+          fi
+          if settings put global ble_scan_always_on 0 >/dev/null 2>&1; then
+            log -t arena_v13 "ble_scan_always_on=0 OK (BLE scan nie budzi drivera)"
+          else
+            log -t arena_v13 "ble_scan: nieudane (kontynuuje)"
+          fi
+          log -t arena_v13 "bt-guard: koniec"
+          SHEOF
+          chmod 755 "$SCR"
+          grep -q 'svc bluetooth disable' "$SCR"
+          grep -q 'ble_scan_always_on 0' "$SCR"
+          RC="$T/etc/init/arena_v13.rc"
+          cat > "$RC" <<'RCEOF'
+          # v13: po boot_completed wylacz BT (stary driver btmtk na slocie _b zabija kernel).
+          on property:sys.boot_completed=1
+              exec_background /system/bin/sh /system/bin/arena_v13_bt.sh
+          RCEOF
+          grep -q 'exec_background /system/bin/sh /system/bin/arena_v13_bt.sh' "$RC"
+          echo "arena_v13_bt.sh + arena_v13.rc zapisane"
+
+      - name: FIX 11 (v14) - SLOT B EDITION - sticky radio-off + re-arm (init)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          SCR="$T/bin/arena_v14_slotb.sh"
+          cat > "$SCR" <<'SHEOF'
+          #!/system/bin/sh
+          # v14 SLOT B EDITION: stary kernel 5.10.177 - radia maja byc martwe na stale.
+          # airplane mode trzyma wifi/bt wylaczone na poziomie frameworku; svc disable
+          # dodatkowo wylacza serwisy. Ten skrypt odpala sie przy boot ORAZ przy KAZDEJ
+          # probie wznowienia serwisu wifi/bt (re-arm z arena_v14.rc).
+          echo "arena_v14: slot-b guard: start" > /dev/kmsg
+          if settings put global airplane_mode_on 1 >/dev/null 2>&1; then
+            echo "arena_v14: airplane_mode_on=1 OK" > /dev/kmsg
+          else
+            echo "arena_v14: airplane_mode: nieudane (kontynuuje)" > /dev/kmsg
+          fi
+          am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true >/dev/null 2>&1 \
+            && echo "arena_v14: AIRPLANE_MODE broadcast OK" > /dev/kmsg \
+            || echo "arena_v14: broadcast: pominiety" > /dev/kmsg
+          svc wifi disable >/dev/null 2>&1 \
+            && echo "arena_v14: wifi: DISABLED" > /dev/kmsg \
+            || echo "arena_v14: wifi disable: nieudane" > /dev/kmsg
+          svc bluetooth disable >/dev/null 2>&1 \
+            && echo "arena_v14: bluetooth: DISABLED" > /dev/kmsg \
+            || echo "arena_v14: bluetooth disable: nieudane" > /dev/kmsg
+          settings put global ble_scan_always_on 0 >/dev/null 2>&1 \
+            && echo "arena_v14: ble_scan_always_on=0 OK" > /dev/kmsg \
+            || echo "arena_v14: ble_scan: nieudane" > /dev/kmsg
+          echo "arena_v14: slot-b guard: koniec" > /dev/kmsg
+          SHEOF
+          chmod 755 "$SCR"
+          grep -q 'airplane_mode_on 1' "$SCR"
+          grep -q 'svc wifi disable' "$SCR"
+          grep -q 'svc bluetooth disable' "$SCR"
+          RC="$T/etc/init/arena_v14.rc"
+          cat > "$RC" <<'RCEOF'
+          # v14 SLOT B EDITION: boot + re-arm - kazda proba wznowienia wifi/bt na starym
+          # kernelu (5.10.177) konczy sie natychmiastowym wylaczeniem (pstore: panika
+          # wlan/bt w suspend). Radia sa martwe na stale; to zamierzzone dla slotu _b.
+          on property:sys.boot_completed=1
+              exec_background /system/bin/sh /system/bin/arena_v14_slotb.sh
+
+          on property:init.svc.wifi=running
+              exec_background /system/bin/sh /system/bin/arena_v14_slotb.sh
+
+          on property:init.svc.bluetooth=running
+              exec_background /system/bin/sh /system/bin/arena_v14_slotb.sh
+          RCEOF
+          test "$(grep -c 'exec_background /system/bin/sh /system/bin/arena_v14_slotb.sh' "$RC")" = "3"
+          grep -q 'on property:init.svc.wifi=running' "$RC"
+          grep -q 'on property:init.svc.bluetooth=running' "$RC"
+          echo "arena_v14_slotb.sh + arena_v14.rc (boot + 2x re-arm) zapisane"
+
+      - name: FIX 12 (v15) - SF-LIBS z system_ext donora do /system (bialy ekran)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          # RECEIPT (bugreport v14 + readelf na donorze): SF HyperOS NEEDED libki, ktorych
+          # nie ma w system donora (Xiaomi trzyma je w system_ext). Gosc DSU dostaje
+          # system_ext od LENOVO A14 -> zle ABI albo nic -> SF nie wstaje -> bialy ekran
+          # bez crashu. Vendorujemy wlasne libki do /system/{lib,lib64} (default namespace
+          # przeszukuje /system/lib64 PRZED /system_ext - nasze wygrywaja).
+          python3 tools/assemble_raw_parts.py --parts /tmp/spool/transfer \
+            --out /tmp/system_ext.img \
+            --expect-sha256 7340a8367d3da8e4bdcf56a0f53dd7b77d87f81389d08b2a7e9e449fc02a5385 \
+            --md5 f879747f3f7ebb5eb026eddeb02f8d13
+          rm -rf /tmp/se-root && mkdir -p /tmp/se-root
+          "$EROFS_DIR/fsck.erofs" --extract=/tmp/se-root /tmp/system_ext.img
+          MAN="$T/etc/arena-v15-sflibs.txt"
+          {
+            echo "# v15 FIX 12: libki SF vendorowane z system_ext donora (Xiaomi Pad 9 Pro Max)"
+            echo "# zrodlo: system_ext.img 632840192 B sha256 7340a8367d3da8e4bd... md5(Google) f879747f3f7e..."
+          } > "$MAN"
+          N=0
+          for L in libsurfaceflinger.so libsurfaceflinger_common_shared.so libfolme.so \
+                   libmisight.so android.hardware.graphics.composer@2.1.so \
+                   android.hardware.graphics.composer@2.2.so \
+                   android.hardware.graphics.composer@2.3.so \
+                   android.hardware.graphics.composer@2.4.so; do
+            for D in lib64 lib; do
+              test -f "/tmp/se-root/$D/$L"
+              cp "/tmp/se-root/$D/$L" "$T/$D/$L"
+              chmod 644 "$T/$D/$L"
+              echo "$(sha256sum "$T/$D/$L" | awk '{print $1}')  $D/$L  $(stat -c%s "$T/$D/$L") B" >> "$MAN"
+              N=$((N+1))
+            done
+          done
+          test "$N" = "16"
+          # domkniecie: vendorowane libki nie wymagaja niczego spoza /system/{lib,lib64}
+          # (libc/libm/libdl zyja z APEX runtime - to nie brak). Sprawdzone offline na
+          # donorze; tu bramka na zywo.
+          for D in lib64 lib; do
+            for F in "$T/$D"/libsurfaceflinger.so "$T/$D"/libsurfaceflinger_common_shared.so \
+                     "$T/$D"/libfolme.so "$T/$D"/libmisight.so "$T/$D"/android.hardware.graphics.composer@2.*.so; do
+              [ -f "$F" ] || continue
+              for ND in $(readelf -d "$F" | awk -F'[][]' '/NEEDED/{print $2}'); do
+                case "$ND" in libc.so|libm.so|libdl.so) continue;; esac
+                if [ ! -e "$T/lib64/$ND" ] && [ ! -e "$T/lib/$ND" ]; then
+                  echo "::error::domkniecie: $F wymaga $ND (brak w /system/{lib,lib64})"; exit 1
+                fi
+              done
+            done
+          done
+          echo "FIX 12: 16 libek SF z system_ext donora w /system/{lib,lib64} + manifest z sumami"
+          # higiena dysku runnera (v15 doklada ~2,1 GB posrednikow; bez tego Zestaw
+          # tonie na ENOSPC): czesci spoolu, obraz system_ext i ekstrakcja sa juz
+          # skonsumowane; kit-image nie jest wejsciem make_release (tylko drzewa).
+          rm -rf /tmp/spool /tmp/se-root
+          rm -f /tmp/system_ext.img /tmp/romkit/system_hyperos4_p11g2.img
+          df -h /tmp | tail -1
+
+      - name: FIX 14 (v16) - FULL COMPATIBILITY MATRIX z inwentarza hosta (z bugreport_v14)
+        run: |
+          set -euo pipefail
+          T=/tmp/tree2/system_tree/system
+          # Inwentarz HAL hosta (ekstrakcja z bugreport_v14: lshal 'HARDWARE HALS' +
+          # service list) -> macierze VINTF 4/5/6. Kazdy wpis optional="true" (pelna
+          # macierz informacyjnie, zero egzekwoty = bypass strict VINTF matching).
+          # make_release widzac istniejacy plik poziomu 5 zostawia go 'nie dotkniety'.
+          python3 tools/make_host_matrix.py \
+            --inventory diagnostics/logs/host-hal-inventory-v14.tsv \
+            --vintf-dir "$T/etc/vintf" --levels 4,5,6
+          # bramki lokalne (to samo, co w Build na ekstrakcie obrazu)
+          python3 - <<'PYEOF'
+          import xml.dom.minidom as m
+          for lvl in (4, 5, 6):
+              p = "/tmp/tree2/system_tree/system/etc/vintf/compatibility_matrix.%d.xml" % lvl
+              d = m.parse(p)
+              hals = d.getElementsByTagName("hal")
+              names = [h.getElementsByTagName("name")[0].firstChild.data for h in hals]
+              assert len(hals) >= 70, lvl
+              assert all(h.getAttribute("optional") == "true" for h in hals), lvl
+              for must in ("android.hardware.graphics.composer",
+                           "android.hardware.graphics.allocator",
+                           "android.hardware.security.keymint"):
+                  assert must in names, (lvl, must)
+          print("macierze 4/5/6: hal>=70, wszystkie optional, composer+allocator+keymint OBECNE")
+          PYEOF
+          grep -q "bugreport_v14" "$T/etc/vintf/compatibility_matrix.5.xml"
+          echo "FIX 14: macierze VINTF 4/5/6 z inwentarza hosta (bugreport_v14) w drzewie"
+
+      - name: Build systemu v16 (EROFS, surowy obraz)
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/reports"
+          exec > >(tee "$GITHUB_WORKSPACE/reports/v16-build-trace.log") 2>&1
+          set -x
+          tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree \
+            --vintf-level 5 --vintf-optional-missing --out /tmp/rebuild-v16 \
+            --erofs-dir "$EROFS_DIR" --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
+          cd /tmp/rebuild-v16
+          echo "$PRODUCT_SHA  product_hyperos4_p11g2.img" | sha256sum -c -
+          # DOWOD: wszystkie fixy fizycznie w obrazie
+          mkdir -p /tmp/imgcheck && rm -rf /tmp/imgcheck/*
+          "$EROFS_DIR/fsck.erofs" --extract=/tmp/imgcheck system_hyperos4_p11g2.img >/dev/null
+          test "$(grep -cE '^[[:space:]]+setenforce 0' /tmp/imgcheck/system/etc/init/arena_permissive.rc)" = "6"
+          grep -q '(typepermissive system_server)' /tmp/imgcheck/system/etc/selinux/plat_sepolicy.cil
+          grep -q 'ro.crypto.volume.contents_mode=footer' /tmp/imgcheck/system/build.prop
+          grep -q 'ro.crypto.volume.metadata.encryption=none' /tmp/imgcheck/system/build.prop
+          if grep -q 'logd.persistent' /tmp/imgcheck/system/build.prop; then
+            echo "::error::bogus propsy logd.persistent przetrwaly w obrazie"; exit 1
+          fi
+          grep -q 'ro.logd.size=16m' /tmp/imgcheck/system/build.prop
+          grep -q 'ro.debuggable=1' /tmp/imgcheck/system/build.prop
+          grep -q 'ro.adb.secure=0' /tmp/imgcheck/system/build.prop
+          grep -q 'persist.sys.usb.config=mtp,adb' /tmp/imgcheck/system/build.prop
+          grep -q 'ro.security.keystore.boot_bypass=true' /tmp/imgcheck/system/build.prop
+          grep -q 'ro.security.keystore.provisioning_bypass=true' /tmp/imgcheck/system/build.prop
+          grep -q 'persist.sys.keystore2.bypass_rkpd=true' /tmp/imgcheck/system/build.prop
+          # dowod neutralizacji dynsystem: rc + skrypt w obrazie (pakiet zyje w system_ext hosta)
+          grep -q 'exec_background /system/bin/sh /system/bin/arena_v7_neutralize.sh' \
+            /tmp/imgcheck/system/etc/init/arena_v7.rc
+          grep -q 'pm disable-user --user 0 com.android.dynsystem' \
+            /tmp/imgcheck/system/bin/arena_v7_neutralize.sh
+          echo "dynsystem: neutralizacja runtime udokumentowana w obrazie (arena_v7)"
+          if [ -n "$(find /tmp/imgcheck/system \( -ipath '*dynsystem*' -o -iname '*DynamicSystem*' \) -prune ! -name '*.arena-disabled' -print 2>/dev/null)" ]; then
+            echo "UWAGA: dynsystem obecny w /system bez wylaczenia - sprawdz FIX 0b"; exit 1
+          fi
+          # v10: rkpd apex MUSI zyc w obrazie (revert FIX 0; dowod w FIX 7)
+          test -f /tmp/imgcheck/system/apex/com.android.rkpd.apex
+          if [ -n "$(find /tmp/imgcheck/system -name '*rkpd*' -name '*.arena-disabled' 2>/dev/null)" ]; then
+            echo "::error::rkpd przemianowany w obrazie (FIX 0 nie odwrocony)"; exit 1
+          fi
+          echo "rkpd: com.android.rkpd.apex zywy w obrazie - revert FIX 0 OK (v10)"
+          grep -q 'ro.remote_provisioning.enable=false' /tmp/imgcheck/system/build.prop
+          grep -q 'ro.remote_provisioning.strongbox.enable=false' /tmp/imgcheck/system/build.prop
+          echo "propsy v10 (RKPD, doslownie wg zlecenia): w obrazie"
+          grep -qF '/sys/bus/sdio/devices/*/power/control' /tmp/imgcheck/system/bin/arena_v11_wifi.sh
+          grep -qF 'svc wifi disable' /tmp/imgcheck/system/bin/arena_v11_wifi.sh
+          grep -q 'exec_background /system/bin/sh /system/bin/arena_v11_wifi.sh' \
+            /tmp/imgcheck/system/etc/init/arena_v11.rc
+          echo "v11: wifi-guard (sdio control=on + wifi off) w obrazie"
+          grep -q 'slot_suffix' /tmp/imgcheck/system/bin/arena_v12_slot.sh
+          grep -q 'exec_background /system/bin/sh /system/bin/arena_v12_slot.sh' \
+            /tmp/imgcheck/system/etc/init/arena_v12.rc
+          if grep -rqE '/dev/block/(by-name|mapper)/[A-Za-z0-9_-]+_(a|b)([^a-zA-Z0-9_]|$)' \
+               /tmp/imgcheck/system/etc 2>/dev/null; then
+            echo "::error::twardy lock slotu przetrwal w obrazie"; exit 1
+          fi
+          echo "v12: slot-agnostic (audyt obrazu: 0 twardych referencji slotow)"
+          grep -q 'ro.boot.veritymode=disabled' /tmp/imgcheck/system/build.prop
+          grep -q 'ro.boot.verifiedbootstate=orange' /tmp/imgcheck/system/build.prop
+          echo "v12: propsy AVB (doslownie, inertne) w obrazie"
+          grep -q 'svc bluetooth disable' /tmp/imgcheck/system/bin/arena_v13_bt.sh
+          grep -q 'ble_scan_always_on 0' /tmp/imgcheck/system/bin/arena_v13_bt.sh
+          grep -q 'exec_background /system/bin/sh /system/bin/arena_v13_bt.sh' \
+            /tmp/imgcheck/system/etc/init/arena_v13.rc
+          echo "v13: bt-guard (bluetooth off + ble scan off) w obrazie"
+          grep -q 'airplane_mode_on 1' /tmp/imgcheck/system/bin/arena_v14_slotb.sh
+          grep -q 'svc wifi disable' /tmp/imgcheck/system/bin/arena_v14_slotb.sh
+          grep -q 'svc bluetooth disable' /tmp/imgcheck/system/bin/arena_v14_slotb.sh
+          test "$(grep -c 'exec_background /system/bin/sh /system/bin/arena_v14_slotb.sh' \
+            /tmp/imgcheck/system/etc/init/arena_v14.rc)" = "3"
+          grep -q 'on property:init.svc.wifi=running' /tmp/imgcheck/system/etc/init/arena_v14.rc
+          grep -q 'on property:init.svc.bluetooth=running' /tmp/imgcheck/system/etc/init/arena_v14.rc
+          echo "v14 SLOT B EDITION: sticky radio-off (airplane + 3x exec: boot/wifi/bt) w obrazie"
+          test -f /tmp/imgcheck/system/lib64/libsurfaceflinger.so
+          test -f /tmp/imgcheck/system/lib64/libsurfaceflinger_common_shared.so
+          test -f /tmp/imgcheck/system/lib64/libfolme.so
+          test -f /tmp/imgcheck/system/lib64/libmisight.so
+          test -f /tmp/imgcheck/system/lib/libsurfaceflinger.so
+          for CL in android.hardware.graphics.composer@2.1.so android.hardware.graphics.composer@2.2.so \
+                    android.hardware.graphics.composer@2.3.so android.hardware.graphics.composer@2.4.so; do
+            test -f "/tmp/imgcheck/system/lib64/$CL"
+            test -f "/tmp/imgcheck/system/lib/$CL"
+          done
+          test "$(wc -l < /tmp/imgcheck/system/etc/arena-v15-sflibs.txt)" = "18"
+          SFL=$(sha256sum /tmp/imgcheck/system/lib64/libsurfaceflinger.so | awk '{print $1}')
+          grep -q "$SFL" /tmp/imgcheck/system/etc/arena-v15-sflibs.txt
+          echo "v15: SF-LIBS (16 plikow z system_ext donora; manifest z sumami w obrazie)"
+          test "$(grep -cE '^[[:space:]]*write /dev/kmsg' /tmp/imgcheck/system/etc/init/arena_diag.rc)" = "9"
+          test "$(grep -c 'log -t ' /tmp/imgcheck/system/etc/init/arena_diag.rc)" = "0"
+          grep -q 'service arena_logcatd' /tmp/imgcheck/system/etc/init/arena_diag.rc
+          grep -q '/data/misc/logd/logcat' /tmp/imgcheck/system/etc/init/arena_diag.rc
+          grep -q 'init.svc.surfaceflinger=running' /tmp/imgcheck/system/etc/init/arena_diag.rc
+          echo "v15: czarna skrzynka (arena_logcatd -> /data/misc/logd + 9 markerow kmsg)"
+          python3 - <<'PYEOF'
+          import xml.dom.minidom as m
+          for lvl in (4, 5, 6):
+              p = "/tmp/imgcheck/system/etc/vintf/compatibility_matrix.%d.xml" % lvl
+              d = m.parse(p)
+              hals = d.getElementsByTagName("hal")
+              names = [h.getElementsByTagName("name")[0].firstChild.data for h in hals]
+              assert len(hals) >= 70, lvl
+              assert all(h.getAttribute("optional") == "true" for h in hals), lvl
+              for must in ("android.hardware.graphics.composer",
+                           "android.hardware.graphics.allocator",
+                           "android.hardware.security.keymint"):
+                  assert must in names, (lvl, must)
+          print("v16: macierze VINTF 4/5/6 w obrazie (hal>=70, optional, composer+allocator+keymint)")
+          PYEOF
+          grep -q "bugreport_v14" /tmp/imgcheck/system/etc/vintf/compatibility_matrix.5.xml
+          echo "v16: FULL COMPATIBILITY MATRIX z inwentarza hosta (ekstrakcja z bugreport_v14) w obrazie"
+
+          if find /tmp/imgcheck/system -name 'fstab*' | grep -q .; then
+            if grep -rE 'fileencryption=|metadata_encryption=|forceencrypt' --include='fstab*' /tmp/imgcheck/system; then
+              echo "::error::flagi FBE przetrwaly w fstab obrazu"; exit 1
+            fi
+            echo "fstab: flagi wyczyszczone w obrazie"
+          else
+            echo "fstab: brak w systemie (vendor Lenovo) - propsy ro.crypto aktywna droga"
+          fi
+          if ls /tmp/imgcheck/system/etc/permissions 2>/dev/null | grep -iE 'uwb|iris' | grep -qv 'arena-disabled'; then
+            echo "::error::zywa deklaracja uwb/iris w obrazie"; exit 1
+          fi
+          for ax in /tmp/imgcheck/system/etc/audio_*.xml; do
+            [ -f "$ax" ] || continue
+            python3 -c "import sys, xml.dom.minidom as m; m.parse(sys.argv[1])" "$ax" \
+              || { echo "::error::$ax nie parsuje po stripie"; exit 1; }
+          done
+          echo "audio xml w obrazie: wszystkie parsuja sie po stripie"
+          test "$(grep -c 'wake_lock arena_nosuspend' /tmp/imgcheck/system/etc/init/arena_nosuspend.rc)" = "3"
+          grep -q 'stay_on_while_plugged_in 7' /tmp/imgcheck/system/bin/arena_v7_neutralize.sh
+          head -c 4 system_hyperos4_p11g2.img | od -An -tx1
+          echo "DOWOD v16: rc(permissive+diag-naprawiony) + CIL + FBE-off + propsy v7/v10/v12 + dynsystem off + rkpd PRZYWROCONY + nosuspend + wifi-guard + bt-guard + slot-agnostic + SLOT-B sticky-radio + SF-LIBS z system_ext + czarna skrzynka + FULL COMPATIBILITY MATRIX z inwentarza hosta"
+          sha256sum system_hyperos4_p11g2.img | tee /tmp/v16.sha
+          rm -rf /tmp/imgcheck
+          echo "RAW_V16=$(awk '{print $1}' /tmp/v16.sha)" >> "$GITHUB_ENV"
+
+      - name: Zestaw v16 - RAW + tar.gz + zip (bez sparse, bez lz4-sparse)
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/kit16 && mkdir /tmp/kit16
+          cp /tmp/rebuild-v16/system_hyperos4_p11g2.img /tmp/kit16/
+          cp "$GITHUB_WORKSPACE/dist/release/HyperOS4_P11Gen2/vbmeta_hyperos4_p11g2.img" /tmp/kit16/
+          echo "$VBMETA_SHA  /tmp/kit16/vbmeta_hyperos4_p11g2.img" | sha256sum -c -
+          cd /tmp/kit16
+          cat > sprawdz.sh <<'EOF'
+          #!/usr/bin/env bash
+          # Weryfikacja v16 (obraz NIESPARSE'OWANY - raw EROFS): suma wystarcza.
+          set -u
+          rc=0
+          echo "== sha256sum -c SHA256SUMS.txt =="
+          sha256sum -c SHA256SUMS.txt || rc=1
+          echo
+          if [ $rc -eq 0 ]; then echo "WSZYSTKO ZGODNE."; else echo "NIEZGODNE - pobierz ponownie."; fi
+          exit $rc
+          EOF
+          chmod +x sprawdz.sh
+          cat > README.md <<EOT
+          # HyperOS 4 v16 - Lenovo Tab P11 Gen 2 (TB350FU): FULL COMPATIBILITY MATRIX - system RAW + vbmeta
+
+          v16 = v15 + pelna macierz zgodnosci DSU-guesta z inwentarza hosta (FIX 14):
+          - inwentarz HAL hosta WYESTRAHOWANY z bugreport_v14 (Drive): lshal 'HARDWARE
+            HALS' -> 127 uslug HIDL + service list -> 32 uslugi AIDL; tsv:
+            diagnostics/logs/host-hal-inventory-v14.tsv (76 wpisow / 71 grup HAL),
+          - macierze compatibility_matrix.{4,5,6}.xml budowane z tego inwentarza
+            (tools/make_host_matrix.py); macierz poziomu 5 (FCM vendora A12) opisuje
+            dokladnie to, co vendor Lenovo A14 realnie dostarcza - w tym composer
+            HIDL 2.1-2.3, allocator AIDL, keymint AIDL (IKeyMintDevice,
+            IRemotelyProvisionedComponent, ISecureClock, ISharedSecret), drm 1.0-1.4,
+          - kazdy wpis optional="true": pelna macierz informacyjnie, ZERO egzekwoty -
+            to jest realizacja 'bypass strict dynamic vendor-interface matching'
+            bez ryzyka 'Failed to initialize VINTF' (sciana znana z docs/05),
+          - receipty wprost z bugreport_v14: zero binder deadlockow, zero graphic
+            buffer allocation failures, zero watchdog timeout w calym zrzucie; gosc
+            v14 zyl 42,8 min i do wspolnego dropboxa zapisal tylko SYSTEM_BOOT +
+            SYSTEM_LAST_KMSG + SYSTEM_AUDIT,
+          - utrzymane z v15 w calosci: SF-LIBS (16 plikow z system_ext donora -
+            naprawa bialego ekranu), czarna skrzynka (arena_logcatd ->
+            /data/misc/logd + 9 markerow kmsg), sticky radio-off v14, bt/wifi-guard,
+            rkpd apex, wakelock, slot-agnostic, propsy, permissive,
+          - odmowy receiptowe (bez zmian): binarne wrappery servicemanager/
+            hwservicemanager i patch keystore2 super_key.rs/security_level.rs -
+            brak zrodel binarek; keymint AIDL zyje na vendorze hosta; do rewizji
+            dopiero po receipcie z czarnej skrzynki (log goscia z testu v15/v16),
+          - ponizej linia v15 (bez zmian):
+          v15 = v14 + naprawa bialego ekranu + czarna skrzynka (analiza bugreport_v14):
+          - architektura DSU: gosc = system Xiaomi + product/system_ext/vendor LENOVO A14
+            (wydajemy wylacznie partycje system; pozostale partycje sa hosta),
+          - SF HyperOS (readelf na donorze) wymaga libsurfaceflinger.so,
+            libsurfaceflinger_common_shared.so, libfolme.so, libmisight.so i stubow
+            composer@2.1-2.4.so - NIE MA ich w partycji system donora (Xiaomi trzyma je
+            w system_ext) -> SF goscia ladowal libki Lenovo A14 (zle ABI) albo nic:
+            bialy ekran przy ZYWYM frameworku (42 min, 0 tombstonow, 0 dropbox),
+          - FIX 12: vendorowanie 16 plikow (8 libek x lib64+lib) z system_ext.img donora
+            do /system/{lib,lib64} (zrodlo: transfer-spool; sha256 7340a836... + md5
+            Google f879747f... = te same bajty co na Dysku; manifest z sumami w obrazie:
+            /system/etc/arena-v15-sflibs.txt),
+          - FIX 13: czarna skrzynka - arena_logcatd (logcat -b all -> /data/misc/logd/
+            logcat; DE = zyje przed unlock; /data wspolne host/gosc; przezywa revert -
+            bugreport hosta po revercie zawiera log goscia) + 9 markerow faz przez
+            write /dev/kmsg (w tym surfaceflinger RUNNING/RESTARTING i zygote RUNNING);
+            usuniete bogusy ro.logd.persistent/persist.logd.persistent (w logd nie
+            istnieja; LAST LOGCAT z 11-03 w bugreport v14 = dowod, ze nie dzialaly),
+          - utrzymane w calosci: sticky radio-off v14 (pstore v14 = v10 bajt w bajt:
+            sciezka paniki wlan/bt martwa), bt-guard, wifi-guard, rkpd apex, wakelock,
+            slot-agnostic audit, propsy, permissive,
+          - NIE ma (odmowy receiptowe): wrappery servicemanager/hwservicemanager
+            (framework goscia wstal - zero dowodow na blokade HAL), patch keystore2
+            (bez zrodel; keymint HIDL 1.0 beanpod zyje na vendorze; bialy ekran go
+            poprzedza), binarny patch SF (vendoring libek rozwiazuje ten sam problem
+            bez zrodel),
+          - ponizej linia v14 (bez zmian):
+          v14 = v13 + STICKY RADIO-OFF (dedykowane dla NIEAKTUALNEGO slotu _b, kernel 5.10.177):
+          - target: starszy kernel 5.10.177-ab10731447 na slocie _b (pozostalosc po starszej OTA;
+            fabryczny to 5.10.233-ab13101360 - patrz ANALIZA-slotB-zestaw-ratunkowy.md),
+          - stary driver wlan/bt nie moze zostac aktywny (pstore: panika w sciezce suspend
+            wlan/bt -> Oops 96000145 -> hard reset + rotacja slotow),
+          - FIX 11 (v14): airplane_mode_on=1 przy boot + svc wifi/bluetooth disable +
+            ble_scan_always_on=0 ORAZ RE-ARM w init: on property:init.svc.wifi=running i
+            init.svc.bluetooth=running -> natychmiastowe ponowne wylaczenie.
+            RADIA SA MARTWE NA STALE (to zamierzone dla _b); wznowienie tylko recznie z shella
+            (svc wifi enable) i to do najblizszego triggera re-arm,
+          - dziedzictwo w pelni utrzymane: bt-guard (v13), wifi-guard + sdio runtime-PM on (v11),
+            wakelock (v9), rkpd apex (v10), slot-agnostic audit + znaczki (v12),
+          - na slocie _a (5.10.233) ta sama budowa dziala z pelnia funkcji po recznym wlaczeniu
+            radii; dedykowanym targetem v14 jest slot _b,
+          - ponizej linia v13 (bez zmian):
+          v13 = v12 + BT-GUARD (cel: przetrwanie obrazu na NIEAKTUALNYM slocie _b):
+          - dowod (ANALIZA-slotB-zestaw-ratunkowy.md): slot _b to pozostalosc po starszej OTA -
+            kernel 5.10.177-ab10731447 zamiast fabrycznego 5.10.233-ab13101360 (boot.img z zestawu
+            ratunkowego); stary vendor, stary driver wlan i btmtk,
+          - pstore okna smierci: 952 linii btmtk ("BT mcu pc: 0x0000000000" = zawieszony MCU BT)
+            + "btmtk subsys reset failed, do whole chip reset!" -> SDIO paging fault -> Oops,
+          - FIX 10 (v13): po boot_completed - svc bluetooth disable + ble_scan_always_on=0.
+            KOSZT: brak BT do recznego wlaczenia. Na zdrowym slocie _a: svc bluetooth enable,
+          - tryb przetrwania na _b (kompletny od v13): WiFi off (v11) + BT off (v13) +
+            SDIO runtime-PM on (v11) + wakelock systemowy (v9) - sciezka paniki wlan/bt nie ruszy,
+          - zalecane pozostaje instalowanie na slocie _a (fastboot --set-active=a) - tam obraz
+            dziala z pelnia funkcji (WiFi/BT wlaczasz recznie),
+          - ponizej linia v12 (bez zmian):
+          v12 = v11 + SLOT-AGNOSTIC AUDIT + znaczniki diagnostyczne (zgloszenie: white-screen DSU v11):
+          - teoria zlecenia (statyczny lock slotu _a) OBALONA RECEIPTSAMI: fstab.postboot nie istnieje,
+            fstab* w /system: 0, twardych referencji /dev/block/*_a|_b w /etc: 0, system_a/vendor_a
+            w etc/init+permissions: 0 => obraz byl slot-agnostic od poczatku; sloty montuje binarny
+            init hosta wg androidboot.slot_suffix z bootloadera (poza obrazem goscia). Dowod v4:
+            ten sam system bootowal przez DSU z pelnym UI (system z /data, vendor z aktywnego slotu),
+          - FIX 9: audyt slot-agnostic jako bramka CI (0 twardych referencji) + arena_v12_slot.sh
+            (po boot_completed loguje: slot_suffix, gsid.image_installed/running, bootreason,
+            veritymode, verifiedbootstate, mCurrentFocus) - kazdy nastepny log bedzie mial kontekst,
+          - FIX 9b: propsy AVB zlecenia DOSLOWNIE: ro.boot.veritymode=disabled,
+            ro.boot.verifiedbootstate=orange. INERTNE (ro.boot.* z cmdline bootloadera wygrywa z
+            build.prop - init zignoruje duplikaty; udokumentowane). Receipts: vbmeta w kicie od v1
+            ma Flags=3 (verification+verity off), na sciezce DSU vbmeta goscia nie jest konsumowane,
+          - WHITE-SCREEN v11 bez logu jest niezdiagnozowalny: v12 wysyla znaczniki; przy kolejnym
+            tescie ZLAP LOG (adb powinno zyc: ro.adb.secure=0, persist.sys.usb.config=mtp,adb,
+            logd persistent):
+                adb wait-for-device
+                adb logcat -d -b all > ws.log        # na GOOGLE DRIVE
+          - ponizej linia v11 (bez zmian):
+          v11 = v10 + WIFI-GUARD (dowod: pstore z bugreportu v10, diagnostics/logs/ANALIZA-bugreport-v10.md):
+          - tablet petlowal KERNEL PANIC w sciezce suspend WiFi/BT na slocie _b (kernel 5.10.177):
+            mtk_sdio_pm_suspend -> halSetFWOwn (358x "skip set fw own") -> btmtk "do whole chip reset!"
+            -> SDIO do_translation_fault -> Oops 96000145 -> ipanic; sesje 52-72 min (idle -> suspend -> oops),
+            booty 16:23/17:35/17:36/18:28/19:24, 3x kernel_panic w boot.reason.history; host uciekl na slot _a,
+          - wakelock z v9 NIE blokuje tej sciezki (suspend URZADZENIA SDIO, nie systemu - 275 linii
+            suspend/resume wlan w oknie smierci),
+          - FIX 8 (v11): po boot_completed: /sys/bus/sdio/devices/*/power/control=on + wakeup=enabled
+            + WiFi DOMYSLNIE WYLACZONE (sciezka paniki nie ruszy bez aktywnego wlan).
+            KOSZT: brak WiFi do recznego wlaczenia. Wlaczenie: adb shell svc wifi enable (albo Ustawienia),
+          - NAJWAZNIEJSZE (poza obrazem): instaluj DSU bedac na slocie _a (kernel 5.10.233 - bez buga
+            wlan na SDIO). Sprawdzenie przed instalacja: adb shell getprop ro.boot.slot_suffix (ma byc _a).
+            Urzadzenie jest na _a po panice z 19:24 - nie restartuj go na sile bez potrzeby,
+          - receipts vs zlecenie v11: keystore2/keymint/beanpod/Dolby = 0 ramek w pstore;
+            servicemanager = 12 lagodnych VINTF-warningow (mtkradioex, brak modemu - sa na kazdym boocie);
+            Family Link / parental / Second Space NIE ISTNIEJA w donorze CN (listing kitu) => nic do wycinania;
+            patche binarne (servicemanager, keystore2 w Rust) NIEMOZLIWE bez zrodel - odmowy udokumentowane
+            w PROGRESS.md i naglowku workflow,
+          - v10 (przywrocony rkpd apex) nietestowane - zostaje w v11 w calosci,
+          - ponizej linia v10 (bez zmian):
+          v10 = v9 + PRZYWROCONY com.android.rkpd.apex + propsy RKPD wg zlecenia:
+          - zlecenie v10 zacytowalo sekwencje keystore2 ("Failed to handle super encryption",
+            "User ECDH key missing", "rkpd_client: Waiting for RKPD key timed out",
+            "OUT_OF_KEYS_TRANSIENT_ERROR") jako przyczyne bootloopu sesji DSU v9,
+          - to REALNE stringi binarki keystore2 donora (strings /system/bin/keystore2):
+            super_key.rs:653 "User ECDH super key missing.", security_level.rs:318
+            "Failed to handle super encryption.", rkpd_client/src/lib.rs:227
+            "Waiting for RKPD key timed out:",
+          - ta sekwencja to podpis BRAKU RkpdApp - a FIX 0 (od v7) usuwal com.android.rkpd.apex
+            z obrazu (w v9 jako .arena-disabled). v4, ktory bootowal w 100%, mial ten apex.
+            keystore2.rc donora: "critical window=0" - crash-loop keystore2 przed boot_completed
+            = init REBOOTUJE urzadzenie (= bootloop),
+          - FIX 7 (v10): apex PRZYWROCONY (zasada "nie tnij" donora); keystore2 odzyskuje
+            sciezke RKPD (klucze ECDH przez HAL beanpod hosta) - bledy znikaja u zrodla,
+          - FIX 7b: propsy zlecenia DOSLOWNIE: ro.remote_provisioning.enable=false,
+            ro.remote_provisioning.strongbox.enable=false. Receipts (strings donora: keystore2,
+            com.android.rkpd.apex, framework.jar, services.jar): ZADEN komponent nie czyta tych
+            kluczy (rodzina czytana: remote_provisioning.tee.rkp_only, .strongbox.rkp_only,
+            .hostname, .use_cert_processor, .connect_timeout_millis, .skip_network_consent_check)
+            => inertne, wstawione z adnotacja,
+          - "product build.prop matrix": partycja product na DSU jest hosta (A14 Lenovo), a nasz
+            product.img nie jest w wydaniu (ma przypiete sha256) - dostarczycielem propsow jest
+            /system/build.prop (jak przy propsach v7),
+          - patch binder keystore2 ("SYSTEM_ERROR/OUT_OF_KEYS jako mock-null"): ODMOWIONE -
+            binarna kompilacja Rust bez zrodel, brak konfigu semantyki bledow; naprawe daje
+            przywrocony apex (FIX 7),
+          - ponizej linia v9 (bez zmian):
+          v9 = v8 + ANTI-SUSPEND (dowod z pstore bugreportu 27 IX):
+          - kernel ginie w suspend WiFi/BT (mtk_sdio_pm_suspend -> Oops 96000145 -> ipanic);
+            "63 sekundy" = screen timeout -> suspend -> crash; slot-switch 5.10.177 -> 5.10.233,
+          - FIX: wakelock arena_nosuspend (write /sys/power/wake_lock na 3 triggerach)
+            + settings stay_on_while_plugged_in=7 - bez suspend sciezka crashu nie ruszy,
+          - koszt: brak suspend = wieksze zuzycie baterii (decyzja diagnostyczna),
+          - claimsy beanpod/dolby z zlecenia ODRUCONE receiptsami z tego samego bugreportu
+            (keymaster beanpod zdrowy 104x, serwis Dolby zywy 307x, w pstore zero ramek
+            binder/audio) - mock-stuby niewstawione (brak zrodel i brak powodu),
+          - ponizej linia v8 (bez zmian):
+          v8 = v7 + IZOLACJA SPRZETU wg 5. zlecenia (27 IX noc):
+          - deklaracje features uwb/iris wylaczone z drzewa (TB350FU nie ma takiego sprzetu),
+          - wpisy Dolby/Atmos/spatial/Xiaomi usuniete z /system/etc/audio_*.xml
+            (DOM + re-parse po zapisie; pliki audio vendora bez zmian),
+          - UCZCIWIE: audioserver NIE crashowal w zadnym logu portu (teoria z zlecenia
+            obalona danymi); zmiany sa izolacja profilaktyczna na wyrazne zlecenie,
+          - niemozliwe w repacku (brak zrodel frameworku): try-catch w SystemServer.java,
+            usuwanie logiki ladowania/baterii - udokumentowane w PROGRESS.md,
+          - ponizej linia v7 (bez zmian):
+          v7 = v6-diag + fix przyczyny konczenia sesji (dowod w logu z 27 IX):
+          analizowalny log dowiodl, ze system HyperOS BOOTUJE W 100% (launcher, dotyk,
+          aplikacje, ~4 min uptime), a "reset" = jawny reboot sesji DSU
+          (com.android.dynsystem ACTION_REBOOT_TO_DYN_SYSTEM -> "Rebooting, reason:
+          dynsystem"). NIE byl to watchdog ani keystore (te linie to poziom WARN).
+          Dlatego v7:
+          - com.android.dynsystem NEUTRALIZOWANY RUNTIME: po boot_completed nasz skrypt
+            wylacza pakiet (pm disable-user / pm hide) - koniec rebootow sesyjnych
+            inicjowanych z obrazu; znaczniki 'arena_v7' w logcat potwierdzaja wykonanie,
+          - propsy usera wg zlecenia (doslownie): ro.security.keystore.boot_bypass=true,
+            ro.security.keystore.provisioning_bypass=true, persist.sys.keystore2.bypass_rkpd=true
+            (inertne w AOSP - udokumentowane), ro.apex.updatable=false ODMOWIONE
+            (boot dziala na aktywnych APEXach; flaga ryzykowalaby rozwalenie lancucha),
+          - utrzymane: FBE off, SELinux permissive 6x + typepermissive (RkpdApp off z v7 ODWROCONY w v10 - patrz FIX 7),
+            logd persistent (/data/misc/logd), adb bez autoryzacji RSA, arena_diag.
+
+          ## Jak uruchomic — DWIE sciezki
+
+          A) FASTBOOT (permanentnie, zalecane):
+              fastboot flash vbmeta_a  vbmeta_hyperos4_p11g2.img
+              fastboot flash vbmeta_b  vbmeta_hyperos4_p11g2.img
+              fastboot flash system_a  system_hyperos4_p11g2.img
+              fastboot flash system_b  system_hyperos4_p11g2.img
+              fastboot reboot
+
+          B) DSU (przez DSU Sideloader): obraz zostaje, ALE:
+             1) wgraj system_hyperos4_p11g2.img przez DSU Sideloader (jak wczesniej),
+             2) PO pierwszym starciu sie HyperOS w DSU wlacz STICKY MODE:
+                    adb shell gsi_tool enable
+                - wtedy kazdy reboot wraca do HyperOS zamiast do hosta Lenovo,
+             3) z v7 notyfikacja DSU (przycisk Restart) znika - nic nie przerwie sesji
+                z wnetrza obrazu.
+
+          | plik | rozmiar | sha256 |
+          |---|---|---|
+          | system_hyperos4_p11g2.img | $(stat -c%s /tmp/kit16/system_hyperos4_p11g2.img) B | $RAW_V16 |
+          | vbmeta_hyperos4_p11g2.img | 4096 B | $VBMETA_SHA |
+          EOT
+          sha256sum system_hyperos4_p11g2.img vbmeta_hyperos4_p11g2.img > SHA256SUMS.txt
+          bash sprawdz.sh
+          tar czf /tmp/HyperOS4_P11Gen2_v16.tar.gz .
+          zip -q -r /tmp/HyperOS4_P11Gen2_v16.zip .
+          ls -l /tmp/HyperOS4_P11Gen2_v16.tar.gz /tmp/HyperOS4_P11Gen2_v16.zip
+
+      - name: Release hyperos4-p11g2-v16 (tar.gz + zip + raw img)
+        run: |
+          set -euo pipefail
+          gh release delete hyperos4-p11g2-v16 --yes --cleanup-tag 2>/dev/null || true
+          gh release create hyperos4-p11g2-v16 --target "$GITHUB_SHA" \
+            --title "HyperOS 4 v16 - Lenovo Tab P11 Gen 2: FULL COMPATIBILITY MATRIX z inwentarza hosta (ekstrakcja bugreport_v14)" \
+            --notes "v16 FULL COMPATIBILITY MATRIX = v15 (WHITE-SCREEN FIX: SF-libs z system_ext donora + czarna skrzynka arena_logcatd) + FIX 14: macierze VINTF 4/5/6 budowane z INWENTARZA HAL HOSTA wyekstrahowanego z bugreport_v14 (lshal HARDWARE HALS -> HIDL 127 uslug + service list -> AIDL 32; tsv: diagnostics/logs/host-hal-inventory-v14.tsv, 76 wpisow / 71 grup HAL). Macierz poziomu 5 (FCM vendora A12) opisuje dokladnie to, co vendor Lenovo A14 dostarcza: composer HIDL 2.1-2.3, allocator AIDL, keymint AIDL (IKeyMintDevice + IRemotelyProvisionedComponent + ISecureClock + ISharedSecret), drm 1.0-1.4, boot 1.0-1.2, health 2.0-2.1 itd. Kazdy wpis optional=true: pelna macierz informacyjnie, zero egzekwoty (bypass strict VINTF matching bez ryzyka Failed to initialize VINTF). Receipty wprost z bugreportu: zero binder deadlockow, zero graphic buffer alloc failures, zero watchdog timeout, gosc v14 zyl 42,8 min (dropbox: tylko SYSTEM_BOOT/LAST_KMSG/AUDIT). Odmowy utrzymane: binarne wrappery servicemanager/hwservicemanager i patch keystore2 (brak zrodel; keymint AIDL zyje na vendorze - do rewizji dopiero po receipcie z czarnej skrzynki v15). Surowy system sha256 $RAW_V16." \
+            /tmp/HyperOS4_P11Gen2_v16.tar.gz /tmp/HyperOS4_P11Gen2_v16.zip
+          gh release view hyperos4-p11g2-v16 --json url,assets -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
+
+      - name: Linki publiczne (tar.gz + zip)
+        run: |
+          set -uo pipefail
+          bash tools/public_links.sh /tmp/HyperOS4_P11Gen2_v16.tar.gz /tmp/links-v16-tgz.md || true
+          bash tools/public_links.sh /tmp/HyperOS4_P11Gen2_v16.zip /tmp/links-v16-zip.md || true
+
+      - name: Raport z linkami + trace do repo
+        if: always()
+        run: |
+          set -u
+          git config user.name "github-actions[bot]" || true
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com" || true
+          mkdir -p reports
+          F="reports/v16-links-${{ github.run_id }}.md"
+          { echo "### v16 links (run ${{ github.run_id }})"; echo "RAW_V16=${RAW_V16:-brak}"; echo
+            echo "--- tar.gz ---"; cat /tmp/links-v16-tgz.md 2>/dev/null || echo "(brak)"
+            echo "--- zip ---"; cat /tmp/links-v16-zip.md 2>/dev/null || echo "(brak)"; } > "$F" || true
+          cat "$F" || true
+          if [ -f reports/v16-build-trace.log ]; then
+            echo "trace builda: reports/v16-build-trace.log ($(stat -c%s reports/v16-build-trace.log) B)"
+          fi
+          git add -f reports || true
+          git commit -q -m "v7-links+trace: run ${{ github.run_id }}" || true
+          git push -q origin "HEAD:${{ github.ref_name }}" || echo "push nie wyszedl"
+          exit 0
