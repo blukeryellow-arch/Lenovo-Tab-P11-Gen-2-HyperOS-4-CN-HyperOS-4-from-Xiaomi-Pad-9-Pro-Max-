@@ -605,3 +605,29 @@ przerobka vendora pod mt6789.
 - RAW_V14 patrz reports/v14-links-36424892337.md; release GH hyperos4-p11g2-v14.
 - Test na _b: instalacja DSU -> idle >1h (dawniej smierc 52-72 min). Bialy ekran:
   getprop ro.product.brand (Xiaomi=gosc) -> logcat -d -b all -> Dysk.
+
+## v15 (28 IX) - WHITE-SCREEN FIX + czarna skrzynka (analiza bugreport_v14)
+- Pobrano i sparsowano bugreport_v14 (Drive 1BAF4jsuQmhB9SA06_XdUpRiwT3ZE5yY-,
+  sha256 c664f57e...): os czasu 14:31 host -> 14:36:28 dynsystem -> 14:37:31 GOSC v14
+  -> 42,8 min stabilnego frameworku (0 tombstonow, 0 dropbox) -> 15:19:20 grzeczny
+  revert -> 15:20:24 host + bugreport. Slot _a, kernel 5.10.233.
+- PSTORE BAJT W BAJT = bugreport_v10: dzisiejsze "kernel_panic" w reason.history to
+  sticky flaga AEE; sciezka paniki wlan/bt NA V14 MARTWA (sticky radio-off dziala).
+- MECHANIZM bialego ekranu: DSU-gosc = system Xiaomi + product/system_ext/vendor
+  LENOVO A14; SF HyperOS NEEDED 11 libek nieobecnych w system donora (Xiaomi trzyma
+  je w system_ext!), w tym libsurfaceflinger.so - SF ladowal libki Lenovo A14 lub
+  nic -> bialy ekran BEZ crashu. Vendor Lenovo: composer HIDL 2.1/2.2/2.3 + MTK
+  composer_ext, allocator AIDL 4.0, brak composer3 AIDL (SF linkuje HIDL 2.1-2.4,
+  warstwa composera oszczedzona).
+- FIX 12: 16 plikow (8 libek x lib64+lib: libsurfaceflinger,
+  libsurfaceflinger_common_shared, libfolme, libmisight, composer@2.1-2.4)
+  vendorowanych z system_ext.img donora (spool; sha256 7340a836... + md5 Google
+  f879747f... = te same bajty co na Dysku) do /system/{lib,lib64}; domkniecie
+  zaleznosci czyste (bramka na zywo w CI); manifest z sumami w obrazie.
+- FIX 13: naprawa instrumentacji v6 (byla NOP-em: ro.logd.persistent nie istnieje w
+  logd - LAST LOGCAT z 11-03; 'log' w wczesnym init = command not found): 9 markerow
+  write /dev/kmsg (w tym surfaceflinger RUNNING/RESTARTING) + arena_logcatd ->
+  /data/misc/logd/logcat (DE, wspolne host/gosc, przezywa revert).
+- Odmowy receiptowe: wrappery servicemanager (framework goscia zyl), patch keystore2
+  (bez zrodel, keymint HIDL 1.0 beanpod zyje), binarny patch SF (vendoring rozwiazuje
+  realna lake). Analiza: diagnostics/logs/ANALIZA-bugreport-v14.md.
