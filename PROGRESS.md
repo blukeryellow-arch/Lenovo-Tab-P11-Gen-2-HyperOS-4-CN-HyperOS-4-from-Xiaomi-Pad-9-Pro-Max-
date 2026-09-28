@@ -556,3 +556,16 @@ przerobka vendora pod mt6789.
 - NIE buduje v13: v12 zawiera juz wifi-guard (usuwa zrodlo panik = rotacji slotow) i
   markery arena_v12 (slot/gsid/focus). Nowy build bez realnej zmiany = rotacja kodu,
   ktorej user zakazal.
+
+## 28 IX (domkniecie): slot _b = NIEAKTUALNY - dowod z zestawu ratunkowego usera
+- Pobrano z Drive (folder TB350FU.../image/): boot.img, vendor_boot.img, lk.img, vbmeta.img,
+  super_empty.img, scatter (google_drive/, niecommitowane). Analiza:
+  diagnostics/logs/ANALIZA-slotB-zestaw-ratunkowy.md.
+- RECEIPT: kernel fabryczny boot.img = 5.10.233-ab13101360 (= zdrowy slot _a); paniki z
+  pstore biegly na 5.10.177-ab10731447 (starszy) = slot _b to pozostalosc po starszej OTA
+  (stary kernel+vendor+wlan-driver). Teoria usera potwierdzona na bajtach; doprecyzowana
+  przyczyna: nie "metadata matching broken" nieokreslone, a STALE SLOT.
+- lk.img: pelna logika [LK_AB] + AVB slot verify w bootloaderze => wybor slotu 2 warstwy
+  ponizej system.img; fstab slotselect w vendor_boot hosta. Hard-code SLOT A w obrazie
+  goscia = brak substratu (utrzymana odmowa). REALNE: --set-active=a / bootctl / SPFT.
+- Nie buduje v13 (zakaz rotacji; v12 zawiera wszystko, co realne: wifi-guard + markery slotu).
