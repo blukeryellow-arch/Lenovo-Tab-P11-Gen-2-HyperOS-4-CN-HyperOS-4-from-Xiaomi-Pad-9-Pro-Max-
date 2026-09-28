@@ -453,7 +453,9 @@ jobs:
           exec > >(tee "$GITHUB_WORKSPACE/reports/mystical1-build-trace.log") 2>&1
           set -x
           FC=/tmp/gsitree/system/etc/selinux/plat_file_contexts
-          "$EROFS_DIR/mkfs.erofs" -zlz4 -T 0 -U 1a2b3c4d-0000-4000-8000-mystical001 \
+          # UUID deterministyczny, czysto hexowy ("mystical" w ASCII hex; fix: run
+          # 36469032983 padl na 'invalid UUID' - mkfs.erofs 1.8.2 wymaga hex):
+          "$EROFS_DIR/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c00000001 \
             --file-contexts="$FC" \
             /tmp/mystical-system.img /tmp/gsitree
           ls -la /tmp/mystical-system.img
