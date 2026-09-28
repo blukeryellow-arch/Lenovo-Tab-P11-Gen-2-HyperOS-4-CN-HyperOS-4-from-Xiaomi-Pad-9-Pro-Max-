@@ -58,7 +58,10 @@ jobs:
   mystical1:
     name: MysticalOS GSI-1 (AOSP 17 GSI repack - microG + Aurora + transplant HyperOS) -> release + linki
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    # 100 min: stream fastboot ROM 12,6 GB z CDN Xiaomi (Tier 2 donora) moze sam
+    # zajac 30-50 min przy wolnym CDN + ~20 min na reszte pipeline'u; 50 min
+    # (run 36472295147) bylo za malo.
+    timeout-minutes: 100
     env:
       EROFS_DIR: /tmp/erofs-c
       COMP_DIR: /tmp/comp-build
