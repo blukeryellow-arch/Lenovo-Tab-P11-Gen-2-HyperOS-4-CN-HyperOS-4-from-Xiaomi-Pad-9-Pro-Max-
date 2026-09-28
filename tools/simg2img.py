@@ -2,7 +2,7 @@
 """Konwersja Android sparse image -> raw image (python, zero zaleznosci).
 
 Sandbox/runner nie maja android-sdk-libsparse-utils, a GSI Google przychodzi
-jako system.img w formacie sparse (magic 0x3AED2684). Format jest trywialny:
+jako system.img w formacie sparse (magic 0x3A69ED55). Format jest trywialny:
 naglowek 28 B + N chunkow (12 B naglowek + dane). Obslugiwane typy: RAW 0xCAC1,
 FILL 0xCAC2 (4-bajtowy wzorzec), DONTCARE 0xCAC3 (zera), CRC32 0xCAC4 (pomijany).
 
@@ -15,7 +15,8 @@ Kod 0 = OK; 1 = to nie jest sparse image (albo inny blad).
 import struct
 import sys
 
-MAGIC = 0x3AED2684
+MAGIC = 0x3A69ED55  # Android sparse image magic (fix: bylo bledne 0x3AED2684 -
+                    # round-trip self-test tego nie zlapal, bo testowal wlasny zapis)
 TYPE_RAW = 0xCAC1
 TYPE_FILL = 0xCAC2
 TYPE_DONTCARE = 0xCAC3
@@ -32,7 +33,7 @@ def main():
     with open(src, "rb") as f:
         head = f.read(28)
         if len(head) < 28 or struct.unpack_from("<I", head, 0)[0] != MAGIC:
-            print("NIE-sparse (brak magic 0x3AED2684) - plik jest chyba raw albo inny format")
+            print("NIE-sparse (brak magic 0x3A69ED55) - plik jest chyba raw albo inny format")
             return 1
         (magic, major, minor, file_hdr_sz, chunk_hdr_sz, blk_sz,
          total_blks, total_chunks, _crc) = struct.unpack("<IHHHHIIII", head)

@@ -18,13 +18,11 @@ name: release-mystical1
 #      PRELOAD (do ROM-ow) do /system/app, + default-permissions (lokalization
 #      background + powiadomienia nadane out-of-the-box).
 #   4. TRANSPLANT HyperOS: MiuiHome / MiuiGallery / MiuiMusic / MiuiFileManager
-#      + fonty Mi* z pelnego product.img donora (Drive, md5 Google = pin) do
-#      /system/app + /system/fonts. KROK BEST-EFFORT: brak dostepu do Drive =
-#      build rusza dalej bez transplantu (Receipt: przyczyna w raporcie).
-#      STAN 28 IX: pelny product.img ZNIKNAL z Drive (get_file=404, kosz pusty,
-#      spool go nie ma) -> FALLBACK = fonty Mi z product-assets.tar.gz
-#      (branch transfer-spool w repo, sha256 = pin); apk MIUI pominięte z reasonem.
-#      Deodex = bez katalogow oat/. Audyt zaleznosci: licznik klas miui.* w dex
+#      + fonty Mi* z pelnego product.img donora do /system/app + /system/fonts.
+#      TIER 1: product.img z Drive (md5 Google = pin). TIER 2 (aktywny od 28 IX
+#      noca): oficjalny fastboot ROM CN yingtian z CDN Xiaomi (stream tar wycina
+#      product.img; md5 calego tgz = pin). TIER 3: fonty Mi z product-assets.tar.gz
+#      (spool w repo). Audyt zaleznosci: licznik klas miui.* w dex
 #      kazdego APK (Launcher Xiaomi bez frameworku MIUI bedzie padal - GSI
 #      zachowuje Launcher3 jako fallback; to jest udokumentowany kompromis).
 #   5. KONTEKSTY SELinux: debugfs rdump traci xattr, a GSI jest ENFORCING ->
@@ -79,12 +77,13 @@ jobs:
       # --- Aurora Store 4.8.4 (wariant preload - do wbudowania w ROM) ---
       AURORA_URL: https://gitlab.com/-/project/6922885/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk
       # --- donor HyperOS: pelny product.img (tu sa MiuiHome/Gallery/Music/FileManager) ---
-      # UWAGA 28 IX wieczor: plik pod tym ID ZNIKNAL z Drive (get_file=404, kosz pusty,
-      # top-30 rozmiarow bez niego). Wg drive-inventory.tsv (23 IX) bylo to product.img
-      # 6445187072 B / md5 2b8d3934... Kro Donor obsluguje to best-effort:
-      # brak pliku => FALLBACK na product-assets.tar.gz (fonty Mi) ze spoola
-      # (branch transfer-spool w repo, sha256 ponizej) + build bez apk MIUI.
-      # Po ponownym wgraniu product.img na Drive: ustaw tu nowe ID (size+md5 walidowane).
+      # TIER 1: Drive (ID ponizej; size+md5 walidowane) - plik zniknal z Drive 28 IX
+      # (get_file=404), czeka na ponowny upload usera.
+      # TIER 2 (AKTYWNY): oficjalny fastboot ROM CN yingtian (HyperOS 4.0.11.0.XBMCNXM)
+      # z CDN Xiaomi - katalog xmfirmwareupdater.com (to samo zrodlo co miuirom.org);
+      # stream tar wycina product.img bez zapisu 12,6 GB tgz; md5 tgz = pin
+      # (60633b4ba6490a2bd98bb58df3b9d850, z oficjalnej strony pobrania).
+      # TIER 3: product-assets.tar.gz ze spoola (fonty Mi) - gdy 1 i 2 zawioda.
       PRODUCT_DRIVE_ID: 1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1
       PRODUCT_SIZE: "6445187072"
       PRODUCT_MD5: 2b8d393435091c45c864c525ce769340
@@ -163,6 +162,87 @@ jobs:
             fi
           else
             REASON="Drive nie oddal pliku (link/udostepnienie)"
+          fi
+          # ---- TIER 2: oficjalny fastboot ROM yingtian z CDN Xiaomi ----
+          # Pelny product.img donora zniknal z Drive (28 IX). Zrodlo zastepcze =
+          # fastboot ROM CN Xiaomi Pad 9 Pro Max "yingtian" (HyperOS 4.0.11.0.XBMCNXM,
+          # Android 17, 2026-09-16, z katalogu xmfirmwareupdater.com = to samo
+          # zrodlo co miuirom.org) - w srodku PELNY product.img z MiuiHome/Gallery/
+          # Music/FileManager. Strona pobrania ma 5 mirrorow CDN; hrefy wyciaga
+          # resolver HTML (jak przy GSI). STREAM: tgz 12,6 GB NIE ląduje na dysku -
+          # tar wycina w locie tylko product.img, a md5 CALEGO tgz liczone jest
+          # rownolegle ze strumienia (pelna weryfikacja bez zapisu 12,6 GB).
+          if [ -n "$REASON" ]; then
+            echo "== TIER 2: fastboot ROM yingtian (CDN Xiaomi) =="
+            ROM_PAGE="https://xmfirmwareupdater.com/hyperos/yingtian/stable/OS4.0.11.0.XBMCNXM/"
+            ROM_TGZ="yingtian-images-OS4.0.11.0.XBMCNXM-user-20260916.0000.00-17.0-cn-60633b4ba6.tgz"
+            ROM_MD5="60633b4ba6490a2bd98bb58df3b9d850"
+            AV2=$(df --output=avail -B1G /tmp | tail -1 | tr -dc '0-9')
+            echo "TIER2 miejsce na dysku: ${AV2}G (potrzeba >=7G na product.img)"
+            PAGE2=$(curl -sSL --connect-timeout 30 --max-time 120 "$ROM_PAGE") || PAGE2=""
+            MIRRORS=""
+            [ -n "$PAGE2" ] && MIRRORS=$(printf '%s' "$PAGE2" | sed 's/&amp;/\&/g' \
+              | grep -oE "https://[^\"'<> ]+/${ROM_TGZ}" | sort -u || true)
+            if [ -z "$MIRRORS" ]; then
+              # fallback: znane wzorce CDN Xiaomi (version-dir + filename; wzorzec
+              # z lat PUBLICZNYCH linkow bigota/bn.d/cdnorg/cdn-ota)
+              for CDNB in cdnorg.download.miui.com bigota.d.miui.com bn.d.miui.com cdn-ota.azureedge.net; do
+                CU="https://$CDNB/OS4.0.11.0.XBMCNXM/$ROM_TGZ"
+                CC=$(curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$CU" 2>/dev/null || echo ERR)
+                echo "SONDA TIER2 $CC $CU" | tee -a /tmp/urlprobe.log
+                if [ "$CC" = "200" ]; then MIRRORS="$CU"; break; fi
+              done
+            else
+              echo "TIER2 mirrory z HTML: $MIRRORS" | tee -a /tmp/urlprobe.log
+            fi
+            echo "TIER2 mirrory CDN: ${MIRRORS:-BRAK (receipt)}" | tee -a /tmp/urlprobe.log
+            if [ -z "$MIRRORS" ]; then
+              REASON="TIER2: brak mirrorow CDN w HTML strony pobrania"
+            elif [ "${AV2:-0}" -lt 7 ]; then
+              REASON="TIER2: za malo miejsca (${AV2}G < 7G)"
+            else
+              for U in $MIRRORS; do
+                echo "TIER2 proba: $U" | tee -a /tmp/urlprobe.log
+                rm -rf /tmp/romx && mkdir -p /tmp/romx
+                if curl -fL --retry 2 --connect-timeout 30 "$U" 2>>/tmp/urlprobe.log \
+                  | tee >(md5sum > /tmp/rom-tgz.md5) \
+                  | tar -xz -C /tmp/romx --wildcards '*/product.img' 2>>/tmp/urlprobe.log; then
+                  GOT=$(find /tmp/romx -name product.img -size +100M | head -1)
+                  MD5GOT=$(awk '{print $1}' /tmp/rom-tgz.md5 2>/dev/null)
+                  if [ -n "$GOT" ] && [ "$MD5GOT" = "$ROM_MD5" ]; then
+                    mv "$GOT" /tmp/product-donor.img && rm -rf /tmp/romx
+                    echo "TIER 2 OK: product.img $(stat -c%s /tmp/product-donor.img) B z fastboot ROM (md5 tgz zgodne)"
+                    REASON=""
+                    break
+                  fi
+                  echo "TIER2 niezgodne: md5=${MD5GOT:-brak} plik=${GOT:-brak}" | tee -a /tmp/urlprobe.log
+                fi
+                rm -rf /tmp/romx /tmp/product-donor.img
+              done
+              [ -z "$REASON" ] || REASON="TIER2: zaden mirror nie dal poprawnego product.img (patrz sondy)"
+            fi
+          fi
+          # product.img z fastboot ROM moze byc SPARSE (Android sparse magic
+          # 0x3A69ED55) - loop-mount i fsck.erofs czytaja tylko raw. Konwersja
+          # wlasnym simg2img (MAGIC naprawiony 28 IX: byl bledny 0x3AED2684 -
+          # round-trip self-test testowal wlasny zapis i tego nie zlapal).
+          # Guard dyskowy: przy <13G wolnego czyscimy duze czastki spoola
+          # (rom-kit/system_hyperos/13e) - czastki assets (fonty) zostaja.
+          if [ -z "$REASON" ] && [ -f /tmp/product-donor.img ]; then
+            AVC=$(df --output=avail -B1G /tmp | tail -1 | tr -dc '0-9')
+            if [ "${AVC:-0}" -lt 13 ]; then
+              rm -f spool/transfer/rom-kit.tar.gz.part.* \
+                    spool/transfer/system_hyperos4_p11g2.img.part.* \
+                    spool/transfer/drive-13e-*.img.part.* 2>/dev/null || true
+              echo "TIER2: oczyszczono duze czastki spoola (assets do fallbacku fontow zostaja); wolne teraz: $(df --output=avail -B1G /tmp | tail -1 | tr -dc '0-9')G"
+            fi
+            if python3 tools/simg2img.py /tmp/product-donor.img /tmp/product-raw.img 2>/tmp/sparse.log; then
+              echo "product.img byl SPARSE -> skonwertowany do raw ($(stat -c%s /tmp/product-donor.img) B)"
+              rm -f /tmp/product-donor.img && mv /tmp/product-raw.img /tmp/product-donor.img
+            else
+              echo "product.img = raw (nie sparse) - zostaje jak jest"
+              rm -f /tmp/product-raw.img
+            fi
           fi
           P=""
           if [ -z "$REASON" ]; then

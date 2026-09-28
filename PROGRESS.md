@@ -743,3 +743,27 @@ przerobka vendora pod mt6789.
   PROGRESS czekaja na reconnect GitHub w Arena. Po reconnect: sprawdzic run
   36469639937, jesli zielony - raport linkow (reports/mystical1-links-<run>.md,
   bot CI commituje go sam), weryfikacja gofile, present_file.
+
+## GSI-1 Tier 2: transplant z oficjalnego fastboot ROM-u yingtian (29 IX, rano)
+- User wskazal miuirom.org/tablets/xiaomi-pad-9-pro-max jako zrodlo ROM-u donora
+  (product.img zniknal z Drive). Katalog = to samo zrodlo co xmfirmwareupdater.com
+  (oficjalne, nietkiete ROM-y Xiaomi prosto z serwerow Xiaomi).
+- Znaleziono: fastboot ROM CN "yingtian" HyperOS 4.0.11.0.XBMCNXM (Android 17,
+  2026-09-16): yingtian-images-OS4.0.11.0.XBMCNXM-user-20260916.0000.00-17.0-cn-
+  60633b4ba6.tgz, 12,6 GB, MD5 tgz 60633b4ba6490a2bd98bb58df3b9d850 (z oficjalnej
+  strony pobrania xmfirmwareupdater.com/hyperos/yingtian/stable/OS4.0.11.0.XBMCNXM/).
+- TIER 2 w kroku Donor: resolver HTML strony pobrania wyciaga mirrory CDN (fallback:
+  4 wzorce bigota/bn.d/cdnorg/cdn-ota), STREAM curl|tee|tar wycina w locie product.img
+  (tgz 12,6 GB NIE ląduje na dysku), md5 calego tgz liczone ze strumienia = pin.
+  product.img moze byc sparse -> konwersja simg2img (z guardem dyskowym i cleanupem
+  duzych czastek spoola; czastki assets do fontow zostaja).
+- BUGFIX krytyczny tools/simg2img.py: MAGIC byl 0x3AED2684, a standard Android
+  sparse = 0x3A69ED55 (round-trip self-test tego nie zlapal - testowal wlasny zapis).
+  Fix + test niezalezny (rzeczywisty naglowek sparse wg spec: RAW/FILL/DONTCARE +
+  odmowa dla nie-sparse) = zgodny.
+- BUGFIX tar (zlapany w sandboxie PRZED runem): GNU tar 1.34 cicho NIE wyciga (RC 0)
+  gdy wzorzec stoi przed -C/-f; poprawna kolejnosc: tar -xz -C <dir> --wildcards
+  '<wzorzec>'. Zweryfikowane pelnym pipe cat|tee(md5)|tar.
+- Run 36469639937 (UUID fix) doczytal do Release (Linki publiczne in_progress w
+  momencie sprawdzenia); nowy push (Tier 2) retriggeruje build z pelnym transplantem
+  MiuiHome/Gallery/Music/FileManager + fontami Mi.
