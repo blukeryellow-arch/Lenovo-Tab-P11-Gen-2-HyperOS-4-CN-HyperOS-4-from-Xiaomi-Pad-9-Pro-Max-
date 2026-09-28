@@ -1,0 +1,7 @@
++ FC=/tmp/gsitree/system/etc/selinux/plat_file_contexts
++ /tmp/erofs-c/mkfs.erofs -zlz4 -T 0 -U 1a2b3c4d-0000-4000-8000-mystical001 --file-contexts=/tmp/gsitree/system/etc/selinux/plat_file_contexts /tmp/mystical-system.img /tmp/gsitree
+<E> erofs: mkfs_parse_options_cfg() Line[1149] invalid UUID 1a2b3c4d-0000-4000-8000-mystical001
+Try '/tmp/erofs-c/mkfs.erofs --help' for more information.
+<E> erofs: main() Line[2100] 	Could not format the device : [Error 22] Invalid argument
+
+mkfs.erofs 1.8.2-local
