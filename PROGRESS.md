@@ -524,3 +524,20 @@ przerobka vendora pod mt6789.
 - Prosba do usera: przy white-screen ZLAP LOG (adb zyje: ro.adb.secure=0, mtp,adb, logd
   persistent): adb wait-for-device && adb logcat -d -b all > ws.log -> NA GOOGLE DRIVE.
   Bez logu white-screen jest niezdiagnozowalny; znaczniki arena_v12 dadza kontekst slotu/DSU.
+
+## utrwalenie (28 IX): fix assemble_raw_parts.py - cichy fallback skladal zly obraz
+- INCYDENT (tura v12): lokalne `--out /tmp/rom-kit2.tar.gz --expect-sha256 537eb4ea...`
+  raz wrocilo "NIEZGODNY: 7340a836..." przy identycznych czastkach. Przyczyna: w main()
+  basename --out niebedacy baza w manifeście wlaczal fallback `base = sorted(heads)[0]`
+  - pod obca nazwa zlozyl sie PIERWSZY obraz ze spoola (drive-13e-...img, sha 7340a836
+  = obraz systemu z Drive), nie kit. Uratowal dopiero --expect-sha256 (rc 1); bez niego
+  narzedzie "udaloby sukces" na zlym pliku. To samo wywolanie uzywaja workflowy release-v*
+  (na szczescie z wlasciwa nazwa --out i expectem).
+- FIX: przy --expect-sha256 baza wybierana JEDNOZNACZNIE wg sumy z manifestu; brak trafien
+  = twardy rc 2 + lista dostepnych baz (nazwa = sha); wiele trafien = rc 2. Stary fallback
+  "skladam pierwszy" zostaje TYLKO dla wywolan bez expect (kompatybilnosc, sekcja Y suity).
+- Testy (reczna replika sekcji Y, sandbox bez toolchainu EROFS - suite pelny odpada
+  srodowiskowo): Y1 zlozenie z expect pod OBCA nazwa -> rc 0 + bajt w bajt; Y2 uszkodzona
+  czastka -> rc 1; Y3 niekompletny zakres -> rc 3; Y4 brak manifestu -> rc 2; repro incydentu
+  (rom-kit2 + expect) -> wybiera rom-kit po sha, sha 537eb4ea OK; negatyw (bogus expect)
+  -> rc 2 + pelna lista baz. 7/7 zielonych.

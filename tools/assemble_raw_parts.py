@@ -223,7 +223,30 @@ def main():
             print("--out wymagany, gdy nie podano --inventory")
             return 2
         base = os.path.basename(a.out)
-        if base not in heads:
+        # 28 IX (utrwalone po incydencie na sandboxie): --out o nazwie niebedacej baza
+        # w manifeście NIE MOZE skladac "pierwszego z brzegu" - wlasnie tak pod
+        # /tmp/rom-kit2.tar.gz zlozyl sie obraz o sha 7340a836 (system_ext) zamiast
+        # kitu 537eb4ea; uratowal dopiero --expect-sha256. Od teraz: przy
+        # --expect-sha256 baza wybierana wg sumy (jednoznacznie albo twardy blad).
+        basename_ok = base in heads and (not a.expect_sha256
+                                         or heads[base].get('sha256') == a.expect_sha256)
+        if not basename_ok and a.expect_sha256:
+            cands = [b for b in sorted(heads) if heads[b].get('sha256') == a.expect_sha256]
+            if len(cands) == 1:
+                print(f"  (nazwa --out nie jest baza w manifeście; --expect-sha256 "
+                      f"jednoznacznie wskazuje '{cands[0]}' - skladam ja)")
+                base = cands[0]
+            elif not cands:
+                print("  FATAL: --expect-sha256 nie pasuje do ZADNEJ bazy w manifestach.")
+                print("  dostepne bazy (nazwa = sha256 z manifestu):")
+                for b in sorted(heads):
+                    print(f"    {b} = {heads[b].get('sha256', '?') or '(brak)'}")
+                print("  nie skladam nic - popraw --expect-sha256 albo wybierz --out po nazwie bazy")
+                return 2
+            else:
+                print(f"  FATAL: --expect-sha256 pasuje do wielu baz: {cands} - wybierz --out po nazwie")
+                return 2
+        elif base not in heads:
             base = sorted(heads)[0]
             print(f"  (w manifescie jest '{base}', nie '{os.path.basename(a.out)}' - skladam pierwszy)")
         r = assemble(base, heads[base], parts[base], a.out)
