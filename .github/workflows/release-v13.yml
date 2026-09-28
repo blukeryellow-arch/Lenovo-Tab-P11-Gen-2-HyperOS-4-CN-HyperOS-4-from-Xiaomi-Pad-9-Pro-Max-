@@ -901,7 +901,7 @@ jobs:
           gh release delete hyperos4-p11g2-v13 --yes --cleanup-tag 2>/dev/null || true
           gh release create hyperos4-p11g2-v13 --target "$GITHUB_SHA" \
             --title "HyperOS 4 v13 - Lenovo Tab P11 Gen 2: bt-guard (adaptacja do nieaktualnego slotu _b)" \
-            --notes "v13 = v12 + BT-GUARD: slot _b = nieaktualny (kernel 5.10.177 vs fabryczny 5.10.233 z boot.img zestawu ratunkowego usera; dowod: ANALIZA-slotB-zestaw-ratunkowy.md); w pstore 952 linii btmtk + 'do whole chip reset!' w sekwencji smierci - v13 wylacza Bluetooth domyslnie (wlacz: svc bluetooth enable) + ble_scan_always_on=0. Domyka tryb przetrwania na starym slocie _b: wifi off + bt off + sdio runtime-PM on + wakelock. Odmowy utrzymane: binarne patche keystore2/servicemanager (brak zrodel), override slot_suffix (decyzja w LK+misc przed kernelem), parental/700MB/LiquidBlur (brak substratu). Surowy system sha256 $RAW_V13."
+            --notes "v13 = v12 + BT-GUARD: slot _b = nieaktualny (kernel 5.10.177 vs fabryczny 5.10.233 z boot.img zestawu ratunkowego usera; dowod: ANALIZA-slotB-zestaw-ratunkowy.md); w pstore 952 linii btmtk + 'do whole chip reset!' w sekwencji smierci - v13 wylacza Bluetooth domyslnie (wlacz: svc bluetooth enable) + ble_scan_always_on=0. Domyka tryb przetrwania na starym slocie _b: wifi off + bt off + sdio runtime-PM on + wakelock. Odmowy utrzymane: binarne patche keystore2/servicemanager (brak zrodel), override slot_suffix (decyzja w LK+misc przed kernelem), parental/700MB/LiquidBlur (brak substratu). Surowy system sha256 $RAW_V13." \
             /tmp/HyperOS4_P11Gen2_v13.tar.gz /tmp/HyperOS4_P11Gen2_v13.zip
           gh release view hyperos4-p11g2-v13 --json url,assets -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
 

@@ -75,6 +75,15 @@ def main(argv):
         f = os.path.join(root, rel) if root != "." else rel
         if not os.path.isfile(f):
             continue                      # usuniety z dysku, ale jeszcze w indeksie
+        # 28 IX: diagnostics/logs/*.log|*.txt to SUROWE ZRZUTY z urzadzenia (receiptsy
+        # analiz) - CJK jest tam natura danych (stringi firmware'u Lenovo/MIUI, np.
+        # chińskie nazwy trybow IME czy etykiety 'product MODEL'), nie nasze pismo.
+        # Autorska proza w diagnostics/logs to .md i ona nadal podlega lintowi.
+        # Bez tego wyjatku suite bylaby czerwona po kazdym dolaczeniu logu
+        # z urzadzenia (pierwszy raz: 26-27 IX).
+        if rel.startswith("diagnostics/logs/") and rel.endswith((".log", ".txt")):
+            skipped_big += 1
+            continue
         if os.path.getsize(f) > MAX_BYTES:
             skipped_big += 1
             continue
