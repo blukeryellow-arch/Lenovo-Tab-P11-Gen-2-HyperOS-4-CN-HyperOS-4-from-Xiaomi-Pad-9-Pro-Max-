@@ -247,28 +247,49 @@ jobs:
       - name: Skladniki (GSI + microG + Aurora) - pobranie z pinami
         run: |
           set -euo pipefail
-          # DIAGNOZA run 36467193303: krok padl w <1 s => natychmiastowy 404/403 na
-          # pierwszym curlu. Google nie publikuje jawnie href-ow (pobranie za
-          # licencja / przez Android Flash Tool), wiec wzorzec sciezki niepewny.
-          # Sonda: 3 buildy Android 17 (sha256 z oficjalnych tabel Google) x 3
-          # wzorce sciezek dl.google.com; pierwszy odpowiadajacy 200 = wybierany.
+          # DIAGNOZA run 36467193303/36468238008: wszystkie 9 sond dl.google.com x
+          # 3 wzorce = 404. Google nie wystawia jawnie <a href> (pobranie za licencja),
+          # ale surowy HTML strony releases zawiera URL-e w atrybutach/przyciskach JS
+          # (markdown je gubi) - metoda resolvera PixelStockGSIs (resolve_official_
+          # pixel_image.py, build z 27-28 IX dzialal). Kolejnosc: (1) resolver HTML,
+          # (2) sonda wzorcow sciezek (receipt), (3) error z pelnym logiem sond.
           probe() { curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$1" 2>/dev/null || echo ERR; }
           : > /tmp/urlprobe.log
+          echo "== resolver HTML: developer.android.com/topic/generic-system-image/releases =="
+          PAGE=$(curl -sSL --connect-timeout 30 --max-time 120 \
+            "https://developer.android.com/topic/generic-system-image/releases") || PAGE=""
+          echo "HTML: ${#PAGE} B"
+          URLS=""
+          if [ -n "$PAGE" ]; then
+            URLS=$(printf '%s' "$PAGE" | sed 's/&amp;/\&/g' \
+              | grep -oE 'https://[a-zA-Z0-9./_?=&%~-]+[.]zip' | sort -u || true)
+          fi
+          if [ -n "$URLS" ]; then
+            echo "== URL-e zip znalezione w HTML ==" | tee -a /tmp/urlprobe.log
+            printf '%s\n' "$URLS" | tee -a /tmp/urlprobe.log
+          else
+            echo "resolver: 0 URL-i w HTML (receipt)" | tee -a /tmp/urlprobe.log
+          fi
           GSI_PICK=""; GSI_PICK_SHA=""
           while IFS='|' read -r F SHA; do
             [ -n "$F" ] || continue
-            for B in "https://dl.google.com/android/gsi" "https://dl.google.com/android/repository/gsi" "https://dl.google.com/android/repository"; do
-              U="$B/$F"
-              C=$(probe "$U")
-              echo "SONDA $C $U" | tee -a /tmp/urlprobe.log
-              if [ "$C" = "200" ] && [ -z "$GSI_PICK" ]; then GSI_PICK="$U"; GSI_PICK_SHA="$SHA"; fi
-            done
+            U=$(printf '%s\n' "$URLS" | grep -F "/$F" | head -1 || true)
+            if [ -z "$U" ]; then
+              for B in "https://dl.google.com/android/gsi" "https://dl.google.com/android/repository/gsi" "https://dl.google.com/android/repository"; do
+                C=$(probe "$B/$F")
+                echo "SONDA $C $B/$F" | tee -a /tmp/urlprobe.log
+                if [ "$C" = "200" ] && [ -z "$U" ]; then U="$B/$F"; fi
+              done
+            else
+              echo "RESOLVER: $U" | tee -a /tmp/urlprobe.log
+            fi
+            if [ -n "$U" ]; then GSI_PICK="$U"; GSI_PICK_SHA="$SHA"; break; fi
           done <<'CAND'
           aosp_arm64-exp-CP41.260831.007-16416850-5e61c946.zip|5e61c946ee45680365336968827bf62509d90f66ed78938f88e4deedda40a7fe
           aosp_arm64-exp-CP3A.260905.010-16176746-4a869a69.zip|4a869a6959a50fee15ff871ce378853ced4485f2aa456eb64dbdbf7a2c0408aa
           aosp_arm64-exp-CP2A.260605.012-15430684-8e545e1e.zip|8e545e1e1e977c3b43b4e54a3af463f3e7d1c3177b120e772138334e15f48f75
           CAND
-          test -n "$GSI_PICK" || { echo "::error::zaden kandydat GSI URL nie odpowiada 200 (sondy w /tmp/urlprobe.log)"; exit 1; }
+          test -n "$GSI_PICK" || { echo "::error::GSI: ani resolver HTML, ani sonda nie daly URL (patrz sondy w raporcie)"; exit 1; }
           echo "GSI WYBRANY: $GSI_PICK"
           echo "GSI SHA256:  $GSI_PICK_SHA"
           curl -fSL --retry 3 --connect-timeout 30 -o /tmp/gsi.zip "$GSI_PICK"
