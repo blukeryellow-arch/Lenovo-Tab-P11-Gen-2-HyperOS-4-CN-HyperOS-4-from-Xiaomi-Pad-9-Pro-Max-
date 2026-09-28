@@ -719,3 +719,27 @@ przerobka vendora pod mt6789.
   transplant best-effort z receiptem przyczyny.
 - v15_guest.log na Drive: NADAL BRAK (list_files 28 IX ~20:4x UTC) -> HyperOS
   pozostaje zamrozony na 9fe92fe.
+
+## GSI-1: iteracje URL GSI + UUID (28 IX, noc) - runy 36467193303 -> 36469639937
+- 36467193303: pad na 'Skladniki' w <1 s (jobs API: start==end) => 404 na wzorcu
+  dl.google.com/android/gsi/. Sandbox egress blokuje dl.google.com (HTTP 000) i
+  developer.android.com (SSL_ERROR) => diagnoza tylko runnerem.
+- 36468238008 (sonda 9 kandydatow: 3 buildy x 3 wzorce): WSZYSTKIE 404. Google
+  ZMIENIL dystrybucje GSI - stare sciezki martwe.
+- PRZELOM: web_search -> repo realheckerrr-bit/PixelStockGSIs (buduje z oficjalnych
+  paczek Google; ich resolve_official_pixel_image.py parsuje surowy HTML stron
+  developer.android.com - URL-e siedza w atrybutach/przyciskach JS, markdown je
+  gubi). Prawdziwa sciezka Google (z ich provenance 27-28 IX):
+  https://dl.google.com/developers/android/<codename>/images/gsi/<file>.zip
+  (np. .../cinnamonbun/images/gsi/aosp_arm64-exp-CP41.260831.007-16416850-5e61c946.zip).
+- 36469032983 (resolver HTML w kroku Skladniki): ZIELONE przez Skladniki/GSI->drzewo/
+  PURGE/INJECT/Konteksty (GSI CP41 QPR2-beta pobrany, sha256 Google OK; resolver
+  wypisal pelna liste URL-i w trace). Pad dopiero na Build: mkfs.erofs 1.8.2
+  'invalid UUID' (mystical001 zawiera niehex s/t/l).
+- FIX: UUID 6d797374-6963-4000-8000-616c00000001 ('mystical' w ASCII hex,
+  8-4-4-4-12, wersja/variant OK) -> run 36469639937 ZOSTAL WYPCHANY (push przeszedl
+  PRZED wygasnieciem tokenu GH). UWAGA: token GH_TOKEN wygasl w trakcie sesji
+  (gh auth: 'no longer valid'; git ls-remote/fetch niedostepne) - monitoring i push
+  PROGRESS czekaja na reconnect GitHub w Arena. Po reconnect: sprawdzic run
+  36469639937, jesli zielony - raport linkow (reports/mystical1-links-<run>.md,
+  bot CI commituje go sam), weryfikacja gofile, present_file.
