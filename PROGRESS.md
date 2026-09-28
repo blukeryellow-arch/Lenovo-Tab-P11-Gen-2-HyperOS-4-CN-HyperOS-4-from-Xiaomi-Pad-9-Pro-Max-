@@ -662,3 +662,20 @@ przerobka vendora pod mt6789.
   retrigger odswiezajacy 36443791417 ZIELONY; RAW_V16 IDENTYCZNY (c2a0c74d... -
   determinizm). Swieze linki: transferarch VaJmr (tgz) / BycKn (zip), gofile
   GU3JuwEu (tgz) / ICcA2mfM (zip) - gofile zweryfikowane zywe; GH release bez zmian.
+
+## Test v15 (28 IX 19:45-19:47) - bugreport_v15_rgb: ZMIANA CHARAKTERU AWARII
+- Pobrano bugreport_v15_rgb.zip (Drive 1h5G0s_ktlPvstbNVIkNiy98s9_zEw4Cz, sha256
+  e576650f...): 19:45:24 reboot dynsystem -> gosc zyl ~15-25 s (RGB flash na
+  display - observacja usera) -> TWARDA smierc BEZ konsoli paniki (pstore nie
+  zmieniony od 27 IX) -> host 19:46:17 (bootreason kernel_panic) -> bugreport
+  19:47:02. ZERO zapisow goscia (log/dropbox/tombstone); 291 trafien "fence" =
+  dump EGL/SF hosta. Teza "Display Fence Timeout" NIEROZSTRZYGNIETA tym plikiem.
+- Interpretacja receiptowa: FIX 12 zadzialal czesciowo (display ozywa = SF
+  startuje przez HIDL composera 2.3 MTK), po czym sciezka display wodzi kernel
+  na twardo. gsid.image_installed=1 - retry o jeden reboot.
+- Analiza: diagnostics/logs/ANALIZA-bugreport-v15-rgb.md. Odmowione receiptami
+  (3x ten sam substrat): pure AOSP 17 compile, Rust refactor binder/SF/SystemServer,
+  microG/Aurora; transplant MiuiHome odrozny do crashu i wymaga frameworku HyperOS.
+- NASTEPNY KROK (bez builda): protokol zlapania logu goscia (root-adb przez
+  ro.debuggable=1 + kumulujacy sie plik /data/misc/logd/logcat z czarnej skrzynki)
+  -> Drive -> dopiero wtedy zakres v17.
