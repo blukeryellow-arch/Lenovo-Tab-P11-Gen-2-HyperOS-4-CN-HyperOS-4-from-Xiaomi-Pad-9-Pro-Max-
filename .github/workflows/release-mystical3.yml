@@ -58,7 +58,8 @@ jobs:
     timeout-minutes: 300
 
     env:
-      WORK: /tmp/m3
+      # WORK ustawiany jest w kroku 0 przez GITHUB_ENV (wybor /mnt ~65 GB,
+      # fallback /tmp ~14 GB - receipt runu 36591101017: 13G free na /)
       # --- baza (S231044 usera nie ma na lustrach; S230982 = najnowszy ROW) ---
       LOLINET_ZIP: https://mirrors.lolinet.com/firmware/lenowow/2022/Tab_P11_2nd_Gen/TB350FU/TB350FU_S230982_251013_ROW.zip
       LOLINET_SIZE: 4805247432
@@ -86,44 +87,54 @@ jobs:
       - name: "0. Toolchain: lp tools + payload-dumper + avbtool + erofs"
         run: |
           set -euo pipefail
-          mkdir -p "$WORK/bin" "$WORK/img" "$WORK/keep/app" "$WORK/keep/fonts" "$WORK/keep/themes"
+          # --- wybor dysku roboczego: /mnt (~65 GB) > /tmp (~14 GB) ---
+          WD=/tmp/m3
+          if [ -d /mnt ] && [ "$(df --output=avail -B1G /mnt | tail -1)" -ge 30 ]; then
+            WD=/mnt/m3
+          fi
+          echo "WORK=$WD" >> "$GITHUB_ENV"
+          echo "dysk roboczy: $WD ($(df -h "$WD" | tail -1))"
+          mkdir -p "$WD/bin" "$WD/img" "$WD/keep/app" "$WD/keep/fonts" "$WD/keep/themes"
+          SRCD=/tmp/m3src; mkdir -p "$SRCD"
           # --- lp tools (statyczne, android-15.0.0_r25; codeload bo raw jest
           #     czasem filtrowany; smoke-testy BLOKUJA dalszy bieg przy braku) ---
-          curl -fsSL "$LP_TOOLS_URL" | tar -xz -C /tmp
-          LPT=$(ls -d /tmp/aosp15_partition_tools-*/linux_glibc_x86_64 | head -1)
+          curl -fsSL "$LP_TOOLS_URL" | tar -xz -C "$SRCD"
+          LPT=$(ls -d "$SRCD"/aosp15_partition_tools-*/linux_glibc_x86_64 | head -1)
           for b in lpmake lpunpack lpdumps; do
-            install -m 755 "$LPT/$b" "$WORK/bin/$b"
+            install -m 755 "$LPT/$b" "$WD/bin/$b"
             # UWAGA: lpunpack/lpdumps --help konczy sie exit 64 (usage error) -
             # to NIE jest awaria; weryfikujemy czy binarium w ogole DZIALA
-            OUT=$("$WORK/bin/$b" --help 2>&1 || true)
+            OUT=$("$WD/bin/$b" --help 2>&1 || true)
             echo "$OUT" | head -4 | grep -qiE "usage|lpmake|lpunpack|lpdumps|super|missing|must specify" \
               || { echo "::error::$b nie uruchamia sie"; exit 1; }
             echo "$b: OK"
           done
           echo "lp tools OK ($LPT)"
           # --- payload-dumper-go (release-assets; fallback: pip payload-dumper) ---
-          if curl -fsSL "$PDG_URL" -o /tmp/pdg.tar.gz; then
-            tar -xzf /tmp/pdg.tar.gz -C /tmp
-            PDGB=$(find /tmp -maxdepth 1 -type f -name 'payload-dumper-go*' | head -1)
-            install -m 755 "$PDGB" "$WORK/bin/payload-dumper-go"
-            "$WORK/bin/payload-dumper-go" --help >/dev/null 2>&1 || PDGB=""
+          if curl -fsSL "$PDG_URL" -o "$SRCD/pdg.tar.gz"; then
+            tar -xzf "$SRCD/pdg.tar.gz" -C "$SRCD"
+            PDGB=$(find "$SRCD" -maxdepth 1 -type f -name 'payload-dumper-go*' | head -1)
+            install -m 755 "$PDGB" "$WD/bin/payload-dumper-go"
+            "$WD/bin/payload-dumper-go" --help >/dev/null 2>&1 || PDGB=""
           fi
-          if [ -z "${PDGB:-}" ] || [ ! -x "$WORK/bin/payload-dumper-go" ]; then
+          if [ -z "${PDGB:-}" ] || [ ! -x "$WD/bin/payload-dumper-go" ]; then
             echo "payload-dumper-go niedostepny -> fallback pip payload-dumper"
             pip install --quiet payload-dumper
             command -v payload-dumper >/dev/null || { echo "::error::brak extractor'a payload"; exit 1; }
           fi
           # --- avbtool (LineageOS, pojedynczy skrypt) ---
-          curl -fsSL "$AVB_URL" | tar -xz -C /tmp
-          cp /tmp/android_external_avb-*/avbtool.py "$WORK/bin/avbtool.py"
-          python3 "$WORK/bin/avbtool.py" version
+          curl -fsSL "$AVB_URL" | tar -xz -C "$SRCD"
+          cp "$SRCD"/android_external_avb-*/avbtool.py "$WD/bin/avbtool.py"
+          python3 "$WD/bin/avbtool.py" version || python3 "$WD/bin/avbtool.py" --help | head -1
           # --- erofs-utils lokalnie (jak GSI-1; shim libselinux dla --file-contexts) ---
-          bash tools/build_comp_libs.sh /tmp/comp >/dev/null 2>&1 || bash tools/build_comp_libs.sh /tmp/comp
-          COMP_PREFIX=/tmp/comp bash tools/build_erofs_local.sh "$WORK/erofs"
-          "$WORK/erofs/mkfs.erofs" --help 2>&1 | grep -q -- --file-contexts || { echo "::error::mkfs.erofs bez --file-contexts"; exit 1; }
-          "$WORK/erofs/fsck.erofs" --help >/dev/null 2>&1 || { echo "::error::brak fsck.erofs"; exit 1; }
+          bash tools/build_comp_libs.sh "$SRCD/comp" >/dev/null 2>&1 || bash tools/build_comp_libs.sh "$SRCD/comp"
+          COMP_PREFIX="$SRCD/comp" bash tools/build_erofs_local.sh "$WD/erofs"
+          "$WD/erofs/mkfs.erofs" --help 2>&1 | grep -q -- --file-contexts || { echo "::error::mkfs.erofs bez --file-contexts"; exit 1; }
+          "$WD/erofs/fsck.erofs" --help >/dev/null 2>&1 || { echo "::error::brak fsck.erofs"; exit 1; }
+          # --- porzadki: zrodla/objekty budowy jebna ~2 GB; zostaja binaria w $WD ---
+          rm -rf "$SRCD"
           echo "toolchain kompletny"
-          df -h / | tail -1
+          df -h "$WD" | tail -1
 
       - name: "1. Geometria fabryczna super (super_empty.img z Drive)"
         run: |
@@ -146,7 +157,7 @@ jobs:
         run: |
           set -uo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
-          NEED_GB=16; AVAIL=$(( $(df --output=avail -B1G / | tail -1) ))
+          NEED_GB=16; AVAIL=$(( $(df --output=avail -B1G "$WORK" | tail -1) ))
           [ "$AVAIL" -ge "$NEED_GB" ] || { echo "::error::za malo miejsca: ${AVAIL}G < ${NEED_GB}G"; exit 1; }
           echo "dysk na donora: ${AVAIL}G"
           curl -fL --retry 3 --connect-timeout 30 --speed-limit 500000 --speed-time 120 \
@@ -223,7 +234,7 @@ jobs:
         run: |
           set -euo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
-          NEED_GB=22; AVAIL=$(( $(df --output=avail -B1G / | tail -1) ))
+          NEED_GB=22; AVAIL=$(( $(df --output=avail -B1G "$WORK" | tail -1) ))
           [ "$AVAIL" -ge "$NEED_GB" ] || { echo "::error::za malo miejsca: ${AVAIL}G < ${NEED_GB}G"; exit 1; }
           curl -fL --retry 3 --connect-timeout 30 --speed-limit 500000 --speed-time 120 \
             -o "$WORK/base.zip" "$LOLINET_ZIP" 2>>"$WORK/urlprobe.log" \
@@ -273,8 +284,8 @@ jobs:
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
           # --- rozpoznanie fs ---
           python3 - <<'PY'
-          import sys
-          d = open('/tmp/m3/img/system.img','rb').read(4096)
+          import sys, os
+          d = open(os.environ['WORK'] + '/img/system.img','rb').read(4096)
           import struct
           m_erofs = struct.unpack('<I', d[1024:1028])[0]
           m_ext = struct.unpack('<H', d[1080:1082])[0]
@@ -283,20 +294,20 @@ jobs:
           else: sys.exit('nieznany fs system.img')
           PY
           # ekstrakcja system do drzewa (erofs albo ext4-copy)
-          rm -rf /tmp/m3/sys; mkdir -p /tmp/m3/sys
+          rm -rf $WORK/sys; mkdir -p $WORK/sys
           if sudo mount -t erofs -o ro,loop "$WORK/img/system.img" /mnt 2>/dev/null; then
-            sudo cp -a /mnt/. /tmp/m3/sys/; sudo umount /mnt
+            sudo cp -a /mnt/. $WORK/sys/; sudo umount /mnt
             echo "system: erofs (loop-mount + kopia)"
-          elif "$WORK/erofs/fsck.erofs" --extract=/tmp/m3/erofsx "$WORK/img/system.img" >/dev/null 2>&1; then
-            if [ -d /tmp/m3/erofsx/system ]; then mv /tmp/m3/erofsx/system /tmp/m3/sys; else mv /tmp/m3/erofsx /tmp/m3/sys; fi
+          elif "$WORK/erofs/fsck.erofs" --extract=$WORK/erofsx "$WORK/img/system.img" >/dev/null 2>&1; then
+            if [ -d "$WORK/erofsx/system" ]; then rm -rf "$WORK/sys" && mv "$WORK/erofsx/system" "$WORK/sys"; rm -rf "$WORK/erofsx"; else rm -rf "$WORK/sys" && mv "$WORK/erofsx" "$WORK/sys"; fi
             echo "system: erofs (fsck extract)"
           else
             sudo e2fsck -fy "$WORK/img/system.img" >/dev/null 2>&1 || true
             sudo mount -o ro,loop "$WORK/img/system.img" /mnt
-            sudo cp -a /mnt/. /tmp/m3/sys/; sudo umount /mnt
+            sudo cp -a /mnt/. $WORK/sys/; sudo umount /mnt
             echo "system: ext4 (loop-mount + kopia)"
           fi
-          T=/tmp/m3/sys
+          T=$WORK/sys
           test -d "$T/app" || { echo "::error::drzewo system bez /app"; find "$T" -maxdepth 2 | head; exit 1; }
           # --- PURGE GMS (lista z GSI-1 + product-aware) ---
           echo "== PURGE GMS =="
@@ -393,16 +404,16 @@ jobs:
           for PART in product system_ext; do
             IMG="$WORK/img/$PART.img"
             [ -s "$IMG" ] || { echo "$PART: brak w bazie - pomijam"; continue; }
-            rm -rf "/tmp/m3/tree_$PART"; mkdir -p "/tmp/m3/tree_$PART"
+            rm -rf "$WORK/tree_$PART"; mkdir -p "$WORK/tree_$PART"
             if sudo mount -t erofs -o ro,loop "$IMG" /mnt 2>/dev/null; then
-              sudo cp -a /mnt/. "/tmp/m3/tree_$PART/"; sudo umount /mnt
-            elif "$WORK/erofs/fsck.erofs" --extract="/tmp/m3/ex_$PART" "$IMG" >/dev/null 2>&1; then
-              if [ -d "/tmp/m3/ex_$PART/$PART" ]; then mv "/tmp/m3/ex_$PART/$PART" "/tmp/m3/tree_$PART"; rm -rf "/tmp/m3/ex_$PART"
-              else rmdir "/tmp/m3/tree_$PART" 2>/dev/null; mv "/tmp/m3/ex_$PART" "/tmp/m3/tree_$PART"; fi
+              sudo cp -a /mnt/. "$WORK/tree_$PART/"; sudo umount /mnt
+            elif "$WORK/erofs/fsck.erofs" --extract="$WORK/ex_$PART" "$IMG" >/dev/null 2>&1; then
+              if [ -d "$WORK/ex_$PART/$PART" ]; then rmdir "$WORK/tree_$PART" 2>/dev/null || rm -rf "$WORK/tree_$PART"; mv "$WORK/ex_$PART/$PART" "$WORK/tree_$PART"; rm -rf "$WORK/ex_$PART"
+              else rmdir "$WORK/tree_$PART" 2>/dev/null; mv "$WORK/ex_$PART" "$WORK/tree_$PART"; fi
             else
-              sudo mount -o ro,loop "$IMG" /mnt && { sudo cp -a /mnt/. "/tmp/m3/tree_$PART/"; sudo umount /mnt; } || { echo "::error::$PART: nie dalo sie odczytac"; exit 1; }
+              sudo mount -o ro,loop "$IMG" /mnt && { sudo cp -a /mnt/. "$WORK/tree_$PART/"; sudo umount /mnt; } || { echo "::error::$PART: nie dalo sie odczytac"; exit 1; }
             fi
-            TT="/tmp/m3/tree_$PART"
+            TT="$WORK/tree_$PART"
             [ -d "$TT/app" ] || [ -d "$TT/priv-app" ] || { echo "$PART: bez app/ - czysty, pomijam mody"; continue; }
             H=$(find "$TT/app" "$TT/priv-app" -maxdepth 1 -type d 2>/dev/null | grep -iE \
               'gms|google|Phonesky|SetupWizard|PrebuiltGmsCore|GoogleServicesFramework|GooglePartnerSetup|GoogleFeedback|GoogleOneTimeInitializer|GoogleRestore|ConfigUpdater|CarrierServices|GoogleExt' || true)
@@ -419,7 +430,7 @@ jobs:
               echo "PURGED_$PART=1" >> /tmp/purge-partitions.status
             else
               echo "$PART: zero pakietow Google - bez zmian (repack niepotrzebny)"
-              rm -rf "/tmp/m3/tree_$PART"
+              rm -rf "$WORK/tree_$PART"
               continue
             fi
             echo "$PART zmodyfikowany - do repacku"
@@ -430,9 +441,9 @@ jobs:
         run: |
           set -euo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
-          FC=/tmp/m3/sys/etc/selinux/plat_file_contexts
+          FC=$WORK/sys/etc/selinux/plat_file_contexts
           test -f "$FC" || { echo "::error::brak plat_file_contexts w systemie Lenovo"; exit 1; }
-          python3 tools/fc_fixup.py --contexts "$FC" --root /tmp/m3/sys --dry-run --report /tmp/fc-report.txt
+          python3 tools/fc_fixup.py --contexts "$FC" --root $WORK/sys --dry-run --report /tmp/fc-report.txt
           if grep -E "MISS .*(priv-app/microG|priv-app/FakeStore|app/AuroraStore|app/Miui|permissions-mystical|fonts/Mi|miui-themes)" /tmp/fc-report.txt; then
             echo "::error::dodane pliki bez kontekstu"; exit 1
           fi
@@ -444,30 +455,30 @@ jobs:
           set -euo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
           set -x
-          FC=/tmp/m3/sys/etc/selinux/plat_file_contexts
+          FC=$WORK/sys/etc/selinux/plat_file_contexts
           # system: UUID deterministyczny hex (m3)
           "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c00000003 \
             --file-contexts="$FC" \
-            "$WORK/img/system_m3.img" /tmp/m3/sys
-          rm -rf /tmp/m3/sys
+            "$WORK/img/system_m3.img" $WORK/sys
+          rm -rf $WORK/sys
           # product: konteksty wlasne, fallback plat
-          if [ -d /tmp/m3/tree_product ]; then
-            PFC=/tmp/m3/tree_product/etc/selinux/product_file_contexts
+          if [ -d $WORK/tree_product ]; then
+            PFC=$WORK/tree_product/etc/selinux/product_file_contexts
             [ -f "$PFC" ] || PFC="$FC"
             "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c00000013 \
               --file-contexts="$PFC" \
-              "$WORK/img/product_m3.img" /tmp/m3/tree_product
-            rm -rf /tmp/m3/tree_product
+              "$WORK/img/product_m3.img" $WORK/tree_product
+            rm -rf $WORK/tree_product
             mv "$WORK/img/product_m3.img" "$WORK/img/product.img"
           fi
           # system_ext: konteksty wlasne, fallback plat
-          if [ -d /tmp/m3/tree_system_ext ]; then
-            SFC=/tmp/m3/tree_system_ext/etc/selinux/system_ext_file_contexts
+          if [ -d $WORK/tree_system_ext ]; then
+            SFC=$WORK/tree_system_ext/etc/selinux/system_ext_file_contexts
             [ -f "$SFC" ] || SFC="$FC"
             "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c00000023 \
               --file-contexts="$SFC" \
-              "$WORK/img/system_ext_m3.img" /tmp/m3/tree_system_ext
-            rm -rf /tmp/m3/tree_system_ext
+              "$WORK/img/system_ext_m3.img" $WORK/tree_system_ext
+            rm -rf $WORK/tree_system_ext
             mv "$WORK/img/system_ext_m3.img" "$WORK/img/system_ext.img"
           fi
           set +x
@@ -532,10 +543,10 @@ jobs:
           # WERYFIKACJA: geometria zbudowana + roundtrip danych
           python3 tools/lpinfo.py "$WORK/super.img" | tee "$WORK/super-built-geometry.txt"
           grep -q "size=9663676416" "$WORK/super-built-geometry.txt"
-          mkdir -p /tmp/m3/verify && "$WORK/bin/lpunpack" "$WORK/super.img" /tmp/m3/verify/ 2>&1 | tail -3
-          test -s /tmp/m3/verify/system_a.img
-          cmp /tmp/m3/verify/system_a.img "$WORK/img/system_m3.img" && echo "ROUNDTRIP system_a: BIT-IDENTYCZNY ✓"
-          rm -rf /tmp/m3/verify
+          mkdir -p $WORK/verify && "$WORK/bin/lpunpack" "$WORK/super.img" $WORK/verify/ 2>&1 | tail -3
+          test -s $WORK/verify/system_a.img
+          cmp $WORK/verify/system_a.img "$WORK/img/system_m3.img" && echo "ROUNDTRIP system_a: BIT-IDENTYCZNY ✓"
+          rm -rf $WORK/verify
           df -h / | tail -1
 
       - name: "9. vbmeta disable + boot + kit + split czastek"
