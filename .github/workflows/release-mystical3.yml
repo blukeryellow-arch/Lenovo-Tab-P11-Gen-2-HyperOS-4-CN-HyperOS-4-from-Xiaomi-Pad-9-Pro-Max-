@@ -139,8 +139,12 @@ jobs:
             --partition=system_a:readonly:6291456:main_a --image=system_a="$SHMD/f2.img" \
             --partition=vendor_a:readonly:6291456:main_a --image=vendor_a="$SHMD/f2.img" \
             -o "$SHMD/super_raw2.img"
+          mkdir -p "$SHMD/mini_unp"   # lpunpack WYMAGA istniejacego katalogu (receipt 36594014181 + 36616340063)
           "$WD/bin/lpunpack" "$SHMD/super_raw2.img" "$SHMD/mini_unp/" >/dev/null 2>&1
-          cat "$SHMD/super_raw2.img" | python3 tools/stream_lpunpack.py --stdin --out "$SHMD/stream_unp" | tail -2
+          # UWAGA: unpacker konczy po ostatnim segmencie _a (nie czyta ogona
+          # b-slotow) => producent pipe dostaje SIGPIPE (exit 141 pod pipefail).
+          # Stad redirection < zamiast cat; httpzip (krok 4) lapie BrokenPipeError.
+          python3 tools/stream_lpunpack.py --stdin --out "$SHMD/stream_unp" < "$SHMD/super_raw2.img" | tail -2
           cmp "$SHMD/mini_unp/system_a.img" "$SHMD/stream_unp/system.img" \
             && cmp "$SHMD/mini_unp/vendor_a.img" "$SHMD/stream_unp/vendor.img" \
             && echo "STREAM-LPUNPACK vs lpunpack: BIT-IDENTYCZNY OK"
