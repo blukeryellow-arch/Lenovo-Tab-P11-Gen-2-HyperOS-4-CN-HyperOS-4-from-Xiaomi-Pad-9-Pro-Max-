@@ -35,7 +35,7 @@ z ekosystemu. Kazdy werdykt = zrodlo.
 natomiast UDOKUMENTOWANA klasa: **custom ROM (port) wymaga WLASNYCH product/
 system_ext — bez nich gosc nie bootuje lub pada przy inicjalizacji UI**. Linker
 dynamiczny goscia nie "rozwiazuje wiazan miedzy-partycyjnych w kernelu" —
-system_server/SurfaceFlinger gosciaпадaja w USERSPACE, gdy framework oczekuje
+system_server/SurfaceFlinger goscia padaja w USERSPACE, gdy framework oczekuje
 zasobow (RRO overlaye, apk, uprawnienia) z product/system_ext, ktorych host
 nie dostarcza. Twarde smierci kernela przychodza z drugiej strony (wektor 2).
 
