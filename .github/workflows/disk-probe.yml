@@ -14,8 +14,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           set -e
-          echo "== df =="; df -h / /mnt /tmp 2>&1 || df -h
-          echo "== avail GB: / = $(df --output=avail -B1G / | tail -1), /mnt = $(df --output=avail -B1G /mnt 2>/dev/null | tail -1 || echo brak)"
+          echo "== df =="; df -h / /mnt /tmp /dev/shm 2>&1 || df -h
+          echo "== avail GB: / = $(df --output=avail -B1G / | tail -1), /mnt = $(df --output=avail -B1G /mnt 2>/dev/null | tail -1 || echo brak), /dev/shm = $(df --output=avail -B1G /dev/shm | tail -1)"
+          echo "== shm size MB: $(df --output=size -B1M /dev/shm | tail -1) ; free -m || true"
           echo "== lsblk =="; lsblk 2>/dev/null | head -12 || true
       - name: raport do repo
         if: always()
@@ -24,7 +25,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com" || true
           mkdir -p reports
           { echo "### disk-probe (run ${{ github.run_id }}, $(date -u +%FT%TZ))"
-            echo '```'; df -h / /mnt /tmp 2>&1 || df -h; echo '```'
+            echo '```'; df -h / /mnt /tmp /dev/shm 2>&1 || df -h; echo '```'
+            echo '```'; free -m 2>/dev/null; echo '```'
             echo '```'; lsblk 2>/dev/null | head -12; echo '```'; } > reports/disk-probe-${{ github.run_id }}.md
           git add -f reports || true
           git commit -q -m "disk-probe: run ${{ github.run_id }}" || true
