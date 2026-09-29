@@ -216,8 +216,10 @@ jobs:
           df -h / /dev/shm | tail -2
 
       - name: "3. Donor HyperOS - TIER A (cache m1) / B / C"
+        # Krok TOLERANCYJNY: donor nigdy nie zabija builda (TIER C zawsze
+        # dostepny; najgorszy przypadek = build bez transplantow/fontow).
         run: |
-          set -uo pipefail
+          set +e   # receipt 36641414863: exit 2 z nieustalonego miejsca mimo || true
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
           GH="gh"
           try_cache() {
@@ -289,8 +291,11 @@ jobs:
               rm -rf "$SHM/tierc"; mkdir -p "$SHM/tierc"
               cat spool/transfer/drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz.part.* > "$SHM/tierc/assets.tar.gz"
               echo "assets.tar.gz: $(stat -c%s "$SHM/tierc/assets.tar.gz") B"
-              echo "-- zawartosc (sample) --"; tar tzf "$SHM/tierc/assets.tar.gz" 2>/dev/null | head -12
-              FONTS=$(tar tzf "$SHM/tierc/assets.tar.gz" 2>/dev/null | grep -icE '\.(ttf|otf|ttc)$' || true)
+              # UWAGA: GitHub dokleja -e do run:; tar|head/grep -q = SIGPIPE pod
+              # pipefail => krok padal (receipt 36641414863, exit 2). Listing do PLIKU.
+              tar tzf "$SHM/tierc/assets.tar.gz" > "$SHM/tierc/tarlist.txt" 2>/dev/null || true
+              echo "-- zawartosc (sample) --"; head -12 "$SHM/tierc/tarlist.txt"
+              FONTS=$(grep -icE '\.(ttf|otf|ttc)$' "$SHM/tierc/tarlist.txt" || true)
               echo "plikow fontow w tar: ${FONTS:-0}"
               if [ "${FONTS:-0}" -gt 0 ]; then
                 tar xzf "$SHM/tierc/assets.tar.gz" -C "$SHM/tierc" 2>/dev/null || true
@@ -312,8 +317,10 @@ jobs:
             fi
           fi
           cat /tmp/transplant.status || true
-          rm -rf "$SHM/dcache" "$SHM/dmnt" "$SHM/dext"
+          [ -f /tmp/transplant.status ] || echo "FALLBACK (krok 3 przerwany wczesniej; bez transplantow)" > /tmp/transplant.status
+          rm -rf "$SHM/dcache" "$SHM/dmnt" "$SHM/dext" "$SHM/tierc"
           df -h / /dev/shm | tail -2
+          exit 0
 
       - name: "4. Baza per-partycja (httpzip range) + mody overlay + mkfs"
         # Kolejnosc pod budzet dysku (peak ~8,1G):
@@ -470,16 +477,23 @@ jobs:
           rm -f "$WORK/one/system.img"
           echo "== weryfikacja system.img (fsck strukturalny + dump.erofs) =="
           sudo "$WORK/erofs/fsck.erofs" "$WORK/img/system.img" >/dev/null 2>&1 && echo "fsck: OK"
-          path_ok() { sudo "$WORK/erofs/dump.erofs" --path="$1" "$WORK/img/system.img" 2>&1 | grep -q "<E>" && return 1 || return 0; }
+          # bez potoku: dump|grep -q => SIGPIPE dump pod -e+pipefail (receipt 36641414863)
+          path_ok() {
+            local O
+            O=$(sudo "$WORK/erofs/dump.erofs" --path="$1" "$WORK/img/system.img" 2>&1 || true)
+            printf '%s' "$O" | grep -q "<E>" && return 1
+            return 0
+          }
           path_ok /priv-app/microG/GmsCore.apk   || { echo "::error::brak GmsCore w obrazie"; exit 1; }
           path_ok /priv-app/FakeStore/FakeStore.apk || { echo "::error::brak FakeStore"; exit 1; }
           path_ok /app/AuroraStore/AuroraStore.apk  || { echo "::error::brak Aurora"; exit 1; }
           path_ok /etc/permissions/privapp-permissions-mystical.xml || { echo "::error::brak perms xml"; exit 1; }
           path_ok /priv-app/PrebuiltGmsCore && { echo "::error::GMS pozostal w systemie!"; exit 1; } || true
-          sudo "$WORK/erofs/dump.erofs" --path=/build.prop --cat "$WORK/img/system.img" 2>/dev/null | grep -q "ro.mysticalos.version=3" \
+          BPV=$(sudo "$WORK/erofs/dump.erofs" --path=/build.prop --cat "$WORK/img/system.img" 2>/dev/null || true)
+          printf '%s' "$BPV" | grep -q "ro.mysticalos.version=3" \
             || { echo "::error::build.prop bez mysticalos"; exit 1; }
-          sudo "$WORK/erofs/dump.erofs" --path=/app --ls "$WORK/img/system.img" 2>/dev/null | grep -qi webview \
-            && echo "webview: ZACHOWANY w obrazie"
+          APLS=$(sudo "$WORK/erofs/dump.erofs" --path=/app --ls "$WORK/img/system.img" 2>/dev/null || true)
+          printf '%s' "$APLS" | grep -qi webview && echo "webview: ZACHOWANY w obrazie"
           echo "system_m3: $(stat -c%s "$WORK/img/system.img") B (bazowy system: 3678793728 B)"
           df -h / /dev/shm | tail -2
           echo "== pass 3: product + PURGE =="
@@ -663,7 +677,7 @@ jobs:
           cat parts.sha > SHA256SUMS.txt
           sha256sum vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img \
             $( [ -f "boot_${BASE_BUILD}.img" ] && echo "boot_${BASE_BUILD}.img" ) >> SHA256SUMS.txt
-          cat SHA256SUMS.txt | head -5
+          head -5 SHA256SUMS.txt
           ls -la
           df -h / /dev/shm | tail -2
 
