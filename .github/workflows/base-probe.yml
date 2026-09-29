@@ -6,6 +6,7 @@ name: base-probe
 # (2) czy super.img jest sparse czy raw (Length vs magic),
 # (3) czy lolinet wspiera range requests (streaming bez zapisu zipa),
 # (4) flash.xml (mapa partycji SPFT).
+# Wersja 2: kazdy test niezalezny (|| true), logowanie kodow exit.
 
 on:
   workflow_dispatch:
@@ -29,41 +30,63 @@ jobs:
       - name: "Range request test (bez pobierania całości)"
         run: |
           set -uo pipefail
-          echo "== HEAD =="; curl -sI "$LOLINET_ZIP" | head -15
+          echo "== HEAD =="; curl -sI --max-time 60 "$LOLINET_ZIP" | head -15 || echo "HEAD exit=$?"
           echo "== GET pierwsze 64 KB (206?) =="
-          curl -s -r 0-65535 -o /tmp/head64k.bin -w "http=%{http_code} size=%{size_download}\n" "$LOLINET_ZIP"
-          echo "== magic super/sparse w glowie zipa (wydruk 256B) =="
-          xxd /tmp/head64k.bin | head -6
+          curl -s --max-time 90 -r 0-65535 -o /tmp/head64k.bin -w "http=%{http_code} size=%{size_download}\n" "$LOLINET_ZIP" || echo "range64k exit=$?"
+          ls -la /tmp/head64k.bin 2>/dev/null || true
           echo "== range z ogona (central directory) =="
-          SZ=$(curl -sI "$LOLINET_ZIP" | grep -i content-length | tr -dc '0-9')
-          echo "content-length=$SZ"
-          FROM=$(( SZ - 1000000 ))
-          curl -s -r "$FROM-$((SZ-1))" -o /tmp/tail1m.bin -w "http=%{http_code} size=%{size_download}\n" "$LOLINET_ZIP"
-          python3 - "$SZ" <<'PYEOF'
-          import sys, zipfile, io
-          # python nie zna offsets w tailu; ale central dir ma podpis PK\x05\x06 na koncu
-          data = open('/tmp/tail1m.bin','rb').read()
-          eocd = data.rfind(b'PK\x05\x06')
-          print("EOCD w tailu:", eocd, "rozmiar tailu:", len(data))
-          if eocd >= 0:
-              import struct
-              cd_size, cd_off = struct.unpack('<II', data[eocd+12:eocd+20])
-              total = int(sys.argv[1])
-              print(f"central dir: size={cd_size} off={cd_off} (plik {total} B)")
-              print("cd_off w tailu?", cd_off >= int(sys.argv[1]) - 1000000)
-          PYEOF
+          SZ=$(curl -sI --max-time 60 "$LOLINET_ZIP" | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}' | tail -1)
+          echo "content-length=[$SZ]"
+          if [ -n "$SZ" ] && [ "$SZ" -gt 1000000 ] 2>/dev/null; then
+            FROM=$(( SZ - 1000000 ))
+            curl -s --max-time 120 -r "$FROM-$((SZ-1))" -o /tmp/tail1m.bin -w "http=%{http_code} size=%{size_download}\n" "$LOLINET_ZIP" || echo "rangetail exit=$?"
+            python3 - "$SZ" <<'PYEOF'
+            import sys, struct
+            try:
+                data = open('/tmp/tail1m.bin','rb').read()
+                eocd = data.rfind(b'PK\x05\x06')
+                print("EOCD w tailu:", eocd, "rozmiar tailu:", len(data))
+                if eocd >= 0:
+                    cd_size, cd_off = struct.unpack('<II', data[eocd+12:eocd+20])
+                    print(f"central dir: size={cd_size} off={cd_off} (plik {sys.argv[1]} B)")
+            except Exception as e:
+                print("tail parse:", e)
+            PYEOF
+          else
+            echo "brak content-length - range streaming odpada"
+          fi
+          exit 0
 
       - name: "Pobranie zipa + pelny listing (unzip -lv)"
         run: |
           set -uo pipefail
           df -h / | tail -1
-          curl -fL --retry 3 -o /tmp/base.zip "$LOLINET_ZIP" || { echo "download padl"; exit 1; }
+          curl -fL --retry 3 --max-time 900 -o /tmp/base.zip "$LOLINET_ZIP" || { echo "download padl exit=$?"; exit 1; }
           stat -c%s /tmp/base.zip
-          echo "== unzip -lv (rozmiary compressed/uncompressed) =="
-          unzip -lv /tmp/base.zip | sort -k1 -n -r | head -40
+          echo "== unzip -lv posortowane po uncompressed (top 40) =="
+          unzip -lv /tmp/base.zip | sort -k1 -n -r | head -40 || true
+          echo "== katalog image/ (same nazwy) =="
+          unzip -l /tmp/base.zip '*image/*' 2>/dev/null | awk '{print $4}' | grep -v '^$' | head -50 || true
           echo "== flash.xml =="
-          unzip -p /tmp/base.zip 'TB350FU_S230982_251013_ROW/flash.xml' 2>/dev/null | head -40 || true
-          unzip -p /tmp/base.zip '*flash.xml' 2>/dev/null | head -60 || true
+          unzip -p /tmp/base.zip '*ROW/flash.xml' 2>/dev/null | head -50 || true
+          echo "== glowa super.img (magic sparse?) =="
+          python3 - <<'PYEOF'
+          import zipfile, struct
+          z = zipfile.ZipFile('/tmp/base.zip')
+          names = [n for n in z.namelist() if n.endswith('super.img')]
+          print("super.img entries:", names)
+          for n in names:
+              info = z.getinfo(n)
+              print(f"{n}: compressed={info.compress_size} uncompressed={info.file_size} method={info.compress_type}")
+              with z.open(n) as f:
+                  h = f.read(28)
+                  if len(h) >= 4:
+                      m = struct.unpack('<I', h[:4])[0]
+                      print(f"  magic32={m:#x} {h[:4].hex()} -> {'SPARSE 0xED26FF3A' if m == 0xED26FF3A else 'raw/gDla?'}")
+                      if h[:4] == b'gDla' or h[:4] == b'gDla'[::-1]:
+                          print("  (geometry liblp - raw super)")
+          print("metody kompresji w zipie:", set(z.getinfo(n).compress_type for n in z.namelist() if not n.endswith('/')))
+          PYEOF
           rm -f /tmp/base.zip /tmp/head64k.bin /tmp/tail1m.bin
 
       - name: "Raport do repo"
@@ -73,8 +96,8 @@ jobs:
           git config user.name "github-actions[bot]" || true
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com" || true
           mkdir -p reports
-          { echo "### base-probe $(date -u +%FT%TZ)"; } > reports/base-probe.md
+          { echo "### base-probe v2 $(date -u +%FT%TZ)"; } > reports/base-probe.md
           git add -f reports || true
-          git commit -q -m "base-probe: $(date -u +%H%M)Z" || true
+          git commit -q -m "base-probe-v2: $(date -u +%H%M)Z" || true
           git push -q origin "HEAD:${{ github.ref_name }}" || true
           exit 0
