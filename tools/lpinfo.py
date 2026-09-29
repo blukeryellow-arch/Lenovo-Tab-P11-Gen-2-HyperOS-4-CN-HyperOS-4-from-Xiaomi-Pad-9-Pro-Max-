@@ -12,7 +12,7 @@ import json
 import struct
 import sys
 
-LP_METADATA_GEOMETRY_MAGIC = 0x616C5379  # b'SyL' + a? ('yLSa' LE)
+LP_METADATA_GEOMETRY_MAGIC = 0x616C4467  # 'gDla' (receipt: lpmake mini-super @4096; 0x616C5379 = zawsze fallback)
 LP_METADATA_HEADER_MAGIC = 0x414C5030    # 'ALP0' LE
 GEOMETRY_OFFSET = 4096
 GEOMETRY_SIZE = 4096
@@ -53,7 +53,7 @@ def parse_geometry(data):
     struct_size = u32(g, 4)
     # checksum[32] @8
     return {
-        "magic": f"{magic:#x}",
+        "magic": f"{LP_METADATA_GEOMETRY_MAGIC:#x}",
         "struct_size": struct_size,
         "metadata_max_size": u32(g, 40),
         "metadata_slot_count": u32(g, 44),
@@ -98,14 +98,16 @@ def parse_metadata(data, geom):
         return out
 
     def parse_part(b, p):
-        # v10.x (VABC): name[36], attributes u32, num_extents u32(@40), reserved u32(@44),
-        # group_index u32(@48) - receipt: super_empty TB350FU (grupy 1/2 = main_a/main_b)
+        # v10.x (VABC): name[36]@0, attributes u32@36, first_extent_index u32@40,
+        # num_extents u32@44, group_index u32@48 (receipt: lpmake mini + lpunpack;
+        # wczesniej num_extents czytane @40 - na super_empty obie = 0, niewidoczne)
         name = b[p:p + 36].split(b"\0", 1)[0].decode()
         attrs = u32(b, p + 36)
-        num_extents = u32(b, p + 40)
+        first_ext = u32(b, p + 40)
+        num_extents = u32(b, p + 44)
         group_idx = u32(b, p + 48)
         return {"name": name, "attributes": attrs, "group_index": group_idx,
-                "num_extents": num_extents}
+                "first_extent_index": first_ext, "num_extents": num_extents}
 
     def parse_group(b, p):
         name = b[p:p + 36].split(b"\0", 1)[0].decode()
@@ -172,9 +174,10 @@ def main():
     if meta["extents"]:
         print("== EXTENTS (sumy sektorow na partycje) ==")
         by_src = {}
-        for i, p in enumerate(meta["partitions"]):
-            s = sum(e["num_sectors"] for e in meta["extents"]
-                    if e["target_type"] == 0 and e["target_source"] == i)
+        for p in meta["partitions"]:
+            i0, n = p["first_extent_index"], p["num_extents"]
+            s = sum(e["num_sectors"] for e in meta["extents"][i0:i0 + n]
+                    if e["target_type"] == 0)
             by_src[p["name"]] = s * 512
         for k, v in by_src.items():
             print(f"  {k}: {v} B ({v / 1e9:.3f} GB)")
