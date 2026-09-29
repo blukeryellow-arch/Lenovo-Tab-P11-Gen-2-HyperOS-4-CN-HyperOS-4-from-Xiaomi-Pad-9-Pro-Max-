@@ -131,6 +131,7 @@ jobs:
             --group=main_a:16777216 \
             --partition=system_a:readonly:8388608:main_a --image=system_a="$SHMD/fake.img" \
             -o "$SHMD/super_mini.img"
+          mkdir -p "$SHMD/mini_unp"
           "$WD/bin/lpunpack" "$SHMD/super_mini.img" "$SHMD/mini_unp/" >/dev/null 2>&1
           cmp "$SHMD/fake.img" "$SHMD/mini_unp/system_a.img" && echo "SPARSE roundtrip: BIT-IDENTYCZNY OK"
           rm -rf "$SHMD/fake.img" "$SHMD/super_mini.img" "$SHMD/mini_unp"
