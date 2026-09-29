@@ -132,9 +132,13 @@ jobs:
             --partition=system_a:readonly:8388608:main_a --image=system_a="$SHMD/fake.img" \
             -o "$SHMD/super_mini.img"
           mkdir -p "$SHMD/mini_unp"
-          "$WD/bin/lpunpack" "$SHMD/super_mini.img" "$SHMD/mini_unp/" >/dev/null 2>&1
+          # UWAGA: lpunpack/lpdumps NIE czytaja formatu sparse (exit 64,
+          # "must be unsparsed") - najpierw konwersja simg2img (MAGIC 0xED26FF3A,
+          # fix 29 IX), potem lpunpack na raw (receipt: test sandboxowy).
+          python3 tools/simg2img.py "$SHMD/super_mini.img" "$SHMD/super_mini_raw.img"
+          "$WD/bin/lpunpack" "$SHMD/super_mini_raw.img" "$SHMD/mini_unp/" >/dev/null 2>&1
           cmp "$SHMD/fake.img" "$SHMD/mini_unp/system_a.img" && echo "SPARSE roundtrip: BIT-IDENTYCZNY OK"
-          rm -rf "$SHMD/fake.img" "$SHMD/super_mini.img" "$SHMD/mini_unp"
+          rm -rf "$SHMD/fake.img" "$SHMD/super_mini.img" "$SHMD/super_mini_raw.img" "$SHMD/mini_unp"
           echo "toolchain kompletny"
           df -h / /dev/shm | tail -2
 
@@ -545,16 +549,51 @@ jobs:
             "${ARGS[@]}" \
             -o "$WORK/super_m3_sparse.img"
           ls -la "$WORK/super_m3_sparse.img"
-          VPART=vendor_a
-          rm -rf "$SHM/vunp"; mkdir -p "$SHM/vunp"
-          "$WORK/bin/lpunpack" "$WORK/super_m3_sparse.img" "$SHM/vunp/" >/dev/null 2>&1 || true
-          if [ -s "$SHM/vunp/$VPART.img" ] && [ -n "${USE[$VPART]:-}" ]; then
-            cmp "$SHM/vunp/$VPART.img" "${USE[$VPART]}" && echo "ROUNDTRIP $VPART (sparse super): BIT-IDENTYCZNY OK"
-          else
-            echo "::warning::roundtrip $VPART niedostepny"
-          fi
-          rm -rf "$SHM/vunp" "$STAGE"
-          "$WORK/bin/lpdumps" "$WORK/super_m3_sparse.img" 2>&1 | head -30 | tee "$WORK/super-built-geometry.txt" || true
+          # WERYFIKACJA duzego sparse BEZ materializacji 9,6 GB raw:
+          # rekonstrukcja glowy (4 MB = geometry + metadata slot0) z chunkow
+          # -> lpinfo.py (dowod geometrii: device 9663676416, main_a, partycje _a)
+          python3 - "$WORK/super_m3_sparse.img" "$SHM/super_head.img" <<'PYEOF'
+          import struct, sys
+          src, dst = sys.argv[1], sys.argv[2]
+          f = open(src, 'rb')
+          hdr = f.read(28)
+          magic, maj, mnr, fhs, chs, blk, nblk, nch, ck = struct.unpack('<IHHHHIIII', hdr)
+          assert magic == 0xED26FF3A, f"bad sparse magic {magic:#x}"
+          HEAD = 4 * 1024 * 1024
+          out = bytearray(HEAD)
+          pos = 0
+          for _ in range(nch):
+            ch = f.read(12)
+            ct, res, n, total = struct.unpack('<HHII', ch)
+            if ct == 0xCAC1:  # RAW
+              data = f.read(total)
+              for i in range(n):
+                o = i * blk
+                if pos + o < HEAD:
+                    end = min(pos + o + blk, HEAD)
+                    out[pos + o:end] = data[o:o + (end - pos - o)]
+            elif ct == 0xCAC2:  # FILL
+                fill = f.read(4)
+                for i in range(n):
+                    o = i * blk
+                    if pos + o < HEAD:
+                        end = min(pos + o + blk, HEAD)
+                        out[pos + o:end] = (fill * blk)[:end - pos - o]
+            else:  # DONTCARE/CRC: pomin dane
+                if ct != 0xCAC3:
+                    f.seek(total, 1)
+            pos += n * blk
+          open(dst, 'wb').write(out)
+          print(f"glowa {HEAD} B zrekonstruowana z {nch} chunkow (device {nblk * blk} B)")
+          PYEOF
+          python3 tools/lpinfo.py "$SHM/super_head.img" | tee "$WORK/super-built-geometry.txt"
+          grep -q "size=9663676416" "$WORK/super-built-geometry.txt"
+          grep -q "system_a" "$WORK/super-built-geometry.txt"
+          grep -q "main_a" "$WORK/super-built-geometry.txt"
+          echo "GEOMETRIA zbudowanego super: ZWERYFIKOWANA (lpinfo na glowie sparse)"
+          rm -f "$SHM/super_head.img"
+          # STAGE (obrazy pomocnicze w tmpfs) ZUZYWA ~5G - zwolnij przed split!
+          rm -rf "$STAGE"
           rm -f "$WORK/img/system_m3.img" "$WORK/img/system_ext.img" "$WORK/img/product.img" \
                 "$WORK/img/vendor.img" "$WORK/img/odm.img" "$WORK/img/odm_dlkm.img" "$WORK/img/vendor_dlkm.img"
           df -h / /dev/shm | tail -2
@@ -587,6 +626,8 @@ jobs:
           truncate -s 4096 "$WORK/kit/vbmeta_vendor_disable.img"
           [ -s "$WORK/img/boot.img" ] && cp "$WORK/img/boot.img" "$WORK/kit/boot_${BASE_BUILD}.img" \
             || echo "::warning::brak boot.img w bazie"
+          # simg2img (magic 0xED26FF3A) do konwersji sparse->raw dla SP Flash Tool
+          cp tools/simg2img.py "$WORK/kit/simg2img.py"
           cat > "$WORK/kit/FLASH-M3.md" <<EOT
           # MysticalOS 3 - flash super.img (TB350FU)
 
@@ -615,8 +656,9 @@ jobs:
           ## UWAGI
           - to NIE jest DSU: super nadpisuje partycje dynamiczne na stale;
             slot B zostaje nietkniety (rollback: fastboot --set-active=b),
-          - SP Flash Tool: najpierw konwersja sparse->raw (simg2img) - plik
-            super_mystical3.img jest w formacie sparse Android,
+          - SP Flash Tool: najpierw konwersja sparse->raw:
+            python3 simg2img.py super_mystical3.img super_raw.img
+            (plik jest w formacie sparse Android, magic 0xED26FF3A),
           - userdata zostaje (A14->A14, ten sam branch),
           - apki MIUI moga wymagac frameworku MIUI (audyt w trace);
             Aurora Store doinstaluje launcher z sieci w razie problemow.
