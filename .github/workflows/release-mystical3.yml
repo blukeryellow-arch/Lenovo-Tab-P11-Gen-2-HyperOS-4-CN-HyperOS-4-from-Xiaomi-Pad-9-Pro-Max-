@@ -1,0 +1,650 @@
+name: release-mystical3
+
+# ============================================================================
+# MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
+# Repack wewnatrz FABRYCZNEGO layoutu super Lenovo (metoda: super.img container).
+#
+# Architektura (wnioski z zwiadu 29 IX - ANALIZA-RGB-forensics-29IX-brief2.md):
+#   - DSU z pojedynczym system.img pada na klasie "custom ROM wymaga wlasnych
+#     product/system_ext" (receipt XDA 4385905). Rozwiazanie: pelny kontener
+#     super z fabryczna geometria => product/system_ext/vendor = SPLOTSPOJNE
+#     ze soba, nie z hostem. Slot A => slot-independent wg zlecenia.
+#
+# Baza: TB350FU_S230982_251013_ROW (lolinet, 4,7 GB, A14) - komplet
+#   system/system_ext/product/vendor/odm*/vendor_dlkm + boot + vbmeta.
+# Geometria: super_empty.img TB350FU (Drive; parsowana tools/lpinfo.py):
+#   super = 9 663 676 416 B, grupy main_a/main_b po 9 661 579 264 B,
+#   metadata 65536 x 3 sloty, block 4096, align 1 MiB, 6 partycji/slot (VAB).
+# Donor HyperOS: yingtian OS4.0.13.0 OTA (Drive, 10,34 GB) -> payload ->
+#   product -> MiuiHome/Gallery/Music/FileManager + fonty Mi + motywy.
+#
+# MODY (protokol zlecenia):
+#   1. PURGE GMS - /system/{app,priv-app} + to samo w product/system_ext
+#      (GMS na A14 zyje glownie w product - purge tylko system bylby NOP-em);
+#      zachowany JEDYNIE com.google.android.webview (brak zamiennika, silnik
+#      renderowania, nie usluga sledzaca - udokumentowane).
+#   2. INJECT microG v0.3.16.252432 (GmsCore+FakeStore, priv-app, uprawnienia)
+#      + Aurora Store 4.8.4 preload - te same piny co GSI-1.
+#   3. TRANSPLANT HyperOS: apki MIUI + fonty Mi* + motywy (best-effort,
+#      inertne - bez frameworku MIUI apki moga padac; dokumentowane ryzyko).
+#   4. Display mitigation (receipt brief #1/#2): staly refresh rate
+#      (ro.surface_flinger.use_content_detection_for_refresh_rate=false).
+#
+# Toolchain: lpmake/lpunpack Rprop aosp15 (statyczne, codeload), wlasny
+#   tools/lpinfo.py (parser liblp v10.x VABC), payload-dumper-go 2.1.0
+#   (fallback: pip payload-dumper), avbtool LineageOS, erofs-utils lokalne
+#   (tools/build_erofs_local.sh, --file-contexts przez shim libselinux).
+# ============================================================================
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/release-mystical3.yml', 'tools/lpinfo.py']
+
+concurrency:
+  group: mystical3-super
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # 300 min: 2 duze pobrania (10,34 GB Drive + 4,7 GB lolinet) + extract
+    # EROFS ~20 GB drzew + 3x repack EROFS + lpmake 9,6 GB. Receipty czasowe
+    # z GSI-1: extract+mkfs 1,4 GB = ~6 min; tu ~10x wiecej danych.
+    timeout-minutes: 300
+
+    env:
+      WORK: /tmp/m3
+      # --- baza (S231044 usera nie ma na lustrach; S230982 = najnowszy ROW) ---
+      LOLINET_ZIP: https://mirrors.lolinet.com/firmware/lenowow/2022/Tab_P11_2nd_Gen/TB350FU/TB350FU_S230982_251013_ROW.zip
+      LOLINET_SIZE: 4805247432
+      BASE_BUILD: TB350FU_S230982_251013_ROW
+      # --- donor HyperOS 4.0.13 CN (Drive usera, publiczny od 29 IX) ---
+      DONOR_DRIVE_ID: 1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd
+      DONOR_SIZE: 10340028849
+      # --- geometria fabryczna ---
+      SUPER_EMPTY_DRIVE_ID: 1NUHbEzgwECQiumZgxlqzR6uNTimMQT9D
+      SUPER_SIZE: 9663676416
+      MAIN_GROUP_SIZE: 9661579264
+      # --- skladniki (piny z GSI-1, zwalidowane runem 36469639937) ---
+      GMS_APK_URL: https://github.com/microg/GmsCore/releases/download/v0.3.16.252432/com.google.android.gms-252432032.apk
+      VENDING_APK_URL: https://github.com/microg/GmsCore/releases/download/v0.3.16.252432/com.android.vending-84022632.apk
+      AURORA_URL: https://gitlab.com/-/project/6922885/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk
+      LP_TOOLS_URL: https://codeload.github.com/Rprop/aosp15_partition_tools/tar.gz/refs/heads/main
+      PDG_URL: https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
+      AVB_URL: https://codeload.github.com/LineageOS/android_external_avb/tar.gz/refs/heads/lineage-22.2
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "0. Toolchain: lp tools + payload-dumper + avbtool + erofs"
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK/bin" "$WORK/img" "$WORK/keep/app" "$WORK/keep/fonts" "$WORK/keep/themes"
+          # --- lp tools (statyczne, android-15.0.0_r25; codeload bo raw jest
+          #     czasem filtrowany; smoke-testy BLOKUJA dalszy bieg przy braku) ---
+          curl -fsSL "$LP_TOOLS_URL" | tar -xz -C /tmp
+          LPT=$(ls -d /tmp/aosp15_partition_tools-*/linux_glibc_x86_64 | head -1)
+          for b in lpmake lpunpack lpdumps; do
+            install -m 755 "$LPT/$b" "$WORK/bin/$b"
+            "$WORK/bin/$b" --help >/dev/null 2>&1 || { echo "::error::$b nie dziala"; exit 1; }
+          done
+          echo "lp tools OK ($LPT)"
+          # --- payload-dumper-go (release-assets; fallback: pip payload-dumper) ---
+          if curl -fsSL "$PDG_URL" -o /tmp/pdg.tar.gz; then
+            tar -xzf /tmp/pdg.tar.gz -C /tmp
+            PDGB=$(find /tmp -maxdepth 1 -type f -name 'payload-dumper-go*' | head -1)
+            install -m 755 "$PDGB" "$WORK/bin/payload-dumper-go"
+            "$WORK/bin/payload-dumper-go" --help >/dev/null 2>&1 || PDGB=""
+          fi
+          if [ -z "${PDGB:-}" ] || [ ! -x "$WORK/bin/payload-dumper-go" ]; then
+            echo "payload-dumper-go niedostepny -> fallback pip payload-dumper"
+            pip install --quiet payload-dumper
+            command -v payload-dumper >/dev/null || { echo "::error::brak extractor'a payload"; exit 1; }
+          fi
+          # --- avbtool (LineageOS, pojedynczy skrypt) ---
+          curl -fsSL "$AVB_URL" | tar -xz -C /tmp
+          cp /tmp/android_external_avb-*/avbtool.py "$WORK/bin/avbtool.py"
+          python3 "$WORK/bin/avbtool.py" version
+          # --- erofs-utils lokalnie (jak GSI-1; shim libselinux dla --file-contexts) ---
+          bash tools/build_comp_libs.sh /tmp/comp >/dev/null 2>&1 || bash tools/build_comp_libs.sh /tmp/comp
+          COMP_PREFIX=/tmp/comp bash tools/build_erofs_local.sh "$WORK/erofs"
+          "$WORK/erofs/mkfs.erofs" --help 2>&1 | grep -q -- --file-contexts || { echo "::error::mkfs.erofs bez --file-contexts"; exit 1; }
+          "$WORK/erofs/fsck.erofs" --help >/dev/null 2>&1 || { echo "::error::brak fsck.erofs"; exit 1; }
+          echo "toolchain kompletny"
+          df -h / | tail -1
+
+      - name: "1. Geometria fabryczna super (super_empty.img z Drive)"
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          curl -fsSL --retry 3 -o "$WORK/super_empty.img" \
+            "https://drive.usercontent.google.com/download?id=${SUPER_EMPTY_DRIVE_ID}&export=download&confirm=t" \
+            || cp tools/super_empty_tb350fu.img "$WORK/super_empty.img"
+          test "$(stat -c%s "$WORK/super_empty.img")" -eq 5184
+          python3 tools/lpinfo.py "$WORK/super_empty.img" | tee "$WORK/geometry.txt"
+          # BRAMKI: geometria MUSI pasowac do pinow (9 GiB super, main_a/main_b)
+          grep -q "size=9663676416" "$WORK/geometry.txt"
+          grep -q "main_a" "$WORK/geometry.txt"
+          grep -q "system_ext_a" "$WORK/geometry.txt"
+          echo "GEOMETRIA OK: super=${SUPER_SIZE}B, grupy main_a/main_b po ${MAIN_GROUP_SIZE}B, VAB"
+
+      - name: "2. Donor HyperOS (yingtian 4.0.13 OTA z Drive) - harvest transplantow"
+        # Najpierw donor (najwieksze ryzyko dyskowe), potem porzadki - receipt
+        # ENOSPC z v15. pdg czyta payload wprost z zipa (oszczednosc 10 GB).
+        run: |
+          set -uo pipefail
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          NEED_GB=16; AVAIL=$(( $(df --output=avail -B1G / | tail -1) ))
+          [ "$AVAIL" -ge "$NEED_GB" ] || { echo "::error::za malo miejsca: ${AVAIL}G < ${NEED_GB}G"; exit 1; }
+          echo "dysk na donora: ${AVAIL}G"
+          curl -fL --retry 3 --connect-timeout 30 --speed-limit 500000 --speed-time 120 \
+            -o "$WORK/donor.zip" \
+            "https://drive.usercontent.google.com/download?id=${DONOR_DRIVE_ID}&export=download&confirm=t" \
+            2>>"$WORK/urlprobe.log" || { echo "DONOR_DOWN=FAIL" > /tmp/transplant.status; echo "::error::pobranie donora padlo"; exit 1; }
+          SZ=$(stat -c%s "$WORK/donor.zip")
+          [ "$SZ" -eq "$DONOR_SIZE" ] || { echo "::error::rozmiar donora $SZ != $DONOR_SIZE"; exit 1; }
+          echo "donor.zip: $SZ B OK"
+          # tylko product (pozostale partycje Xiaomi sa nam zbedne)
+          if [ -x "$WORK/bin/payload-dumper-go" ]; then
+            "$WORK/bin/payload-dumper-go" -p product -o "$WORK/img" "$WORK/donor.zip" 2>&1 | tail -3
+          else
+            unzip -o -j "$WORK/donor.zip" 'payload.bin' -d "$WORK/" >/dev/null
+            payload-dumper -p product -o "$WORK/img" "$WORK/payload.bin" 2>&1 | tail -3
+            rm -f "$WORK/payload.bin"
+          fi
+          rm -f "$WORK/donor.zip"
+          test -f "$WORK/img/product.img" || { echo "DONOR_EXTRACT=FAIL" > /tmp/transplant.status; echo "::error::brak product.img donora"; exit 1; }
+          echo "product.img donora: $(stat -c%s "$WORK/img/product.img") B"
+          # harvest wprost z mountpointu (bez kopiowania 6 GB drzewa):
+          # tylko apk/fonty/motywy, potem natychmiastowy umount
+          rm -rf /tmp/prodtree; mkdir -p /tmp/prodtree
+          MNT=0
+          if sudo mount -t erofs -o ro,loop "$WORK/img/product.img" /tmp/prodtree 2>/dev/null; then
+            MNT=1; echo "donor product: loop-mount erofs OK (harvest z mountpointu)"
+          else
+            echo "loop-mount nie wyszedl -> fsck.erofs --extract (pelne drzewo)"
+            "$WORK/erofs/fsck.erofs" --extract=/tmp/prodtree "$WORK/img/product.img" >/dev/null 2>&1
+          fi
+          P=/tmp/prodtree/product
+          [ -d "$P" ] || P=/tmp/prodtree
+          echo "== harvest transplantow z donora =="
+          for NAME in MiuiHome MiuiGallery MiuiGalleryNew MiuiMusic MiuiFileManager; do
+            D=$(find "$P" -maxdepth 3 -type d -iname "$NAME" 2>/dev/null | head -1)
+            if [ -n "$D" ] && find "$D" -name '*.apk' 2>/dev/null | grep -q .; then
+              DEST="$WORK/keep/app/$(basename "$D" | sed 's/New$//')"
+              mkdir -p "$DEST"
+              find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \; 2>/dev/null || sudo find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \;
+              echo "  apk: $NAME <- $D"
+            fi
+          done
+          if [ -d "$P/fonts" ]; then
+            find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} "$WORK/keep/fonts/" \; 2>/dev/null \
+              || sudo find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} "$WORK/keep/fonts/" \; || true
+          fi
+          # motywy + assety panelu (best-effort, limit 500 MB, inertne)
+          for TD in themes media/theme; do
+            SRC=$(find "$P" -maxdepth 2 -type d -path "*$TD" 2>/dev/null | head -1)
+            if [ -n "$SRC" ]; then
+              SZD=$(sudo du -sm "$SRC" 2>/dev/null | cut -f1 || du -sm "$SRC" | cut -f1)
+              if [ "${SZD:-999}" -le 500 ]; then
+                mkdir -p "$WORK/keep/themes/$(basename "$SRC")"
+                cp -a "$SRC"/. "$WORK/keep/themes/$(basename "$SRC")"/ 2>/dev/null \
+                  || sudo cp -a "$SRC"/. "$WORK/keep/themes/$(basename "$SRC")"/
+                echo "  motywy/assets: $SRC (${SZD} MB)"
+              else
+                echo "  motywy $SRC pominiete (${SZD} MB > 500)"
+              fi
+            fi
+          done
+          [ "$MNT" = "1" ] && sudo umount /tmp/prodtree
+          NA=$(find "$WORK/keep/app" -name '*.apk' | wc -l)
+          NF=$(ls "$WORK/keep/fonts" 2>/dev/null | wc -l)
+          NT=$(du -sm "$WORK/keep/themes" 2>/dev/null | cut -f1 || echo 0)
+          echo "harvest: $NA apk, $NF fontow Mi, ${NT}MB motywow"
+          if [ "$NA" -ge 1 ]; then echo "OK ($NA apk: $(ls "$WORK/keep/app" | tr '\n' ' '))" > /tmp/transplant.status
+          else echo "BRAK APK (donor product bez MiuiHome*)" > /tmp/transplant.status; fi
+          # porzadki - donor product jebie 6+ GB, niepotrzebny dalej
+          rm -f "$WORK/img/product.img"; rm -rf /tmp/prodtree
+          df -h / | tail -1
+
+      - name: "3. Baza Lenovo (lolinet S230982) - pobranie i ekstrakcja partycji"
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          NEED_GB=22; AVAIL=$(( $(df --output=avail -B1G / | tail -1) ))
+          [ "$AVAIL" -ge "$NEED_GB" ] || { echo "::error::za malo miejsca: ${AVAIL}G < ${NEED_GB}G"; exit 1; }
+          curl -fL --retry 3 --connect-timeout 30 --speed-limit 500000 --speed-time 120 \
+            -o "$WORK/base.zip" "$LOLINET_ZIP" 2>>"$WORK/urlprobe.log" \
+            || { echo "::error::pobranie lolinet padlo (sprobuj recznie/ inna lustrzane)"; exit 1; }
+          BSZ=$(stat -c%s "$WORK/base.zip")
+          echo "base.zip: $BSZ B"
+          # sanity: rozmiar +-2% pinu (lolinet nie publikuje hashy; integralnosc
+          # danych gwarantuja hashe wewnatrz payload.bin)
+          LO=$(( LOLINET_SIZE - LOLINET_SIZE / 50 )); HI=$(( LOLINET_SIZE + LOLINET_SIZE / 50 ))
+          [ "$BSZ" -ge "$LO" ] && [ "$BSZ" -le "$HI" ] || echo "::warning::rozmiar base.zip odbiega od pinu ($BSZ vs $LOLINET_SIZE)"
+          echo "== zawartosc pakietu (top) =="
+          unzip -l "$WORK/base.zip" | head -25
+          if unzip -l "$WORK/base.zip" | grep -q 'payload.bin'; then
+            echo "struktura: payload OTA"
+          if [ -x "$WORK/bin/payload-dumper-go" ]; then
+            echo "== dostepne partycje w payload =="
+            "$WORK/bin/payload-dumper-go" -l "$WORK/base.zip" 2>&1 | tee /tmp/payload-parts.txt || true
+            AVAIL=$(grep -oiE 'system|system_ext|product|vendor|odm|odm_dlkm|vendor_dlkm|boot|vbmeta|vbmeta_system|vbmeta_vendor' /tmp/payload-parts.txt | sort -u | tr '\n' ',' | sed 's/,$//')
+            echo "dump partycji: ${AVAIL:-system,system_ext,product,vendor,boot,vbmeta,vbmeta_system,vbmeta_vendor}"
+            "$WORK/bin/payload-dumper-go" -p "${AVAIL:-system,system_ext,product,vendor,boot,vbmeta,vbmeta_system,vbmeta_vendor}" -o "$WORK/img" "$WORK/base.zip" 2>&1 | tail -5
+          else
+            unzip -o -j "$WORK/base.zip" 'payload.bin' -d "$WORK/" >/dev/null
+            payload-dumper -p "system,system_ext,product,vendor,boot,vbmeta,vbmeta_system,vbmeta_vendor" -o "$WORK/img" "$WORK/payload.bin" 2>&1 | tail -5
+            rm -f "$WORK/payload.bin"
+          fi
+          elif unzip -l "$WORK/base.zip" | grep -qi 'super.*\.img'; then
+            echo "struktura: super.img w pakiecie"
+            unzip -o -j "$WORK/base.zip" '*super*.img' -d "$WORK/" >/dev/null
+            python3 tools/simg2img.py "$WORK"/super*.img "$WORK/super_base.img" || cp "$WORK"/super*.img "$WORK/super_base.img"
+            "$WORK/bin/lpunpack" "$WORK/super_base.img" "$WORK/img/"
+            rm -f "$WORK"/super*.img "$WORK/super_base.img"
+            unzip -o -j "$WORK/base.zip" '*boot*.img' '*vbmeta*.img' -d "$WORK/img/" >/dev/null || true
+          else
+            echo "::error::nieznana struktura pakietu (ani payload.bin, ani super.img)"
+            unzip -l "$WORK/base.zip" | tail -20; exit 1
+          fi
+          rm -f "$WORK/base.zip"
+          echo "== obrazy bazowe =="
+          ls -la "$WORK/img/"
+          test -s "$WORK/img/system.img" || { echo "::error::brak system.img"; exit 1; }
+          test -s "$WORK/img/vendor.img" || { echo "::error::brak vendor.img"; exit 1; }
+          df -h / | tail -1
+
+      - name: "4. MOD system: PURGE GMS + INJECT microG/Aurora + TRANSPLANT + props"
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          # --- rozpoznanie fs ---
+          python3 - <<'PY'
+          import sys
+          d = open('/tmp/m3/img/system.img','rb').read(4096)
+          import struct
+          m_erofs = struct.unpack('<I', d[1024:1028])[0]
+          m_ext = struct.unpack('<H', d[1080:1082])[0]
+          if m_erofs == 0xE0F5E1E2: print('erofs')
+          elif m_ext == 0xEF53: print('ext4')
+          else: sys.exit('nieznany fs system.img')
+          PY
+          # ekstrakcja system do drzewa (erofs albo ext4-copy)
+          rm -rf /tmp/m3/sys; mkdir -p /tmp/m3/sys
+          if sudo mount -t erofs -o ro,loop "$WORK/img/system.img" /mnt 2>/dev/null; then
+            sudo cp -a /mnt/. /tmp/m3/sys/; sudo umount /mnt
+            echo "system: erofs (loop-mount + kopia)"
+          elif "$WORK/erofs/fsck.erofs" --extract=/tmp/m3/erofsx "$WORK/img/system.img" >/dev/null 2>&1; then
+            if [ -d /tmp/m3/erofsx/system ]; then mv /tmp/m3/erofsx/system /tmp/m3/sys; else mv /tmp/m3/erofsx /tmp/m3/sys; fi
+            echo "system: erofs (fsck extract)"
+          else
+            sudo e2fsck -fy "$WORK/img/system.img" >/dev/null 2>&1 || true
+            sudo mount -o ro,loop "$WORK/img/system.img" /mnt
+            sudo cp -a /mnt/. /tmp/m3/sys/; sudo umount /mnt
+            echo "system: ext4 (loop-mount + kopia)"
+          fi
+          T=/tmp/m3/sys
+          test -d "$T/app" || { echo "::error::drzewo system bez /app"; find "$T" -maxdepth 2 | head; exit 1; }
+          # --- PURGE GMS (lista z GSI-1 + product-aware) ---
+          echo "== PURGE GMS =="
+          HITS=$(find "$T/app" "$T/priv-app" -maxdepth 1 -type d 2>/dev/null | grep -iE \
+            'gms|google|Phonesky|SetupWizard|PrebuiltGmsCore|GoogleServicesFramework|GooglePartnerSetup|GoogleFeedback|GoogleOneTimeInitializer|GoogleRestore|ConfigUpdater|CarrierServices|AndroidPlatformServices|GoogleExt' || true)
+          KEEP_WEBVIEW=1
+          echo "$HITS" | tee /tmp/gms-purge.list
+          N=0
+          for D in $HITS; do
+            case "$(basename "$D")" in
+              com.google.android.webview|WebView) echo "  ZOSTAWIAM (webview - brak zamiennika): $(basename "$D")"; continue ;;
+            esac
+            sudo rm -rf "$D"; N=$((N+1))
+          done
+          echo "USUNIETO: $N katalogow Google z system"
+          # GMS w konfigach etc/
+          find "$T/etc/permissions" "$T/etc/sysconfig" -name '*.xml' 2>/dev/null | \
+            xargs -r grep -il 'gms\|google' | tee -a /tmp/gms-purge.list | xargs -r sudo rm -f
+          # --- INJECT microG + FakeStore + Aurora ---
+          echo "== INJECT =="
+          curl -fsSL --retry 3 -o /tmp/gmscore.apk "$GMS_APK_URL"
+          curl -fsSL --retry 3 -o /tmp/fakestore.apk "$VENDING_APK_URL"
+          AURORA_PICK=""
+          for U in "$AURORA_URL" "https://gitlab.com/AuroraOSS/AuroraStore/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk"; do
+            if curl -fsI --connect-timeout 20 "$U" >/dev/null 2>&1; then AURORA_PICK="$U"; break; fi
+          done
+          test -n "$AURORA_PICK" || { echo "::error::AuroraStore: zaden URL nie odpowiada"; exit 1; }
+          curl -fsSL --retry 3 -o /tmp/aurora.apk "$AURORA_PICK"
+          mkdir -p "$T/priv-app/microG" "$T/priv-app/FakeStore" "$T/app/AuroraStore"
+          cp /tmp/gmscore.apk  "$T/priv-app/microG/GmsCore.apk"
+          cp /tmp/fakestore.apk "$T/priv-app/FakeStore/FakeStore.apk"
+          cp /tmp/aurora.apk    "$T/app/AuroraStore/AuroraStore.apk"
+          cat > "$T/etc/permissions/privapp-permissions-mystical.xml" <<'XEOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <permissions>
+            <privapp-permissions package="com.google.android.gms">
+              <permission name="android.permission.FAKE_PACKAGE_SIGNATURE"/>
+              <permission name="android.permission.INSTALL_LOCATION_PROVIDER"/>
+              <permission name="android.permission.UPDATE_DEVICE_STATS"/>
+              <permission name="android.permission.UPDATE_APP_OPS_STATS"/>
+              <permission name="android.permission.CHANGE_DEVICE_IDLE_TEMP_WHITELIST"/>
+              <permission name="android.permission.MANAGE_USB"/>
+              <permission name="android.permission.MODIFY_PHONE_STATE"/>
+              <permission name="android.permission.FOREGROUND_SERVICE"/>
+              <permission name="android.permission.LOCAL_MAC_ADDRESS"/>
+              <permission name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+            </privapp-permissions>
+            <privapp-permissions package="com.android.vending">
+              <permission name="android.permission.FAKE_PACKAGE_SIGNATURE"/>
+            </privapp-permissions>
+          </permissions>
+          XEOF
+          # --- TRANSPLANT HyperOS ---
+          echo "== TRANSPLANT: $(cat /tmp/transplant.status 2>/dev/null | head -1) =="
+          if [ -d "$WORK/keep/app" ] && [ -n "$(ls "$WORK/keep/app" 2>/dev/null)" ]; then
+            for D in "$WORK/keep/app"/*; do
+              NAME=$(basename "$D")
+              mkdir -p "$T/app/$NAME"; cp -a "$D"/. "$T/app/$NAME/"
+              echo "  transplant: /system/app/$NAME"
+            done
+          fi
+          if [ -d "$WORK/keep/fonts" ] && [ -n "$(ls "$WORK/keep/fonts" 2>/dev/null)" ]; then
+            cp -a "$WORK/keep/fonts"/*.ttf "$T/fonts/" 2>/dev/null || true
+            echo "  fonty Mi: $(ls "$T/fonts"/Mi*.ttf 2>/dev/null | wc -l) (fonts.xml nietkniety - inertne)"
+          fi
+          if [ -d "$WORK/keep/themes" ] && [ -n "$(ls "$WORK/keep/themes" 2>/dev/null)" ]; then
+            mkdir -p "$T/miui-themes"; cp -a "$WORK/keep/themes"/. "$T/miui-themes/"
+            echo "  motywy: /system/miui-themes ($(du -sm "$T/miui-themes" | cut -f1) MB, inertne)"
+          fi
+          # audyt zaleznosci miui.* (receipt ryzyka - jak GSI-1)
+          echo "== audyt miui-framework w transplantach =="
+          for APK in $(find "$T/app" -maxdepth 2 -name '*.apk' 2>/dev/null); do
+            REF=$(unzip -p "$APK" classes.dex 2>/dev/null | strings -a 2>/dev/null | grep -cE "^Lmiui/|^Lcom/miui/" || true)
+            echo "  $(basename "$APK"): ${REF:-0} odniesien miui.*"
+          done
+          # --- props (mitigation display + znakowanie) ---
+          BP="$T/build.prop"
+          echo "" >> "$BP"
+          echo "# === MysticalOS 3 ===" >> "$BP"
+          echo "ro.mysticalos.version=3" >> "$BP"
+          echo "ro.mysticalos.base=${BASE_BUILD}" >> "$BP"
+          echo "# display mitigation (receipt ANALIZA-RGB-forensics-29IX): staly refresh," >> "$BP"
+          echo "# bez content-detection zmian trybu przy pierwszym mode-switch" >> "$BP"
+          echo "ro.surface_flinger.use_content_detection_for_refresh_rate=false" >> "$BP"
+          grep -c "mysticalos" "$BP"
+          test -f "$T/priv-app/microG/GmsCore.apk"; test -f "$T/app/AuroraStore/AuroraStore.apk"
+          echo "MOD system kompletny"
+          df -h / | tail -1
+
+      - name: "5. MOD product + system_ext: PURGE GMS (GMS zyje glownie w product!)"
+        run: |
+          set -uo pipefail
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          for PART in product system_ext; do
+            IMG="$WORK/img/$PART.img"
+            [ -s "$IMG" ] || { echo "$PART: brak w bazie - pomijam"; continue; }
+            rm -rf "/tmp/m3/tree_$PART"; mkdir -p "/tmp/m3/tree_$PART"
+            if sudo mount -t erofs -o ro,loop "$IMG" /mnt 2>/dev/null; then
+              sudo cp -a /mnt/. "/tmp/m3/tree_$PART/"; sudo umount /mnt
+            elif "$WORK/erofs/fsck.erofs" --extract="/tmp/m3/ex_$PART" "$IMG" >/dev/null 2>&1; then
+              if [ -d "/tmp/m3/ex_$PART/$PART" ]; then mv "/tmp/m3/ex_$PART/$PART" "/tmp/m3/tree_$PART"; rm -rf "/tmp/m3/ex_$PART"
+              else rmdir "/tmp/m3/tree_$PART" 2>/dev/null; mv "/tmp/m3/ex_$PART" "/tmp/m3/tree_$PART"; fi
+            else
+              sudo mount -o ro,loop "$IMG" /mnt && { sudo cp -a /mnt/. "/tmp/m3/tree_$PART/"; sudo umount /mnt; } || { echo "::error::$PART: nie dalo sie odczytac"; exit 1; }
+            fi
+            TT="/tmp/m3/tree_$PART"
+            [ -d "$TT/app" ] || [ -d "$TT/priv-app" ] || { echo "$PART: bez app/ - czysty, pomijam mody"; continue; }
+            H=$(find "$TT/app" "$TT/priv-app" -maxdepth 1 -type d 2>/dev/null | grep -iE \
+              'gms|google|Phonesky|SetupWizard|PrebuiltGmsCore|GoogleServicesFramework|GooglePartnerSetup|GoogleFeedback|GoogleOneTimeInitializer|GoogleRestore|ConfigUpdater|CarrierServices|GoogleExt' || true)
+            if [ -n "$H" ]; then
+              echo "== PURGE GMS z $PART =="
+              M=0
+              for D in $H; do
+                case "$(basename "$D")" in com.google.android.webview|WebView) echo "  ZOSTAWIAM webview"; continue ;; esac
+                sudo rm -rf "$D"; M=$((M+1)); echo "  usunieto: $(basename "$D")"
+              done
+              echo "$PART: usunieto $M"
+              find "$TT/etc/permissions" "$TT/etc/sysconfig" -name '*.xml' 2>/dev/null | \
+                xargs -r grep -il 'gms\|google' | xargs -r sudo rm -f || true
+              echo "PURGED_$PART=1" >> /tmp/purge-partitions.status
+            else
+              echo "$PART: zero pakietow Google - bez zmian (repack niepotrzebny)"
+              rm -rf "/tmp/m3/tree_$PART"
+              continue
+            fi
+            echo "$PART zmodyfikowany - do repacku"
+          done
+          df -h / | tail -1
+
+      - name: "6. Pre-flight kontekstow SELinux (wszystkie dodane sciezki pokryte)"
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          FC=/tmp/m3/sys/etc/selinux/plat_file_contexts
+          test -f "$FC" || { echo "::error::brak plat_file_contexts w systemie Lenovo"; exit 1; }
+          python3 tools/fc_fixup.py --contexts "$FC" --root /tmp/m3/sys --dry-run --report /tmp/fc-report.txt
+          if grep -E "MISS .*(priv-app/microG|priv-app/FakeStore|app/AuroraStore|app/Miui|permissions-mystical|fonts/Mi|miui-themes)" /tmp/fc-report.txt; then
+            echo "::error::dodane pliki bez kontekstu"; exit 1
+          fi
+          echo "pre-flight kontekstow: OK (reguly fabryczne Lenovo pokrywaja dodane sciezki)"
+          df -h / | tail -1
+
+      - name: "7. Repack system + product + system_ext (EROFS + konteksty)"
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          set -x
+          FC=/tmp/m3/sys/etc/selinux/plat_file_contexts
+          # system: UUID deterministyczny hex (m3)
+          "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c00000003 \
+            --file-contexts="$FC" \
+            "$WORK/img/system_m3.img" /tmp/m3/sys
+          rm -rf /tmp/m3/sys
+          # product: konteksty wlasne, fallback plat
+          if [ -d /tmp/m3/tree_product ]; then
+            PFC=/tmp/m3/tree_product/etc/selinux/product_file_contexts
+            [ -f "$PFC" ] || PFC="$FC"
+            "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c00000013 \
+              --file-contexts="$PFC" \
+              "$WORK/img/product_m3.img" /tmp/m3/tree_product
+            rm -rf /tmp/m3/tree_product
+            mv "$WORK/img/product_m3.img" "$WORK/img/product.img"
+          fi
+          # system_ext: konteksty wlasne, fallback plat
+          if [ -d /tmp/m3/tree_system_ext ]; then
+            SFC=/tmp/m3/tree_system_ext/etc/selinux/system_ext_file_contexts
+            [ -f "$SFC" ] || SFC="$FC"
+            "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c00000023 \
+              --file-contexts="$SFC" \
+              "$WORK/img/system_ext_m3.img" /tmp/m3/tree_system_ext
+            rm -rf /tmp/m3/tree_system_ext
+            mv "$WORK/img/system_ext_m3.img" "$WORK/img/system_ext.img"
+          fi
+          set +x
+          ls -la "$WORK/img/"
+          # DOWOD: wypieczone etykiety + obecnosc dodanych plikow w system_m3
+          for C in system_file privapp system_app_data_file; do
+            N=$(grep -ac "$C" "$WORK/img/system_m3.img" || true)
+            echo "kontekst $C w obrazie: $N trafien"
+          done
+          rm -rf /tmp/imgcheck && mkdir -p /tmp/imgcheck
+          "$WORK/erofs/fsck.erofs" --extract=/tmp/imgcheck "$WORK/img/system_m3.img" >/dev/null 2>&1
+          C=/tmp/imgcheck/system
+          test -f "$C/priv-app/microG/GmsCore.apk"
+          test -f "$C/priv-app/FakeStore/FakeStore.apk"
+          test -f "$C/app/AuroraStore/AuroraStore.apk"
+          test -f "$C/etc/permissions/privapp-permissions-mystical.xml"
+          grep -q "mysticalos.version=3" "$C/build.prop"
+          grep -q "use_content_detection_for_refresh_rate=false" "$C/build.prop"
+          echo "PURGE GMS w system: $(find "$C/app" "$C/priv-app" -maxdepth 1 -type d 2>/dev/null | grep -icE 'google|gms' || echo 0) pakietow Google (oczekiwane 0-1: tylko webview)"
+          find "$C/app" -maxdepth 1 -type d | grep -iE 'Miui' && echo "transplanty MIUI w obrazie OK" || true
+          rm -rf /tmp/imgcheck
+          # porzadki: oryginalny system.img juz zbędny (modyfikowany = system_m3.img)
+          rm -f "$WORK/img/system.img"
+          df -h / | tail -1
+
+      - name: "8. Budowa super.img (fabryczna geometria, slot A, lpmake)"
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          # budget: suma obrazow _a <= main_a budget
+          declare -A IMGMAP=(
+            [system_a]="$WORK/img/system_m3.img"
+            [system_ext_a]="$WORK/img/system_ext.img"
+            [product_a]="$WORK/img/product.img"
+            [vendor_a]="$WORK/img/vendor.img"
+          )
+          [ -s "$WORK/img/odm.img" ] && IMGMAP[odm_a]="$WORK/img/odm.img"
+          [ -s "$WORK/img/odm_dlkm.img" ] && IMGMAP[odm_dlkm_a]="$WORK/img/odm_dlkm.img"
+          [ -s "$WORK/img/vendor_dlkm.img" ] && IMGMAP[vendor_dlkm_a]="$WORK/img/vendor_dlkm.img"
+          TOTAL=0; ARGS=()
+          for P in system_a system_ext_a product_a vendor_a odm_a odm_dlkm_a vendor_dlkm_a; do
+            [ -n "${IMGMAP[$P]:-}" ] || continue
+            SZ=$(stat -c%s "${IMGMAP[$P]}")
+            SZR=$(( (SZ + 4095) / 4096 * 4096 ))
+            TOTAL=$(( TOTAL + SZR ))
+            ARGS+=(--partition="$P:readonly:$SZR:main_a" --image="$P=${IMGMAP[$P]}")
+            echo "  $P: $SZ -> $SZR B (rounded 4K)"
+          done
+          echo "SUMA partycji _a: $TOTAL B; budzet main_a: $MAIN_GROUP_SIZE B; super: $SUPER_SIZE B"
+          [ "$TOTAL" -le "$MAIN_GROUP_SIZE" ] || { echo "::error::obrazy nie mieszcza sie w main_a!"; exit 1; }
+          "$WORK/bin/lpmake" \
+            --device-size="$SUPER_SIZE" \
+            --metadata-size=65536 \
+            --metadata-slots=3 \
+            --block-size=4096 \
+            --alignment=1048576 \
+            --super-name=super \
+            --group="main_a:$MAIN_GROUP_SIZE" \
+            "${ARGS[@]}" \
+            -o "$WORK/super.img"
+          ls -la "$WORK/super.img"
+          # WERYFIKACJA: geometria zbudowana + roundtrip danych
+          python3 tools/lpinfo.py "$WORK/super.img" | tee "$WORK/super-built-geometry.txt"
+          grep -q "size=9663676416" "$WORK/super-built-geometry.txt"
+          mkdir -p /tmp/m3/verify && "$WORK/bin/lpunpack" "$WORK/super.img" /tmp/m3/verify/ 2>&1 | tail -3
+          test -s /tmp/m3/verify/system_a.img
+          cmp /tmp/m3/verify/system_a.img "$WORK/img/system_m3.img" && echo "ROUNDTRIP system_a: BIT-IDENTYCZNY ✓"
+          rm -rf /tmp/m3/verify
+          df -h / | tail -1
+
+      - name: "9. vbmeta disable + boot + kit + split czastek"
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          # pusty vbmeta z flags=3 (disable-verity + disable-verification)
+          python3 "$WORK/bin/avbtool.py" make_vbmeta_image --flags 3 -o "$WORK/vbmeta_disable.img" --padding_size 4096
+          truncate -s 8192 "$WORK/vbmeta_disable.img"
+          cp "$WORK/vbmeta_disable.img" "$WORK/vbmeta_system_disable.img"
+          cp "$WORK/vbmeta_disable.img" "$WORK/vbmeta_vendor_disable.img"
+          truncate -s 4096 "$WORK/vbmeta_system_disable.img"
+          truncate -s 4096 "$WORK/vbmeta_vendor_disable.img"
+          ls -la "$WORK"/vbmeta*disable*
+          # kit
+          rm -rf "$WORK/kit" && mkdir -p "$WORK/kit"
+          [ -s "$WORK/img/boot.img" ] && cp "$WORK/img/boot.img" "$WORK/kit/boot_${BASE_BUILD}.img" || echo "::warning::brak boot.img w bazie"
+          cp "$WORK"/vbmeta_*disable*.img "$WORK/kit/"
+          cat > "$WORK/kit/FLASH-M3.md" <<EOT
+          # MysticalOS 3 - flash super.img (TB350FU)
+
+          ## Co to jest
+          Pelny kontener super (fabryczna geometria 9 GiB, slot A) ze SLOTSPOJNYM
+          zestawem S230982 (system_ext/product/vendor/odm*) + zmodyfikowanym
+          systemem MysticalOS 3 (PURGE GMS + microG + Aurora + transplant HyperOS).
+
+          ## Wymagania
+          - bootloader odblokowany (masz), bateria >30%,
+          - fastbootd (fastboot reboot fastboot).
+
+          ## Kolejnosc (fastbootd)
+          1. zloz super.img z czastek: cat super.img.part.* > super.img
+             (albo pobierz caly z gofile) i zweryfikuj: sha256sum -c SHA256SUMS.txt
+          2. fastboot flash vbmeta vbmeta_disable.img
+          3. fastboot flash vbmeta_system vbmeta_system_disable.img
+          4. fastboot flash vbmeta_vendor vbmeta_vendor_disable.img
+          5. fastboot flash super super.img
+          6. fastboot --set-active=a   (build zawiera TYLKO slot A!)
+          7. fastboot reboot
+          8. JESLI bootloop (kernel S231044 vs modul vendor_dlkm S230982):
+             fastboot flash boot boot_${BASE_BUILD}.img && fastboot reboot
+
+          ## UWAGI
+          - to NIE jest DSU - super nadpisuje partycje dynamiczne na stale
+            (slot A; slot B zostaje nietkniety = rollback przez set-active=b),
+          - dane (userdata) zostaja - A14 -> A14 ten sam branch,
+          - jedyny komponent Google w systemie: WebView (brak zamiennika),
+          - apki MIUI moga wymagac frameworku MIUI (audyt zaleznosci w trace);
+            fallback = Launcher z AOSP Lenovo? NIE - Lenovo launcher usuniety?
+            patrz trace; w razie czego Aurora instaluje launcher z sieci.
+          EOT
+          cat > "$WORK/kit/sprawdz.sh" <<'EOF'
+          #!/usr/bin/env bash
+          set -u; rc=0
+          echo "== sha256sum -c SHA256SUMS.txt =="; sha256sum -c SHA256SUMS.txt || rc=1
+          [ $rc -eq 0 ] && echo "WSZYSTKO ZGODNE." || echo "NIEZGODNE - pobierz ponownie."
+          exit $rc
+          EOF
+          chmod +x "$WORK/kit/sprawdz.sh"
+          # czastki 1900 MB (limit assetu GH = 2 GB)
+          cd "$WORK"
+          split -b 1900m -d super.img kit/super.img.part.
+          rm -f super.img
+          { sha256sum kit/super.img.part.* | sed 's|kit/||'; \
+            sha256sum kit/vbmeta_disable.img kit/vbmeta_system_disable.img kit/vbmeta_vendor_disable.img $( [ -f kit/boot_${BASE_BUILD}.img ] && echo kit/boot_${BASE_BUILD}.img ) | sed 's|kit/||'; } > kit/SHA256SUMS.txt
+          { echo "size=$(python3 -c "import glob;print(sum(__import__('os').path.getsize(p) for p in sorted(glob.glob('kit/super.img.part.*'))))")"; \
+            echo "parts=$(ls kit/super.img.part.* | wc -l)"; \
+            echo "sha256_super_zlozony=$(cat kit/super.img.part.* | sha256sum | cut -d' ' -f1)"; } > kit/super.manifest
+          cat kit/super.manifest kit/SHA256SUMS.txt
+          ls -la kit/
+          df -h / | tail -1
+
+      - name: "10. Release mysticalos-3-super (czastki + kit)"
+        run: |
+          set -euo pipefail
+          cd "$WORK/kit"
+          gh release delete mysticalos-3-super --yes --cleanup-tag 2>/dev/null || true
+          gh release create mysticalos-3-super --target "$GITHUB_SHA" \
+            --title "MysticalOS 3 - TB350FU super.img repack (stock Lenovo base + microG/Aurora + HyperOS transplant)" \
+            --notes "MysticalOS 3 = hybrydowy super.img w FABRYCZNEJ geometrii TB350FU (9 GiB, VAB, slot A): pelny spojny zestaw S230982 (system_ext/product/vendor/odm*) + system MysticalOS 3 (PURGE GMS z system+product+system_ext; zachowany tylko WebView; microG v0.3.16.252432 + FakeStore + Aurora 4.8.4; transplant MiuiHome/Gallery/Music/FileManager + fonty Mi + motywy z donora yingtian OS4.0.13; mitigation display: staly refresh). Geometria zweryfikowana tools/lpinfo.py, roundtrip lpmake/lpunpack bit-identyczny. Flash: fastbootd (vbmeta disable x3 -> super -> set-active=a), szczegoly w FLASH-M3.md. To zamiana partycji dynamicznych (NIE DSU); slot B zostaje jako rollback." \
+            super.img.part.* vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img FLASH-M3.md sprawdz.sh SHA256SUMS.txt super.manifest $( [ -f boot_${BASE_BUILD}.img ] && echo boot_${BASE_BUILD}.img )
+          gh release view mysticalos-3-super --json url,assets -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
+
+      - name: "11. Linki publiczne (gofile mirror)"
+        run: |
+          set -uo pipefail
+          cd "$WORK/kit"
+          # tar calosci dla gofile (jednym plikiem, latwiej niz 6 czastek)
+          tar cf "$WORK/MysticalOS3_super_kit.tar" .
+          bash tools/public_links.sh "$WORK/MysticalOS3_super_kit.tar" /tmp/links-m3.md || true
+
+      - name: "12. Raport z linkami + trace do repo"
+        if: always()
+        run: |
+          set -u
+          git config user.name "github-actions[bot]" || true
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com" || true
+          mkdir -p reports
+          F="reports/mystical3-links-${{ github.run_id }}.md"
+          { echo "### MysticalOS 3 (super.img TB350FU) links (run ${{ github.run_id }})"
+            echo "release: mysticalos-3-super"
+            echo "transplant: $(cat /tmp/transplant.status 2>/dev/null | head -1 || echo '?')"
+            echo "purge product/system_ext: $(cat /tmp/purge-partitions.status 2>/dev/null | tr '\n' ' ' || echo 'brak zmian')"
+            echo
+            echo "--- gofile (kit tar) ---"; cat /tmp/links-m3.md 2>/dev/null || echo "(brak)"
+            echo "--- sondy URL ---"; cat "$WORK/urlprobe.log" 2>/dev/null || echo "(brak)"
+            echo "--- manifest ---"; cat "$WORK/kit/super.manifest" 2>/dev/null || echo "(brak)"
+            echo "--- geometria fabryczna ---"; cat "$WORK/geometry.txt" 2>/dev/null || echo "(brak)"
+            echo "--- geometria zbudowana ---"; cat "$WORK/super-built-geometry.txt" 2>/dev/null || echo "(brak)"; } > "$F" || true
+          cat "$F" || true
+          if [ -f reports/mystical3-build-trace.log ]; then
+            echo "trace builda: reports/mystical3-build-trace.log ($(stat -c%s reports/mystical3-build-trace.log) B)"
+          fi
+          git add -f reports tools/lpinfo.py || true
+          git commit -q -m "m3-links+trace: run ${{ github.run_id }}" || true
+          git push -q origin "HEAD:${{ github.ref_name }}" || echo "push nie wyszedl"
+          exit 0

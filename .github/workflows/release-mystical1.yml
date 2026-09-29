@@ -58,10 +58,12 @@ jobs:
   mystical1:
     name: MysticalOS GSI-1 (AOSP 17 GSI repack - microG + Aurora + transplant HyperOS) -> release + linki
     runs-on: ubuntu-latest
-    # 180 min: stream fastboot ROM 12,6 GB z CDN Xiaomi trwal 85+ min przy ~2,5 MB/s
-    # (run 36474547084 przekroczyl 100-min budzet w trakcie Donora). 180 min daje
-    # zapas na stream + ~25 min reszty pipeline'u.
-    timeout-minutes: 180
+    # 300 min: stream fastboot ROM 12,6 GB z CDN Xiaomi. Receipty: 36474547084
+    # (85+ min, timeout 100), 36516170816 (speed-pick wybral bkt-sgp 3,7 MB/s
+    # burst, ale stream nie zdazyl w 180 min = CDN dlawi po burst). Stad guard
+    # --speed-limit 100k/90s (porzucenie mulajacego transferu -> nastepny mirror)
+    # + budzet 300 min. Raz zbudowany donor-cache konczy te epoke.
+    timeout-minutes: 300
     env:
       EROFS_DIR: /tmp/erofs-c
       COMP_DIR: /tmp/comp-build
@@ -166,6 +168,33 @@ jobs:
           else
             REASON="Drive nie oddal pliku (link/udostepnienie)"
           fi
+          # ---- TIER 2a: cache z release donor-cache (GitHub CDN = sekundy) ----
+          # Raz pozyskany product.img zapisujemy jako assety release "donor-cache"
+          # (czesci 1,6 GB + manifest); nastepne runy skladaja go z GitHub CDN
+          # zamiast streamowac 12,6 GB tgz z CDN Xiaomi (85-140+ min).
+          if [ -n "$REASON" ]; then
+            if gh release view donor-cache --json assets --jq '.assets[].name' 2>/dev/null | grep -q '^donor-product\.part\.'; then
+              echo "== TIER 2a: product.img z release donor-cache (GitHub CDN) ==" | tee -a /tmp/urlprobe.log
+              rm -rf /tmp/dcache && mkdir -p /tmp/dcache
+              if gh release download donor-cache --pattern 'donor-product.part.*' --pattern 'donor-product.manifest' --dir /tmp/dcache 2>/dev/null; then
+                PMD5=$(sed -n 's/^md5=//p' /tmp/dcache/donor-product.manifest 2>/dev/null)
+                PSZ=$(sed -n 's/^size=//p' /tmp/dcache/donor-product.manifest 2>/dev/null)
+                cat /tmp/dcache/donor-product.part.* > /tmp/product-donor.img
+                rm -rf /tmp/dcache
+                GOTMD5=$(md5sum /tmp/product-donor.img 2>/dev/null | awk '{print $1}')
+                GOTSZ=$(stat -c%s /tmp/product-donor.img 2>/dev/null || echo 0)
+                if [ -n "$PMD5" ] && [ "$GOTMD5" = "$PMD5" ] && [ "$GOTSZ" = "$PSZ" ]; then
+                  echo "TIER 2a OK: product.img $GOTSZ B z cache (md5 zgodne)" | tee -a /tmp/urlprobe.log
+                  REASON=""
+                else
+                  echo "TIER 2a niezgodne (md5=$GOTMD5 vs $PMD5, size=$GOTSZ vs $PSZ) - przechodze do CDN" | tee -a /tmp/urlprobe.log
+                  rm -f /tmp/product-donor.img
+                fi
+              else
+                echo "TIER 2a: download nie wyszedl - przechodze do CDN" | tee -a /tmp/urlprobe.log
+              fi
+            fi
+          fi
           # ---- TIER 2: oficjalny fastboot ROM yingtian z CDN Xiaomi ----
           # Pelny product.img donora zniknal z Drive (28 IX). Zrodlo zastepcze =
           # fastboot ROM CN Xiaomi Pad 9 Pro Max "yingtian" (HyperOS 4.0.11.0.XBMCNXM,
@@ -217,7 +246,8 @@ jobs:
               for U in $MIRRORS; do
                 echo "TIER2 proba: $U" | tee -a /tmp/urlprobe.log
                 rm -rf /tmp/romx && mkdir -p /tmp/romx
-                if curl -fL --retry 2 --connect-timeout 30 "$U" 2>>/tmp/urlprobe.log \
+                if curl -fL --retry 2 --connect-timeout 30 \
+                  --speed-limit 100000 --speed-time 90 "$U" 2>>/tmp/urlprobe.log \
                   | tee >(md5sum > /tmp/rom-tgz.md5) \
                   | tar -xz -C /tmp/romx --wildcards '*/product.img' 2>>/tmp/urlprobe.log; then
                   GOT=$(find /tmp/romx -name product.img -size +100M | head -1)
@@ -255,6 +285,29 @@ jobs:
             else
               echo "product.img = raw (nie sparse) - zostaje jak jest"
               rm -f /tmp/product-raw.img
+            fi
+          fi
+          # ---- CACHE WRITE: product.img -> assety release donor-cache ----
+          # (po konwersji do raw; tylko gdy cache pusty i jest miejsce na split)
+          if [ -f /tmp/product-donor.img ] && [ -s /tmp/product-donor.img ]; then
+            if ! gh release view donor-cache --json assets --jq '.assets[].name' 2>/dev/null | grep -q '^donor-product\.part\.'; then
+              AVCW=$(df --output=avail -B1G /tmp | tail -1 | tr -dc '0-9')
+              if [ "${AVCW:-0}" -ge 8 ]; then
+                PMD5W=$(md5sum /tmp/product-donor.img | awk '{print $1}')
+                PSZW=$(stat -c%s /tmp/product-donor.img)
+                echo "CACHE WRITE: product.img ($PSZW B, md5 $PMD5W) -> release donor-cache" | tee -a /tmp/urlprobe.log
+                rm -rf /tmp/dcache && mkdir -p /tmp/dcache
+                split -b 1600m -d -a 3 /tmp/product-donor.img /tmp/dcache/donor-product.part.
+                printf 'md5=%s\nsize=%s\n' "$PMD5W" "$PSZW" > /tmp/dcache/donor-product.manifest
+                gh release create donor-cache --title "donor-cache: product.img yingtian (auto)" \
+                  --notes "Cache product.img donora HyperOS (autozapis pipeline'u mystical1; czesci 1,6 GB + manifest md5/size)." 2>/dev/null || true
+                gh release upload donor-cache /tmp/dcache/* --clobber 2>&1 | tail -2 || echo "CACHE WRITE: upload nie wyszedl (receipt)" | tee -a /tmp/urlprobe.log
+                rm -rf /tmp/dcache
+              else
+                echo "CACHE WRITE: brak miejsca (${AVCW}G < 8G) - pomijam (receipt)"
+              fi
+            else
+              echo "CACHE: donor-cache juz zapelniony - pomijam zapis"
             fi
           fi
           P=""
