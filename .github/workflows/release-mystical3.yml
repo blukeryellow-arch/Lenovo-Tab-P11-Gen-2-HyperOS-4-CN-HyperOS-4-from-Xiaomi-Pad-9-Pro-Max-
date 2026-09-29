@@ -4,30 +4,27 @@ name: release-mystical3
 # MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
 # Repack wewnatrz FABRYCZNEGO layoutu super Lenovo (super.img container).
 #
-# RECEIPTY DYSKOWE (sonda 36592788531 + run 36600150934):
-#   - runner = JEDEN dysk 72 GB, wolne FLUKTUUJE 8-14G (rozne obrazy runnera!),
-#   - RAM 16 GB => /dev/shm (tmpfs ~8G) jako drugi nosnik,
-#   - stad: obrazy bazowe PROSTO do tmpfs (dysk trzyma tylko zip 4,5G),
-#     przetwarzanie PER-PARTYCJA (extract tree -> mody -> mkfs -> rm tree ->
-#     rm source img; peak tmpfs = 1 drzewo + niewykorzystane img).
+# RECEIPTY DYSKOWE (sonda 36592788531 + 36602341301 + runy 36600150934/36601392335):
+#   - runner: dysk 72 GB, avail na czystym FLUKTUJE 8-14G (rozne obrazy),
+#   - RAM 7,9 GB => /dev/shm (tmpfs) = 3,9G (NIE 8G!),
+#   - ENOSPC runu 36601392335: fallback obrazow na dysk => zip 4,5 + images
+#     4,4 = 8,9G > avail.
 #
-# Baza: TB350FU_S230982_251013_ROW (lolinet, 4,7 GB, A14; najnowszy ROW na
-# lustrze) - komplet partycji dynamicznych + boot + vbmeta.
-# Geometria: super_empty.img TB350FU (Drive + backup tools/):
-#   super = 9 663 676 416 B, grupy main_a/main_b po 9 661 579 264 B,
-#   metadata 65536 x 3, block 4096, align 1 MiB, VAB, 6 partycji/slot.
+# BUDZET WORST-CASE (dysk >=8G po toolchainu, tmpfs 3,9G):
+#   zip 4,5G + img partycji 1,5G + mkfs out 1,5G = 7,5G dysku (peak, ciasno OK),
+#   drzewa systemu ~3,2G -> tmpfs (guard avail >= 2,6G),
+#   niezmienione partycje ~1,3G -> tmpfs -> rm zip -> mv na dysk,
+#   super: stage malych 2,9G tmpfs + sparse 4,5G dysku (peak 6,0G),
+#   split: tail->tmpfs->dysk, truncate zrobla, head->tmpfs->dysk (peak 7,7G),
+#   gofile: 2 polowkowe tary po ~2,3G przez tmpfs.
 #
-# Donor HyperOS yingtian 4.0.13 (TIERED): A = release 'donor-cache' (m1),
-# B = product.img z Drive, C = fonty Mi z transfer-spool. Donor PRZED pętla
-# partycji (harvest -> $WORK/keep; tmpfs czysty po nim).
-#
-# MODY: PURGE GMS (system+product+system_ext; webview zostaje), INJECT
-# microG v0.3.16.252432 + FakeStore + Aurora 4.8.4, TRANSPLANT apk MIUI +
-# fonty Mi + motywy (inertne), mitigation display (staly refresh rate).
-#
-# Output: super_mystical3 SPARSE (lpmake -S; magic 0xED26FF3A) w ~32 czastkach
-# + vbmeta_disable (flags=3) + boot_S230982 + FLASH-M3.md + simg2img.py
-# -> release mysticalos-3-super + gofile (tar).
+# Baza: TB350FU_S230982_251013_ROW (lolinet, 4,7 GB, A14). Geometria:
+#   super = 9 663 676 416 B, main_a/main_b po 9 661 579 264 B, VAB, 6 partycji.
+# Donor HyperOS yingtian 4.0.13 (TIERED: A=donor-cache m1, B=Drive product.img,
+# C=fonty spool). MODY: PURGE GMS (webview zostaje), INJECT microG+FakeStore+
+# Aurora, TRANSPLANT apk MIUI+fonty+motywy, mitigation display (staly refresh).
+# Output: super_mystical3 SPARSE (~32 czastki) + vbmeta_disable(flags=3) +
+# boot_S230982 + FLASH-M3.md -> release mysticalos-3-super + gofile (2 tary).
 # ============================================================================
 
 on:
@@ -46,8 +43,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # 360 min (max per job): lolinet + poll donor-cache (150) + EROFS + lpmake
-    # + split + uploady.
     timeout-minutes: 360
 
     env:
@@ -62,7 +57,7 @@ jobs:
       MAIN_GROUP_SIZE: 9661579264
       GMS_APK_URL: https://github.com/microg/GmsCore/releases/download/v0.3.16.252432/com.google.android.gms-252432032.apk
       VENDING_APK_URL: https://github.com/microg/GmsCore/releases/download/v0.3.16.252432/com.android.vending-84022632.apk
-      AURORA_URL: https://gitlab.com/-/project/6922885/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk
+      AURORA_URL: https://gitlab.com/AuroraOSS/AuroraStore/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk
       LP_TOOLS_URL: https://codeload.github.com/Rprop/aosp15_partition_tools/tar.gz/refs/heads/main
       PDG_URL: https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
       AVB_URL: https://codeload.github.com/LineageOS/android_external_avb/tar.gz/refs/heads/lineage-22.2
@@ -85,7 +80,7 @@ jobs:
           echo "WORK=$WD" >> "$GITHUB_ENV"
           SHMD=/dev/shm/m3
           echo "SHM=$SHMD" >> "$GITHUB_ENV"
-          mkdir -p "$WD/bin" "$WD/img" "$WD/keep/app" "$WD/keep/fonts" "$WD/keep/themes" "$WD/kit" "$SHMD"
+          mkdir -p "$WD/bin" "$WD/img" "$WD/one" "$WD/keep/app" "$WD/keep/fonts" "$WD/keep/themes" "$WD/kit" "$SHMD"
           echo "dyski: WORK=$WD ($(df -h / | tail -1)); SHM=$SHMD ($(df -h /dev/shm | tail -1))"
           SRCD=/tmp/m3src; mkdir -p "$SRCD"
           # --- lp tools (statyczne, android-15.0.0_r25) ---
@@ -154,23 +149,16 @@ jobs:
           grep -q "system_ext_a" "$WORK/geometry.txt"
           echo "GEOMETRIA OK: super=${SUPER_SIZE}B, grupy main_a/main_b po ${MAIN_GROUP_SIZE}B, VAB"
 
-      - name: "2. Baza Lenovo (lolinet S230982) - obrazy do tmpfs"
-        # Dysk trzyma TYLKO zip (4,5G); obrazy (4,4G) prosto do tmpfs.
-        # Fallback (tmpfs < 5G): obrazy na dysk, dump sekwencyjny per partycja.
+      - name: "2. Baza Lenovo (pobranie zipa lolinet + probe struktury)"
+        # TYLKO pobranie zipa (4,5G dysku) + rozpoznanie struktury (payload vs
+        # super.img) + lista partycji. Dump w kroku 4 PO donorze (harvest musi
+        # byc przed mkfs systemu).
         run: |
           set -euo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
           AVAIL=$(( $(df --output=avail -B1G "$WORK" | tail -1) ))
-          [ "$AVAIL" -ge 5 ] || { echo "::error::za malo miejsca na zip: ${AVAIL}G < 5G"; exit 1; }
-          echo "dysk na zip: ${AVAIL}G"
-          SHM_AVAIL_MB=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
-          if [ "$SHM_AVAIL_MB" -ge 5000 ]; then
-            IMGDIR="$SHM/img"; echo "obrazy -> tmpfs (${SHM_AVAIL_MB}M wolne)"
-          else
-            IMGDIR="$WORK/img"; echo "tmpfs za maly (${SHM_AVAIL_MB}M) -> obrazy -> dysk (dump sekwencyjny)"
-          fi
-          echo "IMGDIR=$IMGDIR" >> "$GITHUB_ENV"
-          mkdir -p "$IMGDIR"
+          [ "$AVAIL" -ge 5 ] || { echo "::error::za malo miejsca na zip: ${AVAIL}G < 5G (saby runner; retrigger)"; exit 1; }
+          echo "dysk na zip: ${AVAIL}G; tmpfs: $(df --output=avail -B1M /dev/shm | tail -1)M"
           curl -fL --retry 3 --connect-timeout 30 --speed-limit 400000 --speed-time 150 \
             -o "$WORK/base.zip" "$LOLINET_ZIP" 2>>"$WORK/urlprobe.log" \
             || { echo "::error::pobranie lolinet padlo"; exit 1; }
@@ -179,17 +167,8 @@ jobs:
           LO=$(( LOLINET_SIZE - LOLINET_SIZE / 50 )); HI=$(( LOLINET_SIZE + LOLINET_SIZE / 50 ))
           { [ "$BSZ" -ge "$LO" ] && [ "$BSZ" -le "$HI" ]; } || echo "::warning::rozmiar base.zip odbiega od pinu ($BSZ vs $LOLINET_SIZE)"
           unzip -l "$WORK/base.zip" | head -25
-          dump_parts() { # $1 = lista partycji (csv) albo puste = wszystkie
-            if [ -x "$WORK/bin/payload-dumper-go" ]; then
-              "$WORK/bin/payload-dumper-go" ${1:+-p "$1"} -o "$IMGDIR" "$WORK/base.zip" 2>&1 | tail -3
-            else
-              unzip -o -j "$WORK/base.zip" 'payload.bin' -d "$WORK/" >/dev/null
-              payload-dumper ${1:+-p "$1"} -o "$IMGDIR" "$WORK/payload.bin" 2>&1 | tail -3
-              rm -f "$WORK/payload.bin"
-            fi
-          }
           if unzip -l "$WORK/base.zip" | grep -q 'payload.bin'; then
-            echo "struktura: payload OTA"
+            echo "BASE_STRUCT=payload" >> "$GITHUB_ENV"
             if [ -x "$WORK/bin/payload-dumper-go" ]; then
               "$WORK/bin/payload-dumper-go" -l "$WORK/base.zip" 2>&1 | tee /tmp/payload-parts.txt || true
               AV=$(grep -oiE 'system|system_ext|product|vendor|odm|odm_dlkm|vendor_dlkm|boot|vbmeta|vbmeta_system|vbmeta_vendor' /tmp/payload-parts.txt | sort -u | tr '\n' ',' | sed 's/,$//')
@@ -197,34 +176,19 @@ jobs:
               AV="system,system_ext,product,vendor,odm,odm_dlkm,vendor_dlkm,boot,vbmeta,vbmeta_system,vbmeta_vendor"
             fi
             echo "partycje w payload: ${AV:-(wszystkie)}"
-            if [ "$IMGDIR" = "$SHM/img" ]; then
-              dump_parts "${AV:-}"
-            else
-              # fallback dyskowy: sekwencyjnie per partycja (kontrola peaku)
-              IFS=',' read -ra PARR <<< "${AV:-system,system_ext,product,vendor,boot}"
-              for P in "${PARR[@]}"; do dump_parts "$P"; done
-            fi
+            echo "PAYLOAD_AV=${AV}" >> "$GITHUB_ENV"
           elif unzip -l "$WORK/base.zip" | grep -qi 'super.*\.img'; then
-            echo "struktura: super.img w pakiecie"
-            unzip -o -j "$WORK/base.zip" '*super*.img' -d "$WORK/" >/dev/null
-            python3 tools/simg2img.py "$WORK"/super*.img "$WORK/super_base.img" || cp "$WORK"/super*.img "$WORK/super_base.img"
-            "$WORK/bin/lpunpack" "$WORK/super_base.img" "$IMGDIR/"
-            rm -f "$WORK"/super*.img "$WORK/super_base.img"
-            unzip -o -j "$WORK/base.zip" '*boot*.img' '*vbmeta*.img' -d "$IMGDIR/" >/dev/null || true
+            echo "BASE_STRUCT=superimg" >> "$GITHUB_ENV"
+            echo "struktura: super.img w pakiecie (rzadkie na lolinet)"
           else
             echo "::error::nieznana struktura pakietu (ani payload.bin, ani super.img)"
             unzip -l "$WORK/base.zip" | tail -20; exit 1
           fi
-          rm -f "$WORK/base.zip"
-          echo "== obrazy bazowe ($IMGDIR) =="
-          ls -la "$IMGDIR/"
-          test -s "$IMGDIR/system.img" || { echo "::error::brak system.img"; exit 1; }
-          test -s "$IMGDIR/vendor.img" || { echo "::error::brak vendor.img"; exit 1; }
           df -h / /dev/shm | tail -2
 
       - name: "3. Donor HyperOS - TIER A (cache m1, poll 150 min) / B / C"
-        # PRZED petla partycji: harvest do $WORK/keep (dysk, <300M); tmpfs
-        # po tym kroku czysty na drzewa.
+        # PRZED dumpem: harvest do $WORK/keep (dysk, <300M). Poll na m1 trwa
+        # tu (zip czeka na dysku; tmpfs wolny).
         run: |
           set -uo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
@@ -237,13 +201,12 @@ jobs:
             WMD5=$(grep -oP '(?<=md5=).*' donor-product.manifest | head -1)
             WSIZE=$(grep -oP '(?<=size=).*' donor-product.manifest | head -1)
             [ -n "$WMD5" ] && [ -n "$WSIZE" ] || return 2
-            # progresywna sklejka: cat part >> img, rm part (peak ~7G tmpfs/dysk)
-            : > "$SHM/donor-product.img"
-            for P in $(ls donor-product.part.* | sort); do cat "$P" >> "$SHM/donor-product.img"; rm -f "$P"; done
-            GMD5=$(md5sum "$SHM/donor-product.img" | cut -d' ' -f1)
-            GSIZE=$(stat -c%s "$SHM/donor-product.img")
+            : > "$WORK/one/donor-product.img"
+            for P in $(ls donor-product.part.* | sort); do cat "$P" >> "$WORK/one/donor-product.img"; rm -f "$P"; done
+            GMD5=$(md5sum "$WORK/one/donor-product.img" | cut -d' ' -f1)
+            GSIZE=$(stat -c%s "$WORK/one/donor-product.img")
             echo "cache: md5=$GMD5 (oczek. $WMD5), size=$GSIZE (oczek. $WSIZE)"
-            [ "$GMD5" = "$WMD5" ] && [ "$GSIZE" = "$WSIZE" ] || { rm -f "$SHM/donor-product.img"; return 1; }
+            [ "$GMD5" = "$WMD5" ] && [ "$GSIZE" = "$WSIZE" ] || { rm -f "$WORK/one/donor-product.img"; return 1; }
             cd "$WORK"; return 0
           }
           TIER=""
@@ -257,23 +220,23 @@ jobs:
             [ "$M1RUN" != "in_progress" ] && { echo "m1 zakonczone bez cache -> TIER B/C"; break; }
             sleep 300; WAITED=$((WAITED+5))
           done
-          [ -f "$SHM/donor-product.img" ] && TIER="${TIER:-A (donor-cache release)}"
+          [ -f "$WORK/one/donor-product.img" ] && TIER="${TIER:-A (donor-cache release)}"
           if [ -z "$TIER" ] && [ -n "${PRODUCT_DONOR_DRIVE_ID:-}" ]; then
             echo "== TIER B: product.img z Drive =="
             if curl -fL --retry 3 --speed-limit 400000 --speed-time 150 \
-              -o "$SHM/donor-product.img" \
+              -o "$WORK/one/donor-product.img" \
               "https://drive.usercontent.google.com/download?id=${PRODUCT_DONOR_DRIVE_ID}&export=download&confirm=t" 2>>"$WORK/urlprobe.log"; then
-              [ "$(stat -c%s "$SHM/donor-product.img")" -gt 3000000000 ] && TIER="B (Drive product.img)"
+              [ "$(stat -c%s "$WORK/one/donor-product.img")" -gt 3000000000 ] && TIER="B (Drive product.img)"
             fi
           fi
-          if [ -n "$TIER" ] && [ -f "$SHM/donor-product.img" ]; then
-            echo "== harvest (tier $TIER, $(stat -c%s "$SHM/donor-product.img") B) =="
-            rm -rf "$SHM/dmnt"; mkdir -p "$SHM/dmnt"
-            if sudo mount -t erofs -o ro,loop "$SHM/donor-product.img" "$SHM/dmnt" 2>/dev/null; then
+          if [ -n "$TIER" ] && [ -f "$WORK/one/donor-product.img" ]; then
+            echo "== harvest (tier $TIER, $(stat -c%s "$WORK/one/donor-product.img") B) =="
+            rm -rf "$SHM/dmnt" "$SHM/dext"; mkdir -p "$SHM/dmnt"
+            if sudo mount -t erofs -o ro,loop "$WORK/one/donor-product.img" "$SHM/dmnt" 2>/dev/null; then
               P="$SHM/dmnt"; [ -d "$SHM/dmnt/product" ] && P="$SHM/dmnt/product"
               echo "donor: loop-mount erofs OK"
             else
-              "$WORK/erofs/fsck.erofs" --extract="$SHM/dext" "$SHM/donor-product.img" >/dev/null 2>&1 || true
+              "$WORK/erofs/fsck.erofs" --extract="$SHM/dext" "$WORK/one/donor-product.img" >/dev/null 2>&1 || true
               P="$SHM/dext"; [ -d "$SHM/dext/product" ] && P="$SHM/dext/product"
               echo "donor: fsck extract"
             fi
@@ -304,7 +267,7 @@ jobs:
               fi
             done
             sudo umount "$SHM/dmnt" 2>/dev/null || true
-            rm -rf "$SHM/donor-product.img" "$SHM/dext" "$SHM/dcache"
+            rm -rf "$WORK/one/donor-product.img" "$SHM/dext" "$SHM/dcache"
             NA=$(find "$WORK/keep/app" -name '*.apk' | wc -l)
             NF=$(ls "$WORK/keep/fonts" 2>/dev/null | wc -l)
             echo "harvest: $NA apk, $NF fontow Mi"
@@ -320,12 +283,17 @@ jobs:
           rm -rf "$SHM/dcache" "$SHM/dmnt" "$SHM/dext"
           df -h / /dev/shm | tail -2
 
-      - name: "4. Per-partycja: extract -> mody -> mkfs (EROFS + konteksty)"
-        # SEKWENCYJNIE (peak tmpfs = 1 drzewo + pozostale img):
-        #   system: extract -> PURGE GMS -> INJECT -> TRANSPLANT -> props ->
-        #           audyt miui -> pre-flight SELinux -> mkfs -> imgcheck -> rm
-        #   product/system_ext: extract -> PURGE GMS -> mkfs (jesli cos zmieniono)
-        # MKFS outputy -> $WORK/img (dysk); zrodla z $IMGDIR sa usuwane po uzytku.
+      - name: "4. Dump per-partycja + mody + mkfs (petla; potem unmod + rm zip)"
+        # SEKWENCJA (peak dysku 7,5G; drzewa w tmpfs):
+        #   dla P in system product system_ext:
+        #     pdg -p P -> $WORK/one/$P.img (dysk, max 1,5G)
+        #     extract tree -> $SHM/tree_$P (tmpfs; guard)
+        #     mody (system: PURGE+INJECT+TRANSPLANT+props+audyt+pre-flight;
+        #            product/system_ext: PURGE -> repack tylko gdy usunieto)
+        #     mkfs EROFS -> $WORK/img/$P.img (dysk)
+        #     rm tree + rm one/$P.img
+        #   potem: dump NIEZMIENIONYCH (vendor/odm*/boot/vbmeta) -> tmpfs,
+        #   rm base.zip (kluczowe: zwalnia 4,5G), mv unmod -> $WORK/img.
         run: |
           set -euo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
@@ -348,23 +316,45 @@ jobs:
               xargs -r grep -il 'gms\|google' | xargs -r sudo rm -f || true
             echo "$N"
           }
-          extract_tree() { # $1=part -> sciezka drzewa na stdout-compatible: ustawia TREE
-            local IMG="$IMGDIR/$1.img"
-            TREE="$SHM/tree_$1"
-            rm -rf "$TREE"; mkdir -p "$TREE"
+          dump_one() { # $1=part (pojedyncza) -> $WORK/one/$1.img
+            if [ -x "$WORK/bin/payload-dumper-go" ]; then
+              "$WORK/bin/payload-dumper-go" -p "$1" -o "$WORK/one" "$WORK/base.zip" 2>&1 | tail -2
+            else
+              if [ ! -f "$WORK/payload.bin" ]; then
+                AVPB=$(( $(df --output=avail -B1G "$WORK" | tail -1) ))
+                [ "$AVPB" -ge 5 ] || { echo "::error::pip-fallback: payload.bin (4,2G) nie zmiesci sie (avail ${AVPB}G)"; exit 1; }
+                unzip -o -j "$WORK/base.zip" 'payload.bin' -d "$WORK/" >/dev/null
+              fi
+              payload-dumper -p "$1" -o "$WORK/one" "$WORK/payload.bin" 2>&1 | tail -2
+            fi
+            test -s "$WORK/one/$1.img"
+          }
+          extract_tree() { # $1=part -> $SHM/tree_$1 (tmpfs)
+            local IMG="$WORK/one/$1.img" SZ
+            SZ=$(stat -c%s "$IMG")
+            local NEED_MB=$(( SZ / 1048576 * 23 / 10 + 200 ))
+            local AV_MB=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
+            echo "$1: img $((SZ/1048576))M, tree estym. ~${NEED_MB}M, tmpfs avail ${AV_MB}M"
+            [ "$AV_MB" -ge "$NEED_MB" ] || { echo "::error::$1: drzewo (~${NEED_MB}M) nie zmiesci sie w tmpfs (${AV_MB}M)"; exit 1; }
+            rm -rf "$SHM/tree_$1"; mkdir -p "$SHM/tree_$1"
             if sudo mount -t erofs -o ro,loop "$IMG" /mnt 2>/dev/null; then
-              sudo cp -a /mnt/. "$TREE/"; sudo umount /mnt; echo "$1: erofs (loop-mount)"
+              sudo cp -a /mnt/. "$SHM/tree_$1/"; sudo umount /mnt; echo "$1: erofs (loop-mount)"
             elif "$WORK/erofs/fsck.erofs" --extract="$SHM/ex_$1" "$IMG" >/dev/null 2>&1; then
-              if [ -d "$SHM/ex_$1/$1" ]; then rm -rf "$TREE" && mv "$SHM/ex_$1/$1" "$TREE"; rm -rf "$SHM/ex_$1"
-              else rm -rf "$TREE" && mv "$SHM/ex_$1" "$TREE"; fi
+              if [ -d "$SHM/ex_$1/$1" ]; then rm -rf "$SHM/tree_$1" && mv "$SHM/ex_$1/$1" "$SHM/tree_$1"; rm -rf "$SHM/ex_$1"
+              else rm -rf "$SHM/tree_$1" && mv "$SHM/ex_$1" "$SHM/tree_$1"; fi
               echo "$1: erofs (fsck extract)"
             else
               sudo e2fsck -fy "$IMG" >/dev/null 2>&1 || true
               sudo mount -o ro,loop "$IMG" /mnt
-              sudo cp -a /mnt/. "$TREE/"; sudo umount /mnt; echo "$1: ext4 (loop-mount)"
+              sudo cp -a /mnt/. "$SHM/tree_$1/"; sudo umount /mnt; echo "$1: ext4 (loop-mount)"
             fi
           }
+          [ "${BASE_STRUCT:-payload}" = "payload" ] || { echo "::error::struktura nie-payload niedostepna w tym runie (BASE_STRUCT=${BASE_STRUCT:-?})"; exit 1; }
+          AVAIL=$(( $(df --output=avail -B1G "$WORK" | tail -1) ))
+          [ "$AVAIL" -ge 4 ] || { echo "::error::po zipie zostalo ${AVAIL}G < 4G (peak petli: img 1,5 + mkfs 1,5 + zapas)"; exit 1; }
+          echo "dysk po zipie: ${AVAIL}G"
           # ---------- SYSTEM ----------
+          dump_one system
           extract_tree system
           T="$SHM/tree_system"
           [ -d "$T/app" ] || { echo "::error::system: drzewo bez /app"; exit 1; }
@@ -445,11 +435,11 @@ jobs:
           echo "== mkfs system (EROFS, UUID m3) =="
           "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c00000003 \
             --file-contexts="$FC" "$WORK/img/system.img" "$T"
-          rm -rf "$T" "$IMGDIR/system.img"
+          rm -rf "$T" "$WORK/one/system.img"
           # DOWOD: etykiety + dodane pliki
           for C in system_file privapp; do
-            N=$(grep -ac "$C" "$WORK/img/system.img" || true)
-            echo "kontekst $C w obrazie: $N trafien"
+            NN=$(grep -ac "$C" "$WORK/img/system.img" || true)
+            echo "kontekst $C w obrazie: $NN trafien"
           done
           rm -rf "$SHM/imgcheck" && mkdir -p "$SHM/imgcheck"
           "$WORK/erofs/fsck.erofs" --extract="$SHM/imgcheck" "$WORK/img/system.img" >/dev/null 2>&1
@@ -463,12 +453,14 @@ jobs:
           echo "PURGE GMS w system: $(find "$C/app" "$C/priv-app" -maxdepth 1 -type d 2>/dev/null | grep -icE 'google|gms' || echo 0) pakietow Google (oczek. 0-1: webview)"
           find "$C/app" -maxdepth 1 -type d | grep -iE 'Miui' && echo "transplanty MIUI w obrazie OK" || true
           rm -rf "$SHM/imgcheck"
+          df -h / /dev/shm | tail -2
           # ---------- PRODUCT + SYSTEM_EXT ----------
           for P in product system_ext; do
-            [ -s "$IMGDIR/$P.img" ] || { echo "$P: brak w bazie"; continue; }
+            echo "${PAYLOAD_AV:-}" | tr ',' '\n' | grep -qx "$P" || { echo "$P: nie ma w payload"; continue; }
+            dump_one "$P"
             extract_tree "$P"
             TT="$SHM/tree_$P"
-            [ -d "$TT/app" ] || [ -d "$TT/priv-app" ] || { echo "$P: drzewo bez /app - pomijam"; rm -rf "$TT"; continue; }
+            [ -d "$TT/app" ] || [ -d "$TT/priv-app" ] || { echo "$P: drzewo bez /app - pomijam"; rm -rf "$TT" "$WORK/one/$P.img"; continue; }
             echo "== PURGE GMS ($P) =="
             M=$(purge_gms "$TT")
             if [ "$M" -gt 0 ]; then
@@ -476,7 +468,6 @@ jobs:
               echo "PURGED_$P=1" >> /tmp/purge-partitions.status
               DF="$TT/etc/selinux/${P}_file_contexts"
               if [ ! -f "$DF" ]; then
-                # fallback: plat_file_contexts z wypieczonego system_m3
                 rm -rf "$SHM/fcext"; mkdir -p "$SHM/fcext"
                 "$WORK/erofs/fsck.erofs" --extract="$SHM/fcext" "$WORK/img/system.img" >/dev/null 2>&1 || true
                 DF="$SHM/fcext/system/etc/selinux/plat_file_contexts"
@@ -485,55 +476,74 @@ jobs:
               UUID_SUFFIX=13; [ "$P" = "system_ext" ] && UUID_SUFFIX=23
               "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U "6d797374-6963-4000-8000-616c000000$UUID_SUFFIX" \
                 --file-contexts="$DF" "$WORK/img/$P.img" "$TT"
-              rm -rf "$TT" "$IMGDIR/$P.img" "$SHM/fcext"
             else
               echo "$P: zero pakietow Google - bez repacku (oryginal do super)"
-              rm -rf "$TT"
+              cp "$WORK/one/$P.img" "$WORK/img/$P.img"
             fi
+            rm -rf "$TT" "$WORK/one/$P.img" "$SHM/fcext" "$SHM/ex_$P"
             df -h / /dev/shm | tail -2
           done
-          echo "== obrazy po petli =="
-          ls -la "$WORK/img/" "$IMGDIR/" 2>/dev/null
+          # ---------- NIEZMIENIONE -> tmpfs, RM ZIP, mv na dysk ----------
+          UNMOD=""
+          for P in vendor odm odm_dlkm vendor_dlkm boot vbmeta vbmeta_system vbmeta_vendor; do
+            echo "${PAYLOAD_AV:-}" | tr ',' '\n' | grep -qx "$P" && UNMOD="${UNMOD:+$UNMOD,}$P"
+          done
+          echo "== dump niezmienionych -> tmpfs: ${UNMOD:-(zadnych!)} =="
+          if [ -n "$UNMOD" ]; then
+            UM_MB=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
+            [ "$UM_MB" -ge 1500 ] || { echo "::error::tmpfs ${UM_MB}M < 1,5G na partycje bazowe"; exit 1; }
+            mkdir -p "$SHM/unmod"
+            if [ -x "$WORK/bin/payload-dumper-go" ]; then
+              "$WORK/bin/payload-dumper-go" -p "$UNMOD" -o "$SHM/unmod" "$WORK/base.zip" 2>&1 | tail -2
+            else
+              payload-dumper -p "$UNMOD" -o "$SHM/unmod" "$WORK/payload.bin" 2>&1 | tail -2
+            fi
+            test -s "$SHM/unmod/vendor.img" || { echo "::error::brak vendor.img w dumpie"; exit 1; }
+          fi
+          rm -f "$WORK/base.zip" "$WORK/payload.bin"
+          echo "zip usuniety; dysk: $(df -h / | tail -1)"
+          if [ -n "$UNMOD" ]; then
+            mv "$SHM/unmod"/* "$WORK/img/"
+            rmdir "$SHM/unmod"
+          fi
+          echo "== obrazy po petli ($WORK/img) =="
+          ls -la "$WORK/img/"
+          for REQ in system vendor; do
+            test -s "$WORK/img/$REQ.img" || { echo "::error::brak $REQ.img"; exit 1; }
+          done
           echo "PURGE+INJECT+REPACK kompletny"
           df -h / /dev/shm | tail -2
 
       - name: "5. super.img (lpmake -S sparse, geometria fabryczna, slot A)"
-        # Przetworzone obrazy w $WORK/img; niezmienione (vendor/odm*/boot) w $IMGDIR.
-        # Male obrazy stage'owane w tmpfs -> dysk trzyma system.img + sparse.
+        # system_m3 (1,5G) ZOSTAJE na dysku; reszta stage'owana w tmpfs (2,9G);
+        # dysk: system_m3 + sparse 4,5G = peak 6,0G.
         run: |
           set -euo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
           STAGE="$SHM/stage"; rm -rf "$STAGE"; mkdir -p "$STAGE"
-          pick() { # $1=part -> sciezka (przetworzony > zrodlowy)
-            if [ -s "$WORK/img/$1.img" ]; then echo "$WORK/img/$1.img"
-            elif [ -s "$IMGDIR/$1.img" ]; then echo "$IMGDIR/$1.img"
-            else echo ""; fi
-          }
-          declare -A USE=()
           TOTAL=0; ARGS=()
           for P in system system_ext product vendor odm odm_dlkm vendor_dlkm; do
-            SRC=$(pick "$P")
-            [ -n "$SRC" ] || continue
+            SRC="$WORK/img/$P.img"
+            [ -s "$SRC" ] || continue
             SZ=$(stat -c%s "$SRC")
             [ "$SZ" -gt 0 ] || continue
-            USE[$P]="$SRC"
             if [ "$P" != "system" ]; then
               SHMFREE_MB=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
               NEED_MB=$(( SZ / 1048576 + 300 ))
               if [ "$SHMFREE_MB" -gt "$NEED_MB" ]; then
-                cp "$SRC" "$STAGE/$P.img" && USE[$P]="$STAGE/$P.img"
+                cp "$SRC" "$STAGE/$P.img" && SRC="$STAGE/$P.img"
               fi
             fi
             SZR=$(( (SZ + 4095) / 4096 * 4096 ))
             TOTAL=$(( TOTAL + SZR ))
-            ARGS+=(--partition="${P}_a:readonly:$SZR:main_a" --image="${P}_a=${USE[$P]}")
-            echo "  ${P}_a: $SZ -> $SZR B (${USE[$P]})"
+            ARGS+=(--partition="${P}_a:readonly:$SZR:main_a" --image="${P}_a=$SRC")
+            echo "  ${P}_a: $SZ -> $SZR B ($SRC)"
           done
           echo "SUMA partycji _a: $TOTAL B; budzet main_a: $MAIN_GROUP_SIZE B"
           [ "$TOTAL" -le "$MAIN_GROUP_SIZE" ] || { echo "::error::obrazy nie mieszcza sie w main_a!"; exit 1; }
           AVAIL=$(( $(df --output=avail -B1G "$WORK" | tail -1) ))
           echo "dysk przed lpmake: ${AVAIL}G"
-          [ "$AVAIL" -ge 6 ] || { echo "::error::za malo na sparse super: ${AVAIL}G < 6G"; exit 1; }
+          [ "$AVAIL" -ge 5 ] || { echo "::error::za malo na sparse super: ${AVAIL}G < 5G"; exit 1; }
           "$WORK/bin/lpmake" \
             --device-size="$SUPER_SIZE" \
             --metadata-size=65536 \
@@ -546,6 +556,7 @@ jobs:
             "${ARGS[@]}" \
             -o "$WORK/super_m3_sparse.img"
           ls -la "$WORK/super_m3_sparse.img"
+          rm -rf "$STAGE"
           # WERYFIKACJA duzego sparse BEZ materializacji 9,6G raw:
           # rekonstrukcja glowy (4 MB) z chunkow -> lpinfo.py
           python3 - "$WORK/super_m3_sparse.img" "$SHM/super_head.img" <<'PYEOF'
@@ -588,25 +599,44 @@ jobs:
           grep -q "main_a" "$WORK/super-built-geometry.txt"
           echo "GEOMETRIA zbudowanego super: ZWERYFIKOWANA (lpinfo na glowie sparse)"
           rm -f "$SHM/super_head.img"
-          rm -rf "$STAGE"
-          rm -f "$WORK/img/system.img" "$WORK/img/system_ext.img" "$WORK/img/product.img" \
-                "$IMGDIR/system.img" "$IMGDIR/system_ext.img" "$IMGDIR/product.img" \
-                "$IMGDIR/vendor.img" "$IMGDIR/odm.img" "$IMGDIR/odm_dlkm.img" "$IMGDIR/vendor_dlkm.img"
+          rm -f "$WORK/img"/*.img
           df -h / /dev/shm | tail -2
 
-      - name: "6. ~32 czastki (split->tmpfs->move) + vbmeta + boot + kit"
+      - name: "6. ~32 czastki (tail->tmpfs->dysk + truncate zrodla) + vbmeta + kit"
+        # Sparse 4,5G + czastki 4,5G naraz = 9G > dysk. Algorytm tail-first:
+        # partia czastek OGONOWYCH -> tmpfs -> split wprost do kit (dysk) ->
+        # truncate zrodla (ucina skopiowany ogon) -> repeat az zrodro <= PER
+        # czastek -> split reszty (glowa) wprost do kit -> rm zrodlo.
+        # Peak dysku: malejace zrodro + rosnace czastki <= ~7,7G.
         run: |
           set -euo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
           S="$WORK/super_m3_sparse.img"
           SSZ=$(stat -c%s "$S")
           CHUNK=$(( ( (SSZ + 31) / 32 + 1048575 ) / 1048576 * 1048576 ))
-          echo "super sparse: $SSZ B -> czastki po ~$CHUNK B (cel: 32)"
-          rm -rf "$SHM/parts"; mkdir -p "$SHM/parts"
-          split -b "$CHUNK" -d "$S" "$SHM/parts/super_mystical3.part."
+          N=$(( (SSZ + CHUNK - 1) / CHUNK ))
+          echo "super sparse: $SSZ B -> $N czastek po ~$CHUNK B (cel: 32)"
+          CAPB=3200000000
+          PER=$(( CAPB / CHUNK )); [ "$PER" -lt 1 ] && PER=1
+          echo "czastek na partie (tmpfs cap ~3,2G): $PER"
+          mkdir -p "$WORK/kit"
+          cur_n=$N; cur_size=$SSZ
+          while [ "$cur_n" -gt "$PER" ]; do
+            new_n=$(( cur_n - PER ))
+            off=$(( new_n * CHUNK ))
+            take=$(( cur_size - off ))
+            echo "partia ogonowa: czastki [${new_n}, ${cur_n}) = $take B (offset $off)"
+            dd if="$S" of="$SHM/parts.bin" bs=1M skip=$(( off / 1048576 )) \
+              count=$(( (take + 1048575) / 1048576 )) status=none
+            split -b "$CHUNK" -d --numeric-suffixes="$new_n" "$SHM/parts.bin" "$WORK/kit/super_mystical3.part."
+            rm -f "$SHM/parts.bin"
+            truncate -s "$off" "$S"   # ucinamy skopiowany ogon zrodla
+            cur_n=$new_n; cur_size=$off
+            df -h / /dev/shm | tail -2
+          done
+          echo "czastki glowne: [0, ${cur_n}) = $cur_size B"
+          split -b "$CHUNK" -d --numeric-suffixes=0 "$S" "$WORK/kit/super_mystical3.part."
           rm -f "$S"
-          mv "$SHM/parts"/* "$WORK/kit/"
-          rmdir "$SHM/parts" 2>/dev/null || true
           NP=$(ls "$WORK/kit"/super_mystical3.part.* | wc -l)
           echo "czastek: $NP (rozmiary: $(du -sh "$WORK/kit" | cut -f1))"
           [ "$NP" -le 32 ] || { echo "::error::wiecej niz 32 czastki ($NP)"; exit 1; }
@@ -617,7 +647,7 @@ jobs:
           truncate -s 4096 "$WORK/kit/vbmeta_system_disable.img"
           cp "$WORK/kit/vbmeta_disable.img" "$WORK/kit/vbmeta_vendor_disable.img"
           truncate -s 4096 "$WORK/kit/vbmeta_vendor_disable.img"
-          [ -s "$IMGDIR/boot.img" ] && cp "$IMGDIR/boot.img" "$WORK/kit/boot_${BASE_BUILD}.img" \
+          [ -s "$WORK/img/boot.img" ] && cp "$WORK/img/boot.img" "$WORK/kit/boot_${BASE_BUILD}.img" \
             || echo "::warning::brak boot.img w bazie"
           cp tools/simg2img.py "$WORK/kit/simg2img.py"
           cat > "$WORK/kit/FLASH-M3.md" <<EOT
@@ -688,14 +718,30 @@ jobs:
             FLASH-M3.md sprawdz.sh SHA256SUMS.txt super.manifest simg2img.py $( [ -f "boot_${BASE_BUILD}.img" ] && echo "boot_${BASE_BUILD}.img" )
           gh release view mysticalos-3-super --json url,assets -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
 
-      - name: "8. Linki publiczne (gofile; tar w tmpfs)"
+      - name: "8. Linki publiczne (gofile; 2 polowkowe tary przez tmpfs)"
+        # tar calego kitu (4,5G) nie zmiescilby sie na dysku obok parts;
+        # stad 2 tary po ~2,3G: kit-a (czastki 00-polowa) i kit-b (reszta).
         run: |
           set -uo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
-          rm -rf "$SHM/gofile"; mkdir -p "$SHM/gofile"
-          tar cf "$SHM/gofile/MysticalOS3_super_kit.tar" -C "$WORK/kit" .
-          bash tools/public_links.sh "$SHM/gofile/MysticalOS3_super_kit.tar" /tmp/links-m3.md || true
-          rm -rf "$SHM/gofile"
+          cd "$WORK/kit"
+          rm -rf "$SHM/gf"; mkdir -p "$SHM/gf"
+          NP=$(ls super_mystical3.part.* | wc -l)
+          HALF=$(( NP / 2 ))
+          set -- super_mystical3.part.*
+          FIRST=(); i=0
+          for F in "$@"; do [ "$i" -lt "$HALF" ] && FIRST+=("$F"); i=$((i+1)); done
+          LAST=(); i=0
+          for F in "$@"; do [ "$i" -ge "$HALF" ] && LAST+=("$F"); i=$((i+1)); done
+          tar cf "$SHM/gf/MysticalOS3_kit-A.tar" "${FIRST[@]}" FLASH-M3.md sprawdz.sh SHA256SUMS.txt super.manifest simg2img.py $( [ -f "boot_${BASE_BUILD}.img" ] && echo "boot_${BASE_BUILD}.img" )
+          tar cf "$SHM/gf/MysticalOS3_kit-B.tar" "${LAST[@]}" vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img
+          { echo "== MysticalOS 3 super kit (gofile, 2 tary) =="
+            echo "Sklejka po rozpakowaniu obu: cat MysticalOS3_kit-A/* MysticalOS3_kit-B/* w jednym katalogu (lub:)"; } > /tmp/links-m3.md
+          bash tools/public_links.sh "$SHM/gf/MysticalOS3_kit-A.tar" /tmp/links-A.md || true
+          bash tools/public_links.sh "$SHM/gf/MysticalOS3_kit-B.tar" /tmp/links-B.md || true
+          cat /tmp/links-A.md >> /tmp/links-m3.md 2>/dev/null || true
+          cat /tmp/links-B.md >> /tmp/links-m3.md 2>/dev/null || true
+          rm -rf "$SHM/gf"
 
       - name: "9. Raport z linkami + trace do repo"
         if: always()
@@ -710,7 +756,7 @@ jobs:
             echo "transplant: $(cat /tmp/transplant.status 2>/dev/null | head -1 || echo '?')"
             echo "purge product/system_ext: $(cat /tmp/purge-partitions.status 2>/dev/null | tr '\n' ' ' || echo 'brak zmian')"
             echo
-            echo "--- gofile (kit tar: czastki + vbmeta + boot + FLASH + simg2img) ---"; cat /tmp/links-m3.md 2>/dev/null || echo "(brak)"
+            echo "--- gofile (2 tary: kit-A czastki+flash, kit-B czastki+vbmeta) ---"; cat /tmp/links-m3.md 2>/dev/null || echo "(brak)"
             echo "--- sondy URL ---"; cat "$WORK/urlprobe.log" 2>/dev/null || echo "(brak)"
             echo "--- manifest ---"; cat "$WORK/kit/super.manifest" 2>/dev/null || echo "(brak)"
             echo "--- geometria fabryczna ---"; cat "$WORK/geometry.txt" 2>/dev/null || echo "(brak)"
