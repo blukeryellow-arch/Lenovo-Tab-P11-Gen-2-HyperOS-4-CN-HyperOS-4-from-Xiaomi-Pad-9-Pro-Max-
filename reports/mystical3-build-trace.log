@@ -82,3 +82,69 @@ GEOMETRIA OK: super=9663676416B, grupy main_a/main_b po 9661579264B, VAB
   vendor_dlkm_b: group=main_b attrs=0x1 extents=0
 GEOMETRIA OK: super=9663676416B, grupy main_a/main_b po 9661579264B, VAB
 ::error::za malo miejsca na baze: 8G < 10G
+== GEOMETRY ==
+  magic: brak (blob flashtoolowy)
+  struct_size: None
+  metadata_max_size: 65536
+  metadata_slot_count: 3
+  logical_block_size: 4096
+  note: geometry fallback (standard VAB)
+== BLOCK DEVICES ==
+  super: size=9663676416 (9.664 GB) align=1048576 flags=0x0
+== GROUPS ==
+  default: max_size=0 (0.000 GB) flags=0x0
+  main_a: max_size=9661579264 (9.662 GB) flags=0x0
+  main_b: max_size=9661579264 (9.662 GB) flags=0x0
+== PARTITIONS ==
+  odm_dlkm_a: group=main_a attrs=0x1 extents=0
+  odm_dlkm_b: group=main_b attrs=0x1 extents=0
+  product_a: group=main_a attrs=0x1 extents=0
+  product_b: group=main_b attrs=0x1 extents=0
+  system_a: group=main_a attrs=0x1 extents=0
+  system_b: group=main_b attrs=0x1 extents=0
+  system_ext_a: group=main_a attrs=0x1 extents=0
+  system_ext_b: group=main_b attrs=0x1 extents=0
+  vendor_a: group=main_a attrs=0x1 extents=0
+  vendor_b: group=main_b attrs=0x1 extents=0
+  vendor_dlkm_a: group=main_a attrs=0x1 extents=0
+  vendor_dlkm_b: group=main_b attrs=0x1 extents=0
+GEOMETRIA OK: super=9663676416B, grupy main_a/main_b po 9661579264B, VAB
+dysk na zip: 8G; tmpfs:  3969M
+base.zip: 4692836474 B
+::warning::rozmiar base.zip odbiega od pinu (4692836474 vs 4805247432)
+Archive:  /tmp/m3/base.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        0  2025-11-03 13:41   TB350FU_S230982_251013_ROW/
+        0  2025-11-03 13:39   TB350FU_S230982_251013_ROW/BackupData/
+        0  2025-11-03 13:39   TB350FU_S230982_251013_ROW/BackupData/4c3226013cf622303536e8958c31567e/
+        0  2025-11-03 13:39   TB350FU_S230982_251013_ROW/BackupData/cbbbef2812371fc92138d07ed7827e0d/
+        0  2025-11-03 13:39   TB350FU_S230982_251013_ROW/BackupData/feb58c29e79ebd39f85a7b0e76993e5e/
+    12226  2025-11-03 13:39   TB350FU_S230982_251013_ROW/console_mode.xsd
+     2272  2025-11-03 13:39   TB350FU_S230982_251013_ROW/da.auth
+       82  2025-11-03 13:39   TB350FU_S230982_251013_ROW/desktop.ini
+  1140224  2025-11-03 13:39   TB350FU_S230982_251013_ROW/flash.dll
+     1237  2025-11-03 13:39   TB350FU_S230982_251013_ROW/flash.xml
+      487  2025-11-03 13:39   TB350FU_S230982_251013_ROW/history.ini
+        0  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/
+   220725  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/APDB_MT6789___W2252
+    20797  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/APDB_MT6789___W2252_ENUM
+ 67108864  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/boot-debug.img
+ 67108864  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/boot.img
+   114688  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/CheckSum_Generate.exe
+        0  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/download_agent/
+     2272  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/download_agent/da.auth
+   727436  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/download_agent/DA_BR.bin
+      392  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/download_agent/flash.xml
+      653  2025-11-03 13:39   TB350FU_S230982_251013_ROW/image/download_agent/flash.xsd
+struktura: super.img w pakiecie (rzadkie na lolinet)
+/dev/root        72G   69G  3.1G  96% /
+tmpfs           3.9G   84K  3.9G   1% /dev/shm
+== TIER A: donor-cache (poll do 150 min) ==
+[+0m] cache niegotowy (rc=2), m1=?
+m1 zakonczone bez cache -> TIER B/C
+== TIER C: fallback fonty Mi z transfer-spool ==
+FALLBACK (fonty z spool: 0; transplant apk wymaga donor-cache z m1 albo product.img na Drive [PRODUCT_DONOR_DRIVE_ID])
+/dev/root        72G   69G  3.1G  96% /
+tmpfs           3.9G   84K  3.9G   1% /dev/shm
+::error::struktura nie-payload niedostepna w tym runie (BASE_STRUCT=superimg)
