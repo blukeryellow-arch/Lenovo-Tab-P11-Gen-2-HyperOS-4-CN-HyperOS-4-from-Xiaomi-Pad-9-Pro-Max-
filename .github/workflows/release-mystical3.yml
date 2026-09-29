@@ -93,7 +93,12 @@ jobs:
           LPT=$(ls -d /tmp/aosp15_partition_tools-*/linux_glibc_x86_64 | head -1)
           for b in lpmake lpunpack lpdumps; do
             install -m 755 "$LPT/$b" "$WORK/bin/$b"
-            "$WORK/bin/$b" --help >/dev/null 2>&1 || { echo "::error::$b nie dziala"; exit 1; }
+            # UWAGA: lpunpack/lpdumps --help konczy sie exit 64 (usage error) -
+            # to NIE jest awaria; weryfikujemy czy binarium w ogole DZIALA
+            OUT=$("$WORK/bin/$b" --help 2>&1 || true)
+            echo "$OUT" | head -4 | grep -qiE "usage|lpmake|lpunpack|lpdumps|super|missing|must specify" \
+              || { echo "::error::$b nie uruchamia sie"; exit 1; }
+            echo "$b: OK"
           done
           echo "lp tools OK ($LPT)"
           # --- payload-dumper-go (release-assets; fallback: pip payload-dumper) ---
