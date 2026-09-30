@@ -15,7 +15,8 @@ Kod 0 = OK; 1 = to nie jest sparse image (albo inny blad).
 import struct
 import sys
 
-MAGIC = 0x3AED2684
+# Android sparse image magic. On disk (little-endian): 3a ff 26 ed.
+MAGIC = 0xED26FF3A
 TYPE_RAW = 0xCAC1
 TYPE_FILL = 0xCAC2
 TYPE_DONTCARE = 0xCAC3
@@ -32,7 +33,7 @@ def main():
     with open(src, "rb") as f:
         head = f.read(28)
         if len(head) < 28 or struct.unpack_from("<I", head, 0)[0] != MAGIC:
-            print("NIE-sparse (brak magic 0x3AED2684) - plik jest chyba raw albo inny format")
+            print("NIE-sparse (brak magic 0xED26FF3A) - plik jest chyba raw albo inny format")
             return 1
         (magic, major, minor, file_hdr_sz, chunk_hdr_sz, blk_sz,
          total_blks, total_chunks, _crc) = struct.unpack("<IHHHHIIII", head)
