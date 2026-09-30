@@ -366,24 +366,97 @@ jobs:
               echo "  pin OK: $P = ${PINV}B"
             done
           }
+          fs_type() { # $1=img -> "erofs"|"ext4"|"?"
+            python3 - "$1" <<'FSEOF'
+          import struct, sys
+          with open(sys.argv[1], "rb") as f:
+              f.seek(1024)
+              sb = f.read(64)
+          if len(sb) >= 58:
+              if struct.unpack("<H", sb[56:58])[0] == 0xEF53:
+                  print("ext4"); raise SystemExit
+          if len(sb) >= 4:
+              if struct.unpack("<I", sb[0:4])[0] == 0xE0F5E1E2:
+                  print("erofs"); raise SystemExit
+          print("?")
+          FSEOF
+          }
+          diag_img() { # $1=part $2=img -> diagnostyka do trace (receipt 36727601026)
+            echo "-- diag $1 --"
+            file "$2" || true
+            python3 - "$2" <<'DGEOF'
+          import sys
+          f = open(sys.argv[1], "rb")
+          for off in (8, 100, 1000, 3000):
+              f.seek(off * 1024 * 1024)
+              c = f.read(1024 * 1024)
+              if not c:
+                  print(f"  MB@{off}: EOF"); continue
+              print(f"  MB@{off}: zer {c.count(0)}/{len(c)}")
+          f.seek(1024)
+          sb = f.read(64)
+          import struct
+          if len(sb) >= 58 and struct.unpack("<H", sb[56:58])[0] == 0xEF53:
+              inodes, blocks = struct.unpack("<II", sb[0:8])
+              print(f"  ext4 sb: inodes={inodes} blocks={blocks}")
+          DGEOF
+            if [ "$(fs_type "$2")" = "ext4" ]; then
+              echo "-- e2fsck -n (odczyt, bez napraw) --"
+              e2fsck -n "$2" 2>&1 | tail -6 || true
+              echo "-- debugfs ls / --"
+              debugfs -R "ls -l /" "$2" 2>&1 | head -15 || true
+            fi
+          }
           extract_tree() { # $1=part: $SHM/one/$1.img -> $WORK/tree/$1 (DYSK)
-            local IMG="$SHM/one/$1.img" SZ NEED_MB AV_MB
+            # KOLEJNOSC (receipt 36727601026: mount-ext4+e2fsck-fy dal drzewo bez
+            # /app - e2fsck -fy przy uszkodzeniu kasuje pliki => najpierw diag,
+            # potem debugfs rdump (ext4, bez kernel-mount i bez napraw):
+            local IMG="$SHM/one/$1.img" SZ NEED_MB AV_MB FST
             SZ=$(stat -c%s "$IMG")
             NEED_MB=$(( SZ / 1048576 * 12 / 10 + 200 ))
             AV_MB=$(( $(df --output=avail -B1M "$WORK" | tail -1) ))
             echo "$1: img $((SZ/1048576))M, tree est ~${NEED_MB}M, dysk avail ${AV_MB}M"
             [ "$AV_MB" -ge "$NEED_MB" ] || { echo "::error::$1: drzewo (~${NEED_MB}M) nie zmiesci sie na dysku (${AV_MB}M)"; exit 1; }
+            diag_img "$1" "$IMG"
+            FST=$(fs_type "$IMG")
+            echo "$1: fs=$FST"
             rm -rf "$WORK/tree/$1"; mkdir -p "$WORK/tree/$1"
-            if sudo mount -t erofs -o ro,loop "$IMG" /mnt 2>/dev/null; then
-              sudo cp -a /mnt/. "$WORK/tree/$1/"; sudo umount /mnt; echo "$1: erofs (loop-mount)"
-            elif "$WORK/erofs/fsck.erofs" --extract="$SHM/ex_$1" "$IMG" >/dev/null 2>&1; then
-              if [ -d "$SHM/ex_$1/$1" ]; then rm -rf "$WORK/tree/$1" && mv "$SHM/ex_$1/$1" "$WORK/tree/$1"; rm -rf "$SHM/ex_$1"
-              else rm -rf "$WORK/tree/$1" && mv "$SHM/ex_$1" "$WORK/tree/$1"; fi
-              echo "$1: erofs (fsck extract)"
+            if [ "$FST" = "erofs" ]; then
+              if "$WORK/erofs/fsck.erofs" --extract="$WORK/tree/$1" "$IMG" >/dev/null 2>&1; then
+                echo "$1: erofs (fsck extract)"
+                [ -d "$WORK/tree/$1/$1" ] && { mv "$WORK/tree/$1/$1" "$WORK/tree/${1}_inner"; rm -rf "$WORK/tree/$1"; mv "$WORK/tree/${1}_inner" "$WORK/tree/$1"; }
+              elif sudo mount -t erofs -o ro,loop "$IMG" /mnt 2>/dev/null; then
+                sudo cp -a /mnt/. "$WORK/tree/$1/"; sudo umount /mnt; echo "$1: erofs (loop-mount)"
+              else
+                echo "::error::$1: erofs bez ekstrakcji"; exit 1
+              fi
+            elif [ "$FST" = "ext4" ]; then
+              # debugfs rdump: bez mount, bez napraw; zachowuje strukture katalogow
+              if debugfs -R "rdump / $WORK/tree/$1" "$IMG" >/dev/null 2>&1; then
+                # rdump tworzy $WORK/tree/$1/... (root fs do wnetrza) - sprawdź
+                if [ -d "$WORK/tree/$1/app" ] || [ -d "$WORK/tree/$1/priv-app" ]; then
+                  echo "$1: ext4 (debugfs rdump)"
+                else
+                  # rdump moze wstawic podkatalog o nazwie obrazu
+                  INNER=$(find "$WORK/tree/$1" -maxdepth 2 -type d -name app | head -1)
+                  if [ -n "$INNER" ]; then
+                    INNER_D=$(dirname "$INNER")
+                    mv "$INNER_D" "$WORK/tree/${1}_inner"; rm -rf "$WORK/tree/$1"; mv "$WORK/tree/${1}_inner" "$WORK/tree/$1"
+                    echo "$1: ext4 (debugfs rdump, inner)"
+                  else
+                    echo "$1: rdump bez /app - proba mount"
+                    rm -rf "$WORK/tree/$1"; mkdir -p "$WORK/tree/$1"
+                    sudo mount -o ro,loop "$IMG" /mnt && sudo cp -a /mnt/. "$WORK/tree/$1/" && sudo umount /mnt
+                    echo "$1: ext4 (loop-mount fallback)"
+                  fi
+                fi
+              else
+                sudo mount -o ro,loop "$IMG" /mnt && sudo cp -a /mnt/. "$WORK/tree/$1/" && sudo umount /mnt
+                echo "$1: ext4 (loop-mount fallback)"
+              fi
             else
-              sudo e2fsck -fy "$IMG" >/dev/null 2>&1 || true
-              sudo mount -o ro,loop "$IMG" /mnt
-              sudo cp -a /mnt/. "$WORK/tree/$1/"; sudo umount /mnt; echo "$1: ext4 (loop-mount)"
+              sudo mount -o ro,loop "$IMG" /mnt && sudo cp -a /mnt/. "$WORK/tree/$1/" && sudo umount /mnt
+              echo "$1: nieznany fs (loop-mount)"
             fi
           }
           echo "== boot.img przez httpzip =="
