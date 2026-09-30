@@ -59,6 +59,15 @@ For DSU/fastbootd experiments, the deliverable is a standalone `system.img` GSI�
 
 The workflow does not wrap the GSI in Lenovo `super.img`; that is a separate physical-flash architecture. Signature spoofing still requires framework support and is not fabricated by an XML permission entry.
 
+### Free build when GitHub Actions billing is blocked
+
+A Google Colab notebook and its source kit are stored on the connected Drive:
+
+* `MysticalOS_GSI2_Free_Colab.ipynb` — Drive ID `1fGh0PGz5-FJDrOG7riqEAUGw6gBxV9CK`
+* `gsi2-colab-kit.tar.gz` — Drive ID `1KORX_K2QuNgoIzHg8De8JJd_wsKnm6XL`, SHA-256 `df76f6e795fc6143c7ce2a87d8656ad5e4630d73e052093c8d34bd426be3a4f8`
+
+Open the notebook in free Colab and run all cells. It downloads the public donor directly inside Google's infrastructure and saves verified archives to `MyDrive/MysticalOS-GSI2-output`. `tools/run_gsi2_local.py` executes the same build steps as the workflow while deliberately stopping before GitHub release/upload operations.
+
 ## Usage
 
 ```bash
