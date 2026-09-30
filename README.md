@@ -45,6 +45,20 @@ apkanalyzer (or aapt2) readelf
 
 Image mutation uses a private mount namespace and loop mount, so it requires Linux root. Extraction and planning do not.
 
+## GSI path: MysticalOS GSI-2 AI-free
+
+For DSU/fastbootd experiments, the deliverable is a standalone `system.img` GSI—not a file called `super.img`. The GitHub workflow `.github/workflows/release-mystical-gsi2.yml` performs a deterministic AOSP 17 arm64 GSI repack:
+
+* downloads pinned microG GmsCore `v0.3.16.252432`, Companion/FakeStore, and Aurora Store preload `4.8.4` from their upstream release channels;
+* downloads the public, size/MD5-pinned `yingtian` HyperOS `OS4.0.13.0` OTA from the connected Drive and extracts only `product`;
+* applies a strict donor allowlist (`MiuiHome`, Gallery, Music, File Manager, Mi fonts, small theme assets);
+* rejects AI/assistant files in the donor harvest and removes a named AI package denylist from the AOSP tree;
+* never imports Xiaomi kernel, vendor, HAL, SystemUI, framework, or XRing libraries;
+* rebuilds a raw EROFS GSI with SELinux file contexts and verifies it by round-trip extraction;
+* publishes checksums and release archives under tag `mysticalos-gsi-2`.
+
+The workflow does not wrap the GSI in Lenovo `super.img`; that is a separate physical-flash architecture. Signature spoofing still requires framework support and is not fabricated by an XML permission entry.
+
 ## Usage
 
 ```bash
