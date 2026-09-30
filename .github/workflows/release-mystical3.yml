@@ -564,9 +564,12 @@ jobs:
             NN=$(grep -ac "$C" "$SHM/m3/system.img" || true)
             echo "kontekst $C w obrazie: $NN trafien"
           done
-          rm -rf "$SHM/imgcheck" && mkdir -p "$SHM/imgcheck"
-          "$WORK/erofs/fsck.erofs" --extract="$SHM/imgcheck" "$SHM/m3/system.img" >/dev/null 2>&1
-          C="$SHM/imgcheck/system"
+          # weryfikacja na DYSK (tmpfs trzyma juz system_m3 2,9G; extract ~2,7G
+          # => w tmpfs by bylo 5,6G > 3,9G = ENOSPC; receipt 36740434096)
+          rm -rf "$WORK/imgcheck" && mkdir -p "$WORK/imgcheck"
+          "$WORK/erofs/fsck.erofs" --extract="$WORK/imgcheck" "$SHM/m3/system.img" >/dev/null 2>&1 \
+            || { echo "::error::fsck.erofs extract system_m3 padl"; exit 1; }
+          C="$WORK/imgcheck/system"
           test -f "$C/priv-app/microG/GmsCore.apk"
           test -f "$C/priv-app/FakeStore/FakeStore.apk"
           if [ "$(cat /tmp/aurora.status 2>/dev/null || echo present)" = "present" ]; then
@@ -577,7 +580,7 @@ jobs:
           grep -q "use_content_detection_for_refresh_rate=false" "$C/build.prop"
           echo "PURGE GMS w system: $(find "$C/app" "$C/priv-app" -maxdepth 1 -type d 2>/dev/null | grep -icE 'google|gms' || echo 0) pakietow Google (oczek. 0-1: webview)"
           find "$C/app" -maxdepth 1 -type d | grep -iE 'Miui' && echo "transplanty MIUI w obrazie OK" || true
-          rm -rf "$SHM/imgcheck"
+          rm -rf "$WORK/imgcheck"
           mv "$SHM/m3/system.img" "$WORK/img/system.img"
           echo "system_m3: $(stat -c%s "$WORK/img/system.img") B (oryginal ${SIZE_SYSTEM}B)"
           df -h / /dev/shm | tail -2
