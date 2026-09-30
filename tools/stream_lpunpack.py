@@ -173,7 +173,14 @@ def main():
     for base in sorted(files):
         print(f"P\t{base}\t{files[base]}")
 
-    outs = {base: open(os.path.join(out_dir, base + ".img"), "wb") for base in files}
+    # UWAGA: przy --only otwieramy WYLACZNIE wybrane pliki - otwarcie 'wb'
+    # wszystkich truncatowaloby istniejace obrazy w out_dir do 0 (receipt
+    # 36748522578: faza vendor --out $WORK/img wyzerowala system_m3 2,9G!)
+    if only is not None:
+        sel = {b: sz for b, sz in files.items() if b in only}
+    else:
+        sel = files
+    outs = {base: open(os.path.join(out_dir, base + ".img"), "wb") for base in sel}
     written = dict.fromkeys(files, 0)
     pos = 0  # logiczna pozycja od POCZATKU super
 
@@ -221,7 +228,7 @@ def main():
         src.close()
     ok_all = True
     for base in sorted(files):
-        if written[base] == -1:
+        if base not in sel:
             print(f"W\t{base}\t0\t{files[base]}\tSKIP")
             continue
         ok = written[base] == files[base] and \
