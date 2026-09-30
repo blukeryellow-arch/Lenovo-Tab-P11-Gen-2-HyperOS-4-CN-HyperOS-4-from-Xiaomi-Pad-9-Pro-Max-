@@ -481,12 +481,20 @@ jobs:
           for U in "$AURORA_URL" "https://gitlab.com/AuroraOSS/AuroraStore/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk"; do
             if curl -fsI --connect-timeout 20 "$U" >/dev/null 2>&1; then AURORA_PICK="$U"; break; fi
           done
-          test -n "$AURORA_PICK" || { echo "::error::AuroraStore: zaden URL nie odpowiada"; exit 1; }
-          curl -fsSL --retry 3 -o /tmp/aurora.apk "$AURORA_PICK"
-          mkdir -p "$T/priv-app/microG" "$T/priv-app/FakeStore" "$T/app/AuroraStore"
+          mkdir -p "$T/priv-app/microG" "$T/priv-app/FakeStore"
           cp /tmp/gmscore.apk   "$T/priv-app/microG/GmsCore.apk"
           cp /tmp/fakestore.apk "$T/priv-app/FakeStore/FakeStore.apk"
-          cp /tmp/aurora.apk    "$T/app/AuroraStore/AuroraStore.apk"
+          if [ -n "$AURORA_PICK" ]; then
+            curl -fsSL --retry 3 -o /tmp/aurora.apk "$AURORA_PICK"
+            mkdir -p "$T/app/AuroraStore"
+            cp /tmp/aurora.apk "$T/app/AuroraStore/AuroraStore.apk"
+            echo "Aurora: wstrzykiwana z $AURORA_PICK"
+            echo "present" > /tmp/aurora.status
+          else
+            echo "::warning::AuroraStore: zaden URL nie odpowiada - build BEZ Aurora (doinstaluj z auroraoss.com; microG+FakeStore sa)"
+            echo "AURORA_SKIP=1" >> "$GITHUB_ENV"   # dla pozniejszych krokow
+            echo "skipped" > /tmp/aurora.status    # dla biezacego kroku
+          fi
           cat > "$T/etc/permissions/privapp-permissions-mystical.xml" <<'XEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <permissions>
@@ -561,7 +569,9 @@ jobs:
           C="$SHM/imgcheck/system"
           test -f "$C/priv-app/microG/GmsCore.apk"
           test -f "$C/priv-app/FakeStore/FakeStore.apk"
-          test -f "$C/app/AuroraStore/AuroraStore.apk"
+          if [ "$(cat /tmp/aurora.status 2>/dev/null || echo present)" = "present" ]; then
+            test -f "$C/app/AuroraStore/AuroraStore.apk"
+          fi
           test -f "$C/etc/permissions/privapp-permissions-mystical.xml"
           grep -q "mysticalos.version=3" "$C/build.prop"
           grep -q "use_content_detection_for_refresh_rate=false" "$C/build.prop"
