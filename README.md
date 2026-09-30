@@ -84,4 +84,6 @@ Do not flash output from this toolkit unless the bootloader is unlocked, the exa
 
 ## What is needed to produce the requested binary
 
-Attach or otherwise place the exact RSA `super.img` plus its flash manifest and the licensed HyperOS donor files in `inputs/`. State whether the TB350FU bootloader is unlocked and include `fastboot getvar all` (serial number redacted), `lpdump` output, and `avbtool info_image` output for `vbmeta.img`, `vbmeta_system.img`, and the extracted logical images. Without those inputs, generating or uploading a genuine device-specific `super.img` is not technically possible.
+The connected V15 bugreport proves that this tablet currently runs `TB350FU_S231044_260105_ROW` and reports verified-boot state `orange`. Use the exact matching S231044 RSA package; do not silently substitute the older S230982 image referenced by an earlier local kit. See `docs/v15-forensics.md`.
+
+Place the exact RSA `super.img` plus its flash manifest and the licensed HyperOS donor files in `inputs/`. Also include `fastboot getvar all` (serial number redacted), `lpdump` output, and `avbtool info_image` output for `vbmeta.img`, `vbmeta_system.img`, and the extracted logical images. Without those inputs, generating or uploading a genuine device-specific `super.img` is not technically possible.
