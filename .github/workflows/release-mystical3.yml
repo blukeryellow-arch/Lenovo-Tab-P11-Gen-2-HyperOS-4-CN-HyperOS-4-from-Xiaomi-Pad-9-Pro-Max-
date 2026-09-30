@@ -569,15 +569,23 @@ jobs:
           rm -rf "$WORK/imgcheck" && mkdir -p "$WORK/imgcheck"
           "$WORK/erofs/fsck.erofs" --extract="$WORK/imgcheck" "$SHM/m3/system.img" >/dev/null 2>&1 \
             || { echo "::error::fsck.erofs extract system_m3 padl"; exit 1; }
-          C="$WORK/imgcheck/system"
-          test -f "$C/priv-app/microG/GmsCore.apk"
-          test -f "$C/priv-app/FakeStore/FakeStore.apk"
+          # fsck --extract moze wypakowac root BEZPOSREDNIO (bez podkatalogu
+          # 'system') - detekcja sciezki + GLOSNE testy (test -f pada bez
+          # slowa pod set -e; receipt 36740434096/36742185571: exit 1 bez
+          # komunikatu po "kontekst privapp...").
+          if [ -d "$WORK/imgcheck/system" ]; then C="$WORK/imgcheck/system"; else C="$WORK/imgcheck"; fi
+          echo "imgcheck: root=$C"
+          echo "imgcheck ls: $(ls "$C" 2>/dev/null | tr '\n' ' ' | head -c 400)"
+          echo "imgcheck rozmiar: $(du -sm "$WORK/imgcheck" 2>/dev/null | cut -f1) MB"
+          for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk" \
+                     "etc/permissions/privapp-permissions-mystical.xml" "build.prop"; do
+            test -f "$C/$CHK" || { echo "::error::imgcheck: BRAK $C/$CHK"; exit 1; }
+          done
           if [ "$(cat /tmp/aurora.status 2>/dev/null || echo present)" = "present" ]; then
-            test -f "$C/app/AuroraStore/AuroraStore.apk"
+            test -f "$C/app/AuroraStore/AuroraStore.apk" || { echo "::error::imgcheck: BRAK AuroraStore.apk"; exit 1; }
           fi
-          test -f "$C/etc/permissions/privapp-permissions-mystical.xml"
-          grep -q "mysticalos.version=3" "$C/build.prop"
-          grep -q "use_content_detection_for_refresh_rate=false" "$C/build.prop"
+          grep -q "mysticalos.version=3" "$C/build.prop" || { echo "::error::imgcheck: brak mysticalos.version=3"; exit 1; }
+          grep -q "use_content_detection_for_refresh_rate=false" "$C/build.prop" || { echo "::error::imgcheck: brak display mitigation"; exit 1; }
           echo "PURGE GMS w system: $(find "$C/app" "$C/priv-app" -maxdepth 1 -type d 2>/dev/null | grep -icE 'google|gms' || echo 0) pakietow Google (oczek. 0-1: webview)"
           find "$C/app" -maxdepth 1 -type d | grep -iE 'Miui' && echo "transplanty MIUI w obrazie OK" || true
           rm -rf "$WORK/imgcheck"
