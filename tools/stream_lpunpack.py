@@ -19,10 +19,7 @@ Format liblp (system/core/fs_mgr/liblp, metadata_format.h):
 
 Uzycie:
   stream_lpunpack.py --out DIR (--stdin | --file super.raw) [--suffix _a]
-                     [--only p1,p2,...]
   stdout: manifest "P <part> <rozmiar>" + "W <part> <zapisano> <oczek> <OK?>"
-  --only: wypakuj WYLACZNIE wymienione partycje i zakoncz strumien po
-          ostatnim ich segmencie (reszta danych pomijana).
 
 Test: lpmake mini-super -> lpunpack (AOSP) vs stream_lpunpack -> cmp.
 """
@@ -138,10 +135,10 @@ def main():
     use_stdin = "--stdin" in argv
     file_path = argv[argv.index("--file") + 1] if "--file" in argv else None
     suffix = argv[argv.index("--suffix") + 1] if "--suffix" in argv else "_a"
-    head_out = argv[argv.index("--head") + 1] if "--head" in argv else None
     only = None
     if "--only" in argv:
-        only = set(x.strip() for x in argv[argv.index("--only") + 1].split(",") if x.strip())
+        only = set(argv[argv.index("--only") + 1].split(","))
+    head_out = argv[argv.index("--head") + 1] if "--head" in argv else None
     if bool(use_stdin) == bool(file_path):
         raise SystemExit("podaj dokladnie jedno zrodlo: --stdin albo --file")
 
@@ -164,13 +161,6 @@ def main():
         raise SystemExit(f"glowa za krotka: {len(head)} (strumien urwany?)")
     meta = parse_metadata(head)
     segs, files = build_segments(meta, suffix)
-    if only is not None:
-        segs = [x for x in segs if x[2] in only]
-        files = {k: v for k, v in files.items() if k in only}
-        unknown = only - set(files)
-        if unknown:
-            raise SystemExit(f"--only: brak partycji {sorted(unknown)} w super")
-    stop_at = max((x[1] for x in segs), default=0)
     os.makedirs(out_dir, exist_ok=True)
     if head_out:
         with open(head_out, "wb") as f:
@@ -179,7 +169,7 @@ def main():
     print(f"# liblp v{meta['version']}; slots={meta['geometry']['metadata_slot_count']}; "
           f"bdev={bd.get('name', '?')} ({bd.get('size', 0)} B); "
           f"grupy={[g['name'] for g in meta['groups']]}")
-    print(f"# glowy={len(head)} B; segmenty: {[(s[2], s[0], s[1]) for s in segs]}")
+    print(f"# glowy={len(head)} B; segmenty: {[(s[2], s[0], s[1]) for s in segs]}; only={sorted(only) if only else 'wszystkie'}")
     for base in sorted(files):
         print(f"P\t{base}\t{files[base]}")
 
@@ -200,6 +190,10 @@ def main():
                 pos += len(buf)
 
     for fs, fe, base, part_off in segs:
+        if only is not None and base not in only:
+            skip_to(fe)   # segment pomijany (--only): przewijamy strumien
+            written[base] = -1
+            continue
         if fs < pos:
             raise SystemExit(f"segment {base} zaczyna sie {fs} < pozycji {pos} (niespojny strumien)")
         skip_to(fs)
@@ -225,10 +219,11 @@ def main():
         f.close()
     if not use_stdin:
         src.close()
-    if stop_at:
-        print(f"# stop po offset {stop_at} (tryb --only)")
     ok_all = True
     for base in sorted(files):
+        if written[base] == -1:
+            print(f"W\t{base}\t0\t{files[base]}\tSKIP")
+            continue
         ok = written[base] == files[base] and \
             os.path.getsize(os.path.join(out_dir, base + ".img")) == files[base]
         ok_all = ok_all and ok
