@@ -5,12 +5,22 @@ w kicie (statyczne lpmake/lpunpack z AOSP 15, mkfs/fsck/dump.erofs 1.8.2,
 avbtool 1.3.0, parsery liblp + streaming unsparse - bit-identyczne z AOSP,
 zwalidowane w CI GitHub).
 
-## Szybki start (Ubuntu / WSL2)
+## Szybki start (Windows - JEDNO KLIKNIECIE)
+
+Pobierz i uruchom `START-MYSTICALOS3.bat` (Drive, publiczny):
+https://drive.google.com/uc?id=1_YsqtYnHTqfXwTS6StCumrWoLYIrQEPj&export=download
+(rowniez: `RUN-WINDOWS.ps1` - https://drive.google.com/uc?id=1eZ9EtJyEbTsqfVoY4cu0OTKChv-2VBCR&export=download)
+
+Skrypt sam: sprawdzi/zainstaluje WSL2 (raz, moze wymagac restartu), dolozy
+pakiety w WSL, pobierze kit z Drive (kontrola SHA256), odpali build i wyda
+wyniki do folderu `WYNIKI-mysticalos3` obok .bat. Nie zamykaj okna do konca.
+
+## Szybki start (Ubuntu / WSL2 - recznie)
 
 ```bash
 sudo apt-get install -y e2fsprogs python3 curl unzip   # debugfs potrzebny
 tar xf mysticalos3-local-kit.tar.gz
-cd mysticalos3-local-kit
+cd kit-mysticalos3
 ./build-mystical3.sh            # ~30-60 min; wznowienie pobierania dziala (-C -)
 ```
 
