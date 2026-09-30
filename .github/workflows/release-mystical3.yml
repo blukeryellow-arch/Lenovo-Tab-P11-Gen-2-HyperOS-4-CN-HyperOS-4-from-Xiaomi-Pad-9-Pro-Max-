@@ -559,6 +559,10 @@ jobs:
           [ "$TM_AV" -ge 3400 ] || { echo "::error::tmpfs ${TM_AV}M < 3400M na mkfs system"; exit 1; }
           "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c00000003 \
             --file-contexts="$FC" "$SHM/m3/system.img" "$T"
+          # plat_file_contexts na pozniej (product/system_ext nie maja wlasnych;
+          # receipt 36744760638: product/etc/selinux bez contexts, fallback
+          # fcext/system/... = zla sciezka bo extract daje root bezposrednio)
+          cp "$FC" "$WORK/plat_file_contexts"
           rm -rf "$T"
           for C in system_file privapp; do
             NN=$(grep -ac "$C" "$SHM/m3/system.img" || true)
@@ -605,12 +609,9 @@ jobs:
               echo "product: usunieto $M -> repack"
               echo "PURGED_product=1" >> /tmp/purge-partitions.status
               DF="$TT/etc/selinux/product_file_contexts"
-              if [ ! -f "$DF" ]; then
-                rm -rf "$SHM/fcext"; mkdir -p "$SHM/fcext"
-                "$WORK/erofs/fsck.erofs" --extract="$SHM/fcext" "$WORK/img/system.img" >/dev/null 2>&1 || true
-                DF="$SHM/fcext/system/etc/selinux/plat_file_contexts"
-              fi
-              test -f "$DF" || { echo "::error::product: brak kontekstow do mkfs"; exit 1; }
+              [ -f "$DF" ] || DF="$WORK/plat_file_contexts"
+              test -f "$DF" || { echo "::error::product: brak kontekstow (ani product_file_contexts, ani plat z systemu)"; exit 1; }
+              echo "product: konteksty: $DF"
               "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U "6d797374-6963-4000-8000-616c00000013" \
                 --file-contexts="$DF" "$SHM/m3/product.img" "$TT"
               echo "product_m3: $(stat -c%s "$SHM/m3/product.img") B (oryginal ${SIZE_PRODUCT}B) - TMPFS"
@@ -641,12 +642,9 @@ jobs:
               echo "system_ext: usunieto $M -> repack"
               echo "PURGED_system_ext=1" >> /tmp/purge-partitions.status
               DF="$TT/etc/selinux/system_ext_file_contexts"
-              if [ ! -f "$DF" ]; then
-                rm -rf "$SHM/fcext"; mkdir -p "$SHM/fcext"
-                "$WORK/erofs/fsck.erofs" --extract="$SHM/fcext" "$WORK/img/system.img" >/dev/null 2>&1 || true
-                DF="$SHM/fcext/system/etc/selinux/plat_file_contexts"
-              fi
-              test -f "$DF" || { echo "::error::system_ext: brak kontekstow do mkfs"; exit 1; }
+              [ -f "$DF" ] || DF="$WORK/plat_file_contexts"
+              test -f "$DF" || { echo "::error::system_ext: brak kontekstow (ani system_ext_file_contexts, ani plat z systemu)"; exit 1; }
+              echo "system_ext: konteksty: $DF"
               "$WORK/erofs/mkfs.erofs" -zlz4 -T 0 -U "6d797374-6963-4000-8000-616c00000023" \
                 --file-contexts="$DF" "$SHM/m3/system_ext.img" "$TT"
               echo "system_ext_m3: $(stat -c%s "$SHM/m3/system_ext.img") B (oryginal ${SIZE_SYSTEM_EXT}B) - TMPFS"
