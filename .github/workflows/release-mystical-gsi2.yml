@@ -74,7 +74,7 @@ jobs:
       DONOR_OTA_DRIVE_ID: 1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd
       DONOR_OTA_SIZE: "10340028849"
       DONOR_OTA_MD5: 98fa9a1ce4e799ad6c8b9f53915af049
-            GH_REPO: ${{ github.repository }}
+      GH_REPO: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
