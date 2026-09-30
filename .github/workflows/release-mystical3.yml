@@ -2,6 +2,10 @@ name: release-mystical3
 
 # ============================================================================
 # MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
+# UWAGA v8.1: super.img w zipie lolinet jest SPARSE (8 297 863 612 B sparse
+# -> 9 663 676 416 B raw; receipt 36725294534: segmenty _a do 8 365 445 120
+# raw > rozmiar pliku => NIE raw). Stad simg2img_stream w pipeline (stdin->stdout,
+# passthrough gdy wejscie nie-sparse).
 # Repack wewnatrz FABRYCZNEGO layoutu super Lenovo (super.img container).
 #
 # RECEIPTY (sondy 36592788531/36602341301/36605363414 + runy 36600150934/
@@ -344,6 +348,7 @@ jobs:
           stream_parts() { # $1=csv -> $SHM/one + weryfikacja pinow rozmiarow
             rm -f "$SHM/one"/*.img 2>/dev/null || true
             python3 tools/httpzip.py "$LOLINET_ZIP" --entry "${BASE_ENTRY_PREFIX}/super.img" \
+              | python3 tools/simg2img_stream.py \
               | python3 tools/stream_lpunpack.py --stdin --out "$SHM/one" --only "$1" \
               | tee /tmp/stream-manifest.txt
             local P PINVAR PINV
@@ -568,6 +573,7 @@ jobs:
           echo "== VENDOR+VENDOR_DLKM+ODM_DLKM: stream -> DYSK (bez modyfikacji) =="
           rm -f "$SHM/one"/*.img 2>/dev/null || true
           python3 tools/httpzip.py "$LOLINET_ZIP" --entry "${BASE_ENTRY_PREFIX}/super.img" \
+            | python3 tools/simg2img_stream.py \
             | python3 tools/stream_lpunpack.py --stdin --out "$WORK/img" --only "vendor,vendor_dlkm,odm_dlkm" \
             | tee /tmp/stream-vendor.txt
           for P in vendor vendor_dlkm odm_dlkm; do
