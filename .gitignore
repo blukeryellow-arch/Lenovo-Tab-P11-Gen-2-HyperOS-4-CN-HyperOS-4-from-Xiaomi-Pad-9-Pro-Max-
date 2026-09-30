@@ -1,5 +1,6 @@
 # Proprietary/large firmware inputs and generated images
 inputs/
+google_drive/
 work/
 out/
 *.img
