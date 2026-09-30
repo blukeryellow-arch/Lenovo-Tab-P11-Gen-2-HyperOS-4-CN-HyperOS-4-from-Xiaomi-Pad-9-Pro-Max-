@@ -1,0 +1,17 @@
+# Proprietary/large firmware inputs and generated images
+inputs/
+work/
+out/
+*.img
+*.bin
+*.apk
+*.apex
+*.zip
+*.7z
+*.tar
+*.zst
+
+# Local tooling
+__pycache__/
+*.pyc
+.venv/

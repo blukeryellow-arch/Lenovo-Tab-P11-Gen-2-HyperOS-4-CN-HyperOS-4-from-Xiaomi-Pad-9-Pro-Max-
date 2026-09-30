@@ -1,0 +1,81 @@
+{
+  "project": "MysticalOS 3 Build V16",
+  "device": {
+    "model": "TB350FU",
+    "soc": "MT6789",
+    "required_bootloader_state": "unlocked"
+  },
+  "paths": {
+    "stock_super": "inputs/lenovo/super.img",
+    "flash_manifest": "inputs/lenovo/flash_manifest",
+    "hyperos": "inputs/hyperos",
+    "gmscore": "inputs/apks/GmsCore.apk",
+    "fakestore": "inputs/apks/FakeStore.apk",
+    "aurora_store": "inputs/apks/AuroraStore.apk",
+    "microg_permissions": "inputs/apks/privapp-permissions-microg.xml",
+    "work": "work",
+    "output": "out"
+  },
+  "partitions": {
+    "system": "system_a",
+    "system_ext": "system_ext_a",
+    "product": "product_a",
+    "vendor": "vendor_a"
+  },
+  "removal_allowlist": [
+    "system/app/GoogleCalendarSyncAdapter",
+    "system/app/GoogleContactsSyncAdapter",
+    "system/app/GoogleTTS",
+    "system/priv-app/GoogleFeedback",
+    "system/priv-app/GoogleOneTimeInitializer",
+    "system/priv-app/GooglePartnerSetup",
+    "system/priv-app/GoogleServicesFramework",
+    "system/priv-app/Phonesky",
+    "system/priv-app/PrebuiltGmsCore",
+    "system/priv-app/SetupWizard",
+    "product/app/Chrome",
+    "product/app/Drive",
+    "product/app/Gmail2",
+    "product/app/Maps",
+    "product/app/Photos",
+    "product/app/YouTube"
+  ],
+  "inject": [
+    {
+      "source_key": "gmscore",
+      "partition_key": "system",
+      "destination": "system/priv-app/GmsCore/GmsCore.apk",
+      "selinux_context": "u:object_r:system_file:s0",
+      "mode": "0644"
+    },
+    {
+      "source_key": "fakestore",
+      "partition_key": "system",
+      "destination": "system/priv-app/FakeStore/FakeStore.apk",
+      "selinux_context": "u:object_r:system_file:s0",
+      "mode": "0644"
+    },
+    {
+      "source_key": "microg_permissions",
+      "partition_key": "system",
+      "destination": "system/etc/permissions/privapp-permissions-microg.xml",
+      "selinux_context": "u:object_r:system_file:s0",
+      "mode": "0644"
+    },
+    {
+      "source_key": "aurora_store",
+      "partition_key": "system",
+      "destination": "system/app/AuroraStore/AuroraStore.apk",
+      "selinux_context": "u:object_r:system_file:s0",
+      "mode": "0644"
+    },
+    {
+      "literal_source": "inputs/hyperos/MiuiHome.apk",
+      "partition_key": "system",
+      "destination": "system/priv-app/MiuiHome/MiuiHome.apk",
+      "selinux_context": "u:object_r:system_file:s0",
+      "mode": "0644",
+      "experimental": true
+    }
+  ]
+}

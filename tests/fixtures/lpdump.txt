@@ -1,0 +1,40 @@
+Metadata version: 10.2
+Metadata size: 1408 bytes
+Metadata max size: 65536 bytes
+Metadata slot count: 3
+Header flags: virtual_ab_device
+Super partition name: super
+Partition table:
+------------------------
+  Name: system_a
+  Group: main_a
+  Attributes: readonly
+  Extents:
+    0 .. 2047 linear super 4096
+------------------------
+  Name: vendor_a
+  Group: main_a
+  Attributes: readonly
+  Extents:
+    0 .. 511 linear super 6144
+------------------------
+  Name: system_b
+  Group: main_b
+  Attributes: readonly
+  Extents:
+    0 .. 1023 linear super 6656
+Block device table:
+------------------------
+  Partition name: super
+  First sector: 2048
+  Size: 8388608 bytes
+  Flags: none
+Group table:
+------------------------
+  Name: main_a
+  Maximum size: 3145728 bytes
+  Flags: none
+------------------------
+  Name: main_b
+  Maximum size: 3145728 bytes
+  Flags: none

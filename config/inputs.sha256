@@ -1,0 +1,4 @@
+# Replace the examples with hashes from the exact reviewed inputs.
+# Format: <64 lowercase hex characters><two spaces><repository-relative path>
+#
+# sha256sum inputs/lenovo/super.img inputs/apks/* inputs/hyperos/MiuiHome.apk
