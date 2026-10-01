@@ -1,5 +1,5 @@
 name: release-mystical3
-# v8.10 (wymogi usera: microG v0.3.17 + Magisk v30.7 + Aurora F-Droid/GitLab resolve + harvest HyperOS: kalkulator/aparat/wideo/notatki/pogoda/zegar/security)
+# v8.10.1 (FIX avbtool: make_vbmeta_image --output zamiast -o — semantyka LineageOS; receipt z walidacji kitu)
 
 # ============================================================================
 # MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
@@ -932,7 +932,7 @@ jobs:
           echo "czastek: $NP (rozmiary: $(du -sh "$WORK/kit" | cut -f1))"
           [ "$NP" -le 32 ] || { echo "::error::wiecej niz 32 czastki ($NP)"; exit 1; }
           [ "$NP" -eq 32 ] || echo "::warning::czastek $NP != 32 (sparse mniejszy niz zakladano)"
-          python3 "$WORK/bin/avbtool.py" make_vbmeta_image --flags 3 -o "$WORK/kit/vbmeta_disable.img" --padding_size 4096
+          python3 "$WORK/bin/avbtool.py" make_vbmeta_image --flags 3 --output "$WORK/kit/vbmeta_disable.img" --padding_size 4096
           truncate -s 8192 "$WORK/kit/vbmeta_disable.img"
           cp "$WORK/kit/vbmeta_disable.img" "$WORK/kit/vbmeta_system_disable.img"
           truncate -s 4096 "$WORK/kit/vbmeta_system_disable.img"
