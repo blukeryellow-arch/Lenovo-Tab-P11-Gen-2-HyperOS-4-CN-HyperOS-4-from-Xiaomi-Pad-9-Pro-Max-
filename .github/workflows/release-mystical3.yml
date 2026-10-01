@@ -1,5 +1,5 @@
 name: release-mystical3
-# v8.10.1 (FIX avbtool: make_vbmeta_image --output zamiast -o — semantyka LineageOS; receipt z walidacji kitu)
+# v8.10.2 (FIX release upload: czastki pojedynczo + 5x retry na 408 uploads.github.com; obraz v8.10.1 powstal caly - padl tylko upload)
 
 # ============================================================================
 # MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
@@ -1005,8 +1005,20 @@ jobs:
           gh release create mysticalos-3-super --target "$GITHUB_SHA" \
             --title "MysticalOS 3 - TB350FU super.img repack (stock Lenovo base + microG/Aurora + HyperOS transplant)" \
             --notes "MysticalOS 3 = hybrydowy super.img w FABRYCZNEJ geometrii TB350FU (9 GiB, VAB, slot A): spojny zestaw S230982 (system_ext/product/vendor/odm*) + system MysticalOS 3 (PURGE GMS z system+product+system_ext; zachowany tylko WebView; microG v0.3.17.252432 + FakeStore + Aurora (auto-resolve F-Droid/GitLab) + Magisk v30.7 (manager); transplant: $TRANSPLANT; mitigation display: staly refresh rate). Ekstrakcja bazy: wlasny streaming unpacker liblp (httpzip range + stream_lpunpack, bit-identyczny z lpunpack AOSP). Format: sparse super w ~32 czastkach + vbmeta_disable (flags=3) + boot_S230982 + simg2img.py. Flash: fastbootd wg FLASH-M3.md (vbmeta x3 -> super -> set-active=a). Slot B = rollback. To zamiana partycji dynamicznych, NIE DSU." \
-            super_mystical3.part.* vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img \
+            vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img \
             FLASH-M3.md sprawdz.sh SHA256SUMS.txt super.manifest simg2img.py $( [ -f "boot_${BASE_BUILD}.img" ] && echo "boot_${BASE_BUILD}.img" )
+          # czastki POJEDYNCZO z retry (uploads.github.com potrafi dac 408 na duzym assescie)
+          UPFAIL=0
+          for P in super_mystical3.part.*; do
+            OK=0
+            for A in 1 2 3 4 5; do
+              if gh release upload mysticalos-3-super "$P" --clobber; then OK=1; break; fi
+              echo "::warning::upload $P: proba $A/5 nie wyszla - pauza 30s, retry"
+              sleep 30
+            done
+            if [ "$OK" = "1" ]; then echo "upload OK: $P"; else echo "::error::upload $P padl po 5 probach"; UPFAIL=1; fi
+          done
+          [ "$UPFAIL" = "0" ] || exit 1
           gh release view mysticalos-3-super --json url,assets -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
 
       - name: "8. Linki publiczne (gofile; 2 polowkowe tary przez tmpfs)"
