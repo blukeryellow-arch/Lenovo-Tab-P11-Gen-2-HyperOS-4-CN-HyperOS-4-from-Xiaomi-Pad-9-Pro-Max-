@@ -1,5 +1,5 @@
 name: release-mystical1
-# retrigger: komentarz (zmiana tej linii odpala nowy bieg; RAW bez zmian przy
+# retrigger: bump 2026-10-01 public-minutes (donor-cache dla m3 TIER A)
 # tych samych skladnikach - build jest deterministyczny).
 
 # MysticalOS GSI-1 = "V16 GSI REPACK" ze zlecenia usera (28 IX wieczor):
