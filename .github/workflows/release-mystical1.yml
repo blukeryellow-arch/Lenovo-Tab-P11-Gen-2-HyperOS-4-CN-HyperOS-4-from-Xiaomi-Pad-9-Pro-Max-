@@ -1,5 +1,5 @@
 name: release-mystical1
-# retrigger: bump 2026-10-01 wieczor - donor-cache dla m3 TIER A (HyperOS 4 apps)
+# retrigger: bump 2026-10-02 noc - donor-cache retry (Drive dlawil 5h; probujemy ponownie)
 # tych samych skladnikach - build jest deterministyczny).
 
 # MysticalOS GSI-1 = "V16 GSI REPACK" ze zlecenia usera (28 IX wieczor):
