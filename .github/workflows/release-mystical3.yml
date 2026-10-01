@@ -1,5 +1,5 @@
 name: release-mystical3
-# v8.9 (FIX head-recon: payload=total-chs — semantyka libsparse; trace per-run nie ginie w reset)
+# v8.9.1 (FIX SIGPIPE+pipefail: { tar|find ||true } | grep -q — TIER C fonty i audit APK donora)
 
 # ============================================================================
 # MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
@@ -253,7 +253,7 @@ jobs:
             fi
             for NAME in MiuiHome MiuiGallery MiuiGalleryNew MiuiMusic MiuiFileManager; do
               D=$(find "$P" -maxdepth 3 -type d -iname "$NAME" 2>/dev/null | head -1)
-              if [ -n "$D" ] && find "$D" -name '*.apk' 2>/dev/null | grep -q .; then
+              if [ -n "$D" ] && { find "$D" -name '*.apk' 2>/dev/null || true; } | grep -q .; then
                 DEST="$WORK/keep/app/$(basename "$D" | sed 's/New$//')"
                 mkdir -p "$DEST"
                 find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \; 2>/dev/null || sudo find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \;
@@ -290,7 +290,7 @@ jobs:
               rm -rf "$SHM/tierc"; mkdir -p "$SHM/tierc"
               cat spool/transfer/drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz.part.* > "$SHM/tierc/assets.tar.gz"
               echo "assets.tar.gz: $(stat -c%s "$SHM/tierc/assets.tar.gz") B"
-              if tar tzf "$SHM/tierc/assets.tar.gz" 2>/dev/null | grep -qi '\.ttf'; then
+              if { tar tzf "$SHM/tierc/assets.tar.gz" 2>/dev/null || true; } | grep -qi '\.ttf'; then
                 tar xzf "$SHM/tierc/assets.tar.gz" -C "$SHM/tierc" 2>/dev/null
                 find "$SHM/tierc" -name 'Mi*.ttf' -size +100k -exec cp -a {} "$WORK/keep/fonts/" \; 2>/dev/null || true
                 find "$SHM/tierc" -name '*.ttf' -size +100k ! -name 'Mi*' -exec sh -c 'test $(find "$WORK/keep/fonts" | wc -l) -lt 8 && cp -a "$1" "$WORK/keep/fonts/" || true' _ {} \; 2>/dev/null || true
