@@ -1,5 +1,5 @@
 name: release-mystical3
-# v8.8.1 (start teraz; krok3 sam zaczeka na donor-cache z m1 -> TIER A)
+# v8.9 (FIX head-recon: payload=total-chs — semantyka libsparse; trace per-run nie ginie w reset)
 
 # ============================================================================
 # MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
@@ -169,7 +169,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/reports"
-          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace-${GITHUB_RUN_ID}.log") 2>&1
           curl -fsSL --retry 3 -o "$WORK/super_empty.img" \
             "https://drive.usercontent.google.com/download?id=${SUPER_EMPTY_DRIVE_ID}&export=download&confirm=t" \
             || cp tools/super_empty_tb350fu.img "$WORK/super_empty.img"
@@ -183,7 +183,7 @@ jobs:
       - name: "2. Baza lolinet: probe przez range (zip NIE dotyka dysku)"
         run: |
           set -euo pipefail
-          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace-${GITHUB_RUN_ID}.log") 2>&1
           python3 tools/httpzip.py "$LOLINET_ZIP" --probe | tee /tmp/lolinet-probe.txt
           grep -q "size=${LOLINET_SIZE}" /tmp/lolinet-probe.txt || echo "::warning::content-length != pin"
           python3 tools/httpzip.py "$LOLINET_ZIP" --list | tee /tmp/lolinet-list.txt
@@ -202,7 +202,7 @@ jobs:
         # PRZED streamingiem: harvest do $WORK/keep (dysk, <300M).
         run: |
           set -uo pipefail
-          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace-${GITHUB_RUN_ID}.log") 2>&1
           GH="gh"
           try_cache() {
             rm -rf "$SHM/dcache"; mkdir -p "$SHM/dcache"; cd "$SHM/dcache"
@@ -325,7 +325,7 @@ jobs:
         # Rozmiary partycji weryfikowane vs PINY z trace runu #9.
         run: |
           set -euo pipefail
-          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace-${GITHUB_RUN_ID}.log") 2>&1
           mkdir -p "$SHM/one" "$SHM/m3" "$WORK/tree" "$WORK/img" "$WORK/one"
           purge_gms() { # $1=tree; na STDOUT wyłącznie liczba usuniętych (diag -> stderr)
             local T="$1" N=0 D
@@ -705,7 +705,7 @@ jobs:
         # Suma danych ~5,6-6,5G; peak = 2x(system_m3)+ext_m3 ~ 6,9-7,5G.
         run: |
           set -euo pipefail
-          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace-${GITHUB_RUN_ID}.log") 2>&1
           declare -A PPATH=( \
             [system]="$WORK/img/system.img" \
             [system_ext]="$WORK/img/system_ext.img" \
@@ -810,27 +810,44 @@ jobs:
           HEAD = 4 * 1024 * 1024
           out = bytearray(HEAD)
           pos = 0
-          for _ in range(nch):
-            ch = f.read(12)
-            ct, res, n, total = struct.unpack('<HHII', ch)
-            if ct == 0xCAC1:  # RAW
-              data = f.read(total)
+          CHS = chs if chs >= 12 else 12
+          for ci in range(nch):
+            ch = f.read(CHS)
+            if len(ch) < 12:
+              print(f"::error::head-recon: krotki naglowek chunka {ci} ({len(ch)} B) - desync/trunc")
+              sys.exit(1)
+            ct, res, n, total = struct.unpack('<HHII', ch[:12])
+            span = n * blk
+            payload = total - CHS
+            if payload < 0:
+              print(f"::error::head-recon: chunk {ci} total={total} < hdr {CHS}")
+              sys.exit(1)
+            if ct == 0xCAC1:  # RAW: payload = total - hdr (semantyka libsparse!)
+              data = f.read(payload)
+              if len(data) != payload:
+                print(f"::error::head-recon: RAW chunk {ci} krotki payload {len(data)}/{payload}")
+                sys.exit(1)
               for i in range(n):
                 o = i * blk
-                if pos + o < HEAD:
-                  end = min(pos + o + blk, HEAD)
-                  out[pos + o:end] = data[o:o + (end - pos - o)]
-            elif ct == 0xCAC2:  # FILL
+                if pos + o >= HEAD:
+                  break
+                end = min(pos + o + blk, HEAD)
+                out[pos + o:end] = data[o:o + (end - pos - o)]
+            elif ct == 0xCAC2:  # FILL: payload = 4B fill (total=16=12+4)
               fill = f.read(4)
+              if payload > 4:
+                f.seek(payload - 4, 1)
               for i in range(n):
                 o = i * blk
-                if pos + o < HEAD:
-                  end = min(pos + o + blk, HEAD)
-                  out[pos + o:end] = (fill * blk)[:end - pos - o]
+                if pos + o >= HEAD:
+                  break
+                end = min(pos + o + blk, HEAD)
+                out[pos + o:end] = (fill * blk)[:end - pos - o]
             else:
-              if ct != 0xCAC3:
-                f.seek(total, 1)
-            pos += n * blk
+              # DONTCARE(0xCAC3): payload 0; CRC32(0xCAC4): payload 4; inne: pomin
+              if payload:
+                f.seek(payload, 1)
+            pos += span
           open(dst, 'wb').write(out)
           print(f"glowa {HEAD} B zrekonstruowana z {nch} chunkow (device {nblk * blk} B)")
           PYEOF
@@ -861,7 +878,7 @@ jobs:
         # (test sandbox: 10,5M/PER=3 -> cat parts == oryginal, wszystkie indeksy)
         run: |
           set -euo pipefail
-          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace-${GITHUB_RUN_ID}.log") 2>&1
           S="$WORK/super_m3_sparse.img"
           SSZ=$(stat -c%s "$S")
           CHUNK=$(( ( (SSZ + 31) / 32 + 1048575 ) / 1048576 * 1048576 ))
@@ -958,7 +975,7 @@ jobs:
       - name: "7. Release mysticalos-3-super (czastki + kit)"
         run: |
           set -euo pipefail
-          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace-${GITHUB_RUN_ID}.log") 2>&1
           cd "$WORK/kit"
           TRANSPLANT=$(cat /tmp/transplant.status 2>/dev/null | head -1 || echo "?")
           gh release delete mysticalos-3-super --yes --cleanup-tag 2>/dev/null || true
@@ -974,7 +991,7 @@ jobs:
         # stad 2 tary po ~2,3G: kit-a (czastki 00-polowa + flash) i kit-b.
         run: |
           set -uo pipefail
-          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace.log") 2>&1
+          exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace-${GITHUB_RUN_ID}.log") 2>&1
           cd "$WORK/kit"
           rm -rf "$SHM/gf"; mkdir -p "$SHM/gf"
           NP=$(ls super_mystical3.part.* | wc -l)
@@ -1016,8 +1033,8 @@ jobs:
             echo "--- geometria zbudowana ---"; cat "$WORK/super-built-geometry.txt" 2>/dev/null || echo "(brak)"
             echo "--- purge GMS ---"; cat /tmp/gms-purge.list 2>/dev/null || echo "(brak)"; } > "$F" || true
           cat "$F" || true
-          if [ -f reports/mystical3-build-trace.log ]; then
-            echo "trace builda: reports/mystical3-build-trace.log ($(stat -c%s reports/mystical3-build-trace.log) B)"
+          if [ -f reports/mystical3-build-trace-${GITHUB_RUN_ID}.log ]; then
+            echo "trace builda: reports/mystical3-build-trace-${GITHUB_RUN_ID}.log ($(stat -c%s reports/mystical3-build-trace-${GITHUB_RUN_ID}.log) B)"
           fi
           git fetch -q origin "${{ github.ref_name }}" 2>/dev/null \
             && git reset -q --hard "FETCH_HEAD" 2>/dev/null \
