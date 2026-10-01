@@ -1,5 +1,5 @@
 name: release-mystical3
-# v8.9.1 (FIX SIGPIPE+pipefail: { tar|find ||true } | grep -q — TIER C fonty i audit APK donora)
+# v8.10 (wymogi usera: microG v0.3.17 + Magisk v30.7 + Aurora F-Droid/GitLab resolve + harvest HyperOS: kalkulator/aparat/wideo/notatki/pogoda/zegar/security)
 
 # ============================================================================
 # MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
@@ -73,8 +73,9 @@ jobs:
       SUPER_EMPTY_DRIVE_ID: 1NUHbEzgwECQiumZgxlqzR6uNTimMQT9D
       SUPER_SIZE: 9663676416
       MAIN_GROUP_SIZE: 9661579264
-      GMS_APK_URL: https://github.com/microg/GmsCore/releases/download/v0.3.16.252432/com.google.android.gms-252432032.apk
-      VENDING_APK_URL: https://github.com/microg/GmsCore/releases/download/v0.3.16.252432/com.android.vending-84022632.apk
+      GMS_APK_URL: https://github.com/microg/GmsCore/releases/download/v0.3.17.252432/com.google.android.gms-252432034.apk
+      VENDING_APK_URL: https://github.com/microg/GmsCore/releases/download/v0.3.17.252432/com.android.vending-84022634.apk
+      MAGISK_URL: https://github.com/topjohnwu/Magisk/releases/download/v30.7/Magisk-v30.7.apk
       AURORA_URL: https://gitlab.com/AuroraOSS/AuroraStore/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk
       LP_TOOLS_URL: https://codeload.github.com/Rprop/aosp15_partition_tools/tar.gz/refs/heads/main
       PDG_URL: https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
@@ -251,7 +252,9 @@ jobs:
               P="$SHM/dext"; [ -d "$SHM/dext/product" ] && P="$SHM/dext/product"
               echo "donor: fsck extract"
             fi
-            for NAME in MiuiHome MiuiGallery MiuiGalleryNew MiuiMusic MiuiFileManager; do
+            for NAME in MiuiHome MiuiGallery MiuiGalleryNew MiuiMusic MiuiFileManager \
+                         MiuiCalculator MiuiCamera MiuiVideo MiuiNotes NewMiuiNotes \
+                         MiuiWeather2 MiuiClock MiuiSecurityCenter; do
               D=$(find "$P" -maxdepth 3 -type d -iname "$NAME" 2>/dev/null | head -1)
               if [ -n "$D" ] && { find "$D" -name '*.apk' 2>/dev/null || true; } | grep -q .; then
                 DEST="$WORK/keep/app/$(basename "$D" | sed 's/New$//')"
@@ -478,13 +481,33 @@ jobs:
           echo "== INJECT microG + FakeStore + Aurora =="
           curl -fsSL --retry 3 -o /tmp/gmscore.apk "$GMS_APK_URL"
           curl -fsSL --retry 3 -o /tmp/fakestore.apk "$VENDING_APK_URL"
+          curl -fsSL --retry 3 -o /tmp/magisk.apk "$MAGISK_URL" \
+            || { echo "::error::Magisk v30.7 nie pobral sie z $MAGISK_URL"; exit 1; }
+          # Aurora: proba resolve z F-Droid (suggestedVersionCode) -> GitLab API -> stary upload
           AURORA_PICK=""
-          for U in "$AURORA_URL" "https://gitlab.com/AuroraOSS/AuroraStore/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk"; do
-            if curl -fsI --connect-timeout 20 "$U" >/dev/null 2>&1; then AURORA_PICK="$U"; break; fi
-          done
-          mkdir -p "$T/priv-app/microG" "$T/priv-app/FakeStore"
+          FDVC=$(curl -fsSL --connect-timeout 20 https://f-droid.org/api/v1/packages/com.aurora.store 2>/dev/null \
+            | grep -o '"suggestedVersionCode":[0-9]*' | head -1 | grep -o '[0-9]*' || true)
+          if [ -n "$FDVC" ]; then
+            U="https://f-droid.org/repo/com.aurora.store_${FDVC}.apk"
+            curl -fsI --connect-timeout 20 "$U" >/dev/null 2>&1 && AURORA_PICK="$U" \
+              && echo "Aurora: kandydat F-Droid (vc=$FDVC): $U"
+          fi
+          if [ -z "$AURORA_PICK" ]; then
+            GLU=$(curl -fsSL --connect-timeout 20 "https://gitlab.com/api/v4/projects/AuroraOSS%2FAuroraStore/releases" 2>/dev/null \
+              | grep -o '"https://[^"]*AuroraStore[^"]*\.apk"' | head -1 | tr -d '"' || true)
+            if [ -n "$GLU" ]; then
+              curl -fsI --connect-timeout 20 "$GLU" >/dev/null 2>&1 && AURORA_PICK="$GLU" \
+                && echo "Aurora: kandydat GitLab: $GLU"
+            fi
+          fi
+          if [ -z "$AURORA_PICK" ] && curl -fsI --connect-timeout 20 "$AURORA_URL" >/dev/null 2>&1; then
+            AURORA_PICK="$AURORA_URL"
+          fi
+          mkdir -p "$T/priv-app/microG" "$T/priv-app/FakeStore" "$T/app/Magisk"
           cp /tmp/gmscore.apk   "$T/priv-app/microG/GmsCore.apk"
           cp /tmp/fakestore.apk "$T/priv-app/FakeStore/FakeStore.apk"
+          cp /tmp/magisk.apk    "$T/app/Magisk/Magisk.apk"
+          echo "Magisk v30.7: wstrzykniety (manager; root = 1 klik w apce: Install -> Patch boot.img)"
           if [ -n "$AURORA_PICK" ]; then
             curl -fsSL --retry 3 -o /tmp/aurora.apk "$AURORA_PICK"
             mkdir -p "$T/app/AuroraStore"
@@ -550,7 +573,7 @@ jobs:
           FC="$T/etc/selinux/plat_file_contexts"
           test -f "$FC" || { echo "::error::brak plat_file_contexts w systemie Lenovo"; exit 1; }
           python3 tools/fc_fixup.py --contexts "$FC" --root "$T" --dry-run --report /tmp/fc-report.txt
-          if grep -E "MISS .*(priv-app/microG|priv-app/FakeStore|app/AuroraStore|app/Miui|permissions-mystical|fonts/Mi|miui-themes)" /tmp/fc-report.txt; then
+          if grep -E "MISS .*(priv-app/microG|priv-app/FakeStore|app/AuroraStore|app/Magisk|app/Miui|permissions-mystical|fonts/Mi|miui-themes)" /tmp/fc-report.txt; then
             echo "::error::dodane pliki bez kontekstu"; exit 1
           fi
           echo "pre-flight kontekstow: OK"
@@ -582,7 +605,7 @@ jobs:
           echo "imgcheck: root=$C"
           echo "imgcheck ls: $(ls "$C" 2>/dev/null | tr '\n' ' ' | head -c 400)"
           echo "imgcheck rozmiar: $(du -sm "$WORK/imgcheck" 2>/dev/null | cut -f1) MB"
-          for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk" \
+          for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk" "app/Magisk/Magisk.apk" \
                      "etc/permissions/privapp-permissions-mystical.xml" "build.prop"; do
             test -f "$C/$CHK" || { echo "::error::imgcheck: BRAK $C/$CHK"; exit 1; }
           done
@@ -981,7 +1004,7 @@ jobs:
           gh release delete mysticalos-3-super --yes --cleanup-tag 2>/dev/null || true
           gh release create mysticalos-3-super --target "$GITHUB_SHA" \
             --title "MysticalOS 3 - TB350FU super.img repack (stock Lenovo base + microG/Aurora + HyperOS transplant)" \
-            --notes "MysticalOS 3 = hybrydowy super.img w FABRYCZNEJ geometrii TB350FU (9 GiB, VAB, slot A): spojny zestaw S230982 (system_ext/product/vendor/odm*) + system MysticalOS 3 (PURGE GMS z system+product+system_ext; zachowany tylko WebView; microG v0.3.16.252432 + FakeStore + Aurora 4.8.4; transplant: $TRANSPLANT; mitigation display: staly refresh rate). Ekstrakcja bazy: wlasny streaming unpacker liblp (httpzip range + stream_lpunpack, bit-identyczny z lpunpack AOSP). Format: sparse super w ~32 czastkach + vbmeta_disable (flags=3) + boot_S230982 + simg2img.py. Flash: fastbootd wg FLASH-M3.md (vbmeta x3 -> super -> set-active=a). Slot B = rollback. To zamiana partycji dynamicznych, NIE DSU." \
+            --notes "MysticalOS 3 = hybrydowy super.img w FABRYCZNEJ geometrii TB350FU (9 GiB, VAB, slot A): spojny zestaw S230982 (system_ext/product/vendor/odm*) + system MysticalOS 3 (PURGE GMS z system+product+system_ext; zachowany tylko WebView; microG v0.3.17.252432 + FakeStore + Aurora (auto-resolve F-Droid/GitLab) + Magisk v30.7 (manager); transplant: $TRANSPLANT; mitigation display: staly refresh rate). Ekstrakcja bazy: wlasny streaming unpacker liblp (httpzip range + stream_lpunpack, bit-identyczny z lpunpack AOSP). Format: sparse super w ~32 czastkach + vbmeta_disable (flags=3) + boot_S230982 + simg2img.py. Flash: fastbootd wg FLASH-M3.md (vbmeta x3 -> super -> set-active=a). Slot B = rollback. To zamiana partycji dynamicznych, NIE DSU." \
             super_mystical3.part.* vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img \
             FLASH-M3.md sprawdz.sh SHA256SUMS.txt super.manifest simg2img.py $( [ -f "boot_${BASE_BUILD}.img" ] && echo "boot_${BASE_BUILD}.img" )
           gh release view mysticalos-3-super --json url,assets -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
