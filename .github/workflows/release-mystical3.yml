@@ -1,5 +1,5 @@
 name: release-mystical3
-# v8.7.5 (PUBLIC retrigger - darmowe minuty)
+# v8.8 (DIAG: lpmake/lpinfo/head-recon glosne bledy + krok9 push po reset na tip)
 
 # ============================================================================
 # MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
@@ -766,6 +766,7 @@ jobs:
             done
           ) &
           WPID=$!
+          set +e
           "$WORK/bin/lpmake" \
             --device-size="$SUPER_SIZE" \
             --metadata-size=65536 \
@@ -777,20 +778,35 @@ jobs:
             --group="main_a:$MAIN_GROUP_SIZE" \
             "${ARGS[@]}" \
             -o "$WORK/super_m3_sparse.img"
+          LPRC=$?
+          set -e
           touch /tmp/lpmake-done || true
+          if [ "$LPRC" -ne 0 ]; then
+            echo "::error::lpmake padl rc=$LPRC"
+            echo "== wejscia =="; ls -la "$WORK/img/" "$SHM/m3/" 2>/dev/null || true
+            echo "== wyjscie =="; ls -la "$WORK/super_m3_sparse.img" 2>/dev/null || true
+            echo "== dyski =="; df -h / /dev/shm 2>/dev/null | tail -2 || true
+            exit 1
+          fi
           sleep 1; kill $WPID 2>/dev/null || true
           echo "== watcher =="; cat /tmp/watcher.log 2>/dev/null || echo "(nic nie usunal?!)"
           ls -la "$WORK/super_m3_sparse.img"
           rm -f "$WORK/img"/*.img "$SHM/m3"/*.img 2>/dev/null || true
           # WERYFIKACJA duzego sparse BEZ materializacji 9,6G raw:
           # rekonstrukcja glowy (4 MB) z chunkow -> lpinfo.py
+          set +e
           python3 - "$WORK/super_m3_sparse.img" "$SHM/super_head.img" <<'PYEOF'
           import struct, sys
           src, dst = sys.argv[1], sys.argv[2]
           f = open(src, 'rb')
           hdr = f.read(28)
+          if len(hdr) < 28:
+            print(f"::error::head-recon: plik sparse za krotki ({len(hdr)} B) - lpmake nie dal produktu?")
+            sys.exit(1)
           magic, maj, mnr, fhs, chs, blk, nblk, nch, ck = struct.unpack('<IHHHHIIII', hdr)
-          assert magic == 0xED26FF3A, f"bad sparse magic {magic:#x}"
+          if magic != 0xED26FF3A:
+            print(f"::error::head-recon: bad sparse magic {magic:#x} (wyjscie lpmake NIE jest sparse!)")
+            sys.exit(1)
           HEAD = 4 * 1024 * 1024
           out = bytearray(HEAD)
           pos = 0
@@ -818,10 +834,21 @@ jobs:
           open(dst, 'wb').write(out)
           print(f"glowa {HEAD} B zrekonstruowana z {nch} chunkow (device {nblk * blk} B)")
           PYEOF
+          PYRC=$?
+          set -e
+          if [ "$PYRC" -ne 0 ]; then
+            echo "::error::head-recon python padl rc=$PYRC"
+            ls -la "$WORK/super_m3_sparse.img" "$SHM/super_head.img" 2>/dev/null || true
+            exit 1
+          fi
+          set +e
           python3 tools/lpinfo.py "$SHM/super_head.img" | tee "$WORK/super-built-geometry.txt"
-          grep -q "size=9663676416" "$WORK/super-built-geometry.txt"
-          grep -q "system_a" "$WORK/super-built-geometry.txt"
-          grep -q "main_a" "$WORK/super-built-geometry.txt"
+          LIRC=$?
+          set -e
+          [ "$LIRC" -eq 0 ] || { echo "::error::lpinfo padl rc=$LIRC na glowie sparse"; od -A x -t x1z "$SHM/super_head.img" 2>/dev/null | head -5 || true; exit 1; }
+          grep -q "size=9663676416" "$WORK/super-built-geometry.txt" || { echo "::error::geometria SIZE niezgodna; lpinfo mowi:"; cat "$WORK/super-built-geometry.txt"; exit 1; }
+          grep -q "system_a" "$WORK/super-built-geometry.txt" || { echo "::error::brak system_a w geometrii; lpinfo mowi:"; cat "$WORK/super-built-geometry.txt"; exit 1; }
+          grep -q "main_a" "$WORK/super-built-geometry.txt" || { echo "::error::brak main_a w geometrii; lpinfo mowi:"; cat "$WORK/super-built-geometry.txt"; exit 1; }
           echo "GEOMETRIA zbudowanego super: ZWERYFIKOWANA (lpinfo na glowie sparse)"
           rm -f "$SHM/super_head.img"
           df -h / /dev/shm | tail -2
@@ -992,6 +1019,9 @@ jobs:
           if [ -f reports/mystical3-build-trace.log ]; then
             echo "trace builda: reports/mystical3-build-trace.log ($(stat -c%s reports/mystical3-build-trace.log) B)"
           fi
+          git fetch -q origin "${{ github.ref_name }}" 2>/dev/null \
+            && git reset -q --hard "FETCH_HEAD" 2>/dev/null \
+            || echo "reset na tip brancha nie wyszedl (push raportu moze byc odrzucony)"
           git add -f reports tools/lpinfo.py tools/simg2img.py tools/httpzip.py tools/stream_lpunpack.py || true
           git commit -q -m "m3-links+trace: run ${{ github.run_id }}" || true
           git push -q origin "HEAD:${{ github.ref_name }}" || echo "push nie wyszedl"
