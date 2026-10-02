@@ -1,5 +1,5 @@
 name: release-mystical3
-# v8.10.2 (FIX release upload: czastki pojedynczo + 5x retry na 408 uploads.github.com; obraz v8.10.1 powstal caly - padl tylko upload)
+# v8.10.3 (release create 3x retry + soft-skip; krok 8 if:always — transfer.archivete.am jako glowny kanal awaryjny)
 
 # ============================================================================
 # MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
@@ -1001,12 +1001,25 @@ jobs:
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace-${GITHUB_RUN_ID}.log") 2>&1
           cd "$WORK/kit"
           TRANSPLANT=$(cat /tmp/transplant.status 2>/dev/null | head -1 || echo "?")
+          RELNOTES="MysticalOS 3 = hybrydowy super.img w FABRYCZNEJ geometrii TB350FU (9 GiB, VAB, slot A): spojny zestaw S230982 (system_ext/product/vendor/odm*) + system MysticalOS 3 (PURGE GMS z system+product+system_ext; zachowany tylko WebView; microG v0.3.17.252432 + FakeStore + Aurora (auto-resolve F-Droid/GitLab) + Magisk v30.7 (manager); transplant: $TRANSPLANT; mitigation display: staly refresh rate). Ekstrakcja bazy: wlasny streaming unpacker liblp (httpzip range + stream_lpunpack, bit-identyczny z lpunpack AOSP). Format: sparse super w ~32 czastkach + vbmeta_disable (flags=3) + boot_S230982 + simg2img.py. Flash: fastbootd wg FLASH-M3.md (vbmeta x3 -> super -> set-active=a). Slot B = rollback. To zamiana partycji dynamicznych, NIE DSU."
           gh release delete mysticalos-3-super --yes --cleanup-tag 2>/dev/null || true
-          gh release create mysticalos-3-super --target "$GITHUB_SHA" \
-            --title "MysticalOS 3 - TB350FU super.img repack (stock Lenovo base + microG/Aurora + HyperOS transplant)" \
-            --notes "MysticalOS 3 = hybrydowy super.img w FABRYCZNEJ geometrii TB350FU (9 GiB, VAB, slot A): spojny zestaw S230982 (system_ext/product/vendor/odm*) + system MysticalOS 3 (PURGE GMS z system+product+system_ext; zachowany tylko WebView; microG v0.3.17.252432 + FakeStore + Aurora (auto-resolve F-Droid/GitLab) + Magisk v30.7 (manager); transplant: $TRANSPLANT; mitigation display: staly refresh rate). Ekstrakcja bazy: wlasny streaming unpacker liblp (httpzip range + stream_lpunpack, bit-identyczny z lpunpack AOSP). Format: sparse super w ~32 czastkach + vbmeta_disable (flags=3) + boot_S230982 + simg2img.py. Flash: fastbootd wg FLASH-M3.md (vbmeta x3 -> super -> set-active=a). Slot B = rollback. To zamiana partycji dynamicznych, NIE DSU." \
-            vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img \
-            FLASH-M3.md sprawdz.sh SHA256SUMS.txt super.manifest simg2img.py $( [ -f "boot_${BASE_BUILD}.img" ] && echo "boot_${BASE_BUILD}.img" )
+          REL_OK=0
+          for A in 1 2 3; do
+            if gh release create mysticalos-3-super --target "$GITHUB_SHA" \
+              --title "MysticalOS 3 - TB350FU super.img repack (stock Lenovo base + microG/Aurora + HyperOS transplant)" \
+              --notes "$RELNOTES" \
+              vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img \
+              FLASH-M3.md sprawdz.sh SHA256SUMS.txt super.manifest simg2img.py $( [ -f "boot_${BASE_BUILD}.img" ] && echo "boot_${BASE_BUILD}.img" ); then
+              REL_OK=1; break
+            fi
+            echo "::warning::release create: proba $A/3 nie wyszla - pauza 60s"
+            sleep 60
+          done
+          if [ "$REL_OK" != "1" ]; then
+            echo "::warning::RELEASE CREATE nie wyszedl po 3 probach - obraz leci na hostingi publiczne (krok 8), release pomijam"
+            touch /tmp/rel.skip
+          fi
+          if [ "$REL_OK" = "1" ]; then
           # czastki POJEDYNCZO z retry (uploads.github.com potrafi dac 408 na duzym assescie)
           UPFAIL=0
           for P in super_mystical3.part.*; do
@@ -1018,10 +1031,12 @@ jobs:
             done
             if [ "$OK" = "1" ]; then echo "upload OK: $P"; else echo "::error::upload $P padl po 5 probach"; UPFAIL=1; fi
           done
-          [ "$UPFAIL" = "0" ] || exit 1
-          gh release view mysticalos-3-super --json url,assets -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
+          [ "$UPFAIL" = "0" ] || { echo "::warning::czesci nie poszly do release - hostingi publiczne (krok 8) przejma"; touch /tmp/rel.skip; }
+          gh release view mysticalos-3-super --json url,assets -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")' || true
+          fi
 
       - name: "8. Linki publiczne (gofile; 2 polowkowe tary przez tmpfs)"
+        if: always()   # hostingi publiczne przejmuja dystrybucje gdy release/uploader padnie
         # tar calego kitu (4,5G) nie zmiescilby sie na dysku obok parts;
         # stad 2 tary po ~2,3G: kit-a (czastki 00-polowa + flash) i kit-b.
         run: |
