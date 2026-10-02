@@ -348,13 +348,25 @@ jobs:
                 find "$SHM/tierc" -name 'Mi*.ttf' -size +100k -exec cp -a {} "$WORK/keep/fonts/" \; 2>/dev/null || true
                 find "$SHM/tierc" -name '*.ttf' -size +100k ! -name 'Mi*' -exec sh -c 'test $(find "$WORK/keep/fonts" | wc -l) -lt 8 && cp -a "$1" "$WORK/keep/fonts/" || true' _ {} \; 2>/dev/null || true
                 NF=$(ls "$WORK/keep/fonts" 2>/dev/null | wc -l)
-                echo "OK (TIER C; fonty z assets.tar.gz product.img Xiaomi: $NF)" > /tmp/transplant.status
+                # RECEIPT 37058971097: TIER C biegajacy PO sukcesie A2 nadpisywal
+                # /tmp/transplant.status (etykieta mowila 'TIER C; fonty' mimo 5 apk
+                # MIUI z A2 wypieczonych w obrazie - build byl dobry, etykieta mylaca).
+                # Status TIER C zapisujemy tylko gdy A2 nie zaszedl.
+                if [ -z "${DONE_A2:-}" ]; then
+                  echo "OK (TIER C; fonty z assets.tar.gz product.img Xiaomi: $NF)" > /tmp/transplant.status
+                else
+                  echo "TIER C dopisek: fonty ($NF) - status A2 zachowany"
+                fi
               else
-                echo "TIER C: brak .ttf w assets.tar.gz" > /tmp/transplant.status
+                if [ -z "${DONE_A2:-}" ]; then
+                  echo "TIER C: brak .ttf w assets.tar.gz" > /tmp/transplant.status
+                fi
               fi
               rm -rf "$SHM/tierc"
             else
-              echo "FALLBACK (brak donor-cache m1, brak PRODUCT_DONOR_DRIVE_ID, brak assets w spool; build bez transplantow)" > /tmp/transplant.status
+              if [ -z "${DONE_A2:-}" ]; then
+                echo "FALLBACK (brak donor-cache m1, brak PRODUCT_DONOR_DRIVE_ID, brak assets w spool; build bez transplantow)" > /tmp/transplant.status
+              fi
             fi
           fi
           cat /tmp/transplant.status || true
