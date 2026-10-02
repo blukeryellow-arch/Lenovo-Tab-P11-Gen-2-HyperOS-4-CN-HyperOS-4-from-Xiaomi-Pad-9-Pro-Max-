@@ -76,6 +76,19 @@ jobs:
             bash "$GITHUB_WORKSPACE/tools/public_links.sh" "$WORK/super_mystical3.img" /tmp/links.md
           echo "== links.md =="; cat /tmp/links.md
 
+      - name: "4b. Artifact: JEDEN plik NA GITHUBIE (do pobrania ze strony runa)"
+        # Assety release: limit 2 GiB. ARTIFAKT runu: limit 10 GB, a publiczne
+        # repo ma storage artifactow za darmo -> super_mystical3.img 6,3 GB
+        # MOZE zyc na GitHubie jako jeden plik. Pobieranie: strona runa ->
+        # sekcja Artifacts -> super_mystical3-img.zip -> unzip -> jeden img.
+        # (retencja 90 dni; pobierz zanim repo wroci na private)
+        uses: actions/upload-artifact@v4
+        with:
+          name: super_mystical3-img
+          path: /tmp/join/super_mystical3.img
+          retention-days: 90
+          compression-level: 0   # binarny img i tak sie nie spakuje; 0 = szybki upload
+
       - name: "5. Link do not release'a + evidence (reports/)"
         run: |
           set -uo pipefail
