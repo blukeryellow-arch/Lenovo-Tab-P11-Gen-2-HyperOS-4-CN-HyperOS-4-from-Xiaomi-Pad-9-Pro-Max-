@@ -1,5 +1,5 @@
 name: release-mystical3
-# v8.10.3 (release create 3x retry + soft-skip; krok 8 if:always — transfer.archivete.am jako glowny kanal awaryjny)
+# v8.11.0 (TIER A2: donor-harvest z release donor-cache - apki MIUI wypieczone w obrazie; donor-pipeline buduje donor-cache z OTA zipa Drive przez range-extraction)
 
 # ============================================================================
 # MysticalOS 3 - HYBRYDOWY SUPER.IMG TB350FU (zlecenie 29 IX, "BUILD V16")
@@ -199,12 +199,59 @@ jobs:
           [ "$AVAIL" -ge 7 ] || { echo "::error::za malo miejsca: ${AVAIL}G < 7G (saby runner; retrigger)"; exit 1; }
           df -h / /dev/shm | tail -2
 
-      - name: "3. Donor HyperOS - TIER A (cache m1, poll 150 min) / B / C"
+      - name: "3. Donor HyperOS - TIER A2 (harvest release) / A (cache m1) / B / C"
         # PRZED streamingiem: harvest do $WORK/keep (dysk, <300M).
         run: |
           set -uo pipefail
           exec > >(tee -a "$GITHUB_WORKSPACE/reports/mystical3-build-trace-${GITHUB_RUN_ID}.log") 2>&1
           GH="gh"
+          # --- TIER A2: gotowy harvest z release donor-cache (GitHub CDN) ---
+          # donor-pipeline (run off-branch) buduje donor-harvest.part.* +
+          # manifest z product.img donora HyperOS 4.0.13 (range-extraction z
+          # OTA zipa na Drive). Drzewo tarballa: app/ fonts/ themes/ - wprost
+          # do $WORK/keep. To najtansza droga transplantu (CDN, sekundy).
+          DONE_A2=""
+          if gh release view donor-cache >/dev/null 2>&1; then
+            echo "== TIER A2: donor-harvest z release donor-cache =="
+            rm -rf "$WORK/a2cache"; mkdir -p "$WORK/a2cache"
+            if gh release download donor-cache --clobber \
+                 -p 'donor-harvest.manifest' -p 'donor-harvest.part.*' \
+                 --dir "$WORK/a2cache" 2>/dev/null; then
+              HMD5=$(sed -n 's/^md5=//p' "$WORK/a2cache/donor-harvest.manifest" | head -1)
+              HSZ=$(sed -n 's/^size=//p' "$WORK/a2cache/donor-harvest.manifest" | head -1)
+              cat "$WORK/a2cache"/donor-harvest.part.* > "$WORK/a2cache/donor-harvest.tar.gz"
+              GMD5=$(md5sum "$WORK/a2cache/donor-harvest.tar.gz" | cut -d' ' -f1)
+              GSIZE=$(stat -c%s "$WORK/a2cache/donor-harvest.tar.gz")
+              echo "A2: md5=$GMD5 (oczek. $HMD5), size=$GSIZE (oczek. $HSZ)"
+              if [ -n "$HMD5" ] && [ "$GMD5" = "$HMD5" ] && [ "$GSIZE" = "$HSZ" ]; then
+                rm -rf "$WORK/keep/app" "$WORK/keep/fonts" "$WORK/keep/themes"
+                mkdir -p "$WORK/keep"
+                tar xzf "$WORK/a2cache/donor-harvest.tar.gz" -C "$WORK/keep" \
+                  || { echo "::error::TIER A2: tar extract padl"; exit 1; }
+                rm -rf "$WORK/a2cache"
+                NA=$(find "$WORK/keep/app" -name '*.apk' 2>/dev/null | wc -l)
+                NF=$(ls "$WORK/keep/fonts" 2>/dev/null | wc -l)
+                echo "A2 harvest: $NA apk, $NF fontow, keep=$(du -sm "$WORK/keep" | cut -f1) MB"
+                KEY=0
+                ls "$WORK/keep/app" 2>/dev/null | grep -qi calculator && KEY=$((KEY+1))
+                ls "$WORK/keep/app" 2>/dev/null | grep -qi camera && KEY=$((KEY+1))
+                ls "$WORK/keep/app" 2>/dev/null | grep -qi notes && KEY=$((KEY+1))
+                if [ "$NA" -ge 1 ] && [ "$KEY" -eq 3 ]; then
+                  DONE_A2=1
+                  echo "OK (tier A2 donor-harvest; $NA apk: $(ls "$WORK/keep/app" | tr '\n' ' '))" > /tmp/transplant.status
+                else
+                  echo "::error::TIER A2: donor-harvest bez kluczowych apk ($KEY/3, NA=$NA) - wymog usera niespelniony, NIE budujemy bez tego"
+                  exit 1
+                fi
+              else
+                echo "A2: md5/size niezgodne - lece w TIER A/B/C"
+                rm -rf "$WORK/a2cache"
+              fi
+            else
+              echo "A2: download nie wyszedl - lece w TIER A/B/C"
+              rm -rf "$WORK/a2cache"
+            fi
+          fi
           try_cache() {
             rm -rf "$SHM/dcache"; mkdir -p "$SHM/dcache"; cd "$SHM/dcache"
             if ! $GH release view donor-cache >/dev/null 2>&1; then return 2; fi
@@ -224,7 +271,7 @@ jobs:
           TIER=""
           echo "== TIER A: donor-cache (poll do 150 min) =="
           WAITED=0
-          while [ "$WAITED" -lt 150 ]; do
+          while [ "$WAITED" -lt 150 ] && [ -z "$DONE_A2" ]; do
             RC=$(try_cache && echo 0 || echo $?)
             [ "$RC" = "0" ] && { TIER="A (donor-cache release)"; break; }
             M1RUN=$($GH run list --workflow release-mystical1.yml --limit 1 --json status --jq '.[0].status' 2>/dev/null || echo "?")
@@ -241,7 +288,7 @@ jobs:
               [ "$(stat -c%s "$WORK/one/donor-product.img")" -gt 3000000000 ] && TIER="B (Drive product.img)"
             fi
           fi
-          if [ -n "$TIER" ] && [ -f "$WORK/one/donor-product.img" ]; then
+          if [ -z "$DONE_A2" ] && [ -n "$TIER" ] && [ -f "$WORK/one/donor-product.img" ]; then
             echo "== harvest (tier $TIER, $(stat -c%s "$WORK/one/donor-product.img") B) =="
             rm -rf "$SHM/dmnt" "$SHM/dext"; mkdir -p "$SHM/dmnt"
             if sudo mount -t erofs -o ro,loop "$WORK/one/donor-product.img" "$SHM/dmnt" 2>/dev/null; then
