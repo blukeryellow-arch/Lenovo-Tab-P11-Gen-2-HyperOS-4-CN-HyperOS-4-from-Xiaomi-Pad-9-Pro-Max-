@@ -41,25 +41,25 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 echo "== 1/3: rozpoznaje system plikow =="
-python3 - "$IMG" <<'EOF'
-import struct, sys
+FS=$(python3 - "$IMG" <<'EOF'
+import sys
 with open(sys.argv[1], 'rb') as f:
     d = f.read(4096)
-if len(d) >= 4036 and d[1024:1026] == b'\x53\xef':
-    print("ext4"); sys.exit(0)
-if d[0:4] == b'\xe0\x1f\xe1\xe2' or d[36:40] == b'\xe0\x1f\xe1\xe2':
-    print("erofs"); sys.exit(0)
 if d[0:4] == b'\x3a\xff\x26\xed':
-    print("SPARSE! najpierw: python3 tools/simg2img.py product.img product_raw.img"); sys.exit(1)
+    print("SPARSE"); sys.exit(0)
+if d[1024:1028] == b'\xe2\xe1\xf5\xe0':   # EROFS: 0xE0F5E1E2 LE @1024
+    print("erofs"); sys.exit(0)
+if d[1080:1082] == b'\x53\xef':           # ext4: 0xEF53 LE @1024+56
+    print("ext4"); sys.exit(0)
 print("nieznany"); sys.exit(1)
 EOF
-FS=$(python3 - "$IMG" <<'EOF'
-import struct, sys
-with open(sys.argv[1], 'rb') as f:
-    d = f.read(4096)
-print("ext4" if d[1024:1026] == b'\x53\xef' else "erofs")
-EOF
 )
+case "$FS" in
+  SPARSE) echo "BLAD: obraz jest SPARSE - najpierw: python3 tools/simg2img.py '$IMG' '${IMG%.img}_raw.img' i podaj raw"; exit 1;;
+  erofs|ext4) ;;
+  *) echo "BLAD: nieznany system plikow (ani EROFS, ani ext4, ani sparse)"; exit 1;;
+esac
+echo "  -> $FS"
 
 echo "== 2/3: ekstrakcja drzewa product ($FS) =="
 TREE="$TMP/product"
