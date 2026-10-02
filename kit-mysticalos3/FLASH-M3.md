@@ -40,9 +40,13 @@ python3 simg2img.py super_mystical3.img super_raw.img
 (magic 0xED26FF3A; simg2img.py jest w kicie).
 
 ## Co siedzi w srodku
-- system MysticalOS 3: PURGE GMS (zostaje TYLKO WebView), microG GmsCore v0.3.16.252432,
+- system MysticalOS 3: PURGE GMS (zostaje TYLKO WebView), microG GmsCore v0.3.17.252432,
   FakeStore, [Aurora jesli dostepna], props `ro.mysticalos.version=3`,
   display mitigation `use_content_detection_for_refresh_rate=false` (staly refresh),
+- **transplant apk MIUI z HyperOS 4.0.13 (Xiaomi Pad 9 Pro Max "yingtian")**:
+  kalkulator / aparat / notatki oraz galeria, muzyka, video, pliki, pogoda, zegar
+  itd. w `/system/app/Miui*` (pelna lista w release notes i MIUI-APKI.md) +
+  fonty MiSans + motywy (inertne). To apki SYSTEMOWE z donora - nie Lenovo.
 - product/system_ext: bez Google (purge 22+4 pakietow),
 - vendor/vendor_dlkm/odm_dlkm/boot: ORYGINALNE S230982 (spojnosc z kernelem),
 - geometria super = FABRYCZNA (9 663 676 416 B, VAB, metadata 3 sloty).

@@ -564,15 +564,24 @@ def main():
              for kv in sorted(by_type.items())), total_dl, total_dl / 2**30,
              part.new_size))
 
-    # walidacja extents
+    # walidacja extents + pokrycie partycji (evidence)
+    covered = set()
     for i, o in enumerate(part.ops):
         if o.type in (MOVE, BSDIFF, SOURCE_COPY, SOURCE_BSDIFF):
             raise SystemExit("op %d typu %s - to nie full OTA (delta?) - brak "
                              "obsługi" % (i, OP_NAMES.get(o.type)))
         if o.type in (ZERO, DISCARD):
+            for e in o.dst_extents:
+                covered.update(range(e.start_block, e.start_block + e.num_blocks))
             continue
         if not o.dst_extents:
             raise SystemExit("op %d bez dst_extents" % i)
+        for e in o.dst_extents:
+            covered.update(range(e.start_block, e.start_block + e.num_blocks))
+    total_blocks = (part.new_size // block_size) if part.new_size else 0
+    print("pokrycie partycji: %d / %d blokow (%.1f%%)"
+          % (len(covered), total_blocks,
+             100.0 * len(covered) / max(1, total_blocks)))
 
     out_size = part.new_size
     if not out_size:
