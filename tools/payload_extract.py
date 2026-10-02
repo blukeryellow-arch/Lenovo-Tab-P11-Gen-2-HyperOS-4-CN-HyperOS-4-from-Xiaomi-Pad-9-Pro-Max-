@@ -298,13 +298,13 @@ class HTTPRangeSource:
 
     def _probe_once(self):
         """-> (size, accepts, opis) albo rzuca. Wymagamy dowodu range: 206 +
-        Content-Range (receipt 37011082568: Drive po kilku GB pobran zaczal
-        odpowiadac 200-bez-Content-Length = interstitial/quota)."""
+        Content-Range (receipt 37011082568/37020690506: Drive po wyczerpaniu
+        anonimowego limitu pliku serwuje 200 + HTML od pierwszego bajtu)."""
         # HEAD czesto nie dziala na drive.usercontent - od razu GET 0-0
         req = urllib.request.Request(
             self.url, headers={"User-Agent": self.UA, "Range": "bytes=0-0"})
         with self.opener.open(req, timeout=90) as r:
-            body = r.read(1)
+            data = r.read(8192)
             st = r.status
             cr = r.headers.get("Content-Range", "")
             cl = r.headers.get("Content-Length", "0")
@@ -312,15 +312,24 @@ class HTTPRangeSource:
             ct = r.headers.get("Content-Type", "")
             sys.stderr.write(
                 "# probe: status=%s CR=%r CL=%r AR=%r CT=%r body0=%r\n"
-                % (st, cr, cl, ar, ct, body))
+                % (st, cr, cl, ar, ct, data[:1]))
             if st == 206 and "/" in cr:
                 return int(cr.rsplit("/", 1)[1]), "bytes", "206+CR"
+            if self._looks_html(data):
+                snippet = data[:300].decode("utf-8", "replace")
+                sys.stderr.write("# probe HTML: %s\n" % snippet)
+                new_url = self._interstitial_url(
+                    data.decode("utf-8", "replace"))
+                if new_url:
+                    sys.stderr.write("# probe: interstitial -> uuid-dance: %s\n"
+                                     % new_url[:120])
+                    self.url = new_url
             raise ValueError("brak dowodu range (status=%s CT=%s body0=%r)"
-                             % (st, ct, body))
+                             % (st, ct, data[:1]))
 
     def _probe(self):
         last = None
-        for attempt in range(10):
+        for attempt in range(4):
             try:
                 self.size, self.accepts, how = self._probe_once()
                 return
@@ -328,10 +337,10 @@ class HTTPRangeSource:
                 raise
             except Exception as e:
                 last = e
-                sys.stderr.write("# probe retry %d/10: %s\n" % (attempt + 1, e))
+                sys.stderr.write("# probe retry %d/4: %s\n" % (attempt + 1, e))
                 time.sleep(60)
         raise SystemExit(
-            "probe nie wyszedl po 10 probach (60s przerwy) - Drive quota/"
+            "probe nie wyszedl po 4 probach (60s przerwy) - Drive quota/"
             "interstitial? Ostatni blad: %s" % last)
 
     @staticmethod
