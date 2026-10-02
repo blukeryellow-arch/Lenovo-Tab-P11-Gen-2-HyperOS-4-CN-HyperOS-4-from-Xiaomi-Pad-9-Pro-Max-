@@ -1129,8 +1129,11 @@ jobs:
           tar cf "$SHM/gf/MysticalOS3_kit-B.tar" "${LAST[@]}" vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img
           { echo "== MysticalOS 3 super kit (gofile, 2 tary) =="
             echo "Po rozpakowaniu OBU tarow w jednym katalogu: cat super_mystical3.part.* > super_mystical3.img"; } > /tmp/links-m3.md
-          bash tools/public_links.sh "$SHM/gf/MysticalOS3_kit-A.tar" /tmp/links-A.md || true
-          bash tools/public_links.sh "$SHM/gf/MysticalOS3_kit-B.tar" /tmp/links-B.md || true
+          # FIX (receipt 37058971097): cwd=$WORK/kit => wzgledna sciezka
+          # tools/public_links.sh nie rozwiazywala sie ("No such file or
+          # directory"). Absolutna z GITHUB_WORKSPACE + limit 1800s na tary ~2,3G.
+          UP_MAX_TIME=1800 bash "$GITHUB_WORKSPACE/tools/public_links.sh" "$SHM/gf/MysticalOS3_kit-A.tar" /tmp/links-A.md || true
+          UP_MAX_TIME=1800 bash "$GITHUB_WORKSPACE/tools/public_links.sh" "$SHM/gf/MysticalOS3_kit-B.tar" /tmp/links-B.md || true
           cat /tmp/links-A.md >> /tmp/links-m3.md 2>/dev/null || true
           cat /tmp/links-B.md >> /tmp/links-m3.md 2>/dev/null || true
           rm -rf "$SHM/gf"
