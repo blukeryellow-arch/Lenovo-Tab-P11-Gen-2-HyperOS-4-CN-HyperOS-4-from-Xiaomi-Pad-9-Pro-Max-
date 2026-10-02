@@ -36,15 +36,18 @@ Uzycie:
 import argparse
 import bz2
 import hashlib
+import http.cookiejar
 import io
 import json
 import lzma
 import os
+import re as _re
 import socket
 import struct
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -285,6 +288,9 @@ class HTTPRangeSource:
         self.requests = 0
         self.lock = threading.Lock()
         self.bytes_downloaded = 0
+        self.jar = http.cookiejar.CookieJar()
+        self.opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(self.jar))
         self._probe()
 
     UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -297,7 +303,7 @@ class HTTPRangeSource:
         # HEAD czesto nie dziala na drive.usercontent - od razu GET 0-0
         req = urllib.request.Request(
             self.url, headers={"User-Agent": self.UA, "Range": "bytes=0-0"})
-        with urllib.request.urlopen(req, timeout=90) as r:
+        with self.opener.open(req, timeout=90) as r:
             body = r.read(1)
             st = r.status
             cr = r.headers.get("Content-Range", "")
@@ -328,31 +334,89 @@ class HTTPRangeSource:
             "probe nie wyszedl po 10 probach (60s przerwy) - Drive quota/"
             "interstitial? Ostatni blad: %s" % last)
 
+    @staticmethod
+    def _looks_html(data):
+        head = data[:512].lstrip().lower()
+        return (head.startswith(b"<!doctype") or head.startswith(b"<html")
+                or (b"<form" in data[:4096] and len(data) < 16384))
+
+    def _interstitial_url(self, html):
+        """Strona 'Download warning' -> URL akcji z uuid/confirm (receipt
+        37015010433: 2009 B HTML zamiast range po ~2,6 GB sesji; mechanizm
+        jak tools/drive_form_post.py: parametry w query action, GET)."""
+        picked = None
+        for m in _re.finditer(r"<form\b([^>]*)>(.*?)</form>", html, _re.S | _re.I):
+            attrs, inner = m.group(1), m.group(2)
+            act = _re.search(r'action="([^"]*)"', attrs)
+            act = act.group(1) if act else ""
+            if "download" in act.lower():
+                picked = (act, inner)
+                break
+            if picked is None and act:
+                picked = (act, inner)
+        if not picked:
+            return None
+        url, inner = picked
+        if url.startswith("/"):
+            url = "https://drive.usercontent.google.com" + url
+        params = {}
+        for k, v in urllib.parse.parse_qsl(
+                url.split("?", 1)[1] if "?" in url else ""):
+            params[k] = v
+        for tag in _re.finditer(r"<input\b[^>]*>", inner, _re.I):
+            n = _re.search(r'name="([^"]+)"', tag.group(0))
+            v = _re.search(r'value="([^"]*)"', tag.group(0))
+            if n:
+                params[n.group(1)] = v.group(1) if v else ""
+        if "id" not in params:
+            q = urllib.parse.parse_qs(
+                urllib.parse.urlparse(self.url).query)
+            if "id" in q:
+                params["id"] = q["id"][0]
+        if not params:
+            return None
+        base = url.split("?", 1)[0]
+        return base + "?" + urllib.parse.urlencode(params)
+
     def read_at(self, off, ln, timeout=600):
         if ln <= 0:
             return b""
         end = off + ln - 1
         last_err = None
-        for attempt in range(6):
+        for attempt in range(8):
             try:
                 req = urllib.request.Request(
                     self.url,
                     headers={"User-Agent": self.UA,
                              "Range": "bytes=%d-%d" % (off, end)})
-                with urllib.request.urlopen(req, timeout=timeout) as r:
+                with self.opener.open(req, timeout=timeout) as r:
                     data = r.read()
                 if len(data) == ln:
                     with self.lock:
                         self.requests += 1
                         self.bytes_downloaded += ln
                     return data
-                last_err = "krotki range: chciano %d, dostano %d" % (ln, len(data))
+                if self._looks_html(data):
+                    new_url = self._interstitial_url(
+                        data.decode("utf-8", "replace"))
+                    if new_url:
+                        sys.stderr.write(
+                            "# interstitial (HTML %d B) -> uuid-dance: %s\n"
+                            % (len(data), new_url[:120]))
+                        self.url = new_url
+                        last_err = "interstitial -> przelaczam URL"
+                    else:
+                        last_err = ("interstitial bez formularza pobierania "
+                                    "(quota?) %r" % data[:120])
+                else:
+                    last_err = ("krotki range: chciano %d, dostano %d"
+                                % (ln, len(data)))
             except Exception as e:
                 last_err = "%s: %s" % (type(e).__name__, e)
-            sys.stderr.write("# range %d-%d retry %d/6: %s\n"
+            sys.stderr.write("# range %d-%d retry %d/8: %s\n"
                              % (off, end, attempt + 1, last_err))
             time.sleep(3 * (attempt + 1))
-        raise SystemExit("range %d-%d padl po 6 probach: %s" % (off, end, last_err))
+        raise SystemExit("range %d-%d padl po 8 probach: %s" % (off, end, last_err))
 
 
 class ZipEntrySource:

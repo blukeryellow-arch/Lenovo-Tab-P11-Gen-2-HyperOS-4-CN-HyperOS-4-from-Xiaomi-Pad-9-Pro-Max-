@@ -202,11 +202,137 @@ def zip64_sparse_test(tmp):
     return True
 
 
+class InterstitialHandler(RangeHTTPHandler):
+    """Symulacja Drive: range >1 MiB BEZ uuid -> 200 + HTML 'Download warning'
+    z formularzem (action=...?id=..&uuid=..); z uuid -> normalny 206."""
+
+    def do_GET(self):
+        if self.path.startswith("/download") and "uuid" in self.path:
+            # po uuid-dance: ten sam endpoint wydaje juz plik (jak Drive)
+            self.path = "/inter.zip"
+            RangeHTTPHandler.do_GET(self)
+            return
+        rng = self.headers.get("Range", "")
+        if rng and not rng.startswith("bytes=0-0") and "uuid" not in self.path:
+            big = rng.split("bytes=")[1].split("-")[0]
+            if int(big) > 1048576:
+                body = (
+                    b"<!doctype html><html><head><title>Google Drive - "
+                    b"Download warning</title></head><body>"
+                    b"<form id=\"download-form\" "
+                    b"action=\"http://127.0.0.1:%d/download?id=SYNTH&"
+                    b"export=download&confirm=t&uuid=dance-uuid-42\" "
+                    b"method=\"post\">"
+                    b"<input type=\"hidden\" name=\"id\" value=\"SYNTH\">"
+                    b"<input type=\"hidden\" name=\"uuid\" value=\"dance-uuid-42\">"
+                    b"</form></body></html>" % self.server.server_address[1])
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+        RangeHTTPHandler.do_GET(self)
+
+
+def interstitial_test(tmp):
+    """Pelny obieg: zip z payloadem, serwer daje interstitial dla range >1MiB,
+    ekstraktor ma przez to przejsc uuid-dancem."""
+    import hashlib as _h
+
+    BLOCK = 4096
+    payload_data = os.urandom(3 * 1024 * 1024 + 3 * 4096)  # ~3 MB produktu (block-aligned)
+
+    def varint(n):
+        out = bytearray()
+        while True:
+            b = n & 0x7F
+            n >>= 7
+            if n:
+                out.append(b | 0x80)
+            else:
+                out.append(b)
+                return bytes(out)
+
+    def tag(f, wt):
+        return varint((f << 3) | wt)
+
+    def pb_str(f, s):
+        b = s.encode()
+        return tag(f, 2) + varint(len(b)) + b
+
+    def pb_msg(f, body):
+        return tag(f, 2) + varint(len(body)) + body
+
+    def pb_varint(f, v):
+        return tag(f, 0) + varint(v)
+
+    def op_msg(t, do, dl, ext, sha=None):
+        body = pb_varint(1, t) + pb_varint(2, do) + pb_varint(3, dl)
+        for (s, n) in ext:
+            body += pb_msg(6, pb_varint(1, s) + pb_varint(2, n))
+        if sha:
+            body += tag(8, 2) + varint(len(sha)) + sha
+        return body
+
+    blobs = b""
+    ops_pb = b""
+    for off in range(0, len(payload_data), 1024 * 1024):
+        chunk = payload_data[off:off + 1024 * 1024]
+        sha = _h.sha256(chunk).digest()
+        st = off // BLOCK
+        nb = len(chunk) // BLOCK
+        ops_pb += pb_msg(8, op_msg(0, len(blobs), len(chunk), [(st, nb)], sha))
+        blobs += chunk
+    prod = pb_str(1, "product") + pb_msg(7, pb_varint(1, len(payload_data))) \
+        + ops_pb
+    manifest = pb_varint(2, BLOCK) + pb_msg(13, prod)
+    payload = b"CrAU" + struct.pack(">Q", 2) + struct.pack(">Q", len(manifest)) \
+        + struct.pack(">I", 0) + manifest + blobs
+    zpath = os.path.join(tmp, "inter.zip")
+    with zipfile.ZipFile(zpath, "w") as z:
+        z.writestr(zipfile.ZipInfo("payload.bin"), payload,
+                   compress_type=zipfile.ZIP_STORED)
+
+    port = 18681
+    while True:
+        try:
+            srv = http.server.ThreadingHTTPServer(("127.0.0.1", port),
+                                                  InterstitialHandler)
+            break
+        except OSError:
+            port += 1
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    os.chdir(tmp)
+    out = os.path.join(tmp, "inter_out.img")
+    r = subprocess.run(
+        [sys.executable, os.path.join(HERE, "payload_extract.py"),
+         "--zip-url", "http://127.0.0.1:%d/inter.zip" % port,
+         "--entry", "payload.bin", "--partition", "product",
+         "--out", out, "--jobs", "4", "--chunk", "262144"],
+        capture_output=True, text=True)
+    srv.shutdown()
+    inter = "uuid-dance" in r.stderr
+    ok = r.returncode == 0 and open(out, "rb").read() == payload_data
+    print("interstitial: dance=%s, wynik=%s" % (inter, "OK" if ok else "FAIL"))
+    if not ok:
+        print("--- stdout ---"); print(r.stdout[-800:])
+        print("--- stderr ---"); print(r.stderr[-1200:])
+        return False
+    if not inter:
+        print("UWAGA: test przeszedl bez interstitiala - handler nie zadzialal")
+        return False
+    print("INTERSTITIAL: PASS")
+    return True
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="plself_")
     print("workspace:", tmp)
     try:
         zip64_sparse_test(tmp)
+        if not interstitial_test(tmp):
+            return 1
         # --- 1. drzewo + obraz ---
         tree = os.path.join(tmp, "tree", "product")
         for rel, size in [

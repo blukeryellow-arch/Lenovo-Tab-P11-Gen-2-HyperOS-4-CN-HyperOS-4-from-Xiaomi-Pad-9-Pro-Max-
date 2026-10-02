@@ -51,6 +51,7 @@ jobs:
           python3 tools/payload_selftest.py 2>&1 | grep -vE "GET /|HEAD /" | tee /tmp/selftest.log
           grep -q "SELFTEST: PASS" /tmp/selftest.log
           grep -q "ZIP64: PASS" /tmp/selftest.log
+          grep -q "INTERSTITIAL: PASS" /tmp/selftest.log
 
       - name: "1. Cache-first: donor-product z donor-cache (GitHub CDN)"
         run: |
