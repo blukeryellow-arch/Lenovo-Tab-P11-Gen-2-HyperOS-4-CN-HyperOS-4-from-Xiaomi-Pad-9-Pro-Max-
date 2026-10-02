@@ -35,6 +35,15 @@ name: donor-pipeline
 #      wspieraja Range (sondy -r w run 8: cdnorg 17 MB/s).
 #   5. smoke w kroku 0: lpmake -S -> simg2img -> lpinfo -> lpunpack -p
 #      (bit-identyczny roundtrip) - waliduje lancuch CDN-F przed uzyciem.
+#
+# v1.3 (receipt 37037434755 - run 9: ekstrakcja CDN-R OK, harvest 3/3 OK,
+#   padl tylko krok 7): `gh release create --target $GITHUB_SHA` -> HTTP 422
+#   'target_commitish is invalid' dla SHA z galezi != domyslna (diagnoza z
+#   sandboxa: target=SHA-arena 422; target=main / target=<branch> /
+#   tag-przez-git/refs-API -> OK). FIX: tag przez API + create bez --target
+#   (fallback --target=<branch>), upload czesci PER-PART x5 retry (receipt m3:
+#   uploads.github.com daje 408 na duzych assetach), caly krok 7 teee do
+#   release.log -> sekcja w evidence raporcie (krok 8).
 
 on:
   workflow_dispatch:
@@ -538,24 +547,46 @@ jobs:
           cat donor-product.manifest
           ls -la donor-harvest.* donor-product.* | head -20
 
-      - name: "7. Release donor-cache (delete+create+upload, retry 3x)"
+      - name: "7. Release donor-cache (tag-API + create + upload per-part, retry)"
         run: |
           set -uo pipefail
           cd "$WORK"
+          exec > >(tee "$WORK/release.log") 2>&1
+          ls donor-harvest.manifest donor-product.manifest donor-harvest.part.* donor-product.part.* \
+            >/dev/null 2>&1 || { echo "::error::brak plikow do publikacji"; exit 1; }
           gh release delete donor-cache --yes --cleanup-tag 2>/dev/null || true
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/donor-cache" >/dev/null 2>&1 || true
+          # RECEIPT 37037434755: `gh release create --target $GITHUB_SHA` -> HTTP 422
+          # ('tag_name is not a valid tag', 'Release.target_commitish is invalid')
+          # dla SHA z galezi innej niz domyslna (repo publiczne; diagnoza 2 X:
+          # target=SHA-arena -> 422, target=main / target=<branch> / tag-przez-API
+          # -> OK). Tag tworzymy przez git/refs API, release bez --target.
+          RELTARGET=""
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+               -f ref=refs/tags/donor-cache -f sha="$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "::warning::tag-create via API nie wyszedl - fallback --target=$GITHUB_REF_NAME"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/donor-cache" >/dev/null 2>&1 || true
+            RELTARGET="--target=$GITHUB_REF_NAME"
+          fi
           OK=0
           for A in 1 2 3; do
-            if gh release create donor-cache --target "$GITHUB_SHA" \
-              --title "donor-cache: product + harvest HyperOS 4.0.13 (yingtian)" \
-              --notes "donor-pipeline run ${GITHUB_RUN_ID}. Zawartosc: (a) donor-harvest.tar.gz (app/fonts/themes z product.img donora; format TIER A2 m3) oraz (b) product.img donora w czesciach donor-product.part.* (format TIER A m3; md5/size/sha256 w donor-product.manifest). Zrodlo: OTA 4.0.13.0 z Drive (range-extraction payload.bin, pole operations=8, 3086 opow, sha256 per-op OK)." \
+            if gh release create donor-cache $RELTARGET \
+              --title "donor-cache: product + harvest HyperOS yingtian" \
+              --notes "donor-pipeline run ${GITHUB_RUN_ID}. Zawartosc: (a) donor-harvest.tar.gz (app/fonts/themes z product.img donora; format TIER A2 m3) oraz (b) product.img donora w czesciach donor-product.part.* (format TIER A m3; md5/size/sha256 w donor-product.manifest). Zrodlo: patrz source= w donor-harvest.manifest." \
               donor-harvest.manifest donor-product.manifest; then OK=1; break; fi
             echo "::warning::release create: proba $A/3 nie wyszla - pauza 60s"; sleep 60
           done
           [ "$OK" = 1 ] || { echo "::error::nie udalo sie stworzyc release donor-cache"; exit 1; }
-          UOK=0
-          for A in 1 2 3; do
-            if gh release upload donor-cache donor-harvest.part.* donor-product.part.* --clobber; then UOK=1; break; fi
-            echo "::warning::release upload: proba $A/3 nie wyszla - pauza 60s"; sleep 60
+          # czastki POJEDYNCZO z retry (uploads.github.com potrafi 408 na duzym
+          # assescie - receipt m3; 1 czesc harvest ~0,5 GB + 4 czesci product ~1,8 GB)
+          UOK=1
+          for P in donor-harvest.part.* donor-product.part.*; do
+            UP=0
+            for A in 1 2 3 4 5; do
+              if gh release upload donor-cache "$P" --clobber; then UP=1; break; fi
+              echo "::warning::upload $P: proba $A/5 nie wyszla - pauza 30s"; sleep 30
+            done
+            [ "$UP" = 1 ] || { UOK=0; echo "::error::upload $P padl po 5 probach"; break; }
           done
           [ "$UOK" = 1 ] || { echo "::error::upload czesci nie wyszedl"; exit 1; }
           gh release view donor-cache --json url,assets \
@@ -571,6 +602,7 @@ jobs:
             echo
             echo "## probe"; echo '```'; cat "$WORK/probe.log" 2>/dev/null || true; echo '```'
             echo "## ekstrakcja (tail 100)"; echo '```'; tail -100 "$WORK/extract.log" 2>/dev/null || true; echo '```'
+            echo "## release (krok 7, tail 120)"; echo '```'; tail -120 "$WORK/release.log" 2>/dev/null || true; echo '```'
             echo "## harvest (tail 120)"; echo '```'; tail -120 "$WORK/harvest.log" 2>/dev/null || true; echo '```'
             echo "## manifesty"; echo '```'; cat "$WORK/donor-harvest.manifest" 2>/dev/null || true; cat "$WORK/donor-product.manifest" 2>/dev/null || true; echo '```'
             echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
