@@ -1,6 +1,6 @@
 name: donor-pipeline
-# v1.1 - TIER A2 dla MysticalOS 3: pozyskanie zawartosci product.img donora
-# HyperOS 4.0.13.0 (Xiaomi Pad 9 Pro Max "yingtian") i publikacja release'u
+# v1.2 - TIER A2 dla MysticalOS 3: pozyskanie zawartosci product.img donora
+# HyperOS (Xiaomi Pad 9 Pro Max "yingtian") i publikacja release'u
 # donor-cache konsumowanego przez release-mystical3 (TIER A2 = donor-harvest,
 # TIER A = donor-product parts).
 #
@@ -14,6 +14,27 @@ name: donor-pipeline
 #   - INSURANCE: raz wyciagniety product.img wraca na donor-cache jako
 #     donor-product.part.* (format m3 TIER A) - nastepne runy ida cache-first
 #     (GitHub CDN) i w ogole nie dotykaja Drive.
+#
+# v1.2 (receipt 37026854069 - run 8, 76 min, failure):
+#   1. Drive probe OK 21 MB/s, ale ekstrakcja kilka minut pozniej dostala
+#      'Google Drive - Quota exceeded' (2009 B HTML) x2 proby -> tier Drive
+#      pada szybko i czysto, gdy fala quoty wroci - zadziala znowu.
+#   2. TIER CDN (fastboot tgz): PELNY stream 11,7 GB @ 63 MB/s sciagniety
+#      poprawnie (md5 sumowane), ale 'tar: */product.img: Not found in
+#      archive' - fastboot ROM yingtian NIE MA */product.img (dyn. partycje:
+#      product siedzi w super.img). FIX: wzorce '*product.img'+'*super.img'
+#      + super -> simg2img -> lpinfo (nazwa partycji) -> lpunpack -p.
+#   3. BUG listy mirrorow: `echo ... | tee` wewnatrz $( ) zanieczyscil
+#      MIRRORS tokenami 'speed'/'B/s:' -> curl probowal hostow "speed"/"B".
+#      FIX: komunikaty tylko >> probe.log, stdout = printf, grep '^https://'.
+#   4. NOWY TIER CDN-R (pierwszy wybor CDN): Recovery OTA zip
+#      yingtian-ota_full-OS4.0.11.0.XBMCNXM (10,3 GB, md5 a12ac31de7...)
+#      z tych samych mirrorow - zawiera payload.bin (identyczny format co
+#      donor Drive 4.0.13) -> payload_extract.py range-extraction (~5,6 GB
+#      blobow zamiast 12,6 GB tgz). Szybkie, sprawdzzone narzedzie, mirrory
+#      wspieraja Range (sondy -r w run 8: cdnorg 17 MB/s).
+#   5. smoke w kroku 0: lpmake -S -> simg2img -> lpinfo -> lpunpack -p
+#      (bit-identyczny roundtrip) - waliduje lancuch CDN-F przed uzyciem.
 
 on:
   workflow_dispatch:
@@ -52,6 +73,28 @@ jobs:
           grep -q "SELFTEST: PASS" /tmp/selftest.log
           grep -q "ZIP64: PASS" /tmp/selftest.log
           grep -q "INTERSTITIAL: PASS" /tmp/selftest.log
+          # smoke pelnego lancucha TIER CDN-F (fastboot tgz -> super -> product):
+          # lpmake -S (sparse) -> simg2img -> lpinfo (nazwa partycji) -> lpunpack -p.
+          # Waliduje fallback zanim padnie na prawdziwym super.img yingtian.
+          echo "== smoke: lancuch CDN-F (lpmake -S -> simg2img -> lpinfo -> lpunpack -p) =="
+          dd if=/dev/urandom of=/tmp/mini.img bs=1M count=8 status=none
+          kit-mysticalos3/bin/lpmake --device-size=33554432 --metadata-size=65536 --metadata-slots=3 \
+            --block-size=4096 --alignment=1048576 --super-name=super -S \
+            --group=main_a:16777216 \
+            --partition=product_a:readonly:8388608:main_a --image=product_a=/tmp/mini.img \
+            -o /tmp/super_mini.img
+          python3 tools/simg2img.py /tmp/super_mini.img /tmp/super_mini_raw.img >/dev/null
+          head -c 8388608 /tmp/super_mini_raw.img > /tmp/super_meta.bin
+          P=$(python3 tools/lpinfo.py --json /tmp/super_meta.bin | python3 -c 'import json,sys,re
+          ns=[p["name"] for p in json.load(sys.stdin)["metadata"]["partitions"]]
+          m=[n for n in ns if re.fullmatch(r"product(_[ab])?", n)]
+          print(m[0] if m else "")')
+          [ "$P" = "product_a" ] || { echo "::error::smoke: lpinfo nie znalazl product_a (P=$P)"; exit 1; }
+          mkdir -p /tmp/mini_unp
+          kit-mysticalos3/bin/lpunpack -p product_a /tmp/super_mini_raw.img /tmp/mini_unp/ >/dev/null 2>&1
+          cmp /tmp/mini.img /tmp/mini_unp/product_a.img \
+            || { echo "::error::smoke: lancuch sparse (CDN-F) FAIL (cmp)"; exit 1; }
+          echo "SMOKE-SPARSE: PASS (lpmake -S -> simg2img -> lpinfo -> lpunpack -p, bit-identyczny)"
 
       - name: "1. Cache-first: donor-product z donor-cache (GitHub CDN)"
         run: |
@@ -140,7 +183,7 @@ jobs:
               f.write("OTA_PICK=%s\n" % pick)
           EOF
 
-      - name: "3. product.img: Drive (range-extraction x2) | CDN Xiaomi (fastboot tgz)"
+      - name: "3. product.img: Drive (x2) | CDN Recovery OTA (range) | CDN Fastboot (super->lpunpack)"
         if: env.CACHED_PRODUCT != '1'
         run: |
           set -uo pipefail
@@ -148,6 +191,36 @@ jobs:
           AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
           [ "${AV:-0}" -ge 8 ] || { echo "::error::dysk ${AV}G < 8G"; exit 1; }
           OK=0
+          # ---- wspolna funkcja: mirrory CDN Xiaomi dla pliku $1, wg szybkosci ----
+          # RECEIPT 37026854069: `echo ... | tee` wewnatrz $( ) zanieczyscil liste
+          # mirrorow tokenami 'speed'/'B/s:' (cut -f2- z linii "CDN speed ... B/s: URL")
+          # i curl probowal hostow "speed"/"B". Stad: komunikaty TYLKO >> probe.log,
+          # na stdout wylacznie printf speed+URL, na koncu grep '^https://'.
+          ROM_PAGE="https://xmfirmwareupdater.com/hyperos/yingtian/stable/OS4.0.11.0.XBMCNXM/"
+          cdn_mirrors() {
+            local FN="$1" PAGE2 M U CU CC SPD
+            PAGE2=$(curl -sSL --connect-timeout 30 --max-time 120 "$ROM_PAGE" || true)
+            M=""
+            [ -n "$PAGE2" ] && M=$(printf '%s' "$PAGE2" | sed 's/&amp;/\&/g' \
+              | grep -oE "https://[^\"'<> ]+/${FN}" | sort -u || true)
+            if [ -z "$M" ]; then
+              for CDNB in cdnorg.d.miui.com bigota.d.miui.com bn.d.miui.com hugeota.d.miui.com cdn-ota.azureedge.net; do
+                CU="https://$CDNB/OS4.0.11.0.XBMCNXM/$FN"
+                CC=$(curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$CU" 2>/dev/null || echo ERR)
+                echo "SONDA CDN $CC $CU" >> "$WORK/probe.log"
+                [ "$CC" = "200" ] && { M="$CU"; break; }
+              done
+            else
+              echo "CDN mirrory z HTML ($FN):" >> "$WORK/probe.log"
+              printf '%s\n' "$M" >> "$WORK/probe.log"
+            fi
+            for U in $M; do
+              SPD=$(curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 "$U" 2>/dev/null || echo 0)
+              echo "CDN speed ${SPD%.*} B/s: $U" >> "$WORK/probe.log"
+              printf '%012.0f %s\n' "${SPD:-0}" "$U" 2>/dev/null || echo "000000000000 $U"
+            done | sort -rn | cut -d' ' -f2- | grep -E '^https?://' || true
+          }
+          # ================= TIER Drive: OTA 4.0.13 z Drive (x2) =================
           if [ -n "${OTA_PICK:-}" ]; then
             for A in 1 2; do
               echo "=== TIER Drive: ekstrakcja, proba $A/2 ==="
@@ -176,56 +249,131 @@ jobs:
           else
             echo "OTA_PICK puste (probe Drive nie wyszedl) - od razu CDN"
           fi
+          # ===== TIER CDN-R: Recovery OTA zip 4.0.11 (payload.bin, range) =====
+          # RECEIPT 37026854069: fastboot tgz (12,6 GB, caly stream OK) NIE zawiera
+          # */product.img ("tar: Not found in archive"). Recovery OTA zip zawiera
+          # payload.bin - TEN SAM format co donor Drive 4.0.13 - payload_extract.py
+          # wycina product range-requestami (~5,6 GB blobow zamiast 12,6 GB tgz).
+          # Pierwszy wybor CDN.
           if [ "$OK" != 1 ]; then
-            echo "=== TIER CDN: fastboot ROM yingtian 4.0.11.0 (Xiaomi CDN) ==="
-            ROM_PAGE="https://xmfirmwareupdater.com/hyperos/yingtian/stable/OS4.0.11.0.XBMCNXM/"
-            ROM_TGZ="yingtian-images-OS4.0.11.0.XBMCNXM-user-20260916.0000.00-17.0-cn-60633b4ba6.tgz"
-            ROM_MD5="60633b4ba6490a2bd98bb58df3b9d850"
-            MIRRORS=""
-            PAGE2=$(curl -sSL --connect-timeout 30 --max-time 120 "$ROM_PAGE" || true)
-            [ -n "$PAGE2" ] && MIRRORS=$(printf '%s' "$PAGE2" | sed 's/&amp;/\&/g' \
-              | grep -oE "https://[^\"'<> ]+/${ROM_TGZ}" | sort -u || true)
-            if [ -z "$MIRRORS" ]; then
-              for CDNB in cdnorg.download.miui.com bigota.d.miui.com bn.d.miui.com cdn-ota.azureedge.net; do
-                CU="https://$CDNB/OS4.0.11.0.XBMCNXM/$ROM_TGZ"
-                CC=$(curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$CU" 2>/dev/null || echo ERR)
-                echo "SONDA CDN $CC $CU" | tee -a "$WORK/probe.log"
-                [ "$CC" = "200" ] && { MIRRORS="$CU"; break; }
-              done
-            else
-              echo "CDN mirrory z HTML:" | tee -a "$WORK/probe.log"; echo "$MIRRORS" | tee -a "$WORK/probe.log"
+            echo "=== TIER CDN-R: Recovery OTA yingtian 4.0.11.0 (payload.bin, range-extraction) ===" | tee -a "$WORK/probe.log"
+            ROM_ZIP="yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip"
+            ROM_ZIP_MD5="a12ac31de7165776806e8252cbb8628a"
+            ZM=$(cdn_mirrors "$ROM_ZIP")
+            if [ -z "$ZM" ]; then
+              echo "::warning::CDN-R: brak mirrorow recovery zip ($ROM_ZIP)" | tee -a "$WORK/probe.log"
             fi
-            if [ -z "$MIRRORS" ]; then
-              echo "::error::brak mirrorow CDN Xiaomi (ani HTML, ani sondy)"
-              exit 1
-            fi
-            MIRRORS=$(for U in $MIRRORS; do
-              SPD=$(curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 "$U" 2>/dev/null || echo 0)
-              echo "CDN speed ${SPD%.*} B/s: $U" | tee -a "$WORK/probe.log"
-              printf '%012.0f %s\n' "${SPD:-0}" "$U" 2>/dev/null || echo "000000000000 $U"
-            done | sort -rn | cut -d' ' -f2-)
-            echo "CDN kolejnosc wg szybkosci: $MIRRORS" | tee -a "$WORK/probe.log"
-            for U in $MIRRORS; do
-              echo "CDN proba: $U" | tee -a "$WORK/probe.log"
-              rm -rf "$WORK/romx" && mkdir -p "$WORK/romx"
-              if curl -fL --retry 2 --connect-timeout 30 \
-                --speed-limit 100000 --speed-time 90 "$U" 2>>"$WORK/probe.log" \
-                | tee >(md5sum > "$WORK/rom-tgz.md5") \
-                | tar -xz -C "$WORK/romx" --wildcards '*/product.img' 2>>"$WORK/probe.log"; then
-                GOT=$(find "$WORK/romx" -name product.img -size +100M | head -1)
-                MD5GOT=$(awk '{print $1}' "$WORK/rom-tgz.md5" 2>/dev/null)
-                if [ -n "$GOT" ] && [ "$MD5GOT" = "$ROM_MD5" ]; then
-                  mv "$GOT" "$WORK/product.img" && rm -rf "$WORK/romx"
-                  echo "CDN OK: product.img $(stat -c%s "$WORK/product.img") B z fastboot ROM (md5 tgz zgodne)" | tee -a "$WORK/probe.log"
-                  echo "source=Xiaomi CDN fastboot ROM yingtian 4.0.11.0.XBMCNXM (tgz md5 $ROM_MD5; Drive quota wyczerpana - receipt 37020690506)" > "$WORK/source.txt"
+            for U in $ZM; do
+              for A in 1 2; do
+                echo "CDN-R proba $A/2: $U" | tee -a "$WORK/probe.log"
+                rm -f "$WORK/product.img"
+                if python3 tools/payload_extract.py \
+                  --zip-url "$U" --entry payload.bin --partition "$PARTITION" \
+                  --out "$WORK/product.img" --jobs 12 --chunk 16777216 --prefetch-ops 3 \
+                  --erofs-check 2>&1 | tee "$WORK/extract.log"; then
+                  echo "CDN-R OK: product.img $(stat -c%s "$WORK/product.img") B z $U (zip md5 wg strony: $ROM_ZIP_MD5)" | tee -a "$WORK/probe.log"
+                  echo "source=Xiaomi CDN Recovery OTA yingtian 4.0.11.0.XBMCNXM zip ($ROM_ZIP; payload.bin range-extraction, per-op sha256 OK, 12 watkow; Drive quota - receipt 37026854069)" > "$WORK/source.txt"
                   OK=1; break
                 fi
-                echo "CDN: niekompletne (GOT=${GOT:-brak}, md5=$MD5GOT vs $ROM_MD5) - nastepny mirror" | tee -a "$WORK/probe.log"
-                rm -rf "$WORK/romx" "$WORK/product.img"
-                fi
+                [ "$A" -lt 2 ] && { echo "pauza 3 min (cooldown)..."; sleep 180; }
+              done
+              [ "$OK" = 1 ] && break
             done
           fi
-          [ "$OK" = 1 ] || { echo "::error::ani Drive, ani CDN nie oddaly product.img"; exit 1; }
+          # == TIER CDN-F: Fastboot tgz (product wprost | super->simg2img->lpunpack) ==
+          # Fallback najnizszy. Wzorce: '*product.img' (receipt 37026854069: '*/product.img'
+          # nie lapan plikow bez katalogu) + '*super.img' (dyn. partycje: product moze
+          # byc wewnatrz super). tar exit=2 (czesc wzorcow bez trafien) NIE dyskwalifikuje
+          # - o zawartosci decyduje find na dysku + md5 calego tgz.
+          if [ "$OK" != 1 ]; then
+            echo "=== TIER CDN-F: fastboot ROM yingtian 4.0.11.0 (tgz) ===" | tee -a "$WORK/probe.log"
+            ROM_TGZ="yingtian-images-OS4.0.11.0.XBMCNXM-user-20260916.0000.00-17.0-cn-60633b4ba6.tgz"
+            ROM_TGZ_MD5="60633b4ba6490a2bd98bb58df3b9d850"
+            FM=$(cdn_mirrors "$ROM_TGZ")
+            if [ -z "$FM" ]; then
+              echo "::warning::CDN-F: brak mirrorow tgz ($ROM_TGZ)" | tee -a "$WORK/probe.log"
+            fi
+            for U in $FM; do
+              echo "CDN-F proba: $U" | tee -a "$WORK/probe.log"
+              rm -rf "$WORK/romx" && mkdir -p "$WORK/romx"
+              curl -fL --retry 2 --connect-timeout 30 \
+                --speed-limit 100000 --speed-time 90 "$U" 2>>"$WORK/probe.log" \
+                | tee >(md5sum > "$WORK/rom-tgz.md5") \
+                | tar -xz -C "$WORK/romx" --wildcards '*product.img' '*super.img' 2>>"$WORK/probe.log"
+              echo "CDN-F: pipeline status $? (tar 2 = czesc wzorcow bez trafien - sprawdzam dysk)" | tee -a "$WORK/probe.log"
+              # md5sum z procsub pisze wynik na KONCU streamu - czekamy az plik
+              # bedzie niepusty (max 15 s; unika race przy natychmiastowym odczycie)
+              for W in $(seq 1 15); do
+                [ -s "$WORK/rom-tgz.md5" ] && break
+                sleep 1
+              done
+              MD5GOT=$(awk '{print $1}' "$WORK/rom-tgz.md5" 2>/dev/null)
+              GOTP=$(find "$WORK/romx" -name product.img -size +100M 2>/dev/null | head -1)
+              GOTS=$(find "$WORK/romx" -name super.img -size +100M 2>/dev/null | head -1)
+              if [ "$MD5GOT" != "$ROM_TGZ_MD5" ]; then
+                echo "CDN-F: md5 tgz niezgodne (${MD5GOT:-brak} vs $ROM_TGZ_MD5) - nastepny mirror" | tee -a "$WORK/probe.log"
+                rm -rf "$WORK/romx" "$WORK/product.img"
+                continue
+              fi
+              if [ -n "$GOTP" ]; then
+                mv "$GOTP" "$WORK/product.img"
+                echo "CDN-F OK: product.img $(stat -c%s "$WORK/product.img") B wprost z tgz (md5 OK)" | tee -a "$WORK/probe.log"
+                echo "source=Xiaomi CDN fastboot tgz 4.0.11.0 (product.img wprost; tgz md5 $ROM_TGZ_MD5 OK)" > "$WORK/source.txt"
+                OK=1
+              elif [ -n "$GOTS" ]; then
+                # straznik dysku: rozmiar raw z naglowka sparse (blk_sz * total_blks)
+                HDRS=$(python3 tools/simg2img.py "$GOTS" /dev/null --info 2>/dev/null \
+                  | sed -n '1s/.*blk_sz=\([0-9]*\) total_blks=\([0-9]*\).*/\1 \2/p')
+                BLKSZ=${HDRS% *}; TOTBL=${HDRS#* }
+                RAWB=$(( ${BLKSZ:-0} * ${TOTBL:-0} ))
+                AVB=$(df --output=avail -B1 / | tail -1 | tr -dc '0-9')
+                echo "CDN-F: super.img -> raw ~${RAWB:-0} B ($(( RAWB / 1073741824 ))G), wolne ${AVB:-0} B" | tee -a "$WORK/probe.log"
+                if [ "${RAWB:-0}" -gt 0 ] && [ $(( RAWB / 1073741824 + 10 )) -gt $(( ${AVB:-0} / 1073741824 )) ]; then
+                  echo "::error::CDN-F: za malo dysku na unsparse super (~$(( RAWB / 1073741824 ))G + 10G)" | tee -a "$WORK/probe.log"
+                  break
+                fi
+                if python3 tools/simg2img.py "$GOTS" "$WORK/super.raw" >>"$WORK/probe.log" 2>&1; then
+                  echo "CDN-F: super.img sparse -> super.raw OK" | tee -a "$WORK/probe.log"
+                else
+                  echo "CDN-F: super.img nie-sparse - uzywam wprost" | tee -a "$WORK/probe.log"
+                  mv "$GOTS" "$WORK/super.raw"
+                fi
+                rm -rf "$WORK/romx" && mkdir -p "$WORK/romx"
+                # metadane LP siedza w pierwszych ~200 KB; lpinfo czyta caly plik do
+                # RAM, wiec dajemy mu tylko glowice 8 MB
+                head -c 8388608 "$WORK/super.raw" > "$WORK/super.meta.bin" 2>/dev/null || true
+                PNAME=$(python3 tools/lpinfo.py --json "$WORK/super.meta.bin" 2>/dev/null \
+                  | python3 -c 'import json,sys,re
+          ns=[p["name"] for p in json.load(sys.stdin)["metadata"]["partitions"]]
+          m=[n for n in ns if re.fullmatch(r"product(_[ab])?", n)]
+          print(m[0] if m else "")' 2>/dev/null)
+                PLIST=$(python3 tools/lpinfo.py --json "$WORK/super.meta.bin" 2>/dev/null \
+                  | python3 -c 'import json,sys; print(",".join(p["name"] for p in json.load(sys.stdin)["metadata"]["partitions"]))' 2>/dev/null)
+                echo "CDN-F: partycje w super: ${PLIST:-?} -> product = ${PNAME:-BRAK}" | tee -a "$WORK/probe.log"
+                if [ -z "${PNAME:-}" ]; then
+                  echo "CDN-F: brak partycji product w super (lpinfo) - nastepny mirror" | tee -a "$WORK/probe.log"
+                  rm -rf "$WORK/romx" "$WORK/super.raw" "$WORK/super.meta.bin"
+                  continue
+                fi
+                if kit-mysticalos3/bin/lpunpack -p "$PNAME" "$WORK/super.raw" "$WORK/romx" >>"$WORK/probe.log" 2>&1 \
+                   && [ -s "$WORK/romx/$PNAME.img" ]; then
+                  mv "$WORK/romx/$PNAME.img" "$WORK/product.img"
+                  rm -rf "$WORK/romx" "$WORK/super.raw" "$WORK/super.meta.bin"
+                  echo "CDN-F OK: product.img $(stat -c%s "$WORK/product.img") B z super.img (simg2img -> lpunpack -p $PNAME; md5 tgz OK)" | tee -a "$WORK/probe.log"
+                  echo "source=Xiaomi CDN fastboot tgz 4.0.11.0 (super.img -> simg2img -> lpunpack -p $PNAME; tgz md5 $ROM_TGZ_MD5 OK)" > "$WORK/source.txt"
+                  OK=1
+                else
+                  echo "CDN-F: lpunpack -p $PNAME nie oddal pliku - nastepny mirror" | tee -a "$WORK/probe.log"
+                  rm -rf "$WORK/romx" "$WORK/super.raw" "$WORK/super.meta.bin"
+                fi
+              else
+                echo "CDN-F: ani product.img, ani super.img w tgz (md5 OK?) - nastepny mirror" | tee -a "$WORK/probe.log"
+                rm -rf "$WORK/romx"
+              fi
+              [ "$OK" = 1 ] && break
+            done
+          fi
+          [ "$OK" = 1 ] || { echo "::error::ani Drive, ani CDN-R (recovery zip), ani CDN-F (fastboot tgz) nie oddaly product.img"; exit 1; }
           # wspolna weryfikacja: magic EROFS @1024 + rozmiar >3G
           SZ=$(stat -c%s "$WORK/product.img")
           [ "$SZ" -gt 3000000000 ] || { echo "::error::product.img ${SZ}B < 3G?"; exit 1; }
