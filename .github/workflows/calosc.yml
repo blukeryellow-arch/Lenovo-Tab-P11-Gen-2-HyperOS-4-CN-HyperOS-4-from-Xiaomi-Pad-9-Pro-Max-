@@ -81,20 +81,36 @@ jobs:
           ls -la "$WORK/kit"
           df -h / | tail -1
 
-      - name: "4. Zip (bez kompresji - binarny img)"
+      - name: "4. Zip bez kompresji (python zipfile STORED; zip CLI zniknal z runera)"
         run: |
           set -euo pipefail
-          cd "$WORK/kit"
-          zip -0 -q "$WORK/MysticalOS3-CALOSC.zip" .
-          SZ=$(stat -c%s "$WORK/MysticalOS3-CALOSC.zip")
-          echo "MysticalOS3-CALOSC.zip: $SZ B"
+          python3 - "$WORK/kit" "$WORK/MysticalOS3-CALOSC.zip" <<'EOF'
+          import os, sys, zipfile, time
+          src, dst = sys.argv[1], sys.argv[2]
+          n = 0
+          with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
+              for root, _dirs, files in os.walk(src):
+                  for f in sorted(files):
+                      p = os.path.join(root, f)
+                      arc = os.path.relpath(p, src)
+                      z.write(p, arc)
+                      n += 1
+          print("plikow w zipie:", n, "| rozmiar:", os.path.getsize(dst), "B")
+          # weryfikacja spisu + rozmiarow w zipie
+          with zipfile.ZipFile(dst) as z:
+              bad = z.testzip()
+              assert bad is None, "uszkodzony wpis: %s" % bad
+              for i in z.infolist():
+                  assert i.file_size > 0, "pusty wpis: %s" % i.filename
+          print("zip weryfikowany OK (testzip)")
+          EOF
           df -h / | tail -1
 
       - name: "5. Artifact: JEDEN zip NA GITHUBIE (do pobrania ze strony runu)"
         uses: actions/upload-artifact@v4
         with:
           name: MysticalOS3-CALOSC
-          path: /tmp/calosc/MysticalOS3-CALOSC.zip
+          path: /tmp/calosc/kit/*
           retention-days: 90
           compression-level: 0
 
@@ -107,6 +123,7 @@ jobs:
           cat /tmp/links-calosc.md
 
       - name: "7. Evidence (reports/)"
+        if: always()
         run: |
           set -uo pipefail
           cd "$GITHUB_WORKSPACE"
