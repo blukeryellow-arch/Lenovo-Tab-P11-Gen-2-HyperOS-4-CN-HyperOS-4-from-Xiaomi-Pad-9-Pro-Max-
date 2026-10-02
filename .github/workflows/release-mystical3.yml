@@ -1,4 +1,7 @@
 name: release-mystical3
+# v8.12.0 (FIX release-create: --target $GITHUB_SHA -> 422 'target_commitish is
+# invalid' dla SHA z galezi != domyslna, receipt 37037434755; tag przez git/refs
+# API + create bez --target, fallback --target=branch)
 # v8.11.0 (TIER A2: donor-harvest z release donor-cache - apki MIUI wypieczone w obrazie; donor-pipeline buduje donor-cache z OTA zipa Drive przez range-extraction)
 
 # ============================================================================
@@ -1050,9 +1053,21 @@ jobs:
           TRANSPLANT=$(cat /tmp/transplant.status 2>/dev/null | head -1 || echo "?")
           RELNOTES="MysticalOS 3 = hybrydowy super.img w FABRYCZNEJ geometrii TB350FU (9 GiB, VAB, slot A): spojny zestaw S230982 (system_ext/product/vendor/odm*) + system MysticalOS 3 (PURGE GMS z system+product+system_ext; zachowany tylko WebView; microG v0.3.17.252432 + FakeStore + Aurora (auto-resolve F-Droid/GitLab) + Magisk v30.7 (manager); transplant: $TRANSPLANT; mitigation display: staly refresh rate). Ekstrakcja bazy: wlasny streaming unpacker liblp (httpzip range + stream_lpunpack, bit-identyczny z lpunpack AOSP). Format: sparse super w ~32 czastkach + vbmeta_disable (flags=3) + boot_S230982 + simg2img.py. Flash: fastbootd wg FLASH-M3.md (vbmeta x3 -> super -> set-active=a). Slot B = rollback. To zamiana partycji dynamicznych, NIE DSU."
           gh release delete mysticalos-3-super --yes --cleanup-tag 2>/dev/null || true
+          # RECEIPT 37037434755 (donor-pipeline): `gh release create --target $GITHUB_SHA`
+          # -> HTTP 422 'target_commitish is invalid' dla SHA z galezi innej niz
+          # domyslna (repo publiczne). Tag przez git/refs API + create bez --target;
+          # fallback --target=<nazwa galezi>.
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/mysticalos-3-super" >/dev/null 2>&1 || true
+          RELTARGET=""
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+               -f ref=refs/tags/mysticalos-3-super -f sha="$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "::warning::tag-create via API nie wyszedl - fallback --target=$GITHUB_REF_NAME"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/mysticalos-3-super" >/dev/null 2>&1 || true
+            RELTARGET="--target=$GITHUB_REF_NAME"
+          fi
           REL_OK=0
           for A in 1 2 3; do
-            if gh release create mysticalos-3-super --target "$GITHUB_SHA" \
+            if gh release create mysticalos-3-super $RELTARGET \
               --title "MysticalOS 3 - TB350FU super.img repack (stock Lenovo base + microG/Aurora + HyperOS transplant)" \
               --notes "$RELNOTES" \
               vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img \
