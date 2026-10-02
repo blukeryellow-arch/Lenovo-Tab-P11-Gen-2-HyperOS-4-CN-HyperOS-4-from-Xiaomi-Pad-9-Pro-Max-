@@ -71,6 +71,10 @@ jobs:
       PARTITION: product
       WORK: /tmp/donor
       GH_TOKEN: ${{ github.token }}
+      # RECEIPT 37044228897: krok 7 robi `cd $WORK` (nie-git) i `gh release create`
+      # bez GH_REPO pada 'failed to run git: fatal: not a git repository'
+      # (m3 ma GH_REPO w env i dlatego publikuje release bez problemu).
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
 
