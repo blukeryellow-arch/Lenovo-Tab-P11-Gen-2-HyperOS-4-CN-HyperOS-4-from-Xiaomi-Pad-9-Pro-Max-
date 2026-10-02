@@ -1,0 +1,280 @@
+name: donor-pipeline
+# v1.0 - TIER A2 dla MysticalOS 3: pozyskanie zawartosci product.img donora
+# HyperOS 4.0.13.0 (Xiaomi Pad 9 Pro Max "yingtian") i publikacja release'u
+# donor-cache (donor-harvest.*) konsumowanego przez release-mystical3 TIER A2.
+#
+# Historia problemu: Drive dlawil pelne transfery 10,3 GB na runnerze (m1 2x
+# nieudane), CDN Xiaomi dlawil 12,6 GB tgz po burst. TU: OTA zip na Drive jest
+# publiczny (anyoneWithLink) i wspiera HTTP Range - pobieramy wylacznie bloby
+# partycji product (~4-5 GB) z payload.bin, chunkami 16 MB x 12 watkow
+# (tools/payload_extract.py; selftest + zip64 test jako bramka w kroku 0).
+#
+# Donor-cache (kiedys "konczy epoke"): raz zbudowany harvest (app/fonts/themes)
+# leci na GitHub CDN i m3 TIER A2 skleja go w sekundy zamiast streamowac
+# dziesiatki GB. Evidencia commitowana do reports/.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/donor-pipeline.yml', 'tools/payload_extract.py', 'tools/payload_selftest.py']
+
+concurrency:
+  group: donor-pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  donor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    env:
+      OTA_URL: "https://drive.usercontent.google.com/download?id=1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd&export=download&confirm=t"
+      OTA_URL2: "https://drive.google.com/uc?export=download&confirm=t&id=1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd"
+      OTA_SIZE: "10340028849"
+      PARTITION: product
+      WORK: /tmp/donor
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "0. Selftest ekstraktora (bramka: selftest + zip64)"
+        run: |
+          set -e
+          pip install --quiet lz4 2>/dev/null || pip install --quiet --break-system-packages lz4
+          python3 tools/payload_selftest.py 2>&1 | grep -vE "GET /|HEAD /" | tee /tmp/selftest.log
+          grep -q "SELFTEST: PASS" /tmp/selftest.log
+          grep -q "ZIP64: PASS" /tmp/selftest.log
+
+      - name: "1. Probe OTA zip na Drive (Range + speed)"
+        run: |
+          set -uo pipefail
+          mkdir -p "$WORK" reports
+          : > "$WORK/probe.log"
+          python3 - <<'EOF' 2>&1 | tee -a "$WORK/probe.log"
+          import os, sys, time, urllib.request
+          urls = [os.environ["OTA_URL"], os.environ["OTA_URL2"]]
+          want = int(os.environ["OTA_SIZE"])
+          pick = None
+          for u in urls:
+              try:
+                  req = urllib.request.Request(u, headers={"Range": "bytes=0-0"})
+                  t0 = time.time()
+                  with urllib.request.urlopen(req, timeout=90) as r:
+                      code = r.status
+                      cr = r.headers.get("Content-Range", "")
+                      r.read(1)
+                  print("probe [%s] -> %s Content-Range=%s (%.1fs)"
+                        % (u.split("/")[2], code, cr, time.time() - t0))
+                  total = int(cr.rsplit("/", 1)[1]) if "/" in cr else 0
+                  if code == 206 and total == want:
+                      pick = u
+                      break
+                  print("  -> NIE nadaje sie (206=%s total=%s oczek=%s)"
+                        % (code == 206, total, want))
+              except Exception as e:
+                  print("probe [%s] -> ERR %s: %s" % (u.split("/")[2],
+                                                       type(e).__name__, e))
+          if not pick:
+              print("BRAK dzialajacego URL z Range - donor-cache nie powstanie")
+              sys.exit(1)
+          req = urllib.request.Request(
+              pick, headers={"Range": "bytes=1048576-34603007"})
+          t0 = time.time()
+          n = 0
+          with urllib.request.urlopen(req, timeout=300) as r:
+              while True:
+                  b = r.read(1 << 20)
+                  if not b:
+                      break
+                  n += len(b)
+          dt = time.time() - t0
+          print("speed 1-watkowo (32 MiB): %.2f MB/s" % (n / dt / 2**20))
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write("OTA_PICK=%s\n" % pick)
+          EOF
+
+      - name: "2. Ekstrakcja product.img (range-streaming z payload.bin)"
+        run: |
+          set -euo pipefail
+          df -h / | tee -a "$WORK/probe.log"
+          AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+          [ "${AV:-0}" -ge 8 ] || { echo "::error::dysk ${AV}G < 8G"; exit 1; }
+          python3 tools/payload_extract.py \
+            --zip-url "$OTA_PICK" \
+            --entry payload.bin \
+            --partition "$PARTITION" \
+            --out "$WORK/product.img" \
+            --jobs 12 --chunk 16777216 --prefetch-ops 3 \
+            --erofs-check 2>&1 | tee "$WORK/extract.log"
+
+      - name: "3. Sanity fsck.erofs (kit bin)"
+        run: |
+          set -e
+          kit-mysticalos3/bin/fsck.erofs --help >/dev/null 2>&1 \
+            || { echo "::error::brak fsck.erofs w kit-mysticalos3/bin"; exit 1; }
+          echo "product.img: $(stat -c%s "$WORK/product.img") B"
+          df -h /
+
+      - name: "4. Harvest (mount erofs | fsck extract) -> keep/{app,fonts,themes}"
+        run: |
+          set -uo pipefail
+          exec > >(tee "$WORK/harvest.log") 2>&1
+          IMG="$WORK/product.img"
+          MNT="$WORK/mnt"; EXT="$WORK/ext"; KEEP="$WORK/keep"
+          rm -rf "$MNT" "$EXT" "$KEEP"
+          mkdir -p "$MNT" "$KEEP/app" "$KEEP/fonts" "$KEEP/themes"
+          P=""
+          if sudo mount -t erofs -o ro,loop "$IMG" "$MNT" 2>/dev/null; then
+            P="$MNT"; [ -d "$MNT/product" ] && P="$MNT/product"
+            echo "harvest: loop-mount erofs OK (P=$P)"
+          else
+            AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+            EST=$(( $(stat -c%s "$IMG") / 1000000000 * 3 / 2 + 1 ))
+            echo "harvest: mount NIE wyszedl; dysk ${AV}G, szac. drzewo ~${EST}G"
+            if [ "${AV:-0}" -ge "${EST:-99}" ]; then
+              kit-mysticalos3/bin/fsck.erofs --extract="$EXT" "$IMG" || true
+              [ -d "$EXT" ] || { echo "::error::fsck extract nie dal drzewa"; exit 1; }
+              P="$EXT"; [ -d "$EXT/product" ] && P="$EXT/product"
+              echo "harvest: fsck extract (P=$P)"
+            else
+              echo "::error::za malo miejsca na ekstrakcje (${AV}G < ${EST}G)"
+              exit 1
+            fi
+          fi
+          echo "== zawartosc product (ls) =="; ls "$P" | head -40
+          FOUND=0
+          for NAME in MiuiHome MiuiGallery MiuiGalleryNew MiuiMusic MiuiFileManager \
+                       MiuiCalculator MiuiCamera MiuiVideo MiuiNotes NewMiuiNotes \
+                       MiuiWeather2 MiuiClock MiuiSecurityCenter; do
+            D=$(find "$P" -maxdepth 3 -type d -iname "$NAME" 2>/dev/null | head -1)
+            if [ -n "$D" ] && { find "$D" -name '*.apk' 2>/dev/null || true; } | grep -q .; then
+              DEST="$KEEP/app/$(basename "$D" | sed 's/New$//')"
+              mkdir -p "$DEST"
+              find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \; 2>/dev/null \
+                || sudo find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \;
+              if [ -d "$D/lib" ]; then cp -a "$D/lib" "$DEST/" 2>/dev/null \
+                || sudo cp -a "$D/lib" "$DEST/"; fi
+              echo "  apk: $NAME <- $D ($(du -sm "$DEST" | cut -f1) MB)"
+              FOUND=$((FOUND+1))
+            else
+              echo "  brak: $NAME"
+            fi
+          done
+          [ "$FOUND" -ge 1 ] || { echo "::error::0 apk MIUI w product donora"; exit 1; }
+          KEY=0
+          ls "$KEEP/app" | grep -qi calculator && KEY=$((KEY+1))
+          ls "$KEEP/app" | grep -qi camera && KEY=$((KEY+1))
+          ls "$KEEP/app" | grep -qi notes && KEY=$((KEY+1))
+          echo "kluczowe apki (kalkulator/aparat/notatki): $KEY/3"
+          [ "$KEY" -eq 3 ] || echo "::warning::kluczowe apki $KEY/3 - sprawdz harvest.log"
+          if [ -d "$P/fonts" ]; then
+            find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} "$KEEP/fonts/" \; 2>/dev/null \
+              || sudo find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} "$KEEP/fonts/" \; || true
+          fi
+          echo "fonty Mi: $(ls "$KEEP/fonts" 2>/dev/null | wc -l)"
+          for TD in themes media/theme; do
+            SRC=$(find "$P" -maxdepth 2 -type d -path "*$TD" 2>/dev/null | head -1)
+            if [ -n "$SRC" ]; then
+              SZD=$(du -sm "$SRC" 2>/dev/null | cut -f1)
+              if [ "${SZD:-999}" -le 300 ]; then
+                mkdir -p "$KEEP/themes/$(basename "$SRC")"
+                cp -a "$SRC"/. "$KEEP/themes/$(basename "$SRC")"/ 2>/dev/null \
+                  || sudo cp -a "$SRC"/. "$KEEP/themes/$(basename "$SRC")"/
+                echo "  motywy: $SRC (${SZD} MB)"
+              else
+                echo "  motywy $SRC pominiete (${SZD} MB > 300)"
+              fi
+            fi
+          done
+          sudo umount "$MNT" 2>/dev/null || true
+          rm -rf "$EXT" "$IMG"
+          df -h /
+          echo "== harvest: $(find "$KEEP/app" -name '*.apk' | wc -l) apk, $(du -sm "$KEEP" | cut -f1) MB =="
+
+      - name: "5. Pakowanie donor-harvest (tar.gz + split + manifest)"
+        run: |
+          set -euo pipefail
+          cd "$WORK"
+          du -sm keep
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+            -czf donor-harvest.tar.gz -C keep .
+          SZ=$(stat -c%s donor-harvest.tar.gz)
+          MD5=$(md5sum donor-harvest.tar.gz | cut -d' ' -f1)
+          rm -f donor-harvest.part.*
+          python3 - <<'EOF'
+          import os
+          src = "donor-harvest.tar.gz"
+          part, idx = 1_800_000_000, 0
+          with open(src, "rb") as f:
+              while True:
+                  b = f.read(part)
+                  if not b:
+                      break
+                  with open("donor-harvest.part.%03d" % idx, "wb") as o:
+                      o.write(b)
+                  idx += 1
+          print("czesci:", idx)
+          EOF
+          {
+            echo "md5=$MD5"
+            echo "size=$SZ"
+            echo "parts=$(ls donor-harvest.part.* | wc -l)"
+            echo "apps=$(ls keep/app | tr '\n' ',' | sed 's/,$//')"
+            echo "fonts=$(ls keep/fonts 2>/dev/null | wc -l)"
+            echo "source=yingtian-ota_full-OS4.0.13.0.XBMCNXM-user-17.0 (Drive 1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd)"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > donor-harvest.manifest
+          cat donor-harvest.manifest
+          ls -la donor-harvest.*
+
+      - name: "6. Release donor-cache (delete+create+upload, retry 3x)"
+        run: |
+          set -uo pipefail
+          cd "$WORK"
+          gh release delete donor-cache --yes --cleanup-tag 2>/dev/null || true
+          OK=0
+          for A in 1 2 3; do
+            if gh release create donor-cache --target "$GITHUB_SHA" \
+              --title "donor-cache: harvest product HyperOS 4.0.13 (yingtian)" \
+              --notes "donor-pipeline run ${GITHUB_RUN_ID}. donor-harvest.tar.gz (app/fonts/themes z product.img donora OTA 4.0.13.0) dla MysticalOS 3 TIER A2. Format: donor-harvest.manifest (md5/size/parts) + donor-harvest.part.NNN (sklejone = tar.gz, drzewo app/ fonts/ themes/)." \
+              donor-harvest.manifest; then OK=1; break; fi
+            echo "::warning::release create: proba $A/3 nie wyszla - pauza 60s"; sleep 60
+          done
+          [ "$OK" = 1 ] || { echo "::error::nie udalo sie stworzyc release donor-cache"; exit 1; }
+          UOK=0
+          for A in 1 2 3; do
+            if gh release upload donor-cache donor-harvest.part.* --clobber; then UOK=1; break; fi
+            echo "::warning::release upload: proba $A/3 nie wyszla - pauza 60s"; sleep 60
+          done
+          [ "$UOK" = 1 ] || { echo "::error::upload czesci donor-harvest nie wyszedl"; exit 1; }
+          gh release view donor-cache --json url,assets \
+            -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
+
+      - name: "7. Raport + evidence commit (reports/)"
+        if: always()
+        run: |
+          set -uo pipefail
+          R="reports/donor-pipeline-${GITHUB_RUN_ID}.md"
+          {
+            echo "# donor-pipeline run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## probe"; echo '```'; cat "$WORK/probe.log" 2>/dev/null || true; echo '```'
+            echo "## ekstrakcja (tail 100)"; echo '```'; tail -100 "$WORK/extract.log" 2>/dev/null || true; echo '```'
+            echo "## harvest (tail 100)"; echo '```'; tail -100 "$WORK/harvest.log" 2>/dev/null || true; echo '```'
+            echo "## manifest"; echo '```'; cat "$WORK/donor-harvest.manifest" 2>/dev/null || true; echo '```'
+            echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
+          } > "$R"
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          git add "$R" || true
+          git commit -m "donor-pipeline: evidence run ${GITHUB_RUN_ID}" \
+            || echo "nic do commitu (raport juz w repo?)"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done
+          echo "RAPORT: $R"
