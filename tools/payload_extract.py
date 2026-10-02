@@ -136,7 +136,8 @@ class Op:
 
 
 class Partition:
-    __slots__ = ("name", "new_size", "new_hash", "ops", "raw_fields")
+    __slots__ = ("name", "new_size", "new_hash", "ops", "raw_fields",
+                 "raw", "ops_field")
 
     def __init__(self):
         self.name = None
@@ -144,6 +145,8 @@ class Partition:
         self.new_hash = None
         self.ops = []
         self.raw_fields = {}
+        self.raw = None
+        self.ops_field = None
 
 
 def parse_extent(buf):
@@ -176,23 +179,58 @@ def parse_op(buf):
     return op
 
 
-def parse_partition(buf):
+def looks_like_op(sub):
+    """Heurystyka: sub-wiadomosc wyglada jak InstallOperation?"""
+    has_type = has_off = has_len = has_ext = False
+    try:
+        for f, wt, v in iter_fields(sub):
+            if f == 1 and wt == 0 and v < 32:
+                has_type = True
+            elif f == 2 and wt == 0:
+                has_off = True
+            elif f == 3 and wt == 0:
+                has_len = True
+            elif f == 6 and wt == 2:
+                has_ext = True
+            elif f == 8 and wt == 2:
+                pass  # sha256
+            elif wt == 2 and f in (4,):
+                has_ext = has_ext or True
+    except ValueError:
+        return False
+    return has_type and (has_off or has_len or has_ext)
+
+
+def parse_partition(buf, ops_field=None):
     p = Partition()
+    p.raw = buf
     for f, wt, v in iter_fields(buf):
         if f == 1 and wt == 2:
             p.name = buf[v[0]:v[1]].decode("utf-8", "replace")
-            p.raw_fields["name_field"] = 1
         elif f == 7 and wt == 2:  # new_partition_info
             for f2, wt2, v2 in iter_fields(buf[v[0]:v[1]]):
                 if f2 == 1 and wt2 == 0:
                     p.new_size = v2
                 elif f2 == 2 and wt2 == 2:
                     p.new_hash = buf[v2[0]:v2[1]]
-        elif f == 268 and wt == 2:  # operations (nowy numer pola)
-            p.ops.append(parse_op(buf[v[0]:v[1]]))
-        elif f == 9 and wt == 2 and not p.ops:
-            # bardzo stare manifesty mialy operations pod 9 (fallback)
-            p.raw_fields.setdefault("legacy_op_fields", []).append(f)
+        elif wt == 2:
+            p.raw_fields.setdefault(f, 0)
+            p.raw_fields[f] += 1
+    # operations: najpierw kanoniczne 268; gdy 0 -> auto-detekcja pola
+    # (receipt 37007764992: Xiaomi OTA HyperOS 4.0.13 ma ops pod innym
+    # numerem; auto-skan repeated len-delim z wygladem InstallOperation)
+    for cand in [268] + sorted([f for f in p.raw_fields
+                                if f != 268 and f not in (1, 6, 7)]):
+        msgs = []
+        for f, wt, v in iter_fields(buf):
+            if f == cand and wt == 2:
+                msgs.append(buf[v[0]:v[1]])
+        if not msgs:
+            continue
+        if all(looks_like_op(m) for m in msgs[:5]) and len(msgs) >= 1:
+            p.ops = [parse_op(m) for m in msgs]
+            p.ops_field = cand
+            break
     return p
 
 
@@ -213,8 +251,13 @@ def dump_structure(block_size, partitions, out=sys.stderr):
           file=out)
     for p in partitions:
         hashes = sum(1 for o in p.ops if o.data_sha256)
-        print("#   partycja %-12s new_size=%d ops=%d (sha256hash na %d op)"
-              % (p.name, p.new_size, len(p.ops), hashes), file=out)
+        print("#   partycja %-14s new_size=%-12d ops=%-5d (pole %s, sha256 na %d)"
+              % (p.name, p.new_size, len(p.ops),
+                 p.ops_field if p.ops_field else "-", hashes), file=out)
+        if p.raw_fields and p.name in ("product", "system", "vendor"):
+            top = sorted(((f, n) for f, n in p.raw_fields.items()),
+                         key=lambda kv: -kv[1])[:6]
+            print("#     pola len-delim w %s: %s" % (p.name, top), file=out)
 
 
 # ----------------------------------------------------------------------------
