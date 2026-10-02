@@ -287,38 +287,46 @@ class HTTPRangeSource:
         self.bytes_downloaded = 0
         self._probe()
 
+    UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+
+    def _probe_once(self):
+        """-> (size, accepts, opis) albo rzuca. Wymagamy dowodu range: 206 +
+        Content-Range (receipt 37011082568: Drive po kilku GB pobran zaczal
+        odpowiadac 200-bez-Content-Length = interstitial/quota)."""
+        # HEAD czesto nie dziala na drive.usercontent - od razu GET 0-0
+        req = urllib.request.Request(
+            self.url, headers={"User-Agent": self.UA, "Range": "bytes=0-0"})
+        with urllib.request.urlopen(req, timeout=90) as r:
+            body = r.read(1)
+            st = r.status
+            cr = r.headers.get("Content-Range", "")
+            cl = r.headers.get("Content-Length", "0")
+            ar = r.headers.get("Accept-Ranges", "none")
+            ct = r.headers.get("Content-Type", "")
+            sys.stderr.write(
+                "# probe: status=%s CR=%r CL=%r AR=%r CT=%r body0=%r\n"
+                % (st, cr, cl, ar, ct, body))
+            if st == 206 and "/" in cr:
+                return int(cr.rsplit("/", 1)[1]), "bytes", "206+CR"
+            raise ValueError("brak dowodu range (status=%s CT=%s body0=%r)"
+                             % (st, ct, body))
+
     def _probe(self):
         last = None
-        for attempt in range(4):
+        for attempt in range(10):
             try:
-                req = urllib.request.Request(self.url, method="HEAD")
-                with urllib.request.urlopen(req, timeout=60) as r:
-                    self.size = int(r.headers.get("Content-Length", "0"))
-                    self.accepts = r.headers.get("Accept-Ranges", "none")
-                    return
+                self.size, self.accepts, how = self._probe_once()
+                return
+            except SystemExit:
+                raise
             except Exception as e:
                 last = e
-                time.sleep(2 * (attempt + 1))
-        # fallback: GET z Range 0-0 (niektore serwery, w tym drive.usercontent,
-        # nie odpowiadaja na HEAD); 206 + Content-Range dowodzi obslugi range
-        for attempt in range(4):
-            try:
-                req = urllib.request.Request(self.url,
-                                             headers={"Range": "bytes=0-0"})
-                with urllib.request.urlopen(req, timeout=60) as r:
-                    if r.status in (200, 206):
-                        cr = r.headers.get("Content-Range", "")
-                        if r.status == 206 and "/" in cr:
-                            self.size = int(cr.rsplit("/", 1)[1])
-                            self.accepts = "bytes"
-                            return
-                        self.size = int(r.headers.get("Content-Length", "0"))
-                        self.accepts = r.headers.get("Accept-Ranges", "none")
-                        return
-            except Exception as e:
-                last = e
-                time.sleep(2 * (attempt + 1))
-        raise SystemExit("HEAD/GET-probe nie wyszly po 4 probach: %r" % last)
+                sys.stderr.write("# probe retry %d/10: %s\n" % (attempt + 1, e))
+                time.sleep(60)
+        raise SystemExit(
+            "probe nie wyszedl po 10 probach (60s przerwy) - Drive quota/"
+            "interstitial? Ostatni blad: %s" % last)
 
     def read_at(self, off, ln, timeout=600):
         if ln <= 0:
@@ -328,7 +336,9 @@ class HTTPRangeSource:
         for attempt in range(6):
             try:
                 req = urllib.request.Request(
-                    self.url, headers={"Range": "bytes=%d-%d" % (off, end)})
+                    self.url,
+                    headers={"User-Agent": self.UA,
+                             "Range": "bytes=%d-%d" % (off, end)})
                 with urllib.request.urlopen(req, timeout=timeout) as r:
                     data = r.read()
                 if len(data) == ln:

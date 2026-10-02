@@ -1,17 +1,19 @@
 name: donor-pipeline
-# v1.0 - TIER A2 dla MysticalOS 3: pozyskanie zawartosci product.img donora
+# v1.1 - TIER A2 dla MysticalOS 3: pozyskanie zawartosci product.img donora
 # HyperOS 4.0.13.0 (Xiaomi Pad 9 Pro Max "yingtian") i publikacja release'u
-# donor-cache (donor-harvest.*) konsumowanego przez release-mystical3 TIER A2.
+# donor-cache konsumowanego przez release-mystical3 (TIER A2 = donor-harvest,
+# TIER A = donor-product parts).
 #
-# Historia problemu: Drive dlawil pelne transfery 10,3 GB na runnerze (m1 2x
-# nieudane), CDN Xiaomi dlawil 12,6 GB tgz po burst. TU: OTA zip na Drive jest
-# publiczny (anyoneWithLink) i wspiera HTTP Range - pobieramy wylacznie bloby
-# partycji product (~4-5 GB) z payload.bin, chunkami 16 MB x 12 watkow
-# (tools/payload_extract.py; selftest + zip64 test jako bramka w kroku 0).
-#
-# Donor-cache (kiedys "konczy epoke"): raz zbudowany harvest (app/fonts/themes)
-# leci na GitHub CDN i m3 TIER A2 skleja go w sekundy zamiast streamowac
-# dziesiatki GB. Evidencia commitowana do reports/.
+# Historia: Drive dlawil pelne transfery 10,3 GB (m1 2x), CDN tgz 12,6 GB tez;
+# range-extraction tylko product (~5,3 GB w chunkach 16 MB x 12 watkow) dziala
+# (receipt 37008170521: 3086 opow, pole operations=8, sha256 all OK, montaz
+# erofs OK). Ale po kilku GB Drive zaczyna serwowac interstitial/quota
+# (receipt 37011082568: 200 bez Content-Length) - stad:
+#   - probe wymaga 206+Content-Range (10 x 60s backoff),
+#   - ekstrakcja 3 próby x 8 min przerwy,
+#   - INSURANCE: raz wyciagniety product.img wraca na donor-cache jako
+#     donor-product.part.* (format m3 TIER A) - nastepne runy ida cache-first
+#     (GitHub CDN) i w ogole nie dotykaja Drive.
 
 on:
   workflow_dispatch:
@@ -34,6 +36,8 @@ jobs:
       OTA_URL: "https://drive.usercontent.google.com/download?id=1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd&export=download&confirm=t"
       OTA_URL2: "https://drive.google.com/uc?export=download&confirm=t&id=1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd"
       OTA_SIZE: "10340028849"
+      PRODUCT_SIZE: "6471729152"
+      PRODUCT_SHA256: "743a28088080fb8d181220107e58d61380327ab9aa7914856d2c0cadc2511329"
       PARTITION: product
       WORK: /tmp/donor
       GH_TOKEN: ${{ github.token }}
@@ -48,40 +52,78 @@ jobs:
           grep -q "SELFTEST: PASS" /tmp/selftest.log
           grep -q "ZIP64: PASS" /tmp/selftest.log
 
-      - name: "1. Probe OTA zip na Drive (Range + speed)"
+      - name: "1. Cache-first: donor-product z donor-cache (GitHub CDN)"
         run: |
           set -uo pipefail
           mkdir -p "$WORK" reports
           : > "$WORK/probe.log"
+          CACHE=0
+          if gh release view donor-cache >/dev/null 2>&1; then
+            rm -rf "$WORK/pcache"; mkdir -p "$WORK/pcache"
+            if gh release download donor-cache --clobber \
+                 -p 'donor-product.manifest' -p 'donor-product.part.*' \
+                 --dir "$WORK/pcache" 2>/dev/null \
+               && [ -f "$WORK/pcache/donor-product.manifest" ]; then
+              WMD5=$(grep -oP '(?<=md5=).*' "$WORK/pcache/donor-product.manifest" | head -1)
+              WSIZE=$(grep -oP '(?<=size=).*' "$WORK/pcache/donor-product.manifest" | head -1)
+              cat "$WORK/pcache"/donor-product.part.* > "$WORK/product.img" 2>/dev/null || true
+              GMD5=$(md5sum "$WORK/product.img" 2>/dev/null | cut -d' ' -f1)
+              GSIZE=$(stat -c%s "$WORK/product.img" 2>/dev/null || echo 0)
+              echo "cache: md5=$GMD5 (oczek. $WMD5), size=$GSIZE (oczek. $WSIZE)" | tee -a "$WORK/probe.log"
+              if [ -n "$WMD5" ] && [ "$GMD5" = "$WMD5" ] && [ "$GSIZE" = "$WSIZE" ]; then
+                CACHE=1
+                echo "CACHED_PRODUCT=1" >> "$GITHUB_ENV"
+                echo "product.img z cache donor-cache (GitHub CDN) - Drive pominiety" | tee -a "$WORK/probe.log"
+              else
+                rm -f "$WORK/product.img"
+                echo "cache niezgodny - ide po Drive" | tee -a "$WORK/probe.log"
+              fi
+              rm -rf "$WORK/pcache"
+            fi
+          fi
+          [ "$CACHE" = 1 ] || echo "brak donor-product w cache - bedzie Drive" | tee -a "$WORK/probe.log"
+
+      - name: "2. Probe OTA zip na Drive (Range 206+CR, backoff)"
+        if: env.CACHED_PRODUCT != '1'
+        run: |
+          set -uo pipefail
           python3 - <<'EOF' 2>&1 | tee -a "$WORK/probe.log"
           import os, sys, time, urllib.request
           urls = [os.environ["OTA_URL"], os.environ["OTA_URL2"]]
           want = int(os.environ["OTA_SIZE"])
-          pick = None
-          for u in urls:
-              try:
-                  req = urllib.request.Request(u, headers={"Range": "bytes=0-0"})
-                  t0 = time.time()
-                  with urllib.request.urlopen(req, timeout=90) as r:
-                      code = r.status
-                      cr = r.headers.get("Content-Range", "")
-                      r.read(1)
-                  print("probe [%s] -> %s Content-Range=%s (%.1fs)"
-                        % (u.split("/")[2], code, cr, time.time() - t0))
-                  total = int(cr.rsplit("/", 1)[1]) if "/" in cr else 0
-                  if code == 206 and total == want:
-                      pick = u
-                      break
-                  print("  -> NIE nadaje sie (206=%s total=%s oczek=%s)"
-                        % (code == 206, total, want))
-              except Exception as e:
-                  print("probe [%s] -> ERR %s: %s" % (u.split("/")[2],
-                                                       type(e).__name__, e))
-          if not pick:
-              print("BRAK dzialajacego URL z Range - donor-cache nie powstanie")
+          UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+          pick, ok = None, False
+          for attempt in range(6):
+              for u in urls:
+                  try:
+                      req = urllib.request.Request(
+                          u, headers={"User-Agent": UA, "Range": "bytes=0-0"})
+                      with urllib.request.urlopen(req, timeout=90) as r:
+                          b0 = r.read(1)
+                          st, cr = r.status, r.headers.get("Content-Range", "")
+                      print("probe [%s] -> %s CR=%r body0=%r"
+                            % (u.split("/")[2], st, cr, b0))
+                      if st == 206 and "/" in cr:
+                          total = int(cr.rsplit("/", 1)[1])
+                          if total == want:
+                              pick, ok = u, True
+                              break
+                          print("  total %s != oczek %s" % (total, want))
+                  except Exception as e:
+                      print("probe [%s] -> ERR %s: %s"
+                            % (u.split("/")[2], type(e).__name__, e))
+              if ok:
+                  break
+              print("probe: proba %d/6 nieudana - pauza 120s (Drive quota/"
+                    "interstitial cooldown)" % (attempt + 1))
+              time.sleep(120)
+          if not ok:
+              print("BRAK dzialajacego URL z Range - nastepny run dostanie "
+                    "nowy IP runnera")
               sys.exit(1)
           req = urllib.request.Request(
-              pick, headers={"Range": "bytes=1048576-34603007"})
+              pick, headers={"User-Agent": UA, "Range": "bytes=1048576-34603007"})
           t0 = time.time()
           n = 0
           with urllib.request.urlopen(req, timeout=300) as r:
@@ -96,21 +138,38 @@ jobs:
               f.write("OTA_PICK=%s\n" % pick)
           EOF
 
-      - name: "2. Ekstrakcja product.img (range-streaming z payload.bin)"
+      - name: "3. Ekstrakcja product.img (range-streaming, retry 3x)"
+        if: env.CACHED_PRODUCT != '1'
         run: |
-          set -euo pipefail
+          set -uo pipefail
           df -h / | tee -a "$WORK/probe.log"
           AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
           [ "${AV:-0}" -ge 8 ] || { echo "::error::dysk ${AV}G < 8G"; exit 1; }
-          python3 tools/payload_extract.py \
-            --zip-url "$OTA_PICK" \
-            --entry payload.bin \
-            --partition "$PARTITION" \
-            --out "$WORK/product.img" \
-            --jobs 12 --chunk 16777216 --prefetch-ops 3 \
-            --erofs-check 2>&1 | tee "$WORK/extract.log"
+          OK=0
+          for A in 1 2 3; do
+            echo "=== ekstrakcja: proba $A/3 ==="
+            if python3 tools/payload_extract.py \
+              --zip-url "$OTA_PICK" \
+              --entry payload.bin \
+              --partition "$PARTITION" \
+              --out "$WORK/product.img" \
+              --jobs 12 --chunk 16777216 --prefetch-ops 3 \
+              --erofs-check 2>&1 | tee "$WORK/extract.log"; then
+              OK=1; break
+            fi
+            [ "$A" -lt 3 ] && { echo "pauza 8 min (Drive cooldown)..."; sleep 480; }
+          done
+          [ "$OK" = 1 ] || { echo "::error::ekstrakcja nie wyszla po 3 probach"; exit 1; }
+          # twardy pin z manifestu OTA (receipt 37008170521)
+          SZ=$(stat -c%s "$WORK/product.img")
+          [ "$SZ" = "$PRODUCT_SIZE" ] || { echo "::error::rozmiar $SZ != pin $PRODUCT_SIZE"; exit 1; }
+          SHA=$(sha256sum "$WORK/product.img" | cut -d' ' -f1)
+          echo "sha256(product.img) = $SHA (pin: $PRODUCT_SHA256)"
+          [ "$SHA" = "$PRODUCT_SHA256" ] \
+            || { echo "::error::sha256 niezgodne z pinem z manifestu OTA"; exit 1; }
+          echo "PIN OK: product.img bit-identyczny z manifestem donora"
 
-      - name: "3. Sanity fsck.erofs (kit bin)"
+      - name: "4. Sanity fsck.erofs (kit bin)"
         run: |
           set -e
           kit-mysticalos3/bin/fsck.erofs --help >/dev/null 2>&1 \
@@ -118,10 +177,11 @@ jobs:
           echo "product.img: $(stat -c%s "$WORK/product.img") B"
           df -h /
 
-      - name: "4. Harvest (mount erofs | fsck extract) -> keep/{app,fonts,themes}"
+      - name: "5. Harvest (mount erofs | fsck extract) -> keep/{app,fonts,themes}"
         # UWAGA -e: GH Actions domyslnie odpala `bash -e`; find po drzewie
         # erofs potrafi zwrocic !=0 (permisje) i ubic krok po cichu (receipt
         # 37008170521: log urywal sie po ls). Stad set +e + jawne bramki.
+        # product.img NIE jest usuwany (krok 6 pakuje go na donor-cache).
         run: |
           set -uo pipefail
           set +e
@@ -202,47 +262,62 @@ jobs:
             fi
           done
           sudo umount "$MNT" 2>/dev/null || true
-          rm -rf "$EXT" "$IMG"
+          rm -rf "$EXT"
           df -h /
           echo "== harvest: $(find "$KEEP/app" -name '*.apk' | wc -l) apk, $(du -sm "$KEEP" | cut -f1) MB =="
 
-      - name: "5. Pakowanie donor-harvest (tar.gz + split + manifest)"
+      - name: "6. Pakowanie donor-harvest + donor-product (split + manifesty)"
         run: |
           set -euo pipefail
           cd "$WORK"
-          du -sm keep
+          du -sm keep product.img
           tar --sort=name --owner=0 --group=0 --numeric-owner \
             -czf donor-harvest.tar.gz -C keep .
           SZ=$(stat -c%s donor-harvest.tar.gz)
           MD5=$(md5sum donor-harvest.tar.gz | cut -d' ' -f1)
-          rm -f donor-harvest.part.*
+          # split (python; czesci <1.9G, limit assetu 2 GiB)
+          rm -f donor-harvest.part.* donor-product.part.*
           python3 - <<'EOF'
-          import os
-          src = "donor-harvest.tar.gz"
-          part, idx = 1_800_000_000, 0
-          with open(src, "rb") as f:
-              while True:
-                  b = f.read(part)
-                  if not b:
-                      break
-                  with open("donor-harvest.part.%03d" % idx, "wb") as o:
-                      o.write(b)
-                  idx += 1
-          print("czesci:", idx)
-          EOF
-          {
-            echo "md5=$MD5"
-            echo "size=$SZ"
-            echo "parts=$(ls donor-harvest.part.* | wc -l)"
-            echo "apps=$(ls keep/app | tr '\n' ',' | sed 's/,$//')"
-            echo "fonts=$(ls keep/fonts 2>/dev/null | wc -l)"
-            echo "source=yingtian-ota_full-OS4.0.13.0.XBMCNXM-user-17.0 (Drive 1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd)"
-            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          } > donor-harvest.manifest
-          cat donor-harvest.manifest
-          ls -la donor-harvest.*
+          import hashlib, os
 
-      - name: "6. Release donor-cache (delete+create+upload, retry 3x)"
+          def split(src, prefix, part):
+              idx = 0
+              md5 = hashlib.md5()
+              with open(src, "rb") as f:
+                  while True:
+                      b = f.read(part)
+                      if not b:
+                          break
+                      md5.update(b)
+                      with open("%s.part.%03d" % (prefix, idx), "wb") as o:
+                          o.write(b)
+                      idx += 1
+              return idx, md5.hexdigest(), os.path.getsize(src)
+
+          hp, hmd5, hsz = split("donor-harvest.tar.gz", "donor-harvest",
+                                1_800_000_000)
+          with open("donor-harvest.manifest", "w") as f:
+              f.write("md5=%s\nsize=%d\nparts=%d\n" % (hmd5, hsz, hp))
+              f.write("apps=%s\n" % ",".join(sorted(os.listdir("keep/app"))))
+              f.write("fonts=%d\n" % len(os.listdir("keep/fonts")))
+              f.write("source=yingtian-ota_full-OS4.0.13.0.XBMCNXM-user-17.0 "
+                      "(Drive 1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd)\n")
+              f.write("created=%s\n" % __import__("time")
+                      .strftime("%Y-%m-%dT%H:%M:%SZ", __import__("time")
+                                .gmtime()))
+          pp, pmd5, psz = split("product.img", "donor-product", 1_800_000_000)
+          with open("donor-product.manifest", "w") as f:
+              f.write("md5=%s\nsize=%d\nparts=%d\n" % (pmd5, psz, pp))
+          print("donor-harvest: %d B, %d czesci (md5 %s)" % (hsz, hp, hmd5))
+          print("donor-product: %d B, %d czesci (md5 %s)" % (psz, pp, pmd5))
+          EOF
+          echo "sha256(product.img)=$(sha256sum product.img | cut -d' ' -f1)" \
+            >> donor-product.manifest
+          cat donor-harvest.manifest
+          cat donor-product.manifest
+          ls -la donor-harvest.* donor-product.* | head -20
+
+      - name: "7. Release donor-cache (delete+create+upload, retry 3x)"
         run: |
           set -uo pipefail
           cd "$WORK"
@@ -250,22 +325,22 @@ jobs:
           OK=0
           for A in 1 2 3; do
             if gh release create donor-cache --target "$GITHUB_SHA" \
-              --title "donor-cache: harvest product HyperOS 4.0.13 (yingtian)" \
-              --notes "donor-pipeline run ${GITHUB_RUN_ID}. donor-harvest.tar.gz (app/fonts/themes z product.img donora OTA 4.0.13.0) dla MysticalOS 3 TIER A2. Format: donor-harvest.manifest (md5/size/parts) + donor-harvest.part.NNN (sklejone = tar.gz, drzewo app/ fonts/ themes/)." \
-              donor-harvest.manifest; then OK=1; break; fi
+              --title "donor-cache: product + harvest HyperOS 4.0.13 (yingtian)" \
+              --notes "donor-pipeline run ${GITHUB_RUN_ID}. Zawartosc: (a) donor-harvest.tar.gz (app/fonts/themes z product.img donora; format TIER A2 m3) oraz (b) product.img donora w czesciach donor-product.part.* (format TIER A m3; md5/size/sha256 w donor-product.manifest). Zrodlo: OTA 4.0.13.0 z Drive (range-extraction payload.bin, pole operations=8, 3086 opow, sha256 per-op OK)." \
+              donor-harvest.manifest donor-product.manifest; then OK=1; break; fi
             echo "::warning::release create: proba $A/3 nie wyszla - pauza 60s"; sleep 60
           done
           [ "$OK" = 1 ] || { echo "::error::nie udalo sie stworzyc release donor-cache"; exit 1; }
           UOK=0
           for A in 1 2 3; do
-            if gh release upload donor-cache donor-harvest.part.* --clobber; then UOK=1; break; fi
+            if gh release upload donor-cache donor-harvest.part.* donor-product.part.* --clobber; then UOK=1; break; fi
             echo "::warning::release upload: proba $A/3 nie wyszla - pauza 60s"; sleep 60
           done
-          [ "$UOK" = 1 ] || { echo "::error::upload czesci donor-harvest nie wyszedl"; exit 1; }
+          [ "$UOK" = 1 ] || { echo "::error::upload czesci nie wyszedl"; exit 1; }
           gh release view donor-cache --json url,assets \
             -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
 
-      - name: "7. Raport + evidence commit (reports/)"
+      - name: "8. Raport + evidence commit (reports/)"
         if: always()
         run: |
           set -uo pipefail
@@ -275,8 +350,8 @@ jobs:
             echo
             echo "## probe"; echo '```'; cat "$WORK/probe.log" 2>/dev/null || true; echo '```'
             echo "## ekstrakcja (tail 100)"; echo '```'; tail -100 "$WORK/extract.log" 2>/dev/null || true; echo '```'
-            echo "## harvest (tail 100)"; echo '```'; tail -100 "$WORK/harvest.log" 2>/dev/null || true; echo '```'
-            echo "## manifest"; echo '```'; cat "$WORK/donor-harvest.manifest" 2>/dev/null || true; echo '```'
+            echo "## harvest (tail 120)"; echo '```'; tail -120 "$WORK/harvest.log" 2>/dev/null || true; echo '```'
+            echo "## manifesty"; echo '```'; cat "$WORK/donor-harvest.manifest" 2>/dev/null || true; cat "$WORK/donor-product.manifest" 2>/dev/null || true; echo '```'
             echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
           } > "$R"
           git config user.name "arena-agent"
