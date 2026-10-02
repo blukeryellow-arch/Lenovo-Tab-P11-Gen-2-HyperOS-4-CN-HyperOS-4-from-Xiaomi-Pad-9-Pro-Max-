@@ -144,8 +144,8 @@ def zip64_sparse_test(tmp):
     spec.loader.exec_module(pe)
 
     big = 4 * 1024**3 + 512 * 1024**2  # 4,5 GiB - rozmiar wpisu payload.bin
-    head = b"CrAU" + struct.pack(">I", 2) + struct.pack(">Q", 5) + \
-        struct.pack(">I", 4) + b"MANIF" + b"\x00" * 4  # 20+5+4 = 29 B realnych
+    head = b"CrAU" + struct.pack(">Q", 2) + struct.pack(">Q", 5) + \
+        struct.pack(">I", 4) + b"MANIF" + b"\x00" * 4  # 24+5+4 = 33 B realnych
     zpath = os.path.join(tmp, "sparse64.zip")
     cd_off = 30 + 11 + 20 + big
     with open(zpath, "wb") as f:
@@ -309,7 +309,7 @@ def main():
             pb_msg(13, prod_pb) + pb_msg(13, vbmeta_pb)
 
         meta_sig = bytes(range(32))
-        payload = b"CrAU" + struct.pack(">I", 2) + \
+        payload = b"CrAU" + struct.pack(">Q", 2) + \
             struct.pack(">Q", len(manifest)) + \
             struct.pack(">I", len(meta_sig)) + manifest + meta_sig + bytes(blobs)
         print("payload.bin: %d B (manifest %d B, blobow %d B, opow product: %d)"

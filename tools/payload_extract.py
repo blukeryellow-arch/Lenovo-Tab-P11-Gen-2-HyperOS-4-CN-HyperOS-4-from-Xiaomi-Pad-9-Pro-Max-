@@ -465,20 +465,23 @@ def main():
         print("  wpis %s: STORED, %d B @+%d" % (pl.name, pl.size, pl.data_off))
         src = pl
 
-    # --- naglowek CrAU ---
-    # v1: magic(4) + version(u32BE) + manifest_size(u64BE) = 16B
-    # v2+: + metadata_signature_size(u32BE) = 20B; bloby po sygnaturze
+    # --- naglowek CrAU (update_engine/payload_consumer.cc: PayloadHeader) ---
+    #   magic[4] "CrAU" + version u64BE + manifest_size u64BE  = 20B (v1)
+    #   v2+: + metadata_signature_size u32BE                    = 24B
+    # Receipt runu 37007276549 (bajty z zywego OTA Xiaomi): version u64BE@+4
+    # (u32@+4 czyta 0, u64@+8 czyta 0x200000000 = wlasnie u64 version=2).
     hdr = src.read_at(0, 32)
+    print("naglowek payload (hex, 32B): %s" % hdr.hex())
     if hdr[:4] != b"CrAU":
         raise SystemExit("zly magic payload.bin: %r" % hdr[:4])
-    version, = struct.unpack_from(">I", hdr, 4)
-    manifest_size, = struct.unpack_from(">Q", hdr, 8)
+    version, = struct.unpack_from(">Q", hdr, 4)
+    manifest_size, = struct.unpack_from(">Q", hdr, 12)
     if version >= 2:
-        meta_sig_size, = struct.unpack_from(">I", hdr, 16)
-        manifest_off = 20
+        meta_sig_size, = struct.unpack_from(">I", hdr, 20)
+        manifest_off = 24
     else:
         meta_sig_size = 0
-        manifest_off = 16
+        manifest_off = 20
     blobs_base = manifest_off + manifest_size + meta_sig_size
     print("payload: version=%d manifest=%dB meta_sig=%dB, bloby od %d"
           % (version, manifest_size, meta_sig_size, blobs_base))
