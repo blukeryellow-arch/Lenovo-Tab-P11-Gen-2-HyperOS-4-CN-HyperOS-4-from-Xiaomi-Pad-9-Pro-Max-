@@ -119,8 +119,12 @@ jobs:
           df -h /
 
       - name: "4. Harvest (mount erofs | fsck extract) -> keep/{app,fonts,themes}"
+        # UWAGA -e: GH Actions domyslnie odpala `bash -e`; find po drzewie
+        # erofs potrafi zwrocic !=0 (permisje) i ubic krok po cichu (receipt
+        # 37008170521: log urywal sie po ls). Stad set +e + jawne bramki.
         run: |
           set -uo pipefail
+          set +e
           exec > >(tee "$WORK/harvest.log") 2>&1
           IMG="$WORK/product.img"
           MNT="$WORK/mnt"; EXT="$WORK/ext"; KEEP="$WORK/keep"
@@ -144,20 +148,26 @@ jobs:
               exit 1
             fi
           fi
-          echo "== zawartosc product (ls) =="; ls "$P" | head -40
+          echo "== zawartosc product (ls) =="; ls "$P" 2>/dev/null | head -40
+          echo "== app =="; ls "$P/app" 2>/dev/null | head -60
+          echo "== priv-app =="; ls "$P/priv-app" 2>/dev/null | head -80
           FOUND=0
           for NAME in MiuiHome MiuiGallery MiuiGalleryNew MiuiMusic MiuiFileManager \
                        MiuiCalculator MiuiCamera MiuiVideo MiuiNotes NewMiuiNotes \
                        MiuiWeather2 MiuiClock MiuiSecurityCenter; do
-            D=$(find "$P" -maxdepth 3 -type d -iname "$NAME" 2>/dev/null | head -1)
-            if [ -n "$D" ] && { find "$D" -name '*.apk' 2>/dev/null || true; } | grep -q .; then
+            D=$( { find "$P" -maxdepth 4 -type d -iname "$NAME" 2>/dev/null \
+                   || sudo find "$P" -maxdepth 4 -type d -iname "$NAME" 2>/dev/null \
+                   || true; } | head -1)
+            if [ -n "$D" ] && { { find "$D" -name '*.apk' 2>/dev/null \
+                   || sudo find "$D" -name '*.apk' 2>/dev/null || true; } \
+                   | grep -q .; }; then
               DEST="$KEEP/app/$(basename "$D" | sed 's/New$//')"
               mkdir -p "$DEST"
-              find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \; 2>/dev/null \
-                || sudo find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \;
-              if [ -d "$D/lib" ]; then cp -a "$D/lib" "$DEST/" 2>/dev/null \
-                || sudo cp -a "$D/lib" "$DEST/"; fi
-              echo "  apk: $NAME <- $D ($(du -sm "$DEST" | cut -f1) MB)"
+              { find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \; 2>/dev/null \
+                || sudo find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \; } || true
+              if [ -d "$D/lib" ]; then { cp -a "$D/lib" "$DEST/" 2>/dev/null \
+                || sudo cp -a "$D/lib" "$DEST/"; } || true; fi
+              echo "  apk: $NAME <- $D ($(du -sm "$DEST" 2>/dev/null | cut -f1) MB)"
               FOUND=$((FOUND+1))
             else
               echo "  brak: $NAME"
@@ -171,18 +181,20 @@ jobs:
           echo "kluczowe apki (kalkulator/aparat/notatki): $KEY/3"
           [ "$KEY" -eq 3 ] || echo "::warning::kluczowe apki $KEY/3 - sprawdz harvest.log"
           if [ -d "$P/fonts" ]; then
-            find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} "$KEEP/fonts/" \; 2>/dev/null \
-              || sudo find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} "$KEEP/fonts/" \; || true
+            { find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} "$KEEP/fonts/" \; 2>/dev/null \
+              || sudo find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} "$KEEP/fonts/" \; ; } || true
           fi
           echo "fonty Mi: $(ls "$KEEP/fonts" 2>/dev/null | wc -l)"
           for TD in themes media/theme; do
-            SRC=$(find "$P" -maxdepth 2 -type d -path "*$TD" 2>/dev/null | head -1)
+            SRC=$( { find "$P" -maxdepth 3 -type d -path "*$TD" 2>/dev/null \
+                     || sudo find "$P" -maxdepth 3 -type d -path "*$TD" 2>/dev/null \
+                     || true; } | head -1)
             if [ -n "$SRC" ]; then
-              SZD=$(du -sm "$SRC" 2>/dev/null | cut -f1)
+              SZD=$(du -sm "$SRC" 2>/dev/null | cut -f1 || echo 999)
               if [ "${SZD:-999}" -le 300 ]; then
                 mkdir -p "$KEEP/themes/$(basename "$SRC")"
-                cp -a "$SRC"/. "$KEEP/themes/$(basename "$SRC")"/ 2>/dev/null \
-                  || sudo cp -a "$SRC"/. "$KEEP/themes/$(basename "$SRC")"/
+                { cp -a "$SRC"/. "$KEEP/themes/$(basename "$SRC")"/ 2>/dev/null \
+                  || sudo cp -a "$SRC"/. "$KEEP/themes/$(basename "$SRC")"/ ; } || true
                 echo "  motywy: $SRC (${SZD} MB)"
               else
                 echo "  motywy $SRC pominiete (${SZD} MB > 300)"
