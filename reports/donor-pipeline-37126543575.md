@@ -1,0 +1,791 @@
+# donor-pipeline run 37126543575 (2026-10-03T13:40:03Z)
+
+## probe
+```
+cache: md5=cfc5e04e1b7cb17a8bcd556b324f91fa (oczek. cfc5e04e1b7cb17a8bcd556b324f91fa), size=6445187072 (oczek. 6445187072)
+product.img z cache donor-cache (GitHub CDN) - Drive pominiety
+```
+## ekstrakcja (tail 100)
+```
+```
+## release (krok 7, tail 120)
+```
+```
+## harvest (tail 120)
+```
+opcust
+overlay
+pangu
+prebuilts
+priv-app
+usr
+== app ==
+AiasstVision
+AnalyticsCore
+CatchLog
+ContentCatcherOS4
+DeviceInfoQR
+EidService
+FidoAuthen2
+GoogleExtShared
+GoogleLocationHistory
+GooglePrintRecommendationService
+HybridPlatform
+IFAAService
+LyraSdkSpp
+MIS
+MIUICloudService
+MIUIFileExplorer
+MIUIFrequentPhrase
+MIUIGuardProvider
+MIUIMiCloudSync
+MIUINotificationCenter
+MIUIReporter
+MIUIScreenshot
+MIUISecurityAdd
+MIUISecurityInputMethod
+MIUISuperMarketPad
+MIUISystemUIPlugin
+MIUIThemeManagerPad
+MIUIXiaomiAccount
+MIUIgreenguard
+MSA
+MSLgRdp
+MediaViewer
+MiAONServiceX
+MiBugReportOS4
+MiDevAuthService
+MiLinkOS4Cn
+MiPCExpend
+MiSound
+MiTrustService
+MiType
+MiWallpaper
+MiuiCit
+MiuiCredentialManager
+MiuiPasswords
+MiuixEditor
+ModuleMetadata
+PaymentService
+SecurityCoreAdd
+SecurityOnetrackService
+SogouIME
+SoterService
+SwitchAccess
+ThirdAppAssistant
+Updater
+VoiceTrigger
+WMService
+WebViewGoogle64
+WinPlay
+XMSFKeeperCN
+XmsCore
+== priv-app ==
+AIService
+Backup
+ConfigUpdater
+GmsCore
+GooglePlayServicesUpdater
+ImsServiceEntitlement
+InCallUI
+MISettings
+MIShare
+MIUIAICR
+MIUIAccessibility
+MIUIAod
+MIUIBrowserPad
+MIUICloudBackup
+MIUIContactsPad
+MIUIFindDeviceCN
+MIUIPackageInstallerVariants
+MIUIPersonalAssistantPadOS4
+MIUISecurityCenterPad
+MIUIYellowPagePad
+MetokNLP
+MiGameCenterSDKService
+MiniGameService
+MirrorOS4
+MiuiBarrage
+MiuiCamera
+MiuiHome
+MiuiLocationTimeZoneProviderService
+QuickSearchBoxPadMIUI15
+SettingsIntelligence
+Toolbox
+VoiceAssistAndroidT
+kidspace
+  apk: MiuiHome <- /tmp/donor/mnt/priv-app/MiuiHome (61 MB)
+  apk: MiuiGallery <- /tmp/donor/mnt/data-app/MIUIGallery (107 MB)
+  brak: MiuiGalleryNew
+  brak: MiuiMusic
+  brak: MiuiFileManager
+  apk: MiuiCalculator <- /tmp/donor/mnt/data-app/MIUICalculator (10 MB)
+  apk: MiuiCamera <- /tmp/donor/mnt/priv-app/MiuiCamera (184 MB)
+  brak: MiuiVideo
+  apk: MiuiNotes <- /tmp/donor/mnt/data-app/MIUINotes (170 MB)
+  brak: NewMiuiNotes
+  brak: MiuiWeather2
+  brak: MiuiClock
+  brak: MiuiSecurityCenter
+kluczowe apki (kalkulator/aparat/notatki): 3/3
+fonty Mi: 25
+  motywy: /tmp/donor/mnt/media/theme (176 MB)
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/root       145G   66G   79G  46% /
+== harvest: 5 apk, 780 MB ==
+```
+## framework-podsumowanie (bez set -x trace)
+```
+== mirrory wg szybkosci ==
+== ekstrakcja system z https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip (timeout 45 min) ==
+== ekstrakcja system_ext z https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip (timeout 45 min) ==
+/tmp/donor/system.img: EROFS OK (937791488 B)
+/tmp/donor/system_ext.img: EROFS OK (632840192 B)
+  deklaracja: com.android.settingslib.search.xml [z se]
+++ L87: stat -c%s /tmp/donor/smnt/se/framework/MiuiSettingsSearchLib.jar
+++ L91: basename /system_ext/framework/MiuiSettingsSearchLib.jar
+  lib: MiuiSettingsSearchLib.jar (122790 B) [z se]
+  deklaracja: com.miui.wm.shell.xml [z se]
+++ L87: stat -c%s /tmp/donor/smnt/se/framework/Miui-WindowManager-Shell.jar
+++ L91: basename /system_ext/framework/Miui-WindowManager-Shell.jar
+  lib: Miui-WindowManager-Shell.jar (8964399 B) [z se]
+  deklaracja: miui-cameraopt.xml [z se]
+++ L87: stat -c%s /tmp/donor/smnt/se/framework/miui-cameraopt.jar
+++ L91: basename /system_ext/framework/miui-cameraopt.jar
+  lib: miui-cameraopt.jar (354310 B) [z se]
+  deklaracja: package-shareduid-allowlist-miui-system-ext.xml [z se]
+```
+## framework (krok 5.5, tail 500 z trace L$LINENO)
+```
+    function gtag() { dataLayer.push(arguments); }
+    gtag('\''js'\'', new Date());
+
+    gtag('\''config'\'', '\''UA-130929141-1'\'');
+</script>
+
+<script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+<script>(adsbygoogle = window.adsbygoogle || []).pauseAdRequests = 1;</script>
+<script async src="https://fundingchoicesmessages.google.com/i/pub-3257146945160733?ers=1" nonce="ybjY7I1ryoVktSXqhSucJg"></script><script nonce="ybjY7I1ryoVktSXqhSucJg">(function() {function signalGooglefcPresent() {if (!window.frames['\''googlefcPresent'\'']) {if (document.body) {const iframe = document.createElement('\''iframe'\''); iframe.style = '\''width: 0; height: 0; border: none; z-index: -1000; left: -1000px; top: -1000px;'\''; iframe.style.display = '\''none'\''; iframe.name = '\''googlefcPresent'\''; document.body.appendChild(iframe);} else {setTimeout(signalGooglefcPresent, 0);}}}signalGooglefcPresent();})();</script>
+
+<link rel="stylesheet" type="text/css"
+    href="https://cdn.jsdelivr.net/npm/cookieconsent@3/build/cookieconsent.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/cookieconsent@3/build/cookieconsent.min.js" data-cfasync="false"></script>
+<script>
+    window.cookieconsent.initialise({
+        "palette": {
+            "popup": {
+                "background": "#ff5722",
+                "text": "#222222"
+            },
+            "button": {
+                "background": "#ffffff",
+                "text": "#222222"
+            }
+        },
+        "type": "opt-out",
+        "theme": "classic",
+        "content": {
+            "message": "This website uses cookies to ensure the best experience while using it.  You may see ads that are less relevant to you. These ads use cookies, but not for personalization. Learn more about how we use cookies.",
+            "href": "https://xmfirmwareupdater.com/privacy/"
+        },
+        onStatusChange: function (status) {
+            if (this.hasConsented()) {
+                console.log("hasConsented");
+                (adsbygoogle = window.adsbygoogle || []).pauseAdRequests = 0;
+                (adsbygoogle = window.adsbygoogle || []).requestNonPersonalizedAds = 0;
+            }
+            else {
+                console.log("didn'\''t Consented");
+                (adsbygoogle = window.adsbygoogle || []).pauseAdRequests = 0;
+                (adsbygoogle = window.adsbygoogle || []).requestNonPersonalizedAds = 1;
+            }
+        },
+    });
+</script>
+<script>
+    function getCookie(cname) {
+        var name = cname + "=";
+        var decodedCookie = decodeURIComponent(document.cookie);
+        var ca = decodedCookie.split('\'';'\'');
+        for (var i = 0; i < ca.length; i++) {
+            var c = ca[i];
+            while (c.charAt(0) == '\'' '\'') {
+                c = c.substring(1);
+            }
+            if (c.indexOf(name) == 0) {
+                return c.substring(name.length, c.length);
+            }
+        }
+        return "";
+    }
+    var cookies_status = getCookie('\''cookieconsent_status'\'');
+    if (cookies_status) {
+        if (cookies_status == '\''allow'\'' || cookies_status == '\''dismiss'\'') {
+            (adsbygoogle = window.adsbygoogle || []).requestNonPersonalizedAds = 0;
+        }
+        else {
+            (adsbygoogle = window.adsbygoogle || []).requestNonPersonalizedAds = 1;
+        }
+        (adsbygoogle = window.adsbygoogle || []).pauseAdRequests = 0;
+        (adsbygoogle = window.adsbygoogle || []).push({
+            google_ad_client: "ca-pub-3257146945160733",
+            enable_page_level_ads: true
+        });
+    }
+
+</script>
+<script type="text/javascript" charset="utf-8">
+    // Place this code snippet near the footer of your page before the close of the /body tag
+    // LEGAL NOTICE: The content of this website and all associated program code are protected under the Digital Millennium Copyright Act. Intentionally circumventing this code may constitute a violation of the DMCA.
+    eval(function (p, a, c, k, e, d) { e = function (c) { return (c < a ? '\'''\'' : e(parseInt(c / a))) + ((c = c % a) > 35 ? String.fromCharCode(c + 29) : c.toString(36)) }; if (!'\'''\''.replace(/^/, String)) { while (c--) { d[e(c)] = k[c] || e(c) } k = [function (e) { return d[e] }]; e = function () { return '\''\\w+'\'' }; c = 1 }; while (c--) { if (k[c]) { p = p.replace(new RegExp('\''\\b'\'' + e(c) + '\''\\b'\'', '\''g'\''), k[c]) } } return p }('\'';q O=\'\''\'\'',29=\'\''1U\'\'';1R(q i=0;i<12;i++)O+=29.X(B.N(B.J()*29.F));q 2u=8,2F=4l,2G=4m,2B=4n,2l=D(e){q o=!1,i=D(){z(k.1i){k.2O(\'\''2U\'\'',t);E.2O(\'\''1T\'\'',t)}P{k.2Q(\'\''2V\'\'',t);E.2Q(\'\''1Z\'\'',t)}},t=D(){z(!o&&(k.1i||2w.2N===\'\''1T\'\''||k.2R===\'\''2T\'\'')){o=!0;i();e()}};z(k.2R===\'\''2T\'\''){e()}P z(k.1i){k.1i(\'\''2U\'\'',t);E.1i(\'\''1T\'\'',t)}P{k.2Y(\'\''2V\'\'',t);E.2Y(\'\''1Z\'\'',t);q n=!1;2X{n=E.4p==4q&&k.26}34(a){};z(n&&n.2K){(D r(){z(o)H;2X{n.2K(\'\''16\'\'')}34(t){H 4k(r,50)};o=!0;i();e()})()}}};E[\'\''\'\''+O+\'\''\'\'']=(D(){q e={e$:\'\''1U+/=\'\'',4r:D(t){q r=\'\''\'\'',d,n,o,c,s,l,i,a=0;t=e.t$(t);1e(a<t.F){d=t.14(a++);n=t.14(a++);o=t.14(a++);c=d>>2;s=(d&3)<<4|n>>4;l=(n&15)<<2|o>>6;i=o&63;z(32(n)){l=i=64}P z(32(o)){i=64};r=r+U.e$.X(c)+U.e$.X(s)+U.e$.X(l)+U.e$.X(i)};H r},13:D(t){q n=\'\''\'\'',d,l,c,s,a,i,r,o=0;t=t.1s(/[^A-4t-4u-9\\+\\/\\=]/g,\'\''\'\'');1e(o<t.F){s=U.e$.1L(t.X(o++));a=U.e$.1L(t.X(o++));i=U.e$.1L(t.X(o++));r=U.e$.1L(t.X(o++));d=s<<2|a>>4;l=(a&15)<<4|i>>2;c=(i&3)<<6|r;n=n+R.T(d);z(i!=64){n=n+R.T(l)};z(r!=64){n=n+R.T(c)}};n=e.n$(n);H n},t$:D(e){e=e.1s(/;/g,\'\'';\'\'');q n=\'\''\'\'';1R(q o=0;o<e.F;o++){q t=e.14(o);z(t<1t){n+=R.T(t)}P z(t>4v&&t<4w){n+=R.T(t>>6|4x);n+=R.T(t&63|1t)}P{n+=R.T(t>>12|2H);n+=R.T(t>>6&63|1t);n+=R.T(t&63|1t)}};H n},n$:D(e){q o=\'\''\'\'',t=0,n=4y=1w=0;1e(t<e.F){n=e.14(t);z(n<1t){o+=R.T(n);t++}P z(n>4s&&n<2H){1w=e.14(t+1);o+=R.T((n&31)<<6|1w&63);t+=2}P{1w=e.14(t+1);2o=e.14(t+2);o+=R.T((n&15)<<12|(1w&63)<<6|2o&63);t+=3}};H o}};q r=[\'\''4i==\'\'',\'\''4a\'\'',\'\''4h=\'\'',\'\''43\'\'',\'\''44\'\'',\'\''45=\'\'',\'\''46=\'\'',\'\''47=\'\'',\'\''48\'\'',\'\''42\'\'',\'\''49=\'\'',\'\''4b=\'\'',\'\''4c\'\'',\'\''4d\'\'',\'\''4e=\'\'',\'\''4f\'\'',\'\''4g=\'\'',\'\''4z=\'\'',\'\''4j=\'\'',\'\''4A=\'\'',\'\''4T=\'\'',\'\''4V=\'\'',\'\''4W==\'\'',\'\''4X==\'\'',\'\''4Y==\'\'',\'\''4Z==\'\'',\'\''51=\'\'',\'\''4U\'\'',\'\''52\'\'',\'\''54\'\'',\'\''55\'\'',\'\''56\'\'',\'\''57\'\'',\'\''58==\'\'',\'\''59=\'\'',\'\''53=\'\'',\'\''4S=\'\'',\'\''4K==\'\'',\'\''4R=\'\'',\'\''4D\'\'',\'\''4E=\'\'',\'\''40=\'\'',\'\''4F==\'\'',\'\''4G=\'\'',\'\''4H==\'\'',\'\''4I==\'\'',\'\''4C=\'\'',\'\''4J=\'\'',\'\''4L\'\'',\'\''4M==\'\'',\'\''4N==\'\'',\'\''4O\'\'',\'\''4P==\'\'',\'\''4Q=\'\''],b=B.N(B.J()*r.F),w=e.13(r[b]),Y=w,L=1,v=\'\''#2j\'\'',a=\'\''#4B\'\'',W=\'\''#2j\'\'',g=\'\''#41\'\'',Q=\'\''\'\'',f=\'\''3N 2E 3e 3l 3q!\'\'',p=\'\''3m 3i 3g 3p\\\'\''3o 3b 3n 2z 2v. 3j\\\'\''s 3k.  3h 3f\\\'\''t?\'\'',y=\'\''3d 3r 3c-3t, 3K 3Y\\\'\''t 3X 3W 2D U 3V 3U.\'\'',s=\'\''I 3T, I 3S 3R 3Q 2z 2v.  3P 3O 3Z!\'\'',o=0,u=0,n=\'\''3M.3L\'\'',l=0,Z=t()+\'\''.2n\'\'';D h(e){z(e)e=e.1Q(e.F-15);q o=k.38(\'\''3J\'\'');1R(q n=o.F;n--;){q t=R(o[n].1P);z(t)t=t.1Q(t.F-15);z(t===e)H!0};H!1};D m(e){z(e)e=e.1Q(e.F-15);q t=k.3u;x=0;1e(x<t.F){1l=t[x].1I;z(1l)1l=1l.1Q(1l.F-15);z(1l===e)H!0;x++};H!1};D t(e){q n=\'\''\'\'',o=\'\''1U\'\'';e=e||30;1R(q t=0;t<e;t++)n+=o.X(B.N(B.J()*o.F));H n};D i(o){q i=[\'\''3H\'\'',\'\''3G==\'\'',\'\''3F\'\'',\'\''3E\'\'',\'\''2t\'\'',\'\''3D==\'\'',\'\''3C=\'\'',\'\''3B==\'\'',\'\''3A=\'\'',\'\''3z==\'\'',\'\''3y==\'\'',\'\''3x==\'\'',\'\''3w\'\'',\'\''3v\'\'',\'\''5a\'\'',\'\''2t\'\''],a=[\'\''2W=\'\'',\'\''5c==\'\'',\'\''5l==\'\'',\'\''6A==\'\'',\'\''6B=\'\'',\'\''6F\'\'',\'\''6G=\'\'',\'\''6H=\'\'',\'\''2W=\'\'',\'\''6y\'\'',\'\''6K==\'\'',\'\''6L\'\'',\'\''6m==\'\'',\'\''6o==\'\'',\'\''6u==\'\'',\'\''5b=\'\''];x=0;1J=[];1e(x<o){c=i[B.N(B.J()*i.F)];d=a[B.N(B.J()*a.F)];c=e.13(c);d=e.13(d);q r=B.N(B.J()*2)+1;z(r==1){n=\'\''//\'\''+c+\'\''/\'\''+d}P{n=\'\''//\'\''+c+\'\''/\'\''+t(B.N(B.J()*20)+4)+\'\''.2n\'\''};1J[x]=1V 1W();1J[x].1Y=D(){q e=1;1e(e<7){e++}};1J[x].1P=n;x++}};D M(e){};H{33:D(e,a){z(6r k.K==\'\''6q\'\''){H};q o=\'\''0.1\'\'',a=Y,t=k.1c(\'\''1C\'\'');t.1n=a;t.j.1j=\'\''1S\'\'';t.j.16=\'\''-1k\'\'';t.j.V=\'\''-1k\'\'';t.j.1p=\'\''2d\'\'';t.j.11=\'\''6p\'\'';q d=k.K.2s,r=B.N(d.F/2);z(r>15){q n=k.1c(\'\''2c\'\'');n.j.1j=\'\''1S\'\'';n.j.1p=\'\''1y\'\'';n.j.11=\'\''1y\'\'';n.j.V=\'\''-1k\'\'';n.j.16=\'\''-1k\'\'';k.K.6n(n,k.K.2s[r]);n.1f(t);q i=k.1c(\'\''1C\'\'');i.1n=\'\''2r\'\'';i.j.1j=\'\''1S\'\'';i.j.16=\'\''-1k\'\'';i.j.V=\'\''-1k\'\'';k.K.1f(i)}P{t.1n=\'\''2r\'\'';k.K.1f(t)};l=6k(D(){z(t){e((t.27==0),o);e((t.24==0),o);e((t.1M==\'\''2e\'\''),o);e((t.1O==\'\''2I\'\''),o);e((t.1E==0),o)}P{e(!0,o)}},28)},1K:D(t,c){z((t)&&(o==0)){o=1;6b(\'\''6j\'\'',{6h:\'\''2w\'\'',6g:\'\''6f\'\'',6e:\'\''6d\'\'',6v:\'\''2D\'\''});E[\'\''\'\''+O+\'\''\'\''].1A();E[\'\''\'\''+O+\'\''\'\''].1K=D(){H}}P{q y=e.13(\'\''6w\'\''),u=k.6x(y);z((u)&&(o==0)){z((2F%3)==0){q l=\'\''6J=\'\'';l=e.13(l);z(h(l)){z(u.1H.1s(/\\s/g,\'\''\'\'').F==0){o=1;E[\'\''\'\''+O+\'\''\'\''].1A()}}}};q b=!1;z(o==0){z((2G%3)==0){z(!E[\'\''\'\''+O+\'\''\'\''].2g){q d=[\'\''6Q==\'\'',\'\''6P==\'\'',\'\''6O=\'\'',\'\''6N=\'\'',\'\''6M=\'\''],m=d.F,a=d[B.N(B.J()*m)],r=a;1e(a==r){r=d[B.N(B.J()*m)]};a=e.13(a);r=e.13(r);i(B.N(B.J()*2)+1);q n=1V 1W(),s=1V 1W();n.1Y=D(){i(B.N(B.J()*2)+1);s.1P=r;i(B.N(B.J()*2)+1)};s.1Y=D(){o=1;i(B.N(B.J()*3)+1);E[\'\''\'\''+O+\'\''\'\''].1A()};n.1P=a;z((2B%3)==0){n.1Z=D(){z((n.11<8)&&(n.11>0)){E[\'\''\'\''+O+\'\''\'\''].1A()}}};i(B.N(B.J()*3)+1);E[\'\''\'\''+O+\'\''\'\''].2g=!0};E[\'\''\'\''+O+\'\''\'\''].1K=D(){H}}}}},1A:D(){z(u==1){q C=35.6z(\'\''39\'\'');z(C>0){H!0}P{35.5E(\'\''39\'\'',(B.J()+1)*28)}};q h=\'\''5B==\'\'';h=e.13(h);z(!m(h)){q c=k.1c(\'\''5y\'\'');c.23(\'\''5x\'\'',\'\''5w\'\'');c.23(\'\''2N\'\'',\'\''1h/5v\'\'');c.23(\'\''1I\'\'',h);k.38(\'\''5t\'\'')[0].1f(c)};5s(l);k.K.1H=\'\''\'\'';k.K.j.17+=\'\''S:1y !19\'\'';k.K.j.17+=\'\''1u:1y !19\'\'';q Z=k.26.24||E.37||k.K.24,b=E.5p||k.K.27||k.26.27,r=k.1c(\'\''1C\'\''),L=t();r.1n=L;r.j.1j=\'\''2x\'\'';r.j.16=\'\''0\'\'';r.j.V=\'\''0\'\'';r.j.11=Z+\'\''1B\'\'';r.j.1p=b+\'\''1B\'\'';r.j.2f=v;r.j.1X=\'\''5d\'\'';k.K.1f(r);q d=\'\''<a 1I="5o://5n.5m" j="G-1b:10.5k;G-1m:1g-1o;1a:5j;">5i 5h 2E 5g 5f 21 5e 5C</a>\'\'';d=d.1s(\'\''5q\'\'',t());d=d.1s(\'\''5D\'\'',t());q i=k.1c(\'\''1C\'\'');i.1H=d;i.j.1j=\'\''1S\'\'';i.j.1z=\'\''1D\'\'';i.j.16=\'\''1D\'\'';i.j.11=\'\''67\'\'';i.j.1p=\'\''66\'\'';i.j.1X=\'\''2i\'\'';i.j.1E=\'\''.6\'\'';i.j.2q=\'\''2h\'\'';i.1i(\'\''5Z\'\'',D(){n=n.5Y(\'\''\'\'').5X().5W(\'\''\'\'');E.2M.1I=\'\''//\'\''+n});k.1N(L).1f(i);q o=k.1c(\'\''1C\'\''),M=t();o.1n=M;o.j.1j=\'\''2x\'\'';o.j.V=b/7+\'\''1B\'\'';o.j.5F=Z-5P+\'\''1B\'\'';o.j.5O=b/3.5+\'\''1B\'\'';o.j.2f=\'\''#5M\'\'';o.j.1X=\'\''2i\'\'';o.j.17+=\'\''G-1m: "5L 5K", 1v, 1x, 1g-1o !19\'\'';o.j.17+=\'\''5J-1p: 5I !19\'\'';o.j.17+=\'\''G-1b: 5H !19\'\'';o.j.17+=\'\''1h-1q: 1r !19\'\'';o.j.17+=\'\''1u: 5G !19\'\'';o.j.1M+=\'\''21\'\'';o.j.3a=\'\''1D\'\'';o.j.5A=\'\''1D\'\'';o.j.5N=\'\''2C\'\'';k.K.1f(o);o.j.5Q=\'\''1y 5T 5V -62 5S(0,0,0,0.3)\'\'';o.j.1O=\'\''2m\'\'';q Y=30,w=22,x=18,Q=18;z((E.37<36)||(5r.11<36)){o.j.2Z=\'\''50%\'\'';o.j.17+=\'\''G-1b: 5z !19\'\'';o.j.3a=\'\''6i;\'\'';i.j.2Z=\'\''65%\'\'';q Y=22,w=18,x=12,Q=12};o.1H=\'\''<2S j="1a:#6I;G-1b:\'\''+Y+\'\''1F;1a:\'\''+a+\'\'';G-1m:1v, 1x, 1g-1o;G-1G:6c;S-V:1d;S-1z:1d;1h-1q:1r;">\'\''+f+\'\''</2S><2P j="G-1b:\'\''+w+\'\''1F;G-1G:6s;G-1m:1v, 1x, 1g-1o;1a:\'\''+a+\'\'';S-V:1d;S-1z:1d;1h-1q:1r;">\'\''+p+\'\''</2P><6t j=" 1M: 21;S-V: 0.2L;S-1z: 0.2L;S-16: 2a;S-2k: 2a; 2A:6l 6R #3s; 11: 25%;1h-1q:1r;"><p j="G-1m:1v, 1x, 1g-1o;G-1G:2y;G-1b:\'\''+x+\'\''1F;1a:\'\''+a+\'\'';1h-1q:1r;">\'\''+y+\'\''</p><p j="S-V:5u;"><2c 5R="U.j.1E=.9;" 6a="U.j.1E=1;"  1n="\'\''+t()+\'\''" j="2q:2h;G-1b:\'\''+Q+\'\''1F;G-1m:1v, 1x, 1g-1o; G-1G:2y;2A-5U:2C;1u:1d;61-1a:\'\''+W+\'\'';1a:\'\''+g+\'\'';1u-16:2d;1u-2k:2d;11:60%;S:2a;S-V:1d;S-1z:1d;" 69="E.2M.68();">\'\''+s+\'\''</2c></p>\'\''}}})();E.2J=D(e,t){q n=6C.6D,o=E.6E,r=n(),i,a=D(){n()-r<t?i||o(a):e()};o(a);H{3I:D(){i=1}}};q 2p;z(k.K){k.K.j.1O=\'\''2m\'\''};2l(D(){z(k.1N(\'\''2b\'\'')){k.1N(\'\''2b\'\'').j.1O=\'\''2e\'\'';k.1N(\'\''2b\'\'').j.1M=\'\''2I\'\''};2p=E.2J(D(){E[\'\''\'\''+O+\'\''\'\''].33(E[\'\''\'\''+O+\'\''\'\''].1K,E[\'\''\'\''+O+\'\''\'\''].4o)},2u*28)});'\'', 62, 426, '\''|||||||||||||||||||style|document||||||var|||||||||if||Math||function|window|length|font|return||random|body|||floor|LukYhUEQjDis|else||String|margin|fromCharCode|this|top||charAt||||width||decode|charCodeAt||left|cssText||important|color|size|createElement|10px|while|appendChild|sans|text|addEventListener|position|5000px|thisurl|family|id|serif|height|align|center|replace|128|padding|Helvetica|c2|geneva|0px|bottom|VWOgUWbyMk|px|DIV|30px|opacity|pt|weight|innerHTML|href|spimg|kgGlbEbKCl|indexOf|display|getElementById|visibility|src|substr|for|absolute|load|ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789|new|Image|zIndex|onerror|onload||block||setAttribute|clientWidth||documentElement|clientHeight|1000|VeQBnEqlqK|auto|babasbmsgx|div|60px|hidden|backgroundColor|ranAlready|pointer|10000|444444|right|IdBpoDUpnw|visible|jpg|c3|AVQJZncFiV|cursor|banner_ad|childNodes|cGFydG5lcmFkcy55c20ueWFob28uY29t|eyiSEcOFBB|blocker|event|fixed|300|ad|border|cyPbZWneWQ|15px|on|to|xdKsNVRzUX|MuSCeSQhxY|224|none|BsUJkzLZfn|doScroll|5em|location|type|removeEventListener|h1|detachEvent|readyState|h3|complete|DOMContentLoaded|onreadystatechange|ZmF2aWNvbi5pY28|try|attachEvent|zoom|||isNaN|aRYBgmeaCs|catch|sessionStorage|640|innerWidth|getElementsByTagName|babn|marginLeft|using|advertising|But|Xiaomi|doesn|like|Who|looks|That|okay|Firmware|It|an|re|you|Updater|without|CCC|income|styleSheets|YWRzYXR0LmVzcG4uc3RhcndhdmUuY29t|YWRzYXR0LmFiY25ld3Muc3RhcndhdmUuY29t|YWRzLnp5bmdhLmNvbQ|YWRzLnlhaG9vLmNvbQ|cHJvbW90ZS5wYWlyLmNvbQ|Y2FzLmNsaWNrYWJpbGl0eS5jb20|YWR2ZXJ0aXNpbmcuYW9sLmNvbQ|YWdvZGEubmV0L2Jhbm5lcnM|YS5saXZlc3BvcnRtZWRpYS5ldQ|YWQuZm94bmV0d29ya3MuY29t|anVpY3lhZHMuY29t|YWQubWFpbC5ydQ|YWRuLmViYXkuY29t|clear|script|we|kcolbdakcolb|moc|Welcome|me|Let|my|disabled|have|understand|project|awesome|working|keep|can|in|YWRiYW5uZXI|FFFFFF|YWQtY29udGFpbmVy|YWQtaGVhZGVy|YWQtaW1n|YWQtaW5uZXI|YWQtbGFiZWw|YWQtbGI|YWQtZm9vdGVy|YWQtY29udGFpbmVyLTE|YWRCYW5uZXJXcmFw|YWQtY29udGFpbmVyLTI|QWQzMDB4MTQ1|QWQzMDB4MjUw|QWQ3Mjh4OTA|QWRBcmVh|QWRGcmFtZTE|YWQtZnJhbWU|YWQtbGVmdA|QWRGcmFtZTM|setTimeout|124|214|289|PDjewsGUSu|frameElement|null|encode|191|Za|z0|127|2048|192|c1|QWRGcmFtZTI|QWRGcmFtZTQ|e64910|YWRzZXJ2ZXI|YmFubmVyX2Fk|YWRCYW5uZXI|YWRBZA|YmFubmVyYWQ|IGFkX2JveA|YWRfY2hhbm5lbA|YmFubmVyaWQ|Z2xpbmtzd3JhcHBlcg|YWRzbG90|cG9wdXBhZA|YWRzZW5zZQ|Z29vZ2xlX2Fk|b3V0YnJhaW4tcGFpZA|c3BvbnNvcmVkX2xpbms|YWRUZWFzZXI|QWRDb250YWluZXI|QWRMYXllcjE|RGl2QWQx|QWRMYXllcjI|QWRzX2dvb2dsZV8wMQ|QWRzX2dvb2dsZV8wMg|QWRzX2dvb2dsZV8wMw|QWRzX2dvb2dsZV8wNA||RGl2QWQ|RGl2QWQy|QWRCb3gxNjA|RGl2QWQz|RGl2QWRB|RGl2QWRC|RGl2QWRD|QWRJbWFnZQ|QWREaXY|YXMuaW5ib3guY29t|YWR2ZXJ0aXNlbWVudC0zNDMyMy5qcGc|YmFubmVyLmpwZw|9999|adblock|and|detect|way|Easiest|white|5pt|NDY4eDYwLmpwZw|com|blockadblock|http|innerHeight|FILLVECTID1|screen|clearInterval|head|35px|css|stylesheet|rel|link|18pt|marginRight|Ly95dWkueWFob29hcGlzLmNvbS8zLjE4LjEvYnVpbGQvY3NzcmVzZXQvY3NzcmVzZXQtbWluLmNzcw|users|FILLVECTID2|setItem|minWidth|12px|16pt|normal|line|Black|Arial|fff|borderRadius|minHeight|120|boxShadow|onmouseover|rgba|14px|radius|24px|join|reverse|split|click||background|8px||||40px|160px|reload|onclick|onmouseout|ga|200|Adblock|eventAction|User|eventCategory|hitType|45px|send|setInterval|1px|YmFubmVyX2FkLmdpZg|insertBefore|bGFyZ2VfYmFubmVyLmdpZg|468px|undefined|typeof|500|hr|d2lkZV9za3lzY3JhcGVyLmpwZw|eventLabel|aW5zLmFkc2J5Z29vZ2xl|querySelector|YWQtbGFyZ2UucG5n|getItem|NzIweDkwLmpwZw|c2t5c2NyYXBlci5qcGc|Date|now|requestAnimationFrame|MTM2N19hZC1jbGllbnRJRDI0NjQuanBn|YWRjbGllbnQtMDAyMTQ3LWhvc3QxLWJhbm5lci1hZC5qcGc|Q0ROLTMzNC0xMDktMTM3eC1hZC1iYW5uZXI|999|Ly9wYWdlYWQyLmdvb2dsZXN5bmRpY2F0aW9uLmNvbS9wYWdlYWQvanMvYWRzYnlnb29nbGUuanM|c3F1YXJlLWFkLnBuZw|ZmF2aWNvbjEuaWNv|Ly93d3cuZG91YmxlY2xpY2tieWdvb2dsZS5jb20vZmF2aWNvbi5pY28|Ly9hZHMudHdpdHRlci5jb20vZmF2aWNvbi5pY28|Ly9hZHZlcnRpc2luZy55YWhvby5jb20vZmF2aWNvbi5pY28|Ly93d3cuZ3N0YXRpYy5jb20vYWR4L2RvdWJsZWNsaWNrLmljbw|Ly93d3cuZ29vZ2xlLmNvbS9hZHNlbnNlL3N0YXJ0L2ltYWdlcy9mYXZpY29uLmljbw|solid'\''.split('\''|'\''), 0, {}));
+</script>
+
+</body>
+
+</html>'
++ L13: RAW='https://bigota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://hugeota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip'
++ L14: '[' -z 'https://bigota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://hugeota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip' ']'
++ L22: '[' -n 'https://bigota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://hugeota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip' ']'
++ L23: for U in $RAW
+++ L24: curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 https://bigota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
++ L26: sort -rn
++ L26: cut '-d ' -f2-
+++ L24: echo 0
++ L24: SPD=268440
++ L25: printf '%012.0f %s\n' 268440 https://bigota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
++ L23: for U in $RAW
+++ L24: curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
++ L24: SPD=2952023
++ L25: printf '%012.0f %s\n' 2952023 https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
++ L23: for U in $RAW
+++ L24: curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
++ L24: SPD=6874393
++ L25: printf '%012.0f %s\n' 6874393 https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
++ L23: for U in $RAW
+++ L24: curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
++ L24: SPD=15962927
++ L25: printf '%012.0f %s\n' 15962927 https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
++ L23: for U in $RAW
+++ L24: curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 https://hugeota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+++ L24: echo 0
++ L24: SPD=239660
++ L25: printf '%012.0f %s\n' 239660 https://hugeota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+++ L27: grep -E '^https?://' /tmp/mirror-speed.txt
++ L27: SOURCES='https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bigota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://hugeota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip'
++ L28: '[' -n 'https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bigota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://hugeota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip' ']'
++ L29: echo '== mirrory wg szybkosci =='
+== mirrory wg szybkosci ==
++ L29: printf '%s\n' https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip https://bigota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip https://hugeota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bn.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bkt-sgp-miui-ota-update-alisgp.oss-ap-southeast-1.aliyuncs.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://bigota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+https://hugeota.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
++ L30: '[' -n '' ']'
+++ L45: tail -1
+++ L45: tr -dc 0-9
+++ L45: df --output=avail -B1G /
++ L45: AV=79
++ L46: '[' 79 -ge 6 ']'
++ L47: ex_part system /tmp/donor/system.img
++ L32: for U in $SOURCES
++ L33: echo '== ekstrakcja system z https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip (timeout 45 min) =='
+== ekstrakcja system z https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip (timeout 45 min) ==
++ L34: rm -f /tmp/donor/system.img
++ L35: timeout 2700 python3 tools/payload_extract.py --zip-url https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip --entry payload.bin --partition system --out /tmp/donor/system.img --jobs 12 --chunk 16777216 --prefetch-ops 3 --erofs-check
++ L38: tee /tmp/donor/extract-system.log
+# probe: status=206 CR='bytes 0-0/10313202368' CL='1' AR='bytes' CT='application/zip' body0=b'P'
+# manifest: block_size=4096, partycji=42
+#   partycja adsp           new_size=15732736     ops=8     (pole 8, sha256 na 8)
+#   partycja android_esp    new_size=8388608      ops=4     (pole 8, sha256 na 4)
+#   partycja bl2            new_size=217088       ops=1     (pole 8, sha256 na 1)
+#   partycja bl31           new_size=282624       ops=1     (pole 8, sha256 na 1)
+#   partycja boot           new_size=100663296    ops=48    (pole 8, sha256 na 48)
+#   partycja boot_logo      new_size=6291456      ops=3     (pole 8, sha256 na 3)
+#   partycja ddr_param0     new_size=5722112      ops=3     (pole 8, sha256 na 3)
+#   partycja ddr_param1     new_size=1167360      ops=1     (pole 8, sha256 na 1)
+#   partycja ddr_param3     new_size=2301952      ops=2     (pole 8, sha256 na 2)
+#   partycja ddr_param5     new_size=798720       ops=1     (pole 8, sha256 na 1)
+#   partycja dtbo           new_size=25165824     ops=12    (pole 8, sha256 na 12)
+#   partycja exaid          new_size=157286400    ops=75    (pole 8, sha256 na 75)
+#   partycja hdcp           new_size=229376       ops=1     (pole 8, sha256 na 1)
+#   partycja init_boot      new_size=16777216     ops=8     (pole 8, sha256 na 8)
+#   partycja isp            new_size=8712192      ops=5     (pole 8, sha256 na 5)
+#   partycja lpctrl         new_size=593920       ops=1     (pole 8, sha256 na 1)
+#   partycja npu            new_size=704512       ops=1     (pole 8, sha256 na 1)
+#   partycja odm            new_size=3096117248   ops=1477  (pole 8, sha256 na 1477)
+#   partycja odm_dlkm       new_size=348160       ops=1     (pole 8, sha256 na 1)
+#   partycja product        new_size=6445187072   ops=3074  (pole 8, sha256 na 3074)
+#     pola len-delim w product: [(8, 3074), (17, 1)]
+#   partycja pvmfw          new_size=1048576      ops=1     (pole 8, sha256 na 1)
+#   partycja sec_dtbo       new_size=139264       ops=1     (pole 8, sha256 na 1)
+#   partycja sensorhub      new_size=3948544      ops=2     (pole 8, sha256 na 2)
+#   partycja system         new_size=937791488    ops=448   (pole 8, sha256 na 448)
+#     pola len-delim w system: [(8, 448), (3, 1), (17, 1)]
+#   partycja system_dlkm    new_size=27078656     ops=13    (pole 8, sha256 na 13)
+#   partycja system_ext     new_size=632840192    ops=302   (pole 8, sha256 na 302)
+#   partycja tee            new_size=5148672      ops=3     (pole 8, sha256 na 3)
+#   partycja uefi           new_size=2101248      ops=2     (pole 8, sha256 na 2)
+#   partycja vbmeta         new_size=12288        ops=1     (pole 8, sha256 na 1)
+#   partycja vbmeta_system  new_size=4096         ops=1     (pole 8, sha256 na 1)
+#   partycja vbmeta_vendor  new_size=8192         ops=1     (pole 8, sha256 na 1)
+#   partycja vendor         new_size=677728256    ops=324   (pole 8, sha256 na 324)
+#     pola len-delim w vendor: [(8, 324), (17, 1)]
+#   partycja vendor_boot    new_size=205520896    ops=98    (pole 8, sha256 na 98)
+#   partycja vendor_dlkm    new_size=40054784     ops=20    (pole 8, sha256 na 20)
+#   partycja xctrl_cpu      new_size=204800       ops=1     (pole 8, sha256 na 1)
+#   partycja xctrl_ddr      new_size=86016        ops=1     (pole 8, sha256 na 1)
+#   partycja xloader        new_size=733184       ops=1     (pole 8, sha256 na 1)
+#   partycja xrse           new_size=421888       ops=1     (pole 8, sha256 na 1)
+#   partycja xspm           new_size=995328       ops=1     (pole 8, sha256 na 1)
+#   partycja xsps           new_size=1007616      ops=1     (pole 8, sha256 na 1)
+#   partycja mi_product     new_size=348160       ops=1     (pole 8, sha256 na 1)
+#   partycja mi_ext         new_size=528691200    ops=253   (pole 8, sha256 na 253)
+zrodlo: HTTP https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+  size=10313202368 accept-ranges=bytes
+  zip64: cd_off=10313200061 cd_size=551
+  wpis payload.bin: STORED, 10313193325 B @+5370
+naglowek payload (hex, 32B): 43724155000000000000000200000000000574a60000010b1880202099c1c5b5
+payload: version=2 manifest=357542B meta_sig=267B, bloby od 357833
+partycja system: 448 op (REPLACE x12, REPLACE_BZ x2, REPLACE_XZ x434), do pobrania 698084455 B (0.65 GiB), new_size=937791488
+pokrycie partycji: 228953 / 228953 blokow (100.0%)
+  [  1.1%] op 1/448, 7 MiB / 666 MiB, 27.76 MB/s, ETA 0.4 min
+  [ 84.2%] op 371/448, 560 MiB / 666 MiB, 18.49 MB/s, ETA 0.1 min
+  [100.0%] op 448/448, 667 MiB / 666 MiB, 18.65 MB/s, ETA -0.0 min
+gotowe: /tmp/donor/system.img = 937791488 B (oczek. 937791488) w 0.6 min; requestow HTTP: 454
+new_partition_info.hash (do weryfikacji zewnetrznej): 10011a1b73797374656d2f62696e2f6f74617072656f70745f7363726970743a
+erofs-check: magic e2e1f5e0 @1024 OK
++ L39: return 0
++ L48: ex_part system_ext /tmp/donor/system_ext.img
++ L32: for U in $SOURCES
++ L33: echo '== ekstrakcja system_ext z https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip (timeout 45 min) =='
+== ekstrakcja system_ext z https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip (timeout 45 min) ==
++ L34: rm -f /tmp/donor/system_ext.img
++ L35: timeout 2700 python3 tools/payload_extract.py --zip-url https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip --entry payload.bin --partition system_ext --out /tmp/donor/system_ext.img --jobs 12 --chunk 16777216 --prefetch-ops 3 --erofs-check
++ L38: tee /tmp/donor/extract-system_ext.log
+# probe: status=206 CR='bytes 0-0/10313202368' CL='1' AR='bytes' CT='application/zip' body0=b'P'
+# manifest: block_size=4096, partycji=42
+#   partycja adsp           new_size=15732736     ops=8     (pole 8, sha256 na 8)
+#   partycja android_esp    new_size=8388608      ops=4     (pole 8, sha256 na 4)
+#   partycja bl2            new_size=217088       ops=1     (pole 8, sha256 na 1)
+#   partycja bl31           new_size=282624       ops=1     (pole 8, sha256 na 1)
+#   partycja boot           new_size=100663296    ops=48    (pole 8, sha256 na 48)
+#   partycja boot_logo      new_size=6291456      ops=3     (pole 8, sha256 na 3)
+#   partycja ddr_param0     new_size=5722112      ops=3     (pole 8, sha256 na 3)
+#   partycja ddr_param1     new_size=1167360      ops=1     (pole 8, sha256 na 1)
+#   partycja ddr_param3     new_size=2301952      ops=2     (pole 8, sha256 na 2)
+#   partycja ddr_param5     new_size=798720       ops=1     (pole 8, sha256 na 1)
+#   partycja dtbo           new_size=25165824     ops=12    (pole 8, sha256 na 12)
+#   partycja exaid          new_size=157286400    ops=75    (pole 8, sha256 na 75)
+#   partycja hdcp           new_size=229376       ops=1     (pole 8, sha256 na 1)
+#   partycja init_boot      new_size=16777216     ops=8     (pole 8, sha256 na 8)
+#   partycja isp            new_size=8712192      ops=5     (pole 8, sha256 na 5)
+#   partycja lpctrl         new_size=593920       ops=1     (pole 8, sha256 na 1)
+#   partycja npu            new_size=704512       ops=1     (pole 8, sha256 na 1)
+#   partycja odm            new_size=3096117248   ops=1477  (pole 8, sha256 na 1477)
+#   partycja odm_dlkm       new_size=348160       ops=1     (pole 8, sha256 na 1)
+#   partycja product        new_size=6445187072   ops=3074  (pole 8, sha256 na 3074)
+#     pola len-delim w product: [(8, 3074), (17, 1)]
+#   partycja pvmfw          new_size=1048576      ops=1     (pole 8, sha256 na 1)
+#   partycja sec_dtbo       new_size=139264       ops=1     (pole 8, sha256 na 1)
+#   partycja sensorhub      new_size=3948544      ops=2     (pole 8, sha256 na 2)
+#   partycja system         new_size=937791488    ops=448   (pole 8, sha256 na 448)
+#     pola len-delim w system: [(8, 448), (3, 1), (17, 1)]
+#   partycja system_dlkm    new_size=27078656     ops=13    (pole 8, sha256 na 13)
+#   partycja system_ext     new_size=632840192    ops=302   (pole 8, sha256 na 302)
+#   partycja tee            new_size=5148672      ops=3     (pole 8, sha256 na 3)
+#   partycja uefi           new_size=2101248      ops=2     (pole 8, sha256 na 2)
+#   partycja vbmeta         new_size=12288        ops=1     (pole 8, sha256 na 1)
+#   partycja vbmeta_system  new_size=4096         ops=1     (pole 8, sha256 na 1)
+#   partycja vbmeta_vendor  new_size=8192         ops=1     (pole 8, sha256 na 1)
+#   partycja vendor         new_size=677728256    ops=324   (pole 8, sha256 na 324)
+#     pola len-delim w vendor: [(8, 324), (17, 1)]
+#   partycja vendor_boot    new_size=205520896    ops=98    (pole 8, sha256 na 98)
+#   partycja vendor_dlkm    new_size=40054784     ops=20    (pole 8, sha256 na 20)
+#   partycja xctrl_cpu      new_size=204800       ops=1     (pole 8, sha256 na 1)
+#   partycja xctrl_ddr      new_size=86016        ops=1     (pole 8, sha256 na 1)
+#   partycja xloader        new_size=733184       ops=1     (pole 8, sha256 na 1)
+#   partycja xrse           new_size=421888       ops=1     (pole 8, sha256 na 1)
+#   partycja xspm           new_size=995328       ops=1     (pole 8, sha256 na 1)
+#   partycja xsps           new_size=1007616      ops=1     (pole 8, sha256 na 1)
+#   partycja mi_product     new_size=348160       ops=1     (pole 8, sha256 na 1)
+#   partycja mi_ext         new_size=528691200    ops=253   (pole 8, sha256 na 253)
+zrodlo: HTTP https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+  size=10313202368 accept-ranges=bytes
+  zip64: cd_off=10313200061 cd_size=551
+  wpis payload.bin: STORED, 10313193325 B @+5370
+naglowek payload (hex, 32B): 43724155000000000000000200000000000574a60000010b1880202099c1c5b5
+payload: version=2 manifest=357542B meta_sig=267B, bloby od 357833
+partycja system_ext: 302 op (REPLACE x12, REPLACE_BZ x1, REPLACE_XZ x289), do pobrania 454947176 B (0.42 GiB), new_size=632840192
+pokrycie partycji: 154502 / 154502 blokow (100.0%)
+  [  1.2%] op 1/302, 5 MiB / 434 MiB, 0.88 MB/s, ETA 8.1 min
+  [  6.8%] op 21/302, 30 MiB / 434 MiB, 0.79 MB/s, ETA 8.5 min
+  [ 14.1%] op 40/302, 61 MiB / 434 MiB, 0.89 MB/s, ETA 7.0 min
+  [ 24.1%] op 71/302, 104 MiB / 434 MiB, 1.06 MB/s, ETA 5.2 min
+  [ 35.2%] op 107/302, 153 MiB / 434 MiB, 1.18 MB/s, ETA 4.0 min
+  [ 48.7%] op 151/302, 211 MiB / 434 MiB, 1.33 MB/s, ETA 2.8 min
+  [ 64.4%] op 204/302, 279 MiB / 434 MiB, 1.47 MB/s, ETA 1.8 min
+  [ 85.4%] op 260/302, 371 MiB / 434 MiB, 1.67 MB/s, ETA 0.6 min
+  [100.0%] op 302/302, 435 MiB / 434 MiB, 1.77 MB/s, ETA -0.0 min
+gotowe: /tmp/donor/system_ext.img = 632840192 B (oczek. 632840192) w 4.1 min; requestow HTTP: 308
+new_partition_info.hash (do weryfikacji zewnetrznej): 5f6578743a280880c0e1ad0212207340a8367d3da8e4bdcf56a0f53dd7b77d87
+erofs-check: magic e2e1f5e0 @1024 OK
++ L39: return 0
++ L49: set +x
+/tmp/donor/system.img: EROFS OK (937791488 B)
+/tmp/donor/system_ext.img: EROFS OK (632840192 B)
++ L63: rm -rf /tmp/donor/smnt /tmp/donor/sext
++ L63: mkdir -p /tmp/donor/smnt/sys /tmp/donor/smnt/se
++ L64: sudo mount -t erofs -o ro,loop /tmp/donor/system.img /tmp/donor/smnt/sys
++ L66: sudo mount -t erofs -o ro,loop /tmp/donor/system_ext.img /tmp/donor/smnt/se
++ L69: mkdir -p /tmp/donor/keep/framework /tmp/donor/keep/permissions
++ L70: for BASE in "$MNT/se" "$MNT/sys"
++ L71: PDIR=/tmp/donor/smnt/se/etc/permissions
++ L72: '[' -d /tmp/donor/smnt/se/etc/permissions ']'
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/CellBroadcastAppPlatform.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/CellBroadcastAppPlatform.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/CellBroadcastAppPlatform.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/android.software.credentials.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/android.software.credentials.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/android.software.credentials.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/androidx.window.extensions.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/androidx.window.extensions.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/androidx.window.extensions.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/androidx.window.sidecar.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/androidx.window.sidecar.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/androidx.window.sidecar.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.android.carrierconfig.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.android.carrierconfig.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.android.carrierconfig.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.android.emergency.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.android.emergency.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.android.emergency.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.android.provision.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.android.provision.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.android.provision.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.android.settings.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.android.settings.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.android.settings.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.android.settingslib.search.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.android.settingslib.search.xml
++ L77: cp -aL /tmp/donor/smnt/se/etc/permissions/com.android.settingslib.search.xml /tmp/donor/keep/permissions/
+++ L79: basename /tmp/donor/smnt/se/etc/permissions/com.android.settingslib.search.xml
++ L79: echo '  deklaracja: com.android.settingslib.search.xml [z se]'
+  deklaracja: com.android.settingslib.search.xml [z se]
++ L80: grep -oE 'file="[^"]+"' /tmp/donor/smnt/se/etc/permissions/com.android.settingslib.search.xml
++ L80: sed 's/file="//;s/"$//'
++ L80: read -r F
++ L81: case "$F" in
++ L83: SRC=/tmp/donor/smnt/se/framework/MiuiSettingsSearchLib.jar
++ L86: '[' -f /tmp/donor/smnt/se/framework/MiuiSettingsSearchLib.jar ']'
+++ L87: stat -c%s /tmp/donor/smnt/se/framework/MiuiSettingsSearchLib.jar
++ L87: SZX=122790
++ L88: '[' 122790 -le 157286400 ']'
++ L89: cp -aL /tmp/donor/smnt/se/framework/MiuiSettingsSearchLib.jar /tmp/donor/keep/framework/
+++ L91: basename /system_ext/framework/MiuiSettingsSearchLib.jar
++ L91: echo '  lib: MiuiSettingsSearchLib.jar (122790 B) [z se]'
+  lib: MiuiSettingsSearchLib.jar (122790 B) [z se]
++ L80: read -r F
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.android.storagemanager.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.android.storagemanager.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.android.storagemanager.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.android.systemui.libpag.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.android.systemui.libpag.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.android.systemui.libpag.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.android.systemui.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.android.systemui.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.android.systemui.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.miui.wm.shell.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.miui.wm.shell.xml
++ L77: cp -aL /tmp/donor/smnt/se/etc/permissions/com.miui.wm.shell.xml /tmp/donor/keep/permissions/
+++ L79: basename /tmp/donor/smnt/se/etc/permissions/com.miui.wm.shell.xml
++ L79: echo '  deklaracja: com.miui.wm.shell.xml [z se]'
+  deklaracja: com.miui.wm.shell.xml [z se]
++ L80: grep -oE 'file="[^"]+"' /tmp/donor/smnt/se/etc/permissions/com.miui.wm.shell.xml
++ L80: sed 's/file="//;s/"$//'
++ L80: read -r F
++ L81: case "$F" in
++ L83: SRC=/tmp/donor/smnt/se/framework/Miui-WindowManager-Shell.jar
++ L86: '[' -f /tmp/donor/smnt/se/framework/Miui-WindowManager-Shell.jar ']'
+++ L87: stat -c%s /tmp/donor/smnt/se/framework/Miui-WindowManager-Shell.jar
++ L87: SZX=8964399
++ L88: '[' 8964399 -le 157286400 ']'
++ L89: cp -aL /tmp/donor/smnt/se/framework/Miui-WindowManager-Shell.jar /tmp/donor/keep/framework/
+++ L91: basename /system_ext/framework/Miui-WindowManager-Shell.jar
++ L91: echo '  lib: Miui-WindowManager-Shell.jar (8964399 B) [z se]'
+  lib: Miui-WindowManager-Shell.jar (8964399 B) [z se]
++ L80: read -r F
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xiaomi.NetworkBoost.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xiaomi.NetworkBoost.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xiaomi.NetworkBoost.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xiaomi.hardware.camera.companion.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xiaomi.hardware.camera.companion.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xiaomi.hardware.camera.companion.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xiaomi.hypercomm.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xiaomi.hypercomm.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xiaomi.hypercomm.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xiaomi.phone.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xiaomi.phone.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xiaomi.phone.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xiaomi.pms.common-V1-java-permission.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xiaomi.pms.common-V1-java-permission.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xiaomi.pms.common-V1-java-permission.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xiaomi.pms.deferredcameraservice-V1-java-permission.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xiaomi.pms.deferredcameraservice-V1-java-permission.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xiaomi.pms.deferredcameraservice-V1-java-permission.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xiaomi.pms.videoplayprocservice-V1-java-permission.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xiaomi.pms.videoplayprocservice-V1-java-permission.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xiaomi.pms.videoplayprocservice-V1-java-permission.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xiaomi.radio.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xiaomi.radio.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xiaomi.radio.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xiaomi.slalib.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xiaomi.slalib.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xiaomi.slalib.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xiaomi.uniperf.UniperfClient.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xiaomi.uniperf.UniperfClient.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xiaomi.uniperf.UniperfClient.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xring.perf.PerfFlingerClient.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xring.perf.PerfFlingerClient.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xring.perf.PerfFlingerClient.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/com.xring.perf.SchedGeniusClient.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/com.xring.perf.SchedGeniusClient.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/com.xring.perf.SchedGeniusClient.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/extphonelib.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/extphonelib.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/extphonelib.xml
++ L76: grep -qi miui
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/miui-cameraopt.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/miui-cameraopt.xml
++ L77: cp -aL /tmp/donor/smnt/se/etc/permissions/miui-cameraopt.xml /tmp/donor/keep/permissions/
+++ L79: basename /tmp/donor/smnt/se/etc/permissions/miui-cameraopt.xml
++ L79: echo '  deklaracja: miui-cameraopt.xml [z se]'
+  deklaracja: miui-cameraopt.xml [z se]
++ L80: grep -oE 'file="[^"]+"' /tmp/donor/smnt/se/etc/permissions/miui-cameraopt.xml
++ L80: sed 's/file="//;s/"$//'
++ L80: read -r F
++ L81: case "$F" in
++ L83: SRC=/tmp/donor/smnt/se/framework/miui-cameraopt.jar
++ L86: '[' -f /tmp/donor/smnt/se/framework/miui-cameraopt.jar ']'
+++ L87: stat -c%s /tmp/donor/smnt/se/framework/miui-cameraopt.jar
++ L87: SZX=354310
++ L88: '[' 354310 -le 157286400 ']'
++ L89: cp -aL /tmp/donor/smnt/se/framework/miui-cameraopt.jar /tmp/donor/keep/framework/
+++ L91: basename /system_ext/framework/miui-cameraopt.jar
++ L91: echo '  lib: miui-cameraopt.jar (354310 B) [z se]'
+  lib: miui-cameraopt.jar (354310 B) [z se]
++ L80: read -r F
++ L73: for XML in "$PDIR"/*.xml
++ L74: '[' -f /tmp/donor/smnt/se/etc/permissions/package-shareduid-allowlist-miui-system-ext.xml ']'
++ L75: grep -qiE '<library[^>]*(name|file)="[^"]*miui' /tmp/donor/smnt/se/etc/permissions/package-shareduid-allowlist-miui-system-ext.xml
++ L76: basename /tmp/donor/smnt/se/etc/permissions/package-shareduid-allowlist-miui-system-ext.xml
++ L76: grep -qi miui
++ L77: cp -aL /tmp/donor/smnt/se/etc/permissions/package-shareduid-allowlist-miui-system-ext.xml /tmp/donor/keep/permissions/
+++ L79: basename /tmp/donor/smnt/se/etc/permissions/package-shareduid-allowlist-miui-system-ext.xml
++ L79: echo '  deklaracja: package-shareduid-allowlist-miui-system-ext.xml [z se]'
+  deklaracja: package-shareduid-allowlist-miui-system-ext.xml [z se]
++ L80: grep -oE 'file="[^"]+"' /tmp/donor/smnt/se/etc/permissions/package-shareduid-allowlist-miui-system-ext.xml
++ L80: sed 's/file="//;s/"$//'
++ L80: read -r F
+```
+## system-extract (tail 60)
+```
+# manifest: block_size=4096, partycji=42
+#   partycja adsp           new_size=15732736     ops=8     (pole 8, sha256 na 8)
+#   partycja android_esp    new_size=8388608      ops=4     (pole 8, sha256 na 4)
+#   partycja bl2            new_size=217088       ops=1     (pole 8, sha256 na 1)
+#   partycja bl31           new_size=282624       ops=1     (pole 8, sha256 na 1)
+#   partycja boot           new_size=100663296    ops=48    (pole 8, sha256 na 48)
+#   partycja boot_logo      new_size=6291456      ops=3     (pole 8, sha256 na 3)
+#   partycja ddr_param0     new_size=5722112      ops=3     (pole 8, sha256 na 3)
+#   partycja ddr_param1     new_size=1167360      ops=1     (pole 8, sha256 na 1)
+#   partycja ddr_param3     new_size=2301952      ops=2     (pole 8, sha256 na 2)
+#   partycja ddr_param5     new_size=798720       ops=1     (pole 8, sha256 na 1)
+#   partycja dtbo           new_size=25165824     ops=12    (pole 8, sha256 na 12)
+#   partycja exaid          new_size=157286400    ops=75    (pole 8, sha256 na 75)
+#   partycja hdcp           new_size=229376       ops=1     (pole 8, sha256 na 1)
+#   partycja init_boot      new_size=16777216     ops=8     (pole 8, sha256 na 8)
+#   partycja isp            new_size=8712192      ops=5     (pole 8, sha256 na 5)
+#   partycja lpctrl         new_size=593920       ops=1     (pole 8, sha256 na 1)
+#   partycja npu            new_size=704512       ops=1     (pole 8, sha256 na 1)
+#   partycja odm            new_size=3096117248   ops=1477  (pole 8, sha256 na 1477)
+#   partycja odm_dlkm       new_size=348160       ops=1     (pole 8, sha256 na 1)
+#   partycja product        new_size=6445187072   ops=3074  (pole 8, sha256 na 3074)
+#     pola len-delim w product: [(8, 3074), (17, 1)]
+#   partycja pvmfw          new_size=1048576      ops=1     (pole 8, sha256 na 1)
+#   partycja sec_dtbo       new_size=139264       ops=1     (pole 8, sha256 na 1)
+#   partycja sensorhub      new_size=3948544      ops=2     (pole 8, sha256 na 2)
+#   partycja system         new_size=937791488    ops=448   (pole 8, sha256 na 448)
+#     pola len-delim w system: [(8, 448), (3, 1), (17, 1)]
+#   partycja system_dlkm    new_size=27078656     ops=13    (pole 8, sha256 na 13)
+#   partycja system_ext     new_size=632840192    ops=302   (pole 8, sha256 na 302)
+#   partycja tee            new_size=5148672      ops=3     (pole 8, sha256 na 3)
+#   partycja uefi           new_size=2101248      ops=2     (pole 8, sha256 na 2)
+#   partycja vbmeta         new_size=12288        ops=1     (pole 8, sha256 na 1)
+#   partycja vbmeta_system  new_size=4096         ops=1     (pole 8, sha256 na 1)
+#   partycja vbmeta_vendor  new_size=8192         ops=1     (pole 8, sha256 na 1)
+#   partycja vendor         new_size=677728256    ops=324   (pole 8, sha256 na 324)
+#     pola len-delim w vendor: [(8, 324), (17, 1)]
+#   partycja vendor_boot    new_size=205520896    ops=98    (pole 8, sha256 na 98)
+#   partycja vendor_dlkm    new_size=40054784     ops=20    (pole 8, sha256 na 20)
+#   partycja xctrl_cpu      new_size=204800       ops=1     (pole 8, sha256 na 1)
+#   partycja xctrl_ddr      new_size=86016        ops=1     (pole 8, sha256 na 1)
+#   partycja xloader        new_size=733184       ops=1     (pole 8, sha256 na 1)
+#   partycja xrse           new_size=421888       ops=1     (pole 8, sha256 na 1)
+#   partycja xspm           new_size=995328       ops=1     (pole 8, sha256 na 1)
+#   partycja xsps           new_size=1007616      ops=1     (pole 8, sha256 na 1)
+#   partycja mi_product     new_size=348160       ops=1     (pole 8, sha256 na 1)
+#   partycja mi_ext         new_size=528691200    ops=253   (pole 8, sha256 na 253)
+zrodlo: HTTP https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+  size=10313202368 accept-ranges=bytes
+  zip64: cd_off=10313200061 cd_size=551
+  wpis payload.bin: STORED, 10313193325 B @+5370
+naglowek payload (hex, 32B): 43724155000000000000000200000000000574a60000010b1880202099c1c5b5
+payload: version=2 manifest=357542B meta_sig=267B, bloby od 357833
+partycja system: 448 op (REPLACE x12, REPLACE_BZ x2, REPLACE_XZ x434), do pobrania 698084455 B (0.65 GiB), new_size=937791488
+pokrycie partycji: 228953 / 228953 blokow (100.0%)
+  [  1.1%] op 1/448, 7 MiB / 666 MiB, 27.76 MB/s, ETA 0.4 min
+  [ 84.2%] op 371/448, 560 MiB / 666 MiB, 18.49 MB/s, ETA 0.1 min
+  [100.0%] op 448/448, 667 MiB / 666 MiB, 18.65 MB/s, ETA -0.0 min
+gotowe: /tmp/donor/system.img = 937791488 B (oczek. 937791488) w 0.6 min; requestow HTTP: 454
+new_partition_info.hash (do weryfikacji zewnetrznej): 10011a1b73797374656d2f62696e2f6f74617072656f70745f7363726970743a
+erofs-check: magic e2e1f5e0 @1024 OK
+#   partycja boot_logo      new_size=6291456      ops=3     (pole 8, sha256 na 3)
+#   partycja ddr_param0     new_size=5722112      ops=3     (pole 8, sha256 na 3)
+#   partycja ddr_param1     new_size=1167360      ops=1     (pole 8, sha256 na 1)
+#   partycja ddr_param3     new_size=2301952      ops=2     (pole 8, sha256 na 2)
+#   partycja ddr_param5     new_size=798720       ops=1     (pole 8, sha256 na 1)
+#   partycja dtbo           new_size=25165824     ops=12    (pole 8, sha256 na 12)
+#   partycja exaid          new_size=157286400    ops=75    (pole 8, sha256 na 75)
+#   partycja hdcp           new_size=229376       ops=1     (pole 8, sha256 na 1)
+#   partycja init_boot      new_size=16777216     ops=8     (pole 8, sha256 na 8)
+#   partycja isp            new_size=8712192      ops=5     (pole 8, sha256 na 5)
+#   partycja lpctrl         new_size=593920       ops=1     (pole 8, sha256 na 1)
+#   partycja npu            new_size=704512       ops=1     (pole 8, sha256 na 1)
+#   partycja odm            new_size=3096117248   ops=1477  (pole 8, sha256 na 1477)
+#   partycja odm_dlkm       new_size=348160       ops=1     (pole 8, sha256 na 1)
+#   partycja product        new_size=6445187072   ops=3074  (pole 8, sha256 na 3074)
+#     pola len-delim w product: [(8, 3074), (17, 1)]
+#   partycja pvmfw          new_size=1048576      ops=1     (pole 8, sha256 na 1)
+#   partycja sec_dtbo       new_size=139264       ops=1     (pole 8, sha256 na 1)
+#   partycja sensorhub      new_size=3948544      ops=2     (pole 8, sha256 na 2)
+#   partycja system         new_size=937791488    ops=448   (pole 8, sha256 na 448)
+#     pola len-delim w system: [(8, 448), (3, 1), (17, 1)]
+#   partycja system_dlkm    new_size=27078656     ops=13    (pole 8, sha256 na 13)
+#   partycja system_ext     new_size=632840192    ops=302   (pole 8, sha256 na 302)
+#   partycja tee            new_size=5148672      ops=3     (pole 8, sha256 na 3)
+#   partycja uefi           new_size=2101248      ops=2     (pole 8, sha256 na 2)
+#   partycja vbmeta         new_size=12288        ops=1     (pole 8, sha256 na 1)
+#   partycja vbmeta_system  new_size=4096         ops=1     (pole 8, sha256 na 1)
+#   partycja vbmeta_vendor  new_size=8192         ops=1     (pole 8, sha256 na 1)
+#   partycja vendor         new_size=677728256    ops=324   (pole 8, sha256 na 324)
+#     pola len-delim w vendor: [(8, 324), (17, 1)]
+#   partycja vendor_boot    new_size=205520896    ops=98    (pole 8, sha256 na 98)
+#   partycja vendor_dlkm    new_size=40054784     ops=20    (pole 8, sha256 na 20)
+#   partycja xctrl_cpu      new_size=204800       ops=1     (pole 8, sha256 na 1)
+#   partycja xctrl_ddr      new_size=86016        ops=1     (pole 8, sha256 na 1)
+#   partycja xloader        new_size=733184       ops=1     (pole 8, sha256 na 1)
+#   partycja xrse           new_size=421888       ops=1     (pole 8, sha256 na 1)
+#   partycja xspm           new_size=995328       ops=1     (pole 8, sha256 na 1)
+#   partycja xsps           new_size=1007616      ops=1     (pole 8, sha256 na 1)
+#   partycja mi_product     new_size=348160       ops=1     (pole 8, sha256 na 1)
+#   partycja mi_ext         new_size=528691200    ops=253   (pole 8, sha256 na 253)
+zrodlo: HTTP https://cdnorg.d.miui.com/OS4.0.11.0.XBMCNXM/yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip
+  size=10313202368 accept-ranges=bytes
+  zip64: cd_off=10313200061 cd_size=551
+  wpis payload.bin: STORED, 10313193325 B @+5370
+naglowek payload (hex, 32B): 43724155000000000000000200000000000574a60000010b1880202099c1c5b5
+payload: version=2 manifest=357542B meta_sig=267B, bloby od 357833
+partycja system_ext: 302 op (REPLACE x12, REPLACE_BZ x1, REPLACE_XZ x289), do pobrania 454947176 B (0.42 GiB), new_size=632840192
+pokrycie partycji: 154502 / 154502 blokow (100.0%)
+  [  1.2%] op 1/302, 5 MiB / 434 MiB, 0.88 MB/s, ETA 8.1 min
+  [  6.8%] op 21/302, 30 MiB / 434 MiB, 0.79 MB/s, ETA 8.5 min
+  [ 14.1%] op 40/302, 61 MiB / 434 MiB, 0.89 MB/s, ETA 7.0 min
+  [ 24.1%] op 71/302, 104 MiB / 434 MiB, 1.06 MB/s, ETA 5.2 min
+  [ 35.2%] op 107/302, 153 MiB / 434 MiB, 1.18 MB/s, ETA 4.0 min
+  [ 48.7%] op 151/302, 211 MiB / 434 MiB, 1.33 MB/s, ETA 2.8 min
+  [ 64.4%] op 204/302, 279 MiB / 434 MiB, 1.47 MB/s, ETA 1.8 min
+  [ 85.4%] op 260/302, 371 MiB / 434 MiB, 1.67 MB/s, ETA 0.6 min
+  [100.0%] op 302/302, 435 MiB / 434 MiB, 1.77 MB/s, ETA -0.0 min
+gotowe: /tmp/donor/system_ext.img = 632840192 B (oczek. 632840192) w 4.1 min; requestow HTTP: 308
+new_partition_info.hash (do weryfikacji zewnetrznej): 5f6578743a280880c0e1ad0212207340a8367d3da8e4bdcf56a0f53dd7b77d87
+erofs-check: magic e2e1f5e0 @1024 OK
+```
+## manifesty
+```
+```
+## dysk
+```
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/root       145G   67G   78G  47% /
+```

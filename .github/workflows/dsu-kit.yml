@@ -1,0 +1,320 @@
+name: dsu-kit
+# v1.0 - DSU PREVIEW MysticalOS 3 (zadanie usera: test przez DSU Sideloader
+# z wymuszonym software renderingiem).
+#
+# UCZCIWA INZYNIERIA (dlaczego NIE "super.img przemianowany na system.img"):
+# gsid/DSU NIE parsuje geometrii super - wpisuje bajty obrazu do JEDNEJ
+# partycji system goscia. Super.img = kontener LP (metadane + system/product/
+# vendor/...), wiec po przemianowaniu gosc probuje montowac kontener jako
+# system -> mount pada ZANIM odpali sie cokolwiek graficznego (propsy w
+# ogole by sie nie zaladowaly). Nie istnieje zadna sciezka "trikowania"
+# gsid - to nie parser, to dd.
+#
+# Co zamiast tego (i dlaczego zadziala): system.img MysticalOS 3 jest na
+# BAZIE LENONO (stock SF/framework na vendorze Lenova) - jako gosc DSU
+# wstaje na vendorze hosta (wlasnie brak konfliktu HWC, ktory user
+# raportowal przy starych systemach HyperOS v12-v16). Ten obraz to:
+#   - system Lenova: purge GMS + microG + Aurora,
+#   - transplant apek MIUI + fontow + motywow (z product donora),
+#   - od iteracji 2: miui-framework.jar + deklaracje <library> (bez nich
+#     apki MIUI dostaja "Missing shared library"/ClassNotFound),
+#   - PROPSY "forced CPU" (v1.1 - FULL SPEC usera po re-send 3 X 19:30):
+#     debug.sf.hw=0, debug.egl.hw=0, persist.sys.composition.type=cpu,
+#     ro.hardware.egl=android (SwiftShader - CPU GL; UI wolniejsze, wg
+#     zyczenia usera), debug.sf.disable_hwc=1 - WSZYSTKIE 5/5, wstrzykiete
+#     do build.prop ORAZ etc/prop.default (v1.0 mial 4/5 tylko build.prop).
+#     Zip: MysticalOS_V16_DSU_ForcedCPU.zip (nazwa wg spec usera).
+# v1.2 (5. polecenie, 4 X ~01:05 - "PURE GSI, stop containers"): standalone
+#     system.img bez zmian kontenerowych (layout DSU "1 of 2"), nazwa
+#     MysticalOS_V16_PureGSI_SoftRender.zip + jawny test NON-SPARSE
+#     (raw EROFS: offset 0 != 0xED26FF3A, offset 1024 = EROFS magic).
+#   Propsy SA TYLKO w podgladzie DSU - do obrazu docelowego (m3) NIE
+#   wchodza (persist.sys.composition.type=cpu to prop z epoki MTK; gdyby
+#   SF Lenova go czytal, zepsulby wydladnosci na PRAWDZIWYM flashu).
+#
+# CAVEAT podgladu (uczciwie): DSU podmienia TYLKO system - product i
+# system_ext goscia to STOCK HOSTA, czyli Google apki WRACAJA i prawdziwe
+# GMS przykrywa microG. Podglad sluzy testowi: czy apki MIUI/fonty/
+# framework dzialaja i czy system jest stabilny na tym sprzecie. Pelne
+# M3 (bez GMS, z purge product) = tylko flash super (CALOSC).
+#
+# Wchodzace: release mysticalos-3-super (32 czesci super_mystical3.img).
+# Lancuch: cat parts | simg2img_stream | stream_lpunpack --only system
+# (zero 9,7G raw na dysku; te same narzedzia co m3/donor-pipeline).
+# Dysk: parts 6,3G + system 3,4G -> parts usuwane -> tree 3,7G (extract)
+# -> mkfs na /dev/shm -> tree usuwane -> zip 3,4G. Peak < 10G.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/dsu-kit.yml']
+    # dispatch API 404/403 (workflow nie na default branch) - trigger przez
+    # push tej sciezki; komentarz-version wystarczy do re-run.
+
+concurrency:
+  group: dsu-kit
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  dsu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      WORK: /tmp/dsu
+      KDIR: ${{ github.workspace }}/kit-mysticalos3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "0. Zaleznosci + dysk"
+        run: |
+          set -e
+          command -v python3 >/dev/null && python3 -c 'import sys; sys.exit(0 if sys.version_info>=(3,7) else 1)'
+          for B in mkfs.erofs fsck.erofs; do
+            [ -x "$KDIR/bin/$B" ] || { echo "::error::brak $KDIR/bin/$B"; exit 1; }
+          done
+          df -h /
+          AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+          [ "$AV" -ge 10 ] || { echo "::error::dysk ${AV}G < 10G"; exit 1; }
+          mkdir -p "$WORK/parts" "$WORK/out" "$WORK/tree" reports
+
+      - name: "1. Super z release mysticalos-3-super (czesci, retry)"
+        run: |
+          set -euo pipefail
+          OK=0
+          for A in 1 2 3; do
+            if gh release download mysticalos-3-super --clobber \
+                 -p 'super_mystical3.part.*' -p 'SHA256SUMS.txt' \
+                 --dir "$WORK/parts"; then OK=1; break; fi
+            echo "::warning::download super: proba $A/3 - pauza 30s"; sleep 30
+          done
+          [ "$OK" = 1 ] || { echo "::error::nie pobraly sie czesci super z release"; exit 1; }
+          N=$(ls "$WORK/parts"/super_mystical3.part.* | wc -l)
+          echo "czesci: $N"; df -h /
+          [ "$N" -ge 30 ] || { echo "::error::czesci $N < 30 - niepelny release?"; exit 1; }
+
+      - name: "2. Stream: czesci -> simg2img -> lpunpack --only system"
+        run: |
+          set -euo pipefail
+          cat "$WORK/parts"/super_mystical3.part.* \
+            | python3 tools/simg2img_stream.py \
+            | python3 tools/stream_lpunpack.py --stdin --out "$WORK/out" --only system \
+            | tee "$WORK/stream-manifest.txt"
+          awk -F'\t' '$1=="P"&&$2=="system"{f=1} END{exit f?0:1}' "$WORK/stream-manifest.txt" \
+            || { echo "::error::brak partycji system w stream-manifest"; cat "$WORK/stream-manifest.txt"; exit 1; }
+          awk -F'\t' '$1=="W"&&$2=="system"&&$5!="OK"&&$5!="SKIP"{bad=1} END{exit bad?1:0}' \
+            "$WORK/stream-manifest.txt" || { echo "::error::system NIEPELNY w streamie"; exit 1; }
+          rm -rf "$WORK/parts"    # zwolnij 6,3G
+          df -h /
+          S="$WORK/out/system.img"
+          SZ=$(stat -c%s "$S")
+          [ "$SZ" -gt 2000000000 ] || { echo "::error::system.img ${SZ}B < 2G?"; exit 1; }
+          python3 - "$S" <<'EOF'
+          import os, struct, sys
+          with open(sys.argv[1], "rb") as f:
+              head = f.read(4); f.seek(1024); m = f.read(4)
+          assert struct.unpack("<I", head)[0] != 0xED26FF3A, "SPARSE magic?! (wymagany raw)"
+          assert m == bytes.fromhex("e2e1f5e0"), "zly magic EROFS: %s" % m.hex()
+          print("system.img: EROFS OK, NON-SPARSE (raw), %d B" % os.path.getsize(sys.argv[1]))
+          EOF
+
+      - name: "3. Propsy forced-CPU (extract -> build.prop -> mkfs EROFS)"
+        # Propsy TYLKO do podgladu DSU (patrz naglowek workflow). Konteksty
+        # SELinux z plat_file_contexts samego obrazu (wzorzec m3/donor).
+        run: |
+          set -euo pipefail
+          T="$WORK/tree"
+          "$KDIR/bin/fsck.erofs" --extract="$T" "$WORK/out/system.img" >/dev/null 2>&1 \
+            || { echo "::error::fsck.erofs extract padl"; exit 1; }
+          if [ ! -d "$T/app" ] && [ ! -d "$T/priv-app" ]; then
+            INNER=$(find "$T" -maxdepth 2 -type d -name app | head -1)
+            [ -n "$INNER" ] || { echo "::error::extract bez /app"; exit 1; }
+            INNER=$(dirname "$INNER")
+            mv "$INNER" "$WORK/tree_i"; rm -rf "$T"; mv "$WORK/tree_i" "$T"
+          fi
+          FC="$T/etc/selinux/plat_file_contexts"
+          [ -f "$FC" ] || FC=$(find "$T" -name plat_file_contexts -type f | head -1)
+          [ -f "$FC" ] || { echo "::error::brak plat_file_contexts w system.img"; exit 1; }
+          BP="$T/build.prop"
+          [ -f "$BP" ] || { echo "::error::brak build.prop"; exit 1; }
+          # v1.1 (zadanie usera, re-send 3 X 19:30 - FULL SPEC): wszystkie 5/5
+          # propsow (wlacznie z ro.hardware.egl=android = SwiftShader, wg
+          # zyczenia usera) w OBU plikach: build.prop + etc/prop.default
+          # (tworzony, jesli go nie ma). prop.default czyta init ZANIM
+          # build.prop - wazne dla ro.* (read-only, ustawiane raz).
+          for TARGET in "$T/build.prop" "$T/etc/prop.default"; do
+            mkdir -p "$(dirname "$TARGET")"
+            [ -f "$TARGET" ] || : > "$TARGET"
+            { echo ""
+              echo "# === DSU FORCED-CPU (user spec 5/5): CPU composition, HWC off, SwiftShader EGL ==="
+              echo "debug.sf.hw=0"
+              echo "debug.egl.hw=0"
+              echo "persist.sys.composition.type=cpu"
+              echo "ro.hardware.egl=android"
+              echo "debug.sf.disable_hwc=1"; } >> "$TARGET"
+            echo "propsy forced-CPU 5/5 -> $TARGET"
+          done
+          echo "== mkfs system_dsu (EROFS + konteksty, tmpfs) =="
+          TM_AV=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
+          [ "$TM_AV" -ge 3500 ] || { echo "::error::tmpfs ${TM_AV}M < 3500M"; exit 1; }
+          "$KDIR/bin/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c0000000d \
+            --file-contexts="$FC" /dev/shm/system_dsu.img "$T" \
+            || { echo "::error::mkfs padl"; exit 1; }
+          rm -rf "$T"
+          mv /dev/shm/system_dsu.img "$WORK/out/system.img"
+          df -h /
+          echo "system_dsu.img: $(stat -c%s "$WORK/out/system.img") B"
+
+      - name: "4. Weryfikacja obrazu (mount + propsy + kluczowe pliki)"
+        run: |
+          set -euo pipefail
+          MNT="$WORK/mnt"; mkdir -p "$MNT"
+          sudo mount -t erofs -o ro,loop "$WORK/out/system.img" "$MNT" \
+            || { echo "::error::montaz weryfikacyjny padl"; exit 1; }
+          P="$MNT"; [ -d "$MNT/system" ] && P="$MNT/system"
+          grep -q "ro.mysticalos.version=3" "$P/build.prop" || { echo "::error::brak mysticalos.version=3"; exit 1; }
+          for KV in "debug.sf.hw=0" "debug.egl.hw=0" "persist.sys.composition.type=cpu" \
+                    "ro.hardware.egl=android" "debug.sf.disable_hwc=1"; do
+            for F in build.prop etc/prop.default; do
+              grep -q "$KV" "$P/$F" || { echo "::error::brak $KV w $F"; exit 1; }
+            done
+          done
+          echo "propsy forced-CPU: 5/5 w build.prop I etc/prop.default (pelna spec usera)"
+          for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk"; do
+            [ -f "$P/$CHK" ] || { echo "::error::brak $CHK"; exit 1; }
+          done
+          NA=$(ls "$P/app" 2>/dev/null | grep -ci miui || true)
+          echo "apki MIUI w /system/app: $NA"
+          [ "$NA" -ge 1 ] || { echo "::error::0 apek MIUI w system.img"; exit 1; }
+          if ls "$P/framework" 2>/dev/null | grep -qi miui; then
+            echo "miui-framework: OBECNY (iteracja 2)"
+          else
+            echo "::warning::brak miui-framework w system.img (m3 bez iteracji 2?) - apki MIUI moga padac na uses-library"
+          fi
+          sudo umount "$MNT"
+
+      - name: "5. README + zip bez kompresji (python zipfile STORED)"
+        # zip CLI nie ma na runnerze (receipt 37071968684) - python zipfile.
+        # EROFS jest juz skompresowany, STORED = zero strat czasu CPU.
+        run: |
+          set -euo pipefail
+          cd "$WORK/out"
+          cat > CZYTAJ-TO-DSU.txt <<'XEOF'
+          ====================================================================
+          MysticalOS V16 PureGSI SoftRender - standalone system.img (DSU)
+          ====================================================================
+          CZYSTY STANDALONE system.img (layout DSU "1 of 2"; ZERO kontenerow).
+          Niesparse (raw EROFS). Propsy 5/5 (build.prop + etc/prop.default):
+            debug.sf.hw=0 | debug.egl.hw=0 | persist.sys.composition.type=cpu
+            ro.hardware.egl=android (SwiftShader, CPU GL) | debug.sf.disable_hwc=1
+          CZEKAJ: UI dziala WOLNIEJ niz zwykle - to cel tego testu
+          (pelna kompozycja CPU, zero HWC). Wyjscie: Discard = wszystko znika.
+
+          CO TO JEST:
+          Prawdziwy system.img MysticalOS 3 (baza Lenovo + microG + Aurora +
+          apki MIUI + fonty Mi + miui-framework + propsy forced-CPU) do
+          testu przez DSU Sideloader. NIC nie zapisuje na stale - restart
+          z discard i wracasz do stocka. Tablet: Lenovo Tab P11 Gen 2
+          (TB350FU), bootloader odblokowany.
+
+          CO POTRZEBUJESZ:
+          - apka DSU Sideloader (F-Droid: vegabobo.dsusideloader / GitHub
+            VegaBobo/DSU-Sideloader),
+          - tablet z wlaczonym USB debugging,
+          - Komputer z adb (tryb ADB) LUB Shizuku.
+
+          KROKI:
+          1. Rozpakuj ten zip -> bedzie plik system.img (~3,4 GB).
+          2. Zainstaluj i otworz DSU Sideloader; daj mu dostep do folderu
+             (stworzy folder tymczasowy - wybezsieczenie).
+          3. Wybierz plik system.img. Rozmiar userdata zostaw domyslny.
+          4. Tryb bez roota: ADB - apka pokaze komende; odpal ja na PC z
+             podpietym tabletem. Pokaze sie ekran DSU -> potwierdz.
+          5. Instalacja trwa kilka minut (pasek w powiadomieniach).
+          6. Po instalacji: powiadomienie "Dynamic System" -> kliknij
+             "Restart" (boot do goscia DSU).
+          7. Pierwszy boot goscia: 5-15 min (optymalizacja).
+
+          UCZCIWIE - CZEGO SIE SPODZIEWAC (to PODGLAD, nie pelne M3):
+          - DSU podmienia TYLKO system. Product/system_ext zostaja STOCK
+            LENOWO hosta, czyli apki Google WRACAJA i prawdziwe GMS
+            przykrywa microG. To normalne - tak dziala DSU.
+          - Testujesz: apki MIUI (kalkulator/notatki/galeria/launcher...),
+            fonty Mi, stabilnosc, ogolny look. Launcher MiuiHome ustawisz
+            jako domyslny.
+          - Aparat: Lenovo (sprzetowy). MiuiCamera moze byc okrojona.
+          - Pelne MysticalOS 3 (GMS OUT, purge product, microG aktywne) =
+            tylko flash super.img (kit MysticalOS3-CALOSC, FLASH-ALL.bat).
+
+          WYJSCIE Z PODGLADU:
+          W DSU Sideloader: "Discard" (albo ustawienia -> reset DSU).
+          UWAGA: w trybie DSU NIC nie flashowac i nie aktualizowac systemu!
+
+          AWARYJNIE:
+          Gosc nie wstaje (bootloop w DSU)? Przytrzymaj Power ~30 s
+          (wymuszony restart) - po kilku probach system wraca do hosta
+          albo wejdz w fastboot (Vol- + Power) i po prostu uruchom ponownie
+          - DSU nie rusza slotow A/B, nic nie zepsutes.
+          XEOF
+          python3 - <<'EOF'
+          import os, zipfile
+          dst = "MysticalOS_V16_PureGSI_SoftRender.zip"
+          with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
+              z.write("system.img")
+              z.write("CZYTAJ-TO-DSU.txt")
+          with zipfile.ZipFile(dst) as z:
+              bad = z.testzip()
+              assert bad is None, "testzip: %s" % bad
+              for i in z.infolist():
+                  print("zip: %s %d B" % (i.filename, i.file_size))
+          print("zip OK: %s (%d B)" % (dst, os.path.getsize(dst)))
+          EOF
+          rm -f "$WORK/out/system.img"   # artifact niesie zip; raw img = z zipa
+          df -h /
+
+      - name: "6. Artifact (zip + README do pobrania ze strony runu)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: MysticalOS_V16_PureGSI_SoftRender
+          path: |
+            /tmp/dsu/out/MysticalOS_V16_PureGSI_SoftRender.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: "7. Publiczne mirrory (bez logowania)"
+        run: |
+          set -uo pipefail
+          HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
+            bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
+            "$WORK/out/MysticalOS_V16_PureGSI_SoftRender.zip" \
+            "$WORK/out/dsu-links.md" || true
+          cat "$WORK/out/dsu-links.md" || true
+
+      - name: "8. Evidence (reports/)"
+        if: always()
+        run: |
+          set -uo pipefail
+          R="reports/dsu-kit-${GITHUB_RUN_ID}.md"
+          {
+            echo "# dsu-kit run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## stream-manifest"; echo '```'; cat "$WORK/stream-manifest.txt" 2>/dev/null || true; echo '```'
+            echo "## linki publiczne"; echo '```'; cat "$WORK/out/dsu-links.md" 2>/dev/null || true; echo '```'
+            echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
+          } > "$R"
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          git add "$R" || true
+          git commit -m "dsu-kit: evidence run ${GITHUB_RUN_ID}" \
+            || echo "nic do commitu"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done
+          echo "RAPORT: $R"

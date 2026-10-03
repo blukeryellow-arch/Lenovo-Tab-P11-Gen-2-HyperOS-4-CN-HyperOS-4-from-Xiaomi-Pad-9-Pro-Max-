@@ -1,0 +1,4 @@
+# No-op (noc 24/25 IX): test kroku 'Wypchnij raport' po fixie (bieg 36030150849
+# padal na non-fast-forward, bo push_spool_branch zostawial runnera na orphanie).
+# Brak ID = nic nie pobieramy; bieg ma tylko sprawdzic, ze raport dochodzi na arene.
+# Ostatni realny request: system_ext donora (13e-okL…), bieg 36030150849.

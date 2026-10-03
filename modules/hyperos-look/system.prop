@@ -1,0 +1,30 @@
+# Nadpisywane wlasciwosci systemowe.
+#
+# Magisk wczytuje ten plik na etapie post-fs-data i zaklada kazda linie przez
+# `resetprop`. Wlasciwosci NIE sa trwale: po wylaczeniu/usunieciu modulu i
+# restarcie system wraca do wartosci stockowych. To swiadomy wybor - dzieki temu
+# modul nie zostawia nic poza /data/adb/modules i nie dotyka zadnego obrazu partycji.
+#
+# UWAGA o doborze wartosci: build HyperOS z Pad 9 Pro Max jest liczony pod
+# 8-16 GB LPDDR5X/LPDDR6. Tutaj jest 6 GB LPDDR4X @2133 MHz. Ponizsze liczby sa
+# uczciwym punktem wyjscia, a nie "optymalizacja" - kalibruje sie je na
+# pomiarach (majorminor `dumpsys meminfo`, `dumpsys activity oom`, `vmstat 1`).
+
+# --- Heap ART ------------------------------------------------------------
+dalvik.vm.heapsize=512m
+dalvik.vm.heapstartsize=16m
+dalvik.vm.heapgrowthlimit=256m
+dalvik.vm.heaptargetutilization=0.75
+dalvik.vm.heapminfree=2m
+dalvik.vm.heapmaxfree=8m
+
+# --- Presja pamięci ------------------------------------------------------
+# false = traktujemy 6 GB jak pelny RAM (duze apply, brak low-ram sciezek w ART).
+# Na 4 GB wariantach tego tabletu zwykle ustawia sie true; przy 6 GB zostawiamy false
+# i obserwujemy, czy LMK nie zabija SystemUI.
+ro.config.low_ram=false
+
+# --- Odczucie animacji (elementy znane z AOSP, nie wymyslone) -----------
+# Szybkie, "sprazyste" animacje to najbardziej slyszalna roznica miedzy HyperOS
+# a stockowym ZUI/Lenovo; to nie jest port frameworka, tylko przestrojenie krzywych.
+ro.min_pointer_dur=8

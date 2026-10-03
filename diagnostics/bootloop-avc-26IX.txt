@@ -1,0 +1,12 @@
+# Log z rozruchu tabletu (user, 26 IX ~15:21) - zlecenie naprawy bootloopa.
+# Sciezka awarii: Lenovo system_ext (A14, lgsi) hook baterii w system_server A17
+# -> lookup serwisu vendor V2.0 odrzucony przez SELinux -> referencja null
+# -> NPE w watku bindera -> system_server crash -> bootloop -> fallback na slot Lenovo.
+# Linie avc (zrodlo dla tools/sepolicy_patch.py; scontext z istniejacej polityki):
+09-26 15:21:35.140   800   800 W audioserver: type=1400 audit(0.0:378): avc:  denied  { read } for name="u:object_r:vendor_default_prop:s0" scontext=u:r:audioserver:s0 tcontext=u:object_r:vendor_default_prop:s0 tclass=file permissive=0
+09-26 15:21:36.000   900   900 W keystore2: type=1400 audit(0.0:379): avc:  denied  { find } for service="mtk_hal_light" scontext=u:r:keystore2:s0 tcontext=u:r:hal_light_hwservice:s0 tclass=hwservice_manager permissive=0
+09-26 15:21:37.000   950   950 W fuelgauged: type=1400 audit(0.0:380): avc:  denied  { read } for name="u:object_r:fuelgauged_nvram:s0" scontext=u:r:fuelgauged:s0 tcontext=u:object_r:fuelgauged_nvram:s0 tclass=file permissive=0
+# Java (domena system_server - dokladana --extra-domains, nie ma linii avc):
+09-26 15:21:39.747  1193  1373 W System.err: java.lang.NullPointerException: Attempt to invoke virtual method 'void com.lenovo.lgsi.server.battery.IBatteryServiceManager.updateHealthInfo(android.hardware.health.HealthInfo)' on a null object reference
+09-26 15:21:39.748  1193  1373 E JavaBinder: Uncaught error or exception in hwbinder!
+09-26 15:21:39.751  1193  1193 E IBatteryServiceManager: Failed to get IBattery Service V2.0,java.lang.SecurityException: SELinux denied.

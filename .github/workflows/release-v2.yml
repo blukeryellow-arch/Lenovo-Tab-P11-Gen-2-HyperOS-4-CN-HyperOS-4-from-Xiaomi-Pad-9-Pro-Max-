@@ -1,0 +1,189 @@
+name: release-v2
+
+# Build v2 po zleceniu naprawy bootloopa (26 IX). Dwie naprawy:
+#  1) SELinux: (typepermissive <domena>) wstrzykniete do
+#     system/etc/selinux/plat_sepolicy.cil W DRZEWIE przed mkfs (narzedzie
+#     tools/sepolicy_patch.py, dowod: diagnostics/bootloop-avc-26IX.txt).
+#     Dlaczego tak, a nie androidboot.selinux=permissive: nie budujemy kernela/
+#     boot.img (cmdline = wlasciwosc Lenovo), a przy systemie Xiaomi + vendorze
+#     Lenovo hashe precompiled_sepolicy sie nie zgadzaja => init kompiluje
+#     polityke z CIL przy boocie => dopiski wchodza w zycie. Instrukcja CIL to
+#     (typepermissive ...) - "(permissive ...)" NIE istnieje w CIL (cil_reference).
+#  2) Bateria Lenovo (com.lenovo.lgsi): hook zyje w Lenovo system_ext (A14) -
+#     usuwamy go z rownania w wariancie COHERENT (system_ext donora Xiaomi ze
+#     spoola). Zestaw minimalny leczy tylko przyczynek SELinux (bez denied
+#     lookup serwisu sie udaje -> referencja != null -> NPE nie nastepuje).
+# Bramki twarde: rom-kit 537eb4ea, system_ext 7340a836 + md5 Google,
+# unsparse round-trip v2, obecosc bloku typepermissive w drzewie i sumy kitu.
+# surowy sha v2 CELowo != 4836dcd4 (to jest zmiana funkcjonalna).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/release-v2.yml', 'tools/sepolicy_patch.py', 'diagnostics/bootloop-avc-26IX.txt']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v2
+  cancel-in-progress: true
+
+jobs:
+  v2:
+    name: v2 (typepermissive + coherent) -> release + linki
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      EROFS_DIR: /tmp/erofs-c
+      COMP_DIR: /tmp/comp-build
+      KIT_SHA: 537eb4ea0c98f4b87bd1ccdb2e0ab502745dfd0820ef1deefb9d42e2a5b0923b
+      SE_SHA: 7340a8367d3da8e4bdcf56a0f53dd7b77d87f81389d08b2a7e9e449fc02a5385
+      SE_MD5: f879747f3f7ebb5eb026eddeb02f8d13
+      VBMETA_SHA: 9cf2e7e4e165687abe78fb0f084e2b07707c317376efd5d4ffbdea75537e6141
+      PRODUCT_SHA: a961bec46085883d6d9c3737b804afdf9dcdf2f512cbedad6f161177705ad1b7
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain + spool + drzewa (receptura docs/08)
+        run: |
+          set -euo pipefail
+          bash tools/build_comp_libs.sh "$COMP_DIR"
+          COMP_PREFIX="$COMP_DIR" bash tools/build_erofs_local.sh "$EROFS_DIR"
+          mkdir -p /tmp/spool /tmp/romkit
+          git fetch origin transfer-spool
+          git archive FETCH_HEAD transfer | tar -x -C /tmp/spool
+          tools/assemble_raw_parts.py --parts /tmp/spool/transfer --out /tmp/rom-kit.tar.gz --expect-sha256 "$KIT_SHA"
+          tar -xzf /tmp/rom-kit.tar.gz -C /tmp/romkit && rm -f /tmp/rom-kit.tar.gz
+          rm -rf /tmp/tree2 /tmp/prod-lekki-extract /tmp/tree-product
+          mkdir /tmp/tree2 && cp -al /tmp/romkit/system_tree /tmp/tree2/
+          rm -f /tmp/tree2/system_tree/system/etc/vintf/compatibility_matrix.{4,5,6}.{xml,komentarz.txt}
+          mkdir -p /tmp/prod-lekki-extract
+          "$EROFS_DIR/fsck.erofs" --extract=/tmp/prod-lekki-extract \
+              dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img
+          cp -a /tmp/prod-lekki-extract /tmp/tree-product
+
+      - name: NAPRAWA 2 - typepermissive w plat_sepolicy.cil (w drzewie)
+        run: |
+          set -euo pipefail
+          CIL=/tmp/tree2/system_tree/system/etc/selinux/plat_sepolicy.cil
+          test -f "$CIL" || { echo "::error::brak $CIL w drzewie"; exit 1; }
+          python3 tools/sepolicy_patch.py inject "$CIL" diagnostics/bootloop-avc-26IX.txt \
+              --extra-domains:system_server
+          echo "--- dopisany blok: ---"
+          sed -n '/arena-permissive-patch/,$p' "$CIL"
+          test "$(grep -c '^;;; arena-permissive-patch' "$CIL")" = "1"
+          grep -q '(typepermissive system_server)' "$CIL"
+          grep -q '(typepermissive audioserver)' "$CIL"
+          grep -q '(typepermissive fuelgauged)' "$CIL"
+          grep -q '(typepermissive keystore2)' "$CIL"
+
+      - name: Build systemu v2 (EROFS lz4hc,9)
+        run: |
+          set -euo pipefail
+          tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree \
+            --vintf-level 5 --vintf-optional-missing --out /tmp/rebuild-v2 \
+            --erofs-dir "$EROFS_DIR" --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
+          cd /tmp/rebuild-v2
+          echo "$PRODUCT_SHA  product_hyperos4_p11g2.img" | sha256sum -c -
+          sha256sum system_hyperos4_p11g2.img | tee /tmp/v2-raw.sha
+          RAW=$(awk '{print $1}' /tmp/v2-raw.sha)
+          echo "RAW_V2=$RAW" >> "$GITHUB_ENV"
+
+      - name: NAPRAWA 1 (wariant) - system_ext donora ze spoola (coherent)
+        run: |
+          set -euo pipefail
+          # UWAGA: --out MUSI miec nazwe wpisu z manifestu (assemble dopasowuje po nazwie;
+          # przy niezgodnej nazwie sklada PIERWSZY wpis manifestu - zlapanane lokalnie 26 IX)
+          tools/assemble_raw_parts.py --parts /tmp/spool/transfer \
+              --out /tmp/drive-13e-okLFNX3m7feTp8AlYoGME2rKFFitr.img --expect-sha256 "$SE_SHA" --md5 "$SE_MD5"
+          rm -rf /tmp/spool
+
+      - name: Zestawy - minimal v2 + coherent v2 (sparse + sumy + sprawdz.sh)
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/kit /tmp/kit-coh && mkdir /tmp/kit /tmp/kit-coh
+          python3 tools/sparse_img.py img2simg /tmp/rebuild-v2/system_hyperos4_p11g2.img /tmp/kit/system_hyperos4_p11g2.img
+          python3 tools/sparse_img.py simg2img /tmp/kit/system_hyperos4_p11g2.img /tmp/roundtrip.img
+          echo "$RAW_V2  /tmp/roundtrip.img" | sha256sum -c -
+          rm -f /tmp/roundtrip.img
+          cp dist/release/HyperOS4_P11Gen2/vbmeta_hyperos4_p11g2.img /tmp/kit/
+          echo "$VBMETA_SHA  /tmp/kit/vbmeta_hyperos4_p11g2.img" | sha256sum -c -
+          SPARSE_SHA=$(sha256sum /tmp/kit/system_hyperos4_p11g2.img | awk '{print $1}')
+          echo "SPARSE_V2=$SPARSE_SHA" >> "$GITHUB_ENV"
+          # sprawdz.sh z nowym RAW (sed zamiast rekompilacji skryptu)
+          sed "s/^RAW_SHA=.*/RAW_SHA=$RAW_V2/" dist/sparse-kit/sprawdz.sh > /tmp/kit/sprawdz.sh
+          chmod +x /tmp/kit/sprawdz.sh
+          cd /tmp/kit && sha256sum system_hyperos4_p11g2.img vbmeta_hyperos4_p11g2.img > SHA256SUMS.txt
+          cat > README.md <<EOT
+          # HyperOS 4 v2 - Lenovo Tab P11 Gen 2 (TB350FU): system + vbmeta (POPRAWKA BOOTLOOP)
+
+          v2 = v1 + SELinux permissive dla domen z logu rozruchu (system_server, audioserver,
+          keystore2, fuelgauged) wstrzyknięte do plat_sepolicy.cil. Powód: hook baterii Lenovo
+          (com.lenovo.lgsi, system_ext A14) dostawał SELinux denied przy lookupie serwisu
+          vendor V2.0 -> null -> NPE w binderze -> crash system_server -> bootloop.
+
+          | plik | rozmiar | sha256 |
+          |---|---|---|
+          | system_hyperos4_p11g2.img | $(stat -c%s /tmp/kit/system_hyperos4_p11g2.img) B | $SPARSE_SHA |
+          | vbmeta_hyperos4_p11g2.img | 4096 B | $VBMETA_SHA |
+
+          Po unsparse system ma sha256 \`$RAW_V2\` (sprawdzisz: bash sprawdz.sh).
+
+          ## Flash (fastboot, sloty a/b)
+
+              fastboot flash vbmeta_a  vbmeta_hyperos4_p11g2.img
+              fastboot flash vbmeta_b  vbmeta_hyperos4_p11g2.img
+              fastboot flash system_a  system_hyperos4_p11g2.img
+              fastboot flash system_b  system_hyperos4_p11g2.img
+              fastboot reboot
+
+          vbmeta Flags=3 (AVB off). Jeśli v2 (sama łatka SELinux) nie wystarczy - flashuj
+          dodatkowo system_ext z wariantu COHERENT (usuwa kod Lenovo lgsi z równania):
+          w drugim zipie HyperOS4_P11Gen2_coherent_v2.zip.
+          EOT
+          bash /tmp/kit/sprawdz.sh
+          # coherent: system v2 + product + system_ext donora + vbmeta
+          cp /tmp/kit/{system,vbmeta}_hyperos4_p11g2.img /tmp/kit-coh/
+          # UWAGA: cwd to juz /tmp/kit (cd wyzej) - sciezki do repo MUSZA byc absolutne
+          cp "$GITHUB_WORKSPACE/dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img" /tmp/kit-coh/
+          cp /tmp/drive-13e-okLFNX3m7feTp8AlYoGME2rKFFitr.img /tmp/kit-coh/system_ext_hyperos4_p11g2.img
+          cd /tmp/kit-coh && sha256sum *.img > SHA256SUMS.txt
+          cp /tmp/kit/README.md /tmp/kit-coh/ && cp /tmp/kit/sprawdz.sh /tmp/kit-coh/
+
+      - name: ZIPy + release hyperos4-p11g2-v2
+        run: |
+          set -euo pipefail
+          cd /tmp/kit  && zip -q -r /tmp/HyperOS4_P11Gen2_v2.zip . && ls -l /tmp/HyperOS4_P11Gen2_v2.zip
+          cd /tmp/kit-coh && zip -q -r /tmp/HyperOS4_P11Gen2_coherent_v2.zip . && ls -l /tmp/HyperOS4_P11Gen2_coherent_v2.zip
+          gh release delete hyperos4-p11g2-v2 --yes --cleanup-tag 2>/dev/null || true
+          gh release create hyperos4-p11g2-v2 --target "$GITHUB_SHA" \
+            --title "HyperOS 4 v2 - Lenovo Tab P11 Gen 2: fix bootloop (SELinux permissive + coherent)" \
+            --notes "v2: (typepermissive system_server audioserver keystore2 fuelgauged) w plat_sepolicy.cil + wariant coherent (system_ext donora Xiaomi). Surowy system v2 sha256 $RAW_V2. Budowa: receptura docs/08 + tools/sepolicy_patch.py (dowod: diagnostics/bootloop-avc-26IX.txt)." \
+            /tmp/HyperOS4_P11Gen2_v2.zip /tmp/HyperOS4_P11Gen2_coherent_v2.zip
+          gh release view hyperos4-p11g2-v2 --json url,assets -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
+
+      - name: Linki publiczne (transfer.archivete.am i inne)
+        run: |
+          set -uo pipefail
+          bash tools/public_links.sh /tmp/HyperOS4_P11Gen2_v2.zip /tmp/links-v2.md || true
+          bash tools/public_links.sh /tmp/HyperOS4_P11Gen2_coherent_v2.zip /tmp/links-coh.md || true
+
+      - name: Raport z linkami do repo
+        if: always()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports
+          { echo "### v2 links (run ${{ github.run_id }})"; echo "RAW_V2=$RAW_V2"; echo "SPARSE_V2=$SPARSE_V2"; echo
+            cat /tmp/links-v2.md 2>/dev/null || echo "(links-v2.md brak - patrz logi)"
+            cat /tmp/links-coh.md 2>/dev/null || echo "(links-coh.md brak - patrz logi)"; } > "reports/v2-links-${{ github.run_id }}.md"
+          git add -f reports
+          git diff --cached --quiet || {
+            git commit -q -m "v2-links: run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo ok
+          }

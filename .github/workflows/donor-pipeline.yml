@@ -1,0 +1,793 @@
+name: donor-pipeline
+# v1.2 - TIER A2 dla MysticalOS 3: pozyskanie zawartosci product.img donora
+# HyperOS (Xiaomi Pad 9 Pro Max "yingtian") i publikacja release'u
+# donor-cache konsumowanego przez release-mystical3 (TIER A2 = donor-harvest,
+# TIER A = donor-product parts).
+#
+# Historia: Drive dlawil pelne transfery 10,3 GB (m1 2x), CDN tgz 12,6 GB tez;
+# range-extraction tylko product (~5,3 GB w chunkach 16 MB x 12 watkow) dziala
+# (receipt 37008170521: 3086 opow, pole operations=8, sha256 all OK, montaz
+# erofs OK). Ale po kilku GB Drive zaczyna serwowac interstitial/quota
+# (receipt 37011082568: 200 bez Content-Length) - stad:
+#   - probe wymaga 206+Content-Range (10 x 60s backoff),
+#   - ekstrakcja 3 próby x 8 min przerwy,
+#   - INSURANCE: raz wyciagniety product.img wraca na donor-cache jako
+#     donor-product.part.* (format m3 TIER A) - nastepne runy ida cache-first
+#     (GitHub CDN) i w ogole nie dotykaja Drive.
+#
+# v1.2 (receipt 37026854069 - run 8, 76 min, failure):
+#   1. Drive probe OK 21 MB/s, ale ekstrakcja kilka minut pozniej dostala
+#      'Google Drive - Quota exceeded' (2009 B HTML) x2 proby -> tier Drive
+#      pada szybko i czysto, gdy fala quoty wroci - zadziala znowu.
+#   2. TIER CDN (fastboot tgz): PELNY stream 11,7 GB @ 63 MB/s sciagniety
+#      poprawnie (md5 sumowane), ale 'tar: */product.img: Not found in
+#      archive' - fastboot ROM yingtian NIE MA */product.img (dyn. partycje:
+#      product siedzi w super.img). FIX: wzorce '*product.img'+'*super.img'
+#      + super -> simg2img -> lpinfo (nazwa partycji) -> lpunpack -p.
+#   3. BUG listy mirrorow: `echo ... | tee` wewnatrz $( ) zanieczyscil
+#      MIRRORS tokenami 'speed'/'B/s:' -> curl probowal hostow "speed"/"B".
+#      FIX: komunikaty tylko >> probe.log, stdout = printf, grep '^https://'.
+#   4. NOWY TIER CDN-R (pierwszy wybor CDN): Recovery OTA zip
+#      yingtian-ota_full-OS4.0.11.0.XBMCNXM (10,3 GB, md5 a12ac31de7...)
+#      z tych samych mirrorow - zawiera payload.bin (identyczny format co
+#      donor Drive 4.0.13) -> payload_extract.py range-extraction (~5,6 GB
+#      blobow zamiast 12,6 GB tgz). Szybkie, sprawdzzone narzedzie, mirrory
+#      wspieraja Range (sondy -r w run 8: cdnorg 17 MB/s).
+#   5. smoke w kroku 0: lpmake -S -> simg2img -> lpinfo -> lpunpack -p
+#      (bit-identyczny roundtrip) - waliduje lancuch CDN-F przed uzyciem.
+#
+# v1.3 (receipt 37037434755 - run 9: ekstrakcja CDN-R OK, harvest 3/3 OK,
+#   padl tylko krok 7): `gh release create --target $GITHUB_SHA` -> HTTP 422
+#   'target_commitish is invalid' dla SHA z galezi != domyslna (diagnoza z
+#   sandboxa: target=SHA-arena 422; target=main / target=<branch> /
+#   tag-przez-git/refs-API -> OK). FIX: tag przez API + create bez --target
+#   (fallback --target=<branch>), upload czesci PER-PART x5 retry (receipt m3:
+#   uploads.github.com daje 408 na duzych assetach), caly krok 7 teee do
+#   release.log -> sekcja w evidence raporcie (krok 8).
+#
+# v1.4 (ITERACJA 2 - wymog usera: podpasowanie apek pod vendor Lenovo, bez
+#   dotykania vendora): nowy krok 5.5 - range-extraction SYSTEM.img donora
+#   (CDN-R recovery zip, fallback Drive OTA) + harvest miui-framework:
+#   /system/framework/miui*.jar + pliki wskazane przez <library file=...> w
+#   /system/etc/permissions/*.xml (deklaracje tez do harvestu). Bez tego apki
+#   MIUI z product donora padaja na "Missing shared library"/ClassNotFound -
+#   dex odwoluje sie do klas miui.*, a uses-library "miui*" nie jest
+#   zadeklarowane. Bramka: harvest bez frameworku = fail (nie publikujemy).
+#   Krok 6: harvest pakowany na /dev/shm + product.img kasowany po splicie
+#   (peak dysku jak w run 9 mimo dodatkowego frameworku); manifest zyskuje
+#   framework=<lista plikow>.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/donor-pipeline.yml', 'tools/payload_extract.py', 'tools/payload_selftest.py']
+
+concurrency:
+  group: donor-pipeline
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  donor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    env:
+      OTA_URL: "https://drive.usercontent.google.com/download?id=1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd&export=download&confirm=t"
+      OTA_URL2: "https://drive.google.com/uc?export=download&confirm=t&id=1wkAkQyd-68oPB_x35BGvqIlzQ0BLffdd"
+      OTA_SIZE: "10340028849"
+      PRODUCT_SIZE: "6471729152"
+      PRODUCT_SHA256: "743a28088080fb8d181220107e58d61380327ab9aa7914856d2c0cadc2511329"
+      PARTITION: product
+      WORK: /tmp/donor
+      GH_TOKEN: ${{ github.token }}
+      # RECEIPT 37044228897: krok 7 robi `cd $WORK` (nie-git) i `gh release create`
+      # bez GH_REPO pada 'failed to run git: fatal: not a git repository'
+      # (m3 ma GH_REPO w env i dlatego publikuje release bez problemu).
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "0. Selftest ekstraktora (bramka: selftest + zip64)"
+        run: |
+          set -e
+          pip install --quiet lz4 2>/dev/null || pip install --quiet --break-system-packages lz4
+          python3 tools/payload_selftest.py 2>&1 | grep -vE "GET /|HEAD /" | tee /tmp/selftest.log
+          grep -q "SELFTEST: PASS" /tmp/selftest.log
+          grep -q "ZIP64: PASS" /tmp/selftest.log
+          grep -q "INTERSTITIAL: PASS" /tmp/selftest.log
+          # smoke pelnego lancucha TIER CDN-F (fastboot tgz -> super -> product):
+          # lpmake -S (sparse) -> simg2img -> lpinfo (nazwa partycji) -> lpunpack -p.
+          # Waliduje fallback zanim padnie na prawdziwym super.img yingtian.
+          echo "== smoke: lancuch CDN-F (lpmake -S -> simg2img -> lpinfo -> lpunpack -p) =="
+          dd if=/dev/urandom of=/tmp/mini.img bs=1M count=8 status=none
+          kit-mysticalos3/bin/lpmake --device-size=33554432 --metadata-size=65536 --metadata-slots=3 \
+            --block-size=4096 --alignment=1048576 --super-name=super -S \
+            --group=main_a:16777216 \
+            --partition=product_a:readonly:8388608:main_a --image=product_a=/tmp/mini.img \
+            -o /tmp/super_mini.img
+          python3 tools/simg2img.py /tmp/super_mini.img /tmp/super_mini_raw.img >/dev/null
+          head -c 8388608 /tmp/super_mini_raw.img > /tmp/super_meta.bin
+          P=$(python3 tools/lpinfo.py --json /tmp/super_meta.bin | python3 -c 'import json,sys,re
+          ns=[p["name"] for p in json.load(sys.stdin)["metadata"]["partitions"]]
+          m=[n for n in ns if re.fullmatch(r"product(_[ab])?", n)]
+          print(m[0] if m else "")')
+          [ "$P" = "product_a" ] || { echo "::error::smoke: lpinfo nie znalazl product_a (P=$P)"; exit 1; }
+          mkdir -p /tmp/mini_unp
+          kit-mysticalos3/bin/lpunpack -p product_a /tmp/super_mini_raw.img /tmp/mini_unp/ >/dev/null 2>&1
+          cmp /tmp/mini.img /tmp/mini_unp/product_a.img \
+            || { echo "::error::smoke: lancuch sparse (CDN-F) FAIL (cmp)"; exit 1; }
+          echo "SMOKE-SPARSE: PASS (lpmake -S -> simg2img -> lpinfo -> lpunpack -p, bit-identyczny)"
+
+      - name: "1. Cache-first: donor-product z donor-cache (GitHub CDN)"
+        run: |
+          set -uo pipefail
+          mkdir -p "$WORK" reports
+          : > "$WORK/probe.log"
+          CACHE=0
+          if gh release view donor-cache >/dev/null 2>&1; then
+            rm -rf "$WORK/pcache"; mkdir -p "$WORK/pcache"
+            if gh release download donor-cache --clobber \
+                 -p 'donor-product.manifest' -p 'donor-product.part.*' \
+                 --dir "$WORK/pcache" 2>/dev/null \
+               && [ -f "$WORK/pcache/donor-product.manifest" ]; then
+              WMD5=$(grep -oP '(?<=md5=).*' "$WORK/pcache/donor-product.manifest" | head -1)
+              WSIZE=$(grep -oP '(?<=size=).*' "$WORK/pcache/donor-product.manifest" | head -1)
+              cat "$WORK/pcache"/donor-product.part.* > "$WORK/product.img" 2>/dev/null || true
+              GMD5=$(md5sum "$WORK/product.img" 2>/dev/null | cut -d' ' -f1)
+              GSIZE=$(stat -c%s "$WORK/product.img" 2>/dev/null || echo 0)
+              echo "cache: md5=$GMD5 (oczek. $WMD5), size=$GSIZE (oczek. $WSIZE)" | tee -a "$WORK/probe.log"
+              if [ -n "$WMD5" ] && [ "$GMD5" = "$WMD5" ] && [ "$GSIZE" = "$WSIZE" ]; then
+                CACHE=1
+                echo "CACHED_PRODUCT=1" >> "$GITHUB_ENV"
+                echo "product.img z cache donor-cache (GitHub CDN) - Drive pominiety" | tee -a "$WORK/probe.log"
+              else
+                rm -f "$WORK/product.img"
+                echo "cache niezgodny - ide po Drive" | tee -a "$WORK/probe.log"
+              fi
+              rm -rf "$WORK/pcache"
+            fi
+          fi
+          [ "$CACHE" = 1 ] || echo "brak donor-product w cache - bedzie Drive" | tee -a "$WORK/probe.log"
+
+      - name: "2. Probe OTA zip na Drive (Range 206+CR, backoff)"
+        if: env.CACHED_PRODUCT != '1'
+        continue-on-error: true   # quota Drive -> krok 3 poleci na CDN Xiaomi
+        run: |
+          set -uo pipefail
+          python3 - <<'EOF' 2>&1 | tee -a "$WORK/probe.log"
+          import os, sys, time, urllib.request
+          urls = [os.environ["OTA_URL"], os.environ["OTA_URL2"]]
+          want = int(os.environ["OTA_SIZE"])
+          UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+          pick, ok = None, False
+          for attempt in range(6):
+              for u in urls:
+                  try:
+                      req = urllib.request.Request(
+                          u, headers={"User-Agent": UA, "Range": "bytes=0-0"})
+                      with urllib.request.urlopen(req, timeout=90) as r:
+                          b0 = r.read(1)
+                          st, cr = r.status, r.headers.get("Content-Range", "")
+                      print("probe [%s] -> %s CR=%r body0=%r"
+                            % (u.split("/")[2], st, cr, b0))
+                      if st == 206 and "/" in cr:
+                          total = int(cr.rsplit("/", 1)[1])
+                          if total == want:
+                              pick, ok = u, True
+                              break
+                          print("  total %s != oczek %s" % (total, want))
+                  except Exception as e:
+                      print("probe [%s] -> ERR %s: %s"
+                            % (u.split("/")[2], type(e).__name__, e))
+              if ok:
+                  break
+              print("probe: proba %d/6 nieudana - pauza 120s (Drive quota/"
+                    "interstitial cooldown)" % (attempt + 1))
+              time.sleep(120)
+          if not ok:
+              print("BRAK dzialajacego URL z Range - nastepny run dostanie "
+                    "nowy IP runnera")
+              sys.exit(1)
+          req = urllib.request.Request(
+              pick, headers={"User-Agent": UA, "Range": "bytes=1048576-34603007"})
+          t0 = time.time()
+          n = 0
+          with urllib.request.urlopen(req, timeout=300) as r:
+              while True:
+                  b = r.read(1 << 20)
+                  if not b:
+                      break
+                  n += len(b)
+          dt = time.time() - t0
+          print("speed 1-watkowo (32 MiB): %.2f MB/s" % (n / dt / 2**20))
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write("OTA_PICK=%s\n" % pick)
+          EOF
+
+      - name: "3. product.img: Drive (x2) | CDN Recovery OTA (range) | CDN Fastboot (super->lpunpack)"
+        if: env.CACHED_PRODUCT != '1'
+        run: |
+          set -uo pipefail
+          df -h / | tee -a "$WORK/probe.log"
+          AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+          [ "${AV:-0}" -ge 8 ] || { echo "::error::dysk ${AV}G < 8G"; exit 1; }
+          OK=0
+          # ---- wspolna funkcja: mirrory CDN Xiaomi dla pliku $1, wg szybkosci ----
+          # RECEIPT 37026854069: `echo ... | tee` wewnatrz $( ) zanieczyscil liste
+          # mirrorow tokenami 'speed'/'B/s:' (cut -f2- z linii "CDN speed ... B/s: URL")
+          # i curl probowal hostow "speed"/"B". Stad: komunikaty TYLKO >> probe.log,
+          # na stdout wylacznie printf speed+URL, na koncu grep '^https://'.
+          ROM_PAGE="https://xmfirmwareupdater.com/hyperos/yingtian/stable/OS4.0.11.0.XBMCNXM/"
+          cdn_mirrors() {
+            local FN="$1" PAGE2 M U CU CC SPD
+            PAGE2=$(curl -sSL --connect-timeout 30 --max-time 120 "$ROM_PAGE" || true)
+            M=""
+            [ -n "$PAGE2" ] && M=$(printf '%s' "$PAGE2" | sed 's/&amp;/\&/g' \
+              | grep -oE "https://[^\"'<> ]+/${FN}" | sort -u || true)
+            if [ -z "$M" ]; then
+              for CDNB in cdnorg.d.miui.com bigota.d.miui.com bn.d.miui.com hugeota.d.miui.com cdn-ota.azureedge.net; do
+                CU="https://$CDNB/OS4.0.11.0.XBMCNXM/$FN"
+                CC=$(curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$CU" 2>/dev/null || echo ERR)
+                echo "SONDA CDN $CC $CU" >> "$WORK/probe.log"
+                [ "$CC" = "200" ] && { M="$CU"; break; }
+              done
+            else
+              echo "CDN mirrory z HTML ($FN):" >> "$WORK/probe.log"
+              printf '%s\n' "$M" >> "$WORK/probe.log"
+            fi
+            for U in $M; do
+              SPD=$(curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 "$U" 2>/dev/null || echo 0)
+              echo "CDN speed ${SPD%.*} B/s: $U" >> "$WORK/probe.log"
+              printf '%012.0f %s\n' "${SPD:-0}" "$U" 2>/dev/null || echo "000000000000 $U"
+            done | sort -rn | cut -d' ' -f2- | grep -E '^https?://' || true
+          }
+          # ================= TIER Drive: OTA 4.0.13 z Drive (x2) =================
+          if [ -n "${OTA_PICK:-}" ]; then
+            for A in 1 2; do
+              echo "=== TIER Drive: ekstrakcja, proba $A/2 ==="
+              if python3 tools/payload_extract.py \
+                --zip-url "$OTA_PICK" \
+                --entry payload.bin \
+                --partition "$PARTITION" \
+                --out "$WORK/product.img" \
+                --jobs 12 --chunk 16777216 --prefetch-ops 3 \
+                --erofs-check 2>&1 | tee "$WORK/extract.log"; then
+                OK=1; break
+              fi
+              [ "$A" -lt 2 ] && { echo "pauza 5 min (Drive cooldown)..."; sleep 300; }
+            done
+            if [ "$OK" = 1 ]; then
+              # pin rozmiaru z manifestu OTA 4.0.13 (receipt 37008170521);
+              # sha256 jako evidence (semantyka VABC - receipt 37012021237)
+              SZ=$(stat -c%s "$WORK/product.img")
+              [ "$SZ" = "$PRODUCT_SIZE" ] || { echo "::error::rozmiar $SZ != pin $PRODUCT_SIZE"; exit 1; }
+              SHA=$(sha256sum "$WORK/product.img" | cut -d' ' -f1)
+              echo "sha256(product.img)=$SHA (manifest donora: $PRODUCT_SHA256)" | tee -a "$WORK/probe.log"
+              [ "$SHA" = "$PRODUCT_SHA256" ] \
+                || echo "::warning::sha256 != new_partition_info.hash (semantyka VABC?); integralnosc = per-op sha256 + rozmiar + magic"
+              echo "source=Drive OTA 4.0.13.0 payload.bin (range-extraction; product 3086 op, per-op sha256 OK)" > "$WORK/source.txt"
+            fi
+          else
+            echo "OTA_PICK puste (probe Drive nie wyszedl) - od razu CDN"
+          fi
+          # ===== TIER CDN-R: Recovery OTA zip 4.0.11 (payload.bin, range) =====
+          # RECEIPT 37026854069: fastboot tgz (12,6 GB, caly stream OK) NIE zawiera
+          # */product.img ("tar: Not found in archive"). Recovery OTA zip zawiera
+          # payload.bin - TEN SAM format co donor Drive 4.0.13 - payload_extract.py
+          # wycina product range-requestami (~5,6 GB blobow zamiast 12,6 GB tgz).
+          # Pierwszy wybor CDN.
+          if [ "$OK" != 1 ]; then
+            echo "=== TIER CDN-R: Recovery OTA yingtian 4.0.11.0 (payload.bin, range-extraction) ===" | tee -a "$WORK/probe.log"
+            ROM_ZIP="yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip"
+            ROM_ZIP_MD5="a12ac31de7165776806e8252cbb8628a"
+            ZM=$(cdn_mirrors "$ROM_ZIP")
+            if [ -z "$ZM" ]; then
+              echo "::warning::CDN-R: brak mirrorow recovery zip ($ROM_ZIP)" | tee -a "$WORK/probe.log"
+            fi
+            for U in $ZM; do
+              for A in 1 2; do
+                echo "CDN-R proba $A/2: $U" | tee -a "$WORK/probe.log"
+                rm -f "$WORK/product.img"
+                if python3 tools/payload_extract.py \
+                  --zip-url "$U" --entry payload.bin --partition "$PARTITION" \
+                  --out "$WORK/product.img" --jobs 12 --chunk 16777216 --prefetch-ops 3 \
+                  --erofs-check 2>&1 | tee "$WORK/extract.log"; then
+                  echo "CDN-R OK: product.img $(stat -c%s "$WORK/product.img") B z $U (zip md5 wg strony: $ROM_ZIP_MD5)" | tee -a "$WORK/probe.log"
+                  echo "source=Xiaomi CDN Recovery OTA yingtian 4.0.11.0.XBMCNXM zip ($ROM_ZIP; payload.bin range-extraction, per-op sha256 OK, 12 watkow; Drive quota - receipt 37026854069)" > "$WORK/source.txt"
+                  OK=1; break
+                fi
+                [ "$A" -lt 2 ] && { echo "pauza 3 min (cooldown)..."; sleep 180; }
+              done
+              [ "$OK" = 1 ] && break
+            done
+          fi
+          # == TIER CDN-F: Fastboot tgz (product wprost | super->simg2img->lpunpack) ==
+          # Fallback najnizszy. Wzorce: '*product.img' (receipt 37026854069: '*/product.img'
+          # nie lapan plikow bez katalogu) + '*super.img' (dyn. partycje: product moze
+          # byc wewnatrz super). tar exit=2 (czesc wzorcow bez trafien) NIE dyskwalifikuje
+          # - o zawartosci decyduje find na dysku + md5 calego tgz.
+          if [ "$OK" != 1 ]; then
+            echo "=== TIER CDN-F: fastboot ROM yingtian 4.0.11.0 (tgz) ===" | tee -a "$WORK/probe.log"
+            ROM_TGZ="yingtian-images-OS4.0.11.0.XBMCNXM-user-20260916.0000.00-17.0-cn-60633b4ba6.tgz"
+            ROM_TGZ_MD5="60633b4ba6490a2bd98bb58df3b9d850"
+            FM=$(cdn_mirrors "$ROM_TGZ")
+            if [ -z "$FM" ]; then
+              echo "::warning::CDN-F: brak mirrorow tgz ($ROM_TGZ)" | tee -a "$WORK/probe.log"
+            fi
+            for U in $FM; do
+              echo "CDN-F proba: $U" | tee -a "$WORK/probe.log"
+              rm -rf "$WORK/romx" && mkdir -p "$WORK/romx"
+              curl -fL --retry 2 --connect-timeout 30 \
+                --speed-limit 100000 --speed-time 90 "$U" 2>>"$WORK/probe.log" \
+                | tee >(md5sum > "$WORK/rom-tgz.md5") \
+                | tar -xz -C "$WORK/romx" --wildcards '*product.img' '*super.img' 2>>"$WORK/probe.log"
+              echo "CDN-F: pipeline status $? (tar 2 = czesc wzorcow bez trafien - sprawdzam dysk)" | tee -a "$WORK/probe.log"
+              # md5sum z procsub pisze wynik na KONCU streamu - czekamy az plik
+              # bedzie niepusty (max 15 s; unika race przy natychmiastowym odczycie)
+              for W in $(seq 1 15); do
+                [ -s "$WORK/rom-tgz.md5" ] && break
+                sleep 1
+              done
+              MD5GOT=$(awk '{print $1}' "$WORK/rom-tgz.md5" 2>/dev/null)
+              GOTP=$(find "$WORK/romx" -name product.img -size +100M 2>/dev/null | head -1)
+              GOTS=$(find "$WORK/romx" -name super.img -size +100M 2>/dev/null | head -1)
+              if [ "$MD5GOT" != "$ROM_TGZ_MD5" ]; then
+                echo "CDN-F: md5 tgz niezgodne (${MD5GOT:-brak} vs $ROM_TGZ_MD5) - nastepny mirror" | tee -a "$WORK/probe.log"
+                rm -rf "$WORK/romx" "$WORK/product.img"
+                continue
+              fi
+              if [ -n "$GOTP" ]; then
+                mv "$GOTP" "$WORK/product.img"
+                echo "CDN-F OK: product.img $(stat -c%s "$WORK/product.img") B wprost z tgz (md5 OK)" | tee -a "$WORK/probe.log"
+                echo "source=Xiaomi CDN fastboot tgz 4.0.11.0 (product.img wprost; tgz md5 $ROM_TGZ_MD5 OK)" > "$WORK/source.txt"
+                OK=1
+              elif [ -n "$GOTS" ]; then
+                # straznik dysku: rozmiar raw z naglowka sparse (blk_sz * total_blks)
+                HDRS=$(python3 tools/simg2img.py "$GOTS" /dev/null --info 2>/dev/null \
+                  | sed -n '1s/.*blk_sz=\([0-9]*\) total_blks=\([0-9]*\).*/\1 \2/p')
+                BLKSZ=${HDRS% *}; TOTBL=${HDRS#* }
+                RAWB=$(( ${BLKSZ:-0} * ${TOTBL:-0} ))
+                AVB=$(df --output=avail -B1 / | tail -1 | tr -dc '0-9')
+                echo "CDN-F: super.img -> raw ~${RAWB:-0} B ($(( RAWB / 1073741824 ))G), wolne ${AVB:-0} B" | tee -a "$WORK/probe.log"
+                if [ "${RAWB:-0}" -gt 0 ] && [ $(( RAWB / 1073741824 + 10 )) -gt $(( ${AVB:-0} / 1073741824 )) ]; then
+                  echo "::error::CDN-F: za malo dysku na unsparse super (~$(( RAWB / 1073741824 ))G + 10G)" | tee -a "$WORK/probe.log"
+                  break
+                fi
+                if python3 tools/simg2img.py "$GOTS" "$WORK/super.raw" >>"$WORK/probe.log" 2>&1; then
+                  echo "CDN-F: super.img sparse -> super.raw OK" | tee -a "$WORK/probe.log"
+                else
+                  echo "CDN-F: super.img nie-sparse - uzywam wprost" | tee -a "$WORK/probe.log"
+                  mv "$GOTS" "$WORK/super.raw"
+                fi
+                rm -rf "$WORK/romx" && mkdir -p "$WORK/romx"
+                # metadane LP siedza w pierwszych ~200 KB; lpinfo czyta caly plik do
+                # RAM, wiec dajemy mu tylko glowice 8 MB
+                head -c 8388608 "$WORK/super.raw" > "$WORK/super.meta.bin" 2>/dev/null || true
+                PNAME=$(python3 tools/lpinfo.py --json "$WORK/super.meta.bin" 2>/dev/null \
+                  | python3 -c 'import json,sys,re
+          ns=[p["name"] for p in json.load(sys.stdin)["metadata"]["partitions"]]
+          m=[n for n in ns if re.fullmatch(r"product(_[ab])?", n)]
+          print(m[0] if m else "")' 2>/dev/null)
+                PLIST=$(python3 tools/lpinfo.py --json "$WORK/super.meta.bin" 2>/dev/null \
+                  | python3 -c 'import json,sys; print(",".join(p["name"] for p in json.load(sys.stdin)["metadata"]["partitions"]))' 2>/dev/null)
+                echo "CDN-F: partycje w super: ${PLIST:-?} -> product = ${PNAME:-BRAK}" | tee -a "$WORK/probe.log"
+                if [ -z "${PNAME:-}" ]; then
+                  echo "CDN-F: brak partycji product w super (lpinfo) - nastepny mirror" | tee -a "$WORK/probe.log"
+                  rm -rf "$WORK/romx" "$WORK/super.raw" "$WORK/super.meta.bin"
+                  continue
+                fi
+                if kit-mysticalos3/bin/lpunpack -p "$PNAME" "$WORK/super.raw" "$WORK/romx" >>"$WORK/probe.log" 2>&1 \
+                   && [ -s "$WORK/romx/$PNAME.img" ]; then
+                  mv "$WORK/romx/$PNAME.img" "$WORK/product.img"
+                  rm -rf "$WORK/romx" "$WORK/super.raw" "$WORK/super.meta.bin"
+                  echo "CDN-F OK: product.img $(stat -c%s "$WORK/product.img") B z super.img (simg2img -> lpunpack -p $PNAME; md5 tgz OK)" | tee -a "$WORK/probe.log"
+                  echo "source=Xiaomi CDN fastboot tgz 4.0.11.0 (super.img -> simg2img -> lpunpack -p $PNAME; tgz md5 $ROM_TGZ_MD5 OK)" > "$WORK/source.txt"
+                  OK=1
+                else
+                  echo "CDN-F: lpunpack -p $PNAME nie oddal pliku - nastepny mirror" | tee -a "$WORK/probe.log"
+                  rm -rf "$WORK/romx" "$WORK/super.raw" "$WORK/super.meta.bin"
+                fi
+              else
+                echo "CDN-F: ani product.img, ani super.img w tgz (md5 OK?) - nastepny mirror" | tee -a "$WORK/probe.log"
+                rm -rf "$WORK/romx"
+              fi
+              [ "$OK" = 1 ] && break
+            done
+          fi
+          [ "$OK" = 1 ] || { echo "::error::ani Drive, ani CDN-R (recovery zip), ani CDN-F (fastboot tgz) nie oddaly product.img"; exit 1; }
+          # wspolna weryfikacja: magic EROFS @1024 + rozmiar >3G
+          SZ=$(stat -c%s "$WORK/product.img")
+          [ "$SZ" -gt 3000000000 ] || { echo "::error::product.img ${SZ}B < 3G?"; exit 1; }
+          python3 - "$WORK/product.img" <<'MEOF'
+          import sys
+          with open(sys.argv[1], "rb") as f:
+              f.seek(1024)
+              m = f.read(4)
+          assert m == bytes.fromhex("e2e1f5e0"), "zly magic EROFS: %s" % m.hex()
+          print("weryfikacja: magic EROFS e2e1f5e0 @1024 OK")
+          MEOF
+          [ -f "$WORK/source.txt" ] || echo "source=nieznany" > "$WORK/source.txt"
+          cat "$WORK/source.txt" | tee -a "$WORK/probe.log"
+          echo "PRODUCT_OK=1" >> "$GITHUB_ENV"
+
+      - name: "4. Sanity fsck.erofs (kit bin)"
+        run: |
+          set -e
+          kit-mysticalos3/bin/fsck.erofs --help >/dev/null 2>&1 \
+            || { echo "::error::brak fsck.erofs w kit-mysticalos3/bin"; exit 1; }
+          echo "product.img: $(stat -c%s "$WORK/product.img") B"
+          df -h /
+
+      - name: "5. Harvest (mount erofs | fsck extract) -> keep/{app,fonts,themes}"
+        # UWAGA -e: GH Actions domyslnie odpala `bash -e`; find po drzewie
+        # erofs potrafi zwrocic !=0 (permisje) i ubic krok po cichu (receipt
+        # 37008170521: log urywal sie po ls). Stad set +e + jawne bramki.
+        # product.img NIE jest usuwany (krok 6 pakuje go na donor-cache).
+        run: |
+          set -uo pipefail
+          set +e
+          exec > >(tee "$WORK/harvest.log") 2>&1
+          IMG="$WORK/product.img"
+          MNT="$WORK/mnt"; EXT="$WORK/ext"; KEEP="$WORK/keep"
+          rm -rf "$MNT" "$EXT" "$KEEP"
+          mkdir -p "$MNT" "$KEEP/app" "$KEEP/fonts" "$KEEP/themes"
+          P=""
+          if sudo mount -t erofs -o ro,loop "$IMG" "$MNT" 2>/dev/null; then
+            P="$MNT"; [ -d "$MNT/product" ] && P="$MNT/product"
+            echo "harvest: loop-mount erofs OK (P=$P)"
+          else
+            AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+            EST=$(( $(stat -c%s "$IMG") / 1000000000 * 3 / 2 + 1 ))
+            echo "harvest: mount NIE wyszedl; dysk ${AV}G, szac. drzewo ~${EST}G"
+            if [ "${AV:-0}" -ge "${EST:-99}" ]; then
+              kit-mysticalos3/bin/fsck.erofs --extract="$EXT" "$IMG" || true
+              [ -d "$EXT" ] || { echo "::error::fsck extract nie dal drzewa"; exit 1; }
+              P="$EXT"; [ -d "$EXT/product" ] && P="$EXT/product"
+              echo "harvest: fsck extract (P=$P)"
+            else
+              echo "::error::za malo miejsca na ekstrakcje (${AV}G < ${EST}G)"
+              exit 1
+            fi
+          fi
+          echo "== zawartosc product (ls) =="; ls "$P" 2>/dev/null | head -40
+          echo "== app =="; ls "$P/app" 2>/dev/null | head -60
+          echo "== priv-app =="; ls "$P/priv-app" 2>/dev/null | head -80
+          FOUND=0
+          for NAME in MiuiHome MiuiGallery MiuiGalleryNew MiuiMusic MiuiFileManager \
+                       MiuiCalculator MiuiCamera MiuiVideo MiuiNotes NewMiuiNotes \
+                       MiuiWeather2 MiuiClock MiuiSecurityCenter; do
+            D=$( { find "$P" -maxdepth 4 -type d -iname "$NAME" 2>/dev/null \
+                   || sudo find "$P" -maxdepth 4 -type d -iname "$NAME" 2>/dev/null \
+                   || true; } | head -1)
+            if [ -n "$D" ] && { { find "$D" -name '*.apk' 2>/dev/null \
+                   || sudo find "$D" -name '*.apk' 2>/dev/null || true; } \
+                   | grep -q .; }; then
+              DEST="$KEEP/app/$(basename "$D" | sed 's/New$//')"
+              mkdir -p "$DEST"
+              find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \; 2>/dev/null \
+                || sudo find "$D" -name '*.apk' -exec cp -a {} "$DEST/" \; || true
+              if [ -d "$D/lib" ]; then { cp -a "$D/lib" "$DEST/" 2>/dev/null \
+                || sudo cp -a "$D/lib" "$DEST/"; } || true; fi
+              echo "  apk: $NAME <- $D ($(du -sm "$DEST" 2>/dev/null | cut -f1) MB)"
+              FOUND=$((FOUND+1))
+            else
+              echo "  brak: $NAME"
+            fi
+          done
+          [ "$FOUND" -ge 1 ] || { echo "::error::0 apk MIUI w product donora"; exit 1; }
+          KEY=0
+          ls "$KEEP/app" | grep -qi calculator && KEY=$((KEY+1))
+          ls "$KEEP/app" | grep -qi camera && KEY=$((KEY+1))
+          ls "$KEEP/app" | grep -qi notes && KEY=$((KEY+1))
+          echo "kluczowe apki (kalkulator/aparat/notatki): $KEY/3"
+          [ "$KEY" -eq 3 ] || echo "::warning::kluczowe apki $KEY/3 - sprawdz harvest.log"
+          if [ -d "$P/fonts" ]; then
+            { find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} "$KEEP/fonts/" \; 2>/dev/null \
+              || sudo find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} "$KEEP/fonts/" \; ; } || true
+          fi
+          echo "fonty Mi: $(ls "$KEEP/fonts" 2>/dev/null | wc -l)"
+          for TD in themes media/theme; do
+            SRC=$( { find "$P" -maxdepth 3 -type d -path "*$TD" 2>/dev/null \
+                     || sudo find "$P" -maxdepth 3 -type d -path "*$TD" 2>/dev/null \
+                     || true; } | head -1)
+            if [ -n "$SRC" ]; then
+              SZD=$(du -sm "$SRC" 2>/dev/null | cut -f1 || echo 999)
+              if [ "${SZD:-999}" -le 300 ]; then
+                mkdir -p "$KEEP/themes/$(basename "$SRC")"
+                { cp -a "$SRC"/. "$KEEP/themes/$(basename "$SRC")"/ 2>/dev/null \
+                  || sudo cp -a "$SRC"/. "$KEEP/themes/$(basename "$SRC")"/ ; } || true
+                echo "  motywy: $SRC (${SZD} MB)"
+              else
+                echo "  motywy $SRC pominiete (${SZD} MB > 300)"
+              fi
+            fi
+          done
+          sudo umount "$MNT" 2>/dev/null || true
+          rm -rf "$EXT"
+          df -h /
+          echo "== harvest: $(find "$KEEP/app" -name '*.apk' | wc -l) apk, $(du -sm "$KEEP" | cut -f1) MB =="
+
+      - name: "5.5. System+system_ext donora: miui-framework + deklaracje (CDN-R | Drive)"
+        # v1.5 (receipt 37124760440 + 37123502013): (a) harvest rozszerzony na
+        # SYSTEM_EXT - w system.img HyperOS 4 yingtian sa tylko vdexy +
+        # MiuiBooster.jar; miui-framework.jar (wskazywany w deklaracjach
+        # <library file="/system/framework/...">) realnie siedzi w
+        # system_ext/framework. (b) set -x + PS4=L$LINENO - log 37124760440
+        # urywal sie bez komunikatu bledu, trace da linie padniecia.
+        # (c) cp -aL (dereference) - wpisy w EROFS moga byc symlinkami,
+        # cp -a zrobiloby martwe linki w harvestcie.
+        run: |
+          set -uo pipefail
+          export PS4='+ L$LINENO: '
+          exec > >(tee "$WORK/framework.log") 2>&1
+          set -x
+          SYSIMG="$WORK/system.img"; SEIMG="$WORK/system_ext.img"
+          MNT="$WORK/smnt"; EXT="$WORK/sext"; KEEP="$WORK/keep"
+          # ---- zrodla: sonda 10MB + sort wg szybkosci (wzorzec kroku 3) ----
+          ROM_PAGE="https://xmfirmwareupdater.com/hyperos/yingtian/stable/OS4.0.11.0.XBMCNXM/"
+          ROM_ZIP="yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip"
+          RAW=""
+          PAGE2=$(curl -sSL --connect-timeout 30 --max-time 120 "$ROM_PAGE" || true)
+          [ -n "$PAGE2" ] && RAW=$(printf '%s' "$PAGE2" | sed 's/&amp;/\&/g' \
+            | grep -oE "https://[^\"'<> ]+/${ROM_ZIP}" | sort -u || true)
+          if [ -z "$RAW" ]; then
+            for CDNB in cdnorg.d.miui.com bigota.d.miui.com bn.d.miui.com hugeota.d.miui.com cdn-ota.azureedge.net; do
+              CU="https://$CDNB/OS4.0.11.0.XBMCNXM/$ROM_ZIP"
+              CC=$(curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$CU" 2>/dev/null || echo ERR)
+              echo "SONDA CDN $CC $CU"
+              [ "$CC" = "200" ] && RAW="$RAW $CU"
+            done
+          fi
+          [ -n "$RAW" ] || { echo "::error::brak mirrorow CDN-R ($ROM_ZIP)"; exit 1; }
+          for U in $RAW; do
+            SPD=$(curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 "$U" 2>/dev/null || echo 0)
+            printf '%012.0f %s\n' "${SPD:-0}" "$U" 2>/dev/null || echo "000000000000 $U"
+          done | sort -rn | cut -d' ' -f2- > /tmp/mirror-speed.txt || true
+          SOURCES=$(grep -E '^https?://' /tmp/mirror-speed.txt 2>/dev/null || true)
+          [ -n "$SOURCES" ] || SOURCES="$RAW"
+          echo "== mirrory wg szybkosci =="; printf '%s\n' $SOURCES
+          if [ -n "${OTA_PICK:-}" ]; then SOURCES="$SOURCES $OTA_PICK"; fi
+          ex_part() { # $1=partycja $2=out.img
+            for U in $SOURCES; do
+              echo "== ekstrakcja $1 z $U (timeout 45 min) =="
+              rm -f "$2"
+              if timeout 2700 python3 tools/payload_extract.py \
+                --zip-url "$U" --entry payload.bin --partition "$1" \
+                --out "$2" --jobs 12 --chunk 16777216 --prefetch-ops 3 \
+                --erofs-check 2>&1 | tee "$WORK/extract-$1.log"; then
+                return 0
+              fi
+              echo "::warning::$1: proba na $U nie wyszla - nastepny mirror"
+            done
+            return 1
+          }
+          AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+          [ "${AV:-0}" -ge 6 ] || { echo "::error::dysk ${AV}G < 6G"; exit 1; }
+          ex_part system "$SYSIMG"    || { echo "::error::system.img: zaden mirror nie oddal"; exit 1; }
+          ex_part system_ext "$SEIMG" || { echo "::error::system_ext.img: zaden mirror nie oddal"; exit 1; }
+          set +x
+          for IMG in "$SYSIMG" "$SEIMG"; do
+            SZ=$(stat -c%s "$IMG")
+            [ "$SZ" -gt 300000000 ] || { echo "::error::$IMG ${SZ}B < 300M?"; exit 1; }
+            python3 - "$IMG" <<'MEOF'
+          import sys
+          with open(sys.argv[1], "rb") as f:
+              f.seek(1024); m = f.read(4)
+          assert m == bytes.fromhex("e2e1f5e0"), "zly magic EROFS: %s" % m.hex()
+          MEOF
+            echo "$IMG: EROFS OK ($SZ B)"
+          done
+          set -x
+          # ---- montaz obu (ro) ----
+          rm -rf "$MNT" "$EXT"; mkdir -p "$MNT/sys" "$MNT/se"
+          sudo mount -t erofs -o ro,loop "$SYSIMG" "$MNT/sys" 2>/dev/null \
+            || { echo "::error::montaz system.img padl"; exit 1; }
+          sudo mount -t erofs -o ro,loop "$SEIMG" "$MNT/se" 2>/dev/null \
+            || { echo "::error::montaz system_ext.img padl"; exit 1; }
+          # ---- 1) deklaracje + wskazane jary (system_ext pierwszy = priorytet HyperOS) ----
+          # v1.5.1 (receipt 37126543575): warunek TYLKO na zawartosc <library> -
+          # basename-match lapy tez pliki bez <library> (np. allowlisty shareduid),
+          # a read w potoku ubijal krok bez komunikatu. while na process
+          # substitution (bez subshell-pipe).
+          mkdir -p "$KEEP/framework" "$KEEP/permissions"
+          for BASE in "$MNT/se" "$MNT/sys"; do
+            PDIR="$BASE/etc/permissions"
+            [ -d "$PDIR" ] || continue
+            for XML in "$PDIR"/*.xml; do
+              [ -f "$XML" ] || [ -L "$XML" ] || continue
+              grep -q '<library' "$XML" 2>/dev/null || continue
+              grep -qiE '<library[^>]*(name|file)="[^"]*miui' "$XML" 2>/dev/null || continue
+              { cp -aL "$XML" "$KEEP/permissions/" 2>/dev/null \
+                || sudo cp -aL "$XML" "$KEEP/permissions/"; } || true
+              echo "  deklaracja: $(basename "$XML") [z ${BASE##*/}]"
+              while IFS= read -r F; do
+                case "$F" in
+                  /system/framework/*)     SRC="$MNT/sys/${F#/system/}" ;;
+                  /system_ext/framework/*) SRC="$MNT/se/${F#/system_ext/}" ;;
+                  *) continue ;;
+                esac
+                if [ -f "$SRC" ]; then
+                  SZX=$(stat -c%s "$SRC" 2>/dev/null || echo 999999999)
+                  if [ "$SZX" -le 157286400 ]; then
+                    { cp -aL "$SRC" "$KEEP/framework/" 2>/dev/null \
+                      || sudo cp -aL "$SRC" "$KEEP/framework/"; } || true
+                    echo "  lib: $(basename "$F") ($SZX B) [z ${BASE##*/}]"
+                  else
+                    echo "  pomijam lib (${SZX}B > 150M): $F"
+                  fi
+                else
+                  echo "  UWAGA: $F wskazany w deklaracji, nie ma go w system/system_ext"
+                fi
+              done < <(grep -oE 'file="[^"]+"' "$XML" 2>/dev/null | sed 's/file="//;s/"$//')
+            done
+          done
+          # ---- 2) safety net: wszystkie miui*.jar z obu /framework ----
+          for FDIR in "$MNT/se/framework" "$MNT/sys/framework"; do
+            [ -d "$FDIR" ] || continue
+            { find "$FDIR" -maxdepth 1 -iname 'miui*.jar' -size -150M \
+                -exec cp -aLn {} "$KEEP/framework/" \; 2>/dev/null \
+              || sudo find "$FDIR" -maxdepth 1 -iname 'miui*.jar' -size -150M \
+                -exec cp -aLn {} "$KEEP/framework/" \; ; } || true
+          done
+          sudo umount "$MNT/sys" 2>/dev/null || true
+          sudo umount "$MNT/se" 2>/dev/null || true
+          rm -rf "$EXT" "$SYSIMG" "$SEIMG"
+          set +x
+          df -h /
+          NJ=$(find "$KEEP/framework" -name '*.jar' 2>/dev/null | wc -l)
+          NP=$(find "$KEEP/permissions" -name '*.xml' 2>/dev/null | wc -l)
+          FWM=$(du -sm "$KEEP/framework" 2>/dev/null | cut -f1)
+          echo "== framework harvest: $NJ jar, $NP deklaracji, ${FWM} MB =="
+          ls -la "$KEEP/framework" "$KEEP/permissions" 2>/dev/null
+          if ! ls "$KEEP/framework" 2>/dev/null | grep -qi framework; then
+            echo "::warning::brak *framework*.jar w harvest - apki MIUI moga nie dostac klas miui.*"
+          fi
+          [ "$NJ" -ge 1 ] || { echo "::error::0 miui jar - nie publikujemy harvestu bez frameworku"; exit 1; }
+          [ "$NP" -ge 1 ] || { echo "::error::0 deklaracji bibliotek miui"; exit 1; }
+          [ "${FWM:-0}" -le 400 ] || { echo "::error::framework harvest ${FWM}MB > 400M"; exit 1; }
+          echo "FRAMEWORK_OK=1" >> "$GITHUB_ENV"
+
+      - name: "6. Pakowanie donor-harvest + donor-product (split + manifesty)"
+        # Dysk: harvest (tgz+czesci ~1G) pakujemy na /dev/shm (tmpfs), a
+        # product.img kasujemy ZARAZ po splitcie - peak dysku = run 9 mimo
+        # dodatkowego frameworku w harvestcie.
+        run: |
+          set -euo pipefail
+          cd "$WORK"
+          du -sm keep product.img
+          SHMP=/dev/shm/pack
+          rm -rf "$SHMP"; mkdir -p "$SHMP"
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+            -czf "$SHMP/donor-harvest.tar.gz" -C keep .
+          SZ=$(stat -c%s "$SHMP/donor-harvest.tar.gz")
+          MD5=$(md5sum "$SHMP/donor-harvest.tar.gz" | cut -d' ' -f1)
+          # split (python; czesci <1.9G, limit assetu 2 GiB)
+          rm -f donor-harvest.part.* donor-product.part.*
+          python3 - <<'EOF'
+          import hashlib, os
+
+          def split(src, prefix, outdir, part):
+              idx = 0
+              md5 = hashlib.md5()
+              with open(src, "rb") as f:
+                  while True:
+                      b = f.read(part)
+                      if not b:
+                          break
+                      md5.update(b)
+                      with open(os.path.join(outdir, "%s.part.%03d" % (prefix, idx)), "wb") as o:
+                          o.write(b)
+                      idx += 1
+              return idx, md5.hexdigest(), os.path.getsize(src)
+
+          hp, hmd5, hsz = split("/dev/shm/pack/donor-harvest.tar.gz", "donor-harvest",
+                                "/dev/shm/pack", 1_800_000_000)
+          fw = sorted(os.listdir("keep/framework")) if os.path.isdir("keep/framework") else []
+          with open("/dev/shm/pack/donor-harvest.manifest", "w") as f:
+              f.write("md5=%s\nsize=%d\nparts=%d\n" % (hmd5, hsz, hp))
+              f.write("apps=%s\n" % ",".join(sorted(os.listdir("keep/app"))))
+              f.write("fonts=%d\n" % len(os.listdir("keep/fonts")))
+              f.write("framework=%s\n" % ",".join(fw))
+              f.write("source=%s\n" % open("source.txt").read().strip()
+                      if os.path.isfile("source.txt")
+                      else "source=nieznany\n")
+              f.write("created=%s\n" % __import__("time")
+                      .strftime("%Y-%m-%dT%H:%M:%SZ", __import__("time")
+                      .gmtime()))
+          pp, pmd5, psz = split("product.img", "donor-product", os.getcwd(),
+                                1_800_000_000)
+          with open("donor-product.manifest", "w") as f:
+              f.write("md5=%s\nsize=%d\nparts=%d\n" % (pmd5, psz, pp))
+          print("donor-harvest: %d B, %d czesci (md5 %s, framework: %d plikow)"
+                % (hsz, hp, hmd5, len(fw)))
+          print("donor-product: %d B, %d czesci (md5 %s)" % (psz, pp, pmd5))
+          EOF
+          echo "sha256(product.img)=$(sha256sum product.img | cut -d' ' -f1)" \
+            >> donor-product.manifest
+          # product.img juz zbedny (czesci + manifesty zapisane) - zwalniamy 6,4G
+          rm -f product.img
+          mv "$SHMP"/* .
+          rmdir "$SHMP" 2>/dev/null || true
+          df -h /
+          cat donor-harvest.manifest
+          cat donor-product.manifest
+          ls -la donor-harvest.* donor-product.* | head -20
+
+      - name: "7. Release donor-cache (tag-API + create + upload per-part, retry)"
+        run: |
+          set -uo pipefail
+          cd "$WORK"
+          exec > >(tee "$WORK/release.log") 2>&1
+          ls donor-harvest.manifest donor-product.manifest donor-harvest.part.* donor-product.part.* \
+            >/dev/null 2>&1 || { echo "::error::brak plikow do publikacji"; exit 1; }
+          gh release delete donor-cache --yes --cleanup-tag 2>/dev/null || true
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/donor-cache" >/dev/null 2>&1 || true
+          # RECEIPT 37037434755: `gh release create --target $GITHUB_SHA` -> HTTP 422
+          # ('tag_name is not a valid tag', 'Release.target_commitish is invalid')
+          # dla SHA z galezi innej niz domyslna (repo publiczne; diagnoza 2 X:
+          # target=SHA-arena -> 422, target=main / target=<branch> / tag-przez-API
+          # -> OK). Tag tworzymy przez git/refs API, release bez --target.
+          RELTARGET=""
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+               -f ref=refs/tags/donor-cache -f sha="$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "::warning::tag-create via API nie wyszedl - fallback --target=$GITHUB_REF_NAME"
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/donor-cache" >/dev/null 2>&1 || true
+            RELTARGET="--target=$GITHUB_REF_NAME"
+          fi
+          OK=0
+          for A in 1 2 3; do
+            if gh release create donor-cache $RELTARGET \
+              --title "donor-cache: product + harvest HyperOS yingtian" \
+              --notes "donor-pipeline run ${GITHUB_RUN_ID}. Zawartosc: (a) donor-harvest.tar.gz (app/fonts/themes + framework/miui-framework.jar + permissions/deklaracje bibliotek; format TIER A2 m3; iteracja 2: podpasowanie apek MIUI pod vendor Lenovo) oraz (b) product.img donora w czesciach donor-product.part.* (format TIER A m3; md5/size/sha256 w donor-product.manifest). Zrodlo: patrz source= w donor-harvest.manifest." \
+              donor-harvest.manifest donor-product.manifest; then OK=1; break; fi
+            echo "::warning::release create: proba $A/3 nie wyszla - pauza 60s"; sleep 60
+          done
+          [ "$OK" = 1 ] || { echo "::error::nie udalo sie stworzyc release donor-cache"; exit 1; }
+          # czastki POJEDYNCZO z retry (uploads.github.com potrafi 408 na duzym
+          # assescie - receipt m3; 1 czesc harvest ~0,5 GB + 4 czesci product ~1,8 GB)
+          UOK=1
+          for P in donor-harvest.part.* donor-product.part.*; do
+            UP=0
+            for A in 1 2 3 4 5; do
+              if gh release upload donor-cache "$P" --clobber; then UP=1; break; fi
+              echo "::warning::upload $P: proba $A/5 nie wyszla - pauza 30s"; sleep 30
+            done
+            [ "$UP" = 1 ] || { UOK=0; echo "::error::upload $P padl po 5 probach"; break; }
+          done
+          [ "$UOK" = 1 ] || { echo "::error::upload czesci nie wyszedl"; exit 1; }
+          gh release view donor-cache --json url,assets \
+            -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
+
+      - name: "8. Raport + evidence commit (reports/)"
+        if: always()
+        run: |
+          set -uo pipefail
+          R="reports/donor-pipeline-${GITHUB_RUN_ID}.md"
+          {
+            echo "# donor-pipeline run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## probe"; echo '```'; cat "$WORK/probe.log" 2>/dev/null || true; echo '```'
+            echo "## ekstrakcja (tail 100)"; echo '```'; tail -100 "$WORK/extract.log" 2>/dev/null || true; echo '```'
+            echo "## release (krok 7, tail 120)"; echo '```'; tail -120 "$WORK/release.log" 2>/dev/null || true; echo '```'
+            echo "## harvest (tail 120)"; echo '```'; tail -120 "$WORK/harvest.log" 2>/dev/null || true; echo '```'
+            echo "## framework-podsumowanie (bez set -x trace)"; echo '```'; grep -aE "deklaracja:|lib:|UWAGA:|pomijam|SONDA|mirrory wg|ekstrakcja .* z |EROFS OK|framework harvest|::error|::warning|jars?|jar," "$WORK/framework.log" 2>/dev/null | grep -av "^+ L" | tail -120 || true; echo '```'
+            echo "## framework (krok 5.5, tail 500 z trace L\$LINENO)"; echo '```'; tail -500 "$WORK/framework.log" 2>/dev/null || true; echo '```'
+            echo "## system-extract (tail 60)"; echo '```'; tail -60 "$WORK/extract-system.log" 2>/dev/null || true; tail -60 "$WORK/extract-system_ext.log" 2>/dev/null || true; echo '```'
+            echo "## manifesty"; echo '```'; cat "$WORK/donor-harvest.manifest" 2>/dev/null || true; cat "$WORK/donor-product.manifest" 2>/dev/null || true; echo '```'
+            echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
+          } > "$R"
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          git add "$R" || true
+          git commit -m "donor-pipeline: evidence run ${GITHUB_RUN_ID}" \
+            || echo "nic do commitu (raport juz w repo?)"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done
+          echo "RAPORT: $R"

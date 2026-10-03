@@ -1,0 +1,304 @@
+# HyperOS 4 dla Lenovo Tab P11 Gen 2 (TB350FU) — zestaw do flashowania
+
+Zbudowany i zweryfikowany **lokalnie** (bez chmury buildowej), narzędziami zbudowanymi
+w tym samym sandboksie. Historia decyzji i wszystkie pomiary: `docs/06-budowa-lokalna.md`.
+
+**Format obrazów: EROFS + `lz4hc,9`.** To nie kosmetyka — bez kompresji `system` miał
+1 376 899 072 B, plain `lz4` daje 967 503 872 B, a `lz4hc,9` 920 039 424 B (build z 23 IX miał
+920 047 616 B — dwa nadmiarowe pliki VINTF więcej; źródło HyperOS:
+937 791 488 B, czyli +3,2 % nad źródłem i −33,2 % wobec wersji bez kompresji). Kernel nie
+potrzebuje na to `EROFS_FS_LZ4HC`: `lz4hc` jest tylko wolniejszym pakowaniem, strumień jest
+zwykłym lz4, a `EROFS_FS_LZ4=y` go czyta. Poprzedni akapit podpisywał tę liczbę jako „`lz4`" —
+była z `lz4hc,9`; liczby się nie zmieniły, myląca była etykieta.
+
+## Warianty
+
+| | co w `/product` | rozmiar `product.img` | dla kogo |
+|---|---|---|---|
+| `HyperOS4_P11G2` (ten katalog) | `fonts/` (28 plików MiSans VF w 13 wariantach, Arimo, SourceHanSansCN) | **75 198 464 B** | domyślny: minimalny surface zmiany |
+| `HyperOS4_P11G2-full` | fonty **+ 67 nakładek RRO** (HyperOS-owy wygląd; `SettingsRroCommonOverlay` itd.) — jedyne miejsce, gdzie te RRO sie powoduja | **150 560 768 B** | jeśli ma być „HyperOS Look", nie tylko fonty |
+
+`vbmeta` jest w obu wariantach **tym samym plikiem** (identyczne sha256, ten sam klucz testowy).
+`system` — od 24 IX **różni się świadomie**: ten katalog ma poprawiony build
+(4836dcd4c8d5f6c0…, macierz poziomu 5, wariant miękki), a `-full` zostawił kaskadę 23 IX
+(cf0b889d45a6bb4f…) jako ślad historyczny — patrz sekcja „Czym ten obraz różni się od źródła"
+i `docs/06` §6.33.
+
+## Skład wydania
+
+| plik | bajty | co to |
+|---|---|---|
+| `product_hyperos4_p11g2.img` | 75 198 464 | `/product` (EROFS+lz4): `fonts/` + `etc/passwd` + `etc/group`; zweryfikowany **67/67** wpisów 1:1 |
+| `system_hyperos4_p11g2.img` | 920 039 424 | `/system` z HyperOS 4 (framework, `system/fonts` z MiSans, `system/etc/permissions` 27 plików, wygenerowana macierz VINTF poziomu 5, wariant miękki). Nakładek RRO **tu nie ma** — `system/product` w tym obrazie nie istnieje (zmierzone: `fsck.erofs --path=system/product` → rc 1), więc `/product` z tego wydania niczego nie przykrywa, tylko dokłada, zweryfikowany **4 563/4 563** wpisów 1:1. **Nie ma go w gicie** (limit 100 MB/blob) — patrz przepis niżej |
+| `vbmeta_hyperos4_p11g2.img` | 4 096 | `Flags: 3` (weryfikacja + verity wyłączone), `rollback_index 0`, SHA256_RSA2048, key `cdbb7717…` |
+| `flash-all.sh` | 8 776 | bramka sum → `getvar` → kopia vbmeta → **bramka rozmiaru partycji** → oba sloty → reboot |
+| `device-probe.sh` | 6 897 | **krok 0 przed flashem**: czyta `fastboot getvar` + `adb shell` i drukuje GO / GO z zastrzeżeniami / NO-GO (fastbootd, rozmiary slotów, `CONFIG_EROFS_FS{,_LZ4}`). Tylko odczyty — nic nie zapisuje, nic nie mountuje |
+| `rollback.sh` | 1 152 | przywraca vbmeta z kopii wykonanej przed flashem |
+| `release-manifest.tsv` | 671 | `plik ⇥ bajty ⇥ sha256 ⇥ uwaga` |
+| `SHA256SUMS.txt` | — | liczony na końcu; `sha256sum -c` = 8/8 OK. **`*.md` jest poza sumami** — README to dokumentacja, nie ładunek: inaczej redakcja zdania „unieważnia" wydanie (złapane przez `tools/test_release.sh`) |
+| `build-info.txt` | 591 | kompresja, UUID, wersja `mkfs.erofs`, ścieżki drzew, flagi VINTF |
+| `mkfs.log`, `fsck.log`, `system-verify.log` | — | surowe logi budowy i obu sprawdzeń |
+
+## Jak sprawdzic, ze to, co masz, to to, co zbudowalem
+
+```
+tools/test_release.sh --real --erofs-dir <katalog z mkfs.erofs/fsck.erofs>
+```
+
+Ten skrypt robi wszystko, czego nie da sie zrobic patrzeniem na plik: buduje obrazy na
+drzewie syntetycznym, sprawdza determinizm (dwa budowania = ten sam bajt), **psuje** obraz i
+sprawdza, czy weryfikator to widzi (test negatywny — bez niego „wszystkie pliki OK" może
+znaczyć „nikt nie sprawdził, czy check cokolwiek sprawdza"), podmienia cel symlinka, odpala
+`flash-all.sh` na atrapie `fastboot` w pięciu scenariuszach (za mały slot → zero flashów)
+i na końcu weryfikuje 1:1 **ten** katalog. 135 kontroli (z `--real`: 143), zero wymagań sieciowych.
+
+## Poziomy dowodu — co sprawdza który test
+
+Od najtańszego do jedynego, które dowodzi uruchomienia: **A** sumy → **B** zawartość 1:1 →
+**C** determinizm → **D** instalator na atrapie `fastboot` → **E** format narzędziem z zewnątrz
+(`release-selftest` w CI) → **F** vbmeta → **G** urządzenie. Każdy poziom ma w `docs/07-jak-weryfikowac.md`
+polecenie, oczekiwane wyjście i — to jest rzecz, której zwykle brakuje — **jedno zdanie o tym,
+czego ten test NIE dowodzi**. Np. `fsck.erofs` bez `--extract` zwraca 0 nawet na obrazie, którego
+nie umie rozpakować, a `vbmeta` ma klucz testowy, więc obraz jest *samo-spójny*, nie *zaufany*.
+
+## Jak to wgrać
+
+```
+bash device-probe.sh --release .   # KROK 0: tylko odczyty
+sha256sum -c SHA256SUMS.txt      # musi byc OK dla kazdej pozycji (system zobaczysz dopiero po ściągnięciu)
+bash flash-all.sh                # bootloader odblokowany; tablet w fastbootd (adb reboot fastboot)
+```
+
+`flash-all.sh` ma też przełącznik, którego **domyślnie nie ma i nie będzie włączony z automatu**:
+`RESIZE_SUPER=1 I_ACCEPT_DATA_LOSS=yes ./flash-all.sh` — jedyna droga, żeby obraz 920 MB wszedł
+na slot 768 MB. Robi wtedy `delete-logical-partition product_a/b` (tej samej sztuczki wymagały
+GSI na tym sprzęcie) i `resize-logical-partition system_a/b`, a `product` nie jest flashowany —
+czyli tracisz nakładki RRO z `/product` (fonty zostają, bo są w `/system/fonts`). Bez frazy
+`I_ACCEPT_DATA_LOSS=yes` skrypt odmawia i nie dotyka urządzenia. To rusza `/data` i jest
+nieodwracalne, więc decyzja należy do Ciebie; pilnują tego testy RS1–RS3 w `tools/test_release.sh`
+(RS2 sprawdza, że sama prośba bez zgody nie wydaje żadnego polecenia).
+
+`flash-all.sh` sam robi rzeczy, których zwykle się nie robi:
+- nie rusza niczego, jeśli sumy nie zgadzają się **albo** tablet nie jest w fastbootd;
+- pyta `getvar partition-size:{vbmeta,product,system}_{a,b}` i **przerywa przed pierwszym
+  flaszem**, gdy obraz się nie mieści (testowo: `system` 768 MB vs obraz 922 MB →
+  „ZMALE … brakuje 155 MB", zero flashów);
+- flashuje **oba sloty** — tylko bieżący daje „flash OK, boot stop";
+- kopiuje `vbmeta_stock_{a,b}.img` zanim cokolwiek nadpisze (to jest Twój rollback AVB);
+- **nie** robi `erase userdata` za Ciebie — utrata danych jest nieodwracalna.
+
+## Dlaczego `lz4hc,9`, a nie zwykłe `lz4`
+
+Oba dają ten sam format na dysku (identyfikator `Z_EROFS_COMPRESSION_LZ4`, te same bity
+`sb_csum mtime` / `lz4_0padding`), więc kernel nie ma żadnego nowego zadania. Różnica jest
+wyłącznie w tym, jak mocno napina się kompresor przy budowie — i ile miejsca zostaje na
+partycji: 920 039 424 B zamiast 967 503 872 B, czyli **45,3 MiB zapasu** za ~25 s extra.
+Przy wąskiej partycji `system` to jest dokładnie ten bufor, którego brak zabił próbę z GSIm.
+Pełne porównanie trzech wariantów: docs/06 §6.23.
+
+## Wymóg kernela (to jedyne, co może Cię zaskoczyć)
+
+Obraz `system`/`product` z `lz4` wymaga, żeby **kernel Lenovo** miał `CONFIG_EROFS_FS_LZ4=y`:
+
+```
+adb shell 'zcat /proc/config.gz | grep EROFS'
+```
+
+`device-probe.sh` (krok 0) robi to zdanie za Ciebie i zatrzymuje flash, jezeli `LZ4` nie ma.
+Nie ma? Wtedy flashuj wariant bez kompresji: `tools/make_release.sh … --compress none`
+(pliki ~1,5× większe — `system` 1 376 759 808 B (bez wykluczen: 1 376 899 072 B z CI), `product` 87 973 888 B), albo zrezygnuj.
+Format lz4 nie jest tu moim widzimisię: źródłowy `system.img` HyperOS-u jest lz4-owy.
+
+## Odtworzenie bit w bajt — przepis sprawdzony na nowo skompilowanym narzędziu
+
+`mkfs.erofs` zbudowany od zera (inna kompilacja, ten sam kod) odtwarza `product.img` wydania
+**co do bajta** (`cmp` bez różnicy, sha256 `a961bec46085883d…`):
+
+```
+mkfs.erofs -T 0 -U 67b7eb22-3ebb-4c21-8b01-8ff545f10d8d -zlz4hc,9 \
+           --force-uid=0 --force-gid=0 --exclude-regex '\.komentarz\.txt$' \
+           out.img <drzewo-product>
+```
+
+Trzy flagi, bez których się nie uda: `-T 0` (zeruje timestamps, bez tego każdy bieg ma inne
+bajty), `--force-uid/gid=0` (bez tego właściciel wchodzi z drzewa — patrz sekcja DAC wyżej)
+i `--exclude-regex` (pliki-notatki generatora). To jest też powód, dla którego `make_release.sh`
+ma je wpisane, a nie zostawia do recznego pilnowania.
+
+## Odtworzenie bit w bit (bez CI, z plików na Dysku)
+
+Kanał git nie pomieści 967 MB, więc `system_hyperos4_p11g2.img` jest do zbudowania.
+Potrzebujesz tylko `gcc`, `make`, `curl`, `python3` i pięciu obrazów z Dysku
+(ID w `diagnostics/drive-inventory.tsv`):
+
+```
+tools/build_comp_libs.sh /tmp/comp-build                      # zlib + lz4, ~12 s
+COMP_PREFIX=/tmp/comp-build tools/build_erofs_local.sh /tmp/erofs
+export FSCK=/tmp/erofs/fsck.erofs MKFS=/tmp/erofs/mkfs.erofs
+
+# 1) drzewo /system z obrazu HyperOS (EROFS czyta fsck, nie trzeba montowac)
+$FSCK --extract=/tmp/tree/system_src system.img    # uwaga: --extract tworzy
+#    sciezki wzgledem korzenia partycji; katalog 'system_tree' nazywa sie tak samo
+#    jak w buildzie CI, wiec nie uzywaj 'tar --strip-components=2' (docs/06 §6.12)
+
+# 2) macierze VINTF: NIE recznie do drzewa. Od aaa5919 robi to builder jedna flaga:
+#      --vintf-level 5
+# doklada plik TYLKO jezeli go w drzewie nie ma, weryfikuje 1:1 w ZBUDOWANYM obrazie
+# (fsck --extract, nie 'plik istnieje') i sprzata drzewo po weryfikacji. Reczne
+# 'make_level_matrix.py --out .../etc/vintf/...' podmienia cudze drzewo donorow i
+# pozostawia w nim ślad - patrz docs/06 §6.29.
+
+# 3) /product: fonty (+ opcjonalnie RRO) - dokladnie kuracja z wydania (docs/06 §6.33)
+#    --path=KATALOG wyciaga ZAWARTOSC katalogu do celu (z podkatalogami), wiec cel musi
+#    byc samym katalogiem docelowym - inaczej pliki wyladuja poziom wyzej (§6.14)
+mkdir -p /tmp/tree/product/fonts
+$FSCK --extract=/tmp/tree/product/fonts --path=fonts product.img
+mkdir -p /tmp/tree/product/overlay
+$FSCK --extract=/tmp/tree/product/overlay --path=overlay product.img   # tylko dla wariantu -full
+mkdir -p /tmp/tree/product/etc
+printf 'system:x:1000:1000:system:/none:/bin/false\n' > /tmp/tree/product/etc/passwd
+printf 'system:x:1000:\n' > /tmp/tree/product/etc/group
+#    (tresc z gory wiadoma; bez tych dwoch plikow wychodzi 64 wpisy zamiast 67 - §6.15)
+# NIE uruchamiaj przy odtwarzaniu bajt-w-bajt 'tools/enrich_product.sh' - dociaga on z
+#    prawdziwego product.img m.in. etc/sysconfig, etc/selinux/, fonts_customization.xml,
+#    a te swiadomie NIE weszly do wydania (§6.15). enrich sluzy do budowy BOGATSZEJ niz
+#    wydanie, nie do odtwarzania wydania.
+
+# 4) budowa + weryfikacja (fsck + 1:1 na kazdym wpisie) + vbmeta + instalator
+tools/make_release.sh --product-tree /tmp/tree/product --system-tree /tmp/tree/system_src \
+  --compress lz4hc,9 --exclude-regex '\.komentarz\.txt$' \
+  --vintf-level 5 --vintf-optional-missing \
+  --avb <avbtool.py> --key <testkey_rsa2048.pem> --erofs-dir /tmp/erofs --out /tmp/release
+#   --exclude-regex wylacza z PARTYCJI pliki-notatki generatora (*.komentarz.txt, 3 x ~400 B);
+#   drzewo zostaje z notatkami, obraz jest o 4 096 B czystszy i bez nich w /system/etc/vintf
+
+# 5) dowod, ze to TO SAMO
+sha256sum /tmp/release/product_hyperos4_p11g2.img   # a961bec46085883d6d9c…
+sha256sum /tmp/release/system_hyperos4_p11g2.img     # 4836dcd4c8d5f6c0… (wariant miekki NA SZEROKO;
+#    bez --vintf-optional-missing dostaniesz wariant strict z 84 obowiazkowymi - inny sha i zla bramka)
+sha256sum /tmp/release/vbmeta_hyperos4_p11g2.img     # 9cf2e7e4e165687abe78…
+# wariant -full: product da17ffcd20c0ab4e8d0d… (150 560 768 B, z overlay w drzewie), vbmeta jak
+#    wyzej; uwaga: system WYDANIA -full to kaskada 23 IX cf0b889d45a6bb4f… (920 047 616 B) z drzewa
+#    kitu CI (3 pliki runnera) - ten przepis zbuduje zamiast niego ten sam system co wyzej, co jest
+#    ZALECANE (kaskada ma 84 obowiazkowe pozycje i zamknieta bramke init)
+```
+
+`make_release.sh --selftest` przechodzi ten łańcuch na drzewie syntetycznym, więc narzędzia
+można sprawdzić, zanim ruszy się prawdziwe obrazy.
+
+## Co stwierdzil bieg CI `release-selftest` (35918777924, ubuntu-latest)
+
+Trzy rzeczy, ktorych nie da sie ustalic z samego katalogu wydania i ktore zostaly zmierzone
+na swiezej maszynie, 23 IX 2026:
+
+1. **Narzędzia da się odtworzyć poza tym sandboxem**: `tools/build_comp_libs.sh` (zlib + lz4
+   ze źródeł, bez pakietów `-dev`) i `tools/build_erofs_local.sh` (erofs-utils 1.8.2 bez
+   autoconfu) budują się na czystym runnerze, a `mkfs.erofs` z tej budowy rozpoznaje `-zlz4`.
+2. **Cała suite przechodzi tam, gdzie nie ma nic z `/tmp`**: `tools/test_release.sh`
+   = 17 kontroli, w tym determinizm (dwa `mkfs` = identyczny plik) i testy negatywne.
+3. **Weryfikacja nie jest samoobslugą**: obraz zbudowany *moim* `mkfs.erofs` zostal
+   rozpakowany i porównany plik-po-pliku przez `fsck.erofs` **z pakietu Ubuntu** (trzeba
+   `add-apt-repository universe` — bez tego apt milcząco nic nie dawał, a krok byl zielony).
+   Krzyżowo: każdy obraz czytany każdym narzędziem.
+
+Czego ten bieg **NIE** stwierdzil: ze obraz startuje na TB350FU. To nadal tylko poziom G
+w `docs/07-jak-weryfikowac.md` i nikt go nie wykonal.
+
+## Właściciel plików w partiach (korekta z 23 IX 2026)
+
+Korzeń `/product` i `/system` ma `Uid: 0 Gid: 0`, try `0755`, a pliki `0644`/`0755` zgodnie z
+drzewem — bo `make_release.sh` nadaje `--force-uid=0 --force-gid=0` (przełącznik `--owner`,
+wpis w `build-info.txt`). Poprzednie wydanie dziedziczyło właściciela z drzewa i oba obrazy były
+własnością uid 1001 (`radio`). Na `ro` nie dawało to zapisu, ale było błędnym DAC-iem i — ważniejsze
+dla Ciebie — **uniemożliwiało odtworzenie moich sum na innej maszynie**, bo uid budującego wchodził
+w bajty. Dlatego rozmiary zostały te same, a sha256 się zmieniły. docs/06 §6.19.
+
+## Czym ten obraz różni się od źródła HyperOS (bez owijania)
+
+1. **Ten `system.img` zawiera `etc/vintf/compatibility_matrix.5.xml`** — i od 24 IX jest on zrobiony
+   tak, żeby libvintf go faktycznie przeczytał. Stan, który mierzę na **rozpakowanym** obrazie (nie na
+   drzewie, nie na logu buildera): plik 19 197 B, atrybut `level="5"`, 84 pozycje, **0
+   obowiązkowych**, 0 martwych dzieci `<optional>`.
+   Co było wcześniej (23 IX, sha256 `cf0b889d45a6bb4f…`): w obrazie leżały **trzy** pliki —
+   `.4`, `.5`, `.6` — przy czym każdy był cięty od poprzedniego, a nie od donora (komentarz w
+   `.5.xml` mówi `zrodlo: compatibility_matrix.4.xml`), a `optional` był zapisany jako *element*
+   `<optional>true</optional>`. libvintf czyta ten parametr jako *atrybut*
+   (`LineageOS/android_system_libvintf`, `parse_xml.cpp:528`), więc po jego stronie wszystkie
+   **84 pozycje zostawały obowiązkowe** — plik był, poziom się zgadzał, a bramka i tak była
+   zamknięta. To jest różnica między „otworzyłem bramkę" a „dopisałem plik, którego nikt nie
+   czyta"; opis obu usterek: `docs/06 §6.32` i `§6.33`.
+   **Czego ten plik NIE załatwia:** zmiękczenie przez `optional` to jest umowa z `init`, że nie
+   zatrzyma startu, dopóki framework realnie nie zażąda usługi. ~70 interfejsów, których vendor
+   A12 nie deklaruje, nie znika — pojawią się jako crashe `audioserver`/`healthd`/`gatekeeperd`
+   po starcie. Dlatego to wydanie nadal jest eksperymentem, a nie „pewnym ROM-em".
+   Jak odtworzyć ten obraz:
+   ```
+   tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree \
+     --exclude-regex '\.komentarz\.txt$' --erofs-dir /tmp/erofs-c \
+     --avb ~/romtools/avb/avbtool.py --key ~/romtools/avb/test/data/testkey_rsa2048.pem \
+     --vintf-level 5 --vintf-optional-missing --out dist/release/HyperOS4_P11Gen2
+   ```
+   (`--vintf-optional-missing` bez `--vintf-vendor-manifest` = `optional` NA SZEROKO. Mając
+   `adb pull /vendor/etc/vintf` z tabletu, podaj `--vintf-vendor-manifest ten/katalog` — wtedy
+   zwalniane są tylko pozycje, których vendor naprawdę nie ma; pilnuje tego sekcja S14 w suicie.)
+
+1. **pliki `*.komentarz.txt` są WYKLUCZONE**, nie zostawione: `build-info.txt` tego buildu ma
+   `wykluczenia_mkfs  --exclude-regex=\.komentarz\.txt$`. Notatki generatora zostają w drzewie,
+   do obrazu nie wchodzą — stąd obraz jest o 4 096 B mniejszy niż drzewo by wskazywało.
+2. **`vbmeta` bez nadbitek AVB w obrazach** — `avbtool` 1.3.0 nie ma `fec`, więc
+   `add_hashtree_footer` jest niemożliwe; stąd `Flags: 3` zamiast „zielonego" bootowania.
+3. **`/product` jest mój, nie Xiaomi** — tylko fonty (+ RRO w wariancie `-full`). Pełny
+   `product.img` Xiaomi ma 6 445 187 072 B; brakujących pozycji (`etc/aconfig_flags.pb`,
+   `etc/fonts_customization.xml`, `etc/selinux/product_*.contexts`, `pangu/`) listę z
+   liczbą odwołań masz w `diagnostics/product-refs.tsv`, a narzędzie `enrich_product.sh`.
+
+## Awaria — kolejność, która istnieje naprawdę
+
+**Krok 0, przed cokolwiek: zrób kopię `system`, `product`, `system_ext`, `vendor`, `odm` ze
+swojego tabletu albo wyciągnij je z oficjalnego firmware Lenovo dla TB350FU.** Brzmi jak
+biurokracja, a jest całym ubezpieczeniem: na Dysku leżą obrazy Lenovo `boot`, `vendor_boot`,
+`vbmeta` — i ANI JEDEN stockowy `system`/`product` (te dwie pozycje na Dysku to HyperOS z
+Xiaomi Pad 9 Pro Max, który nie ma tablicy partycji Twojego tabletu). Kto tego nie zrobi, ten
+po awarii układa firmware z pobranej paczki zamiast wlać kopię.
+
+Dalej, w tej kolejności — każda pozycja jest o jeden krok dalej od cegły:
+
+1. **Tablet wisi, ale USB żyje** → przytrzymaj `zasilanie + ściszanie` ~20 s, aż wejdzie w
+   fastboot/fastbootd (`fastboot devices` powinno go pokazać). Uruchom `bash rollback.sh`:
+   przywraca on `vbmeta_a`/`vbmeta_b` z kopii, którą `flash-all.sh` zrobił PRZED nadpisaniem.
+   To odkręca wyłączenie weryfikacji AVB, nie dotyka `product`/`system`.
+2. **Przywróć kernel, jeśli go ruszałeś** — ten zestaw NIE flashuje `boot` ani `vendor_boot`,
+   więc w normalnym scenariuszu ten krok jest zbędny. Jeśli mimo wszystko flashowałeś:
+   `fastboot flash boot boot.img` (plik z Dysku, Lenovo).
+3. **Nie licz na przełączenie slotu.** `flash-all.sh` wlewa `product` i `system` na OBA sloty —
+   `fastboot --set-active=b` prowadzi do tego samego obrazu. To była cena za to, że flash tylko
+   bieżącego slotu daje „flash OK, boot stop" po restarcie na drugi.
+4. **Brak fastbootu w ogóle** → zostań na trybie **BROM/DA MediaTeka** (`mtkclient` albo
+   SP Flash Tool z obejściem `auth` dla `mt6789`). Nie EDL — EDL to procedura Qualcomma, ten
+   tablet go nie ma, i wpisanie go do checklisty byłoby obietnicą bez pokrycia (sprawdziłem,
+   że sam tak miałem w trzech dokumentach do 23 IX 2026). Tej ścieżki NIE testowałem tutaj:
+   wymaga drugiego komputera i kabla w trybie bootromu, więc traktuj ją jako kierunek, nie
+   instrukcję.
+5. **NIE rób `fastboot erase userdata`.** Nie daje nic, czego krok 1–4 nie da, a kasuje dane.
+
+Jeśli po kroku 1 tablet wstaje na stock, to znaczy, że `product`/`system` wróciły z Twojej
+kopii albo że w ogóle ich nie ruszałeś — w drugim przypadku to wciąż mój obraz, tylko bez
+weryfikacji. Wtedy `bash device-probe.sh --release .` zanim spróbujesz ponownie.
+
+## Czego NIE sprawdzono
+
+**Bootalności.** Nic wyżej nie dowodzi, że tablet wstanie; `Flags: 3` wygasza komunikat
+weryfikacji, więc awaria wygląda jak cisza. Ratunek: `rollback.sh` (przywraca stock `vbmeta`), stockowe obrazy Lenovo
+(`boot`/`vendor_boot`/`vbmeta` — ID w `diagnostics/drive-inventory.tsv`), a na ostatecznosc
+**tryb BROM/DA MediaTeka** (`mtkclient` albo SP Flash Tool z obejściem `auth` dla `mt6789`).
+Nie ma tu EDL — to jest procedura Qualcomma, nie tego tabletu; wpisanie jej w checklistę
+byłoby obietnicą, której nikt nie spełni. NIE testowałem jej w tym sandboxie.
+Braki HAL-i, których vendor `mt6789` nie ma (audio AIDL, health, power, thermal — `docs/05`
+§5.1), nie znikają przez obniżenie ich do `optional`: to usuwa blokadę startu, nie dodaje
+implementacji.
+
+<!-- ROZMIARY-KONTRAKT build-info.txt=591 device-probe.sh=6897 flash-all.sh=8776 product_hyperos4_p11g2.img=75198464 release-manifest.tsv=671 rollback.sh=1152 system_hyperos4_p11g2.img=920039424 vbmeta_hyperos4_p11g2.img=4096 -->
+<!-- tools/test_release.sh, sekcja Q, wywala FAIL jesli ktora kolwiek z tych liczb przestanie
+     zgadzac sie z plikiem. Dzieki temu 'odswiezanie dokumentacji' nie moze zostawic przedawnionego
+     rozmiaru (23 IX 2026: podmiana sum pomiedzy wariantami wlasnie to zrobila i nikt by nie
+     zauwazyl, bo sekcja N patrzyla wtedy wyłącznie na sha256). -->

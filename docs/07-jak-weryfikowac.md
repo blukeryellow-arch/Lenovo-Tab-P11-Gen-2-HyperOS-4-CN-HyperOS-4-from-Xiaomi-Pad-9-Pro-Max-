@@ -1,0 +1,288 @@
+# 07 — Jak zweryfikować to wydanie (i czego każdy test NIE dowodzi)
+
+Napisane dla kogoś, kto ma osiem plików z Dyska i nie ma mnie. Każdy poziom ma
+**jedno polecenie, jedno oczekiwane wyjście i jedno zdanie o tym, czego nie dowodzi**.
+Kolejność jest celowa: od najtańszego. Poziomu G nie da się pominąć — wszystko poniżej
+niego sprawdza *pliki*, nie *uruchamianie*.
+
+Wartości oczekiwane (wariant lekki po przebudowie VINTF z 24 IX 2026; `-full` wciąż na buildzie
+z 23 IX; uuid `67b7eb22-3ebb-4c21-8b01-8ff545f10d8d`, właściciel wpisów `0:0`):
+
+| artefakt | bajty | sha256 (prefiks) | wpisy 1:1 |
+|---|---|---|---|
+| `HyperOS4_P11Gen2/product` | 75 198 464 | `a961bec46085883d…` | 67/67 |
+| `HyperOS4_P11Gen2-full/product` | 150 560 768 | `da17ffcd20c0ab4e…` | 147/147 |
+| `HyperOS4_P11Gen2/system` | 920 039 424 | `4836dcd4c8d5f6c0…` | 4 563/4 563 |
+| `HyperOS4_P11Gen2-full/system` (legacy 23 IX) | 920 047 616 | `cf0b889d45a6bb4f…` | 4 565/4 565 |
+| `vbmeta` (oba warianty) | 4 096 | `9cf2e7e4…` | — |
+
+---
+
+## 0. Zanim cokolwiek: `device-probe.sh` (krok 0, tylko odczyty)
+
+```
+bash device-probe.sh --release .        # w katalogu wydania; rc 0 = go, 2 = nie flashuj
+```
+
+Mierzy trzy rzeczy, ktorych z plikami na dysku nie da sie zmierzyc: czy tablet jest w
+fastbootd (`is-userspace`), czy oba sloty pomieszcza obrazy (`partition-size:product_a`,
+`system_a`, ... porownywane z `release-manifest.tsv`) i czy kernel ma `CONFIG_EROFS_FS=y`
+oraz `CONFIG_EROFS_FS_LZ4=y` (przez adb, jezeli device zyje). To trzecie jest warunkiem
+wstepnym wydania, nie ciekawostka: bez `LZ4` montaz odmawia, a wariant bez kompresji trzeba
+zbudowac samemu (§6.10, §6.21). Scenariusze bramek sa w testach (sekcja P suite, osiem
+przypadkow + dwie kontrole formy wypowiedzi).
+
+## A. Integralność pobrania
+
+```
+cd <katalog wydania> && sha256sum -c SHA256SUMS.txt
+```
+
+Oczekiwane: 8 linii `OK`, rc=0.
+
+**Dowodzi:** że pliki są identyczne z tymi, które wyszły z `make_release.sh`.
+**NIE dowodzi:** że te pliki są *dobre* — sumy liczy ten, kto budował. Złe wydanie z dobrymi
+sumami istnieje; dlatego są poziomy B, C i E. Uwaga celowa: `*.md` **nie jest w sumach**, więc
+inny tekst w README nie jest rozbieżnością (patrz docs/06 §6.16, punkt 1).
+
+## B. Zawartość: czy w obrazie jest dokładnie to, co w drzewie
+
+```
+tools/verify_image.sh --img <product|system>.img --tree <drzewo> --fsck <fsck.erofs> \
+    [--exclude '\.komentarz\.txt$']
+```
+
+Oczekiwane dla producta lekkiego: `zrodlo: 67 wpisów (pliki 65, symlinki 0, katalogi 2)`,
+`ZGODNE: 67  rozbiezne: 0  brak z obrazu: 0  dodatkowe: 0`. Dla systemu lekkiego: 4 563
+(3 890 + 409 + 264) — trzy pliki VINTF z 23 IX zamienione na jeden; dla `system` w `-full`
+(legacy) nadal 4 565 (3 892 + 409 + 264)
+i `--exclude` **konieczne**, bo trzy pliki `.komentarz.txt` są wykluczone z obrazu świadomie.
+
+**Dowodzi:** każdy plik po sha256 **i po try** (`0o644` vs `0o600` to rozbieżność od
+23 IX 2026), każdy symlink po `readlink`, każdy katalog po istnieniu; `--expect-owner` porównuje
+dodatkowo uid/gid korzenia partycji przez `dump.erofs --nid` (działa bez roota).
+To jest najmocniejsza kontrola w projekcie i jedyna, która łapie „builder zgubił podkatalog" —
+klasę błędu, przy której „wszystkie pliki OK" znaczy tyle, co „nikt nie zajrzał".
+**NIE dowodzi:** `uid`/`gid` poszczególnych plików. Ekstrakcja jako zwykły użytkownik nie odda
+właściciela (`chown` mu nie wolno) — per plik da się to zmierzyć tylko z rootem,
+`sudo fsck.erofs --extract=…`. Korzeń partycji sprawdzam osobno (`dump.erofs`), i to wystarczyło,
+żeby 23 IX 2026 złapać realny błąd wydania: oba obrazy miały `Uid: 1001 Gid: 1001` (uid `radio`)
+zamiast `0:0`, bo `mkfs.erofs` dziedziczy właściciela z drzewa.
+Etykiety SELinux biorą się ze ścieżki w polityce Lenovo, więc plik na dobrej ścieżce dostanie
+dobrą etykietę, ale bity wykonania i setuid trzeba sprawdzić na urządzeniu:
+
+```
+adb shell 'ls -lZ /system/bin/su /product/bin 2>/dev/null; restorecon -RFv /product 2>&1 | head'
+```
+
+## C. Powtarzalność: czy budowanie jest deterministyczne
+
+```
+bash tools/test_release.sh --erofs-dir <katalog z mkfs/fsck>
+```
+
+Oczekiwane: `=== podsumowanie: 173 PASS, 0 FAIL ===` (26 IX: +13 kontroli wariantu CLEAN w sekcji ZC, +4 df-guardu w AA, +3 anty-regresja NEED_S w AB), a z `--real` (z drzewami podanymi w
+`PRODTREE`, `PRODTREE_FULL`, `SYSTREE`, `SYSTREE_FULL` — `SYSTREE_FULL` = drzewo donora z trzema
+plikami runnera, bo `-full` trzeba porównywać z drzewem, z którego powstał):
+`=== podsumowanie: 181 PASS, 0 FAIL ===`.
+
+Sekcje: A selftest buildera · B determinizm (dwa `mkfs.erofs` na tym samym drzewie = **identyczny
+plik**, `cmp` bez różnic) · C **test negatywny** weryfikatora (drzewo ma plik, którego nie ma w
+obrazie → musi być rc=1 i wskazanie nazwy) · D symlinki (podmiana celu musi być wykryta) ·
+E–I bramka rozmiaru i kolejność flashów na atrapie `fastboot` · J (tylko `--real`) oba wydania ·
+K kontrola pisma · L `fsck.erofs` na zbudowanym obrazie (tylko `--real`) · M `device_probe.sh` na
+zestawie pułapek (NO-GO przy braku `EROFS_FS_LZ4`, przy `system_a` 256 MB, przy slocie o bajt
+mniejszym) · N README-y nie mogą obiecywać rozmiaru mniejszego niż build (patrzy też na blok
+`ROZMIARY-KONTRAKT`) · P granica `<` vs `<=` w bramce · P2 ładunek: `device-probe.sh` **z katalogów wydania** na tych
+samych atrapach (GO/NO-GO po obu wariantach + negatyw: zepsuta kopia nie daje GO) · F2 `flash-all.sh`
+**z katalogów wydania** (E/F/RS1 po obu; RS2/RS3 + sekwencja resize tylko na lekkim — `-full` jest
+zamrożony sprzed ery `RESIZE_SUPER`; plus negatyw) · F3 `rollback.sh` **z katalogów wydania** —
+jedyny skrypt wydania, którego wcześniej żadna sekcja nie odpalała (bash -n; bez `vbmeta_stock_*`
+→ 0 flashów i komunikat „brak" dla obu slotów; tylko slot a → 1 flash z własnym plikiem; oba → 2;
+heredoc „NIE przywraca partycji product ani system" drukowany; samolokalizacja z cudzego cwd;
+negatyw: zepsuta kopia nie flashuje) · V **wnętrze `vbmeta`** z katalogów wydania — nagłówek AVB
+parsowany bez `avbtool` (ten znika z `/tmp` przy każdym restarcie): magic, `algorithm_type=1`
+(SHA256_RSA2048), `rollback_index=0`, **`flags=3`** (weryfikacja i verity wyłączone — bez tego
+AVB odrzuci donorowski system), `release_string`, rozmiar 4 096, `sha1` klucza publicznego
+wobec docs/03 §A.1 (cdbb7717… = AOSP testkey; pułapka: offsety klucza są względne wobec bloku
+AUX, nie początku pliku), identyczność vbmeta w obu wydaniach · W **`release-manifest.tsv` 1:1 z
+plikami** — każdy wiersz (także skrypty, nie tylko `.img`): istnienie, bajty, sha256; nieobecność
+tolerowana wyłącznie dla plików >100 MiB (limit GitHuba, ta sama umowa co J), a nawet dla
+nieobecnych manifest musi zgadzać się sha256 z `SHA256SUMS.txt`; negatyw: atrapki 1-bajtowe +
+brak małego pliku muszą dać FAIL · X **`dist/modules` + `dist/rom-kit`** — pozostałe ładunki w gicie, których żadna
+sekcja nie dotykała (modul Magisk: trzy kopie sumy — plik, sidecar `.sha256`, `SHA256SUMS.txt` —
+struktura `module.prop`/`customize.sh`/`uninstall.sh`/`system/product/fonts/*.ttf` + CRC `testzip`;
+rom-kit: `bash -n` flash.sh, `SHA256SUMS.git.txt` 1:1, oraz **świadoma różnica** vbmeta: rom-kit
+niesie donorski `3506d20e…`, wydanie testkey `9cf2e7e4…` — pilnuje, żeby ktoś nie „naprawił"
+różnicy kopią; **`rom-kit/flash.sh` wykonany** na atrapie: bez `system.img` (stan z czystego gita)
+→ czysta odmowa rc=1; z oboma obrazami → 4 flashy (vbmeta a/b + system a/b) + 2 kopie `fetch`,
+bez `erase userdata`; z bootloadera → `reboot fastboot` i kontynuacja z ostrzeżeniem) ·
+Y **`assemble_raw_parts.py` na syntetycznych cząstkach** — narzędzie, od którego wisi cała
+receptura odzysku, do tej pory wykonywane tylko w replayach sesyjnych: fixture 2 cząstki (64+36 KB)
++ manifest `# RAW v1`; rc 0 (złożenie bajt w bajt + `--expect-sha256`), rc 1 (uszkodzona cząstka
+środkowa łapana per-part sha **przed** sklejeniem), rc 3 (brak cząstki = niekompletny zakres, nie
+składamy połowy), rc 2 (katalog bez manifestu), sieroty (cząstki bez wpisu w manifeście składane
+i weryfikowane po inwentarzu — droga z biegu 35892866524) ·
+Z **wariant coherent** (`dist/coherent-release/`, celowo poza globem `dist/release/*` — jego
+flash-all ma inne liczniki flashy): bash -n ×3, sumy z kontraktem ROZMIARY-KONTRAKT (nieobecne
+tylko >100 MiB), manifest 1:1, flash-all na atrapie — sloty `system_ext_a/b` → 8 flashów;
+`system_ext` bez slotów → abort bez `I_ACCEPT_SYSTEM_EXT_ONEWAY=yes`, 7 flashów z zgodą (flash
+po przyrostku bez slotu); brak partycji → abort; bramka ZMALE z komunikatem; resize 6 flashów
+bez product; negatyw; rollback z ostrzeżeniem o system_ext; **triage** — `postflash_triage.sh`
+na syntetycznych logach (zdrowy boot → rc 0; crash SurfaceFlinger → rc 1 z nazwanym stoperem) ·
+Q kontrakt rozmiarów: każdy plik wydania
+musi być **nazwany w prozie** `$OUT/README.md` ze swoją liczbą bajtów (spacja co 3 cyfry i granice
+cyfr — „591" w numerze commita `aaa5919` się nie liczy); plus ta sama liczba i suma w wierszach
+`docs/07` oraz spójność liczby kolumn w tabelach markdown.
+Licznik „przeanalizowane pozycje kontraktu: 16" jest asercją (`seen<16` = FAIL), nie opisem ·
+R pliki workflow: `yaml.safe_load` każdego `.github/workflows/*.yml`, brak poleceń powłoki w
+kolumnie 0 i próg `bloki run >= 8` (24 IX 2026 zepsuty `build.yml` dawal zero jobow, czyli ani
+jednego FAIL-a — patrz `docs/06` §6.28) · S ścieżka `--vintf-level`: plik macierzy czytany z
+**rozpakowanego obrazu** (atrybuty `level`/`optional`, warianty strict/miękki, `S14` z manifestem
+vendora, sprzątanie drzewa po budowie) · T twierdzenia README o VINTF porównane z `build-info.txt`
+(dwukierunkowo: claim bez dowodu i dowód bez claimu to FAIL) · RS ścieżka `RESIZE_SUPER` na atrapie
+`fastboot` (RS1–RS3; RS2: sama prośba bez `I_ACCEPT_DATA_LOSS=yes` nie wydaje żadnego polecenia).
+
+**Dowodzi:** że nie ma ukrytej losowości (timestampy, UUID, kolejność katalogowania), więc
+porównywanie sha256 między maszynami ma sens — i że kontroli B i D nie da się przejść przez ich
+*nieistnienie*. **NIE dowodzi:** że obrazy da się zbudować z oryginalnego ROM-u — test idzie na
+drzewach syntetycznych; 1:1 z `product.img` 6,4 GB to inna praca (`tools/enrich_product.sh`).
+
+## D. Instalator: że nie zbrickuje przy złych warunkach
+
+Te same sekcje E–I co wyżej, na atrapie `fastboot`:
+
+| scenariusz | oczekiwane |
+|---|---|
+| brak `system.img` w katalogu | rc=1, **zero** flashów |
+| sloty obszerne (product 4 GB, system 64 GB) | rc=0, 6 flashów |
+| system 900 MB na slocie 768 MB | rc=1, zero flashów |
+| product na slocie 4 KB | rc=1, zero flashów |
+| `fastboot` nie zna `partition-size` | rc=0, ostrzeżenie + 6 flashów |
+| `is-userspace: no` (nie fastbootd) | rc=1, zero flashów |
+
+**Dowodzi:** że bramka `stat -Lc%s` kontra `partition-size` działa **zanim** cokolwiek zostanie
+napisane, i że instalator nie „idzie dalej" przy braku obrazu. **NIE dowodzi:** że *prawdziwy*
+fastboot odpowiada tak jak atrapa — na urządzeniu sprawdź ręcznie:
+
+```
+fastboot getvar partition-size:product_a ; fastboot getvar partition-size:system_a
+fastboot getvar is-userspace ; fastboot getvar current-slot
+```
+
+`system_a` **nie ma** deskryptora HASHTREE w fabrycznej vbmeta, więc jego rozmiar zna tylko
+`getvar` — i dlatego bramka istnieje (docs/06 §6.11, docs/03).
+
+## E. Format: że patrzy na to narzędzie z zewnątrz
+
+```
+# to robi .github/workflows/release-selftest.yml — bieg 'release-selftest'
+mkfs.erofs (moja budowa) -> fsck.erofs (pakiet Ubuntu) --extract -> porownanie per plik
+dump.erofs -s <obraz>   # superblock
+```
+
+Status: **bieg `release-selftest` 35927660767 (24 IX 2026, ubuntu-latest, `d84c3cc`) — 15/15
+kroków success** (w tym ekstrakcja obrazu zbudowanego moim `mkfs.erofs` narzędziem z pakietu
+Ubuntu i porównanie per plik). Bieg na `059b850` jest poza moim zasięgiem wzroku, bo API
+odpowiedziało 401. Od tego commita krok suity liczy `rc=${PIPESTATUS[0]}`, więc zieleń znaczy
+naprawdę „`test_release.sh` wyszedł zerem". Biegi wcześniejsze — w tym wielokrotnie przeze mnie
+cytowane 13/13 z `35918777924` — patrzyły na status `tee`, czyli na nic; `docs/06` §6.27. Wymaga to `sudo add-apt-repository -y universe`: pierwsza
+wersja kroku instalowala z `>/dev/null 2>&1 || true`, pakiet nie wchodzil, a krok byl
+**zielony** — blad wyszedl dwa kroki pozniej jako `127`. Dlatego krok instalacji dzis
+mowi wszystko i ustawia `DISTRO_OK`, ktorego kroki sluchaja (brak pakietu = `::notice::`
+i swiadome pominiecie, NIE FAIL wydania).
+
+Oczekiwane na `system.img`: `Filesystem incompatible features: lz4_0padding`,
+`Required upstream Linux kernel version: 5.4`; wariant lekki: `Filesystem inode count: 4564`
+(4 563 wpisy + korzeń). Gdy `dump.erofs` wypisuje `compressed`/`uncompressed files`, to liczy
+**inode'y** razem z katalogami i symlinkami (pomiar 23 IX: 2738 + 1828 = 4 566) — nie porównuj
+tego do liczby samych plików.
+
+**Dowodzi:** że obrazu nie da się zmontować kernelowi bez `EROFS_FS_LZ4` — i to jest
+*pozytywny* wniosek: feature jest w `incompatible`, więc odmowa nastąpi przy **montowaniu**,
+nie przy czytaniu pliku. Kernel 5.10/5.15 w TB350FU (A12L) ma EROFS+lz4, a źródłowy obraz
+HyperOS też jest lz4 (docs/06 §6.10, §6.17).
+**NIE dowodzi — i tu jest najgroźniejsze nieporozumienie — że „`fsck` przeszedł" znaczy „obsługuje
+kompresję".** Bez `--extract` `fsck.erofs` sprawdza tylko metadane i zwraca **rc=0** na obrazie,
+którego nie umie rozpakować. Tak samo nie mówią nic testy zrobione na danych **losowych**:
+`-zlz4` na 300 KB szumu nie zbija bajta i wtedy nawet stary build „czyta" (patrz §6.17).
+Każdy, kto powtarza te pomiary, musi mieć w drzewie dane podatne na kompresję.
+
+## F. vbmeta: co jest podpisane, a co NIE jest poświadczone
+
+```
+python3 ~/romtools/avb/avbtool.py info_image --image vbmeta_hyperos4_p11g2.img
+```
+
+Zmierzone na tym wydaniu (dokładna treść, nie przybliżona):
+
+```
+Minimum libavb version:   1.0
+Public key (sha1):        cdbb77177f731920bbe0a0f94f84d9038ae0617d
+Algorithm:                SHA256_RSA2048
+Rollback Index:           0
+Flags:                    3
+Descriptors:
+    Prop: com.android.build.system.fingerprint -> 'hyperos4.p11g2.experiment'
+```
+
+**Dowodzi:** że vbmeta jest poprawnie podpisana (własnym, testowym kluczem), że `Flags: 3`
+wyłącza weryfikację i łańcuch, oraz że licznik anty-rollback zostaje na 0 — a to decyzja
+jednokierunkowa, więc świadoma (`docs/03`).
+**NIE dowodzi integralności obrazów.** W tej vbmetcie **nie ma żadnego deskryptora HASHTREE**:
+`/product` i `/system` nie są przez nią hashowane ani poświadczone. Kto podmieni bajt w
+`product_hyperos4_p11g2.img`, ten nie zostanie wykryty — i nie da się tego naprawić bez klucza
+Lenovo. To jest cena wymiany partycji, trzeba ją znać, a nie opisywać.
+
+Sprostowanie, bo poprzednia wersja tego dokumentu była nieprawdziwa: pisałem tu o „jednym
+deskryptorze `HASHTREE` dla `product`" i o „17–35× zapasu w deskryptorze". To opis **fabrycznej**
+vbmet Lenovo (jeden deskryptor HASHTREE, `image size 2 748 350 464 B`), nie mojej — myliłem
+oba obiekty w jednym zdaniu. Skutek dla czytającego: rozmiar z fabrycznej vbmet jest użyteczny
+jako **pomiar slotu** i nic poza tym. Jeśli na urządzeniu weryfikacja jest włączona, moja vbmeta
+**nie wystarczy** i flash musi iść z `--disable-verification` (patrz README wydania).
+
+## G. Urządzenie: jedyne, co dowodzi uruchomienia
+
+```
+adb shell 'zcat /proc/config.gz | grep -E "EROFS"'         # PRZED flashem
+adb shell 'getenforce; mount | grep -E " /(system|product) "'
+adb shell 'ls -l /product/etc/passwd /product/fonts/MiSansKRVariable.ttf'
+adb shell 'pm list packages -p /product/overlay | head'   # tylko -full
+adb shell 'dmesg | grep -iE "erofs|avb|denied" | tail -40'
+adb shell 'logcat -b all -d | grep -iE "vintf|HAL|failed to" | head -40'
+```
+
+Oczekiwane: `CONFIG_EROFS_FS=y`, `CONFIG_EROFS_FS_LZ4=y` (bez tego: nie flashuj, użyj
+`--compress none` i licz się z tym, że `system` przestaje się mieścić — §6.10); `erofs`
+zamontowane na `/system` i `/product`; `avb: verified` albo jawne „disabled", ale **bez**
+`avb: hashtree descriptor digest mismatch`; `denied` dotyczące `/product/*` = źle odtworzone
+etykiety → `restorecon`, potem zgłoś.
+
+**Dowodzi:** tylko to, że ten obraz na tym urządzeniu startuje. Bootowalność **nie jest**
+w tym projekcie udowodniona ani jedną kontrolą — nikt z nas nie odpalił tego na TB350FU.
+
+---
+
+## Progi decyzyjne
+
+- rc≠0 w A → nie flashuj, pobierz ponownie.
+- rc≠0 w B (rozbieżność) → drzewo nie zgadza się z obrazem; winny jest **albo** build, **albo**
+  test (patrz §6.16 punkt 2 — przydarzyło się raz, i to test był winny). Nie zgaduj: odpal
+  `verify_image.sh` z `--fsck` i czytaj nazwy wpisów.
+- rc≠0 w C na determinizmie → w `mkfs.erofs` lezie losowość; sprawdź `-T 0` i `-U` w
+  `make_release.sh`, zanim uznasz, że „to tylko cosmetic".
+- brak `CONFIG_EROFS_FS_LZ4` w G → `--compress none` (albo nic), nie „jakoś to zadziała".
+- `avb: digest mismatch` w G → `vbmeta` nie pasuje do `product.img`; wgraj parę z tego samego
+  katalogu wydania, nie mixuj wariantów.
+
+## Czego w tym projekcie NIE sprawdzono (żeby nikt nie czytał ciszy jako zgody)
+
+1. Bootowania na sprzęcie — patrz G.
+2. `uid`/`gid` per plik w obrazach — B porównuje try zawsze, a właściciela tylko korzenia
+   (pełny pomiar wymaga `sudo fsck.erofs --extract`). Wczesne wydanie miało przez to `Uid: 1001
+   Gid: 1001` w obu partiach; naprawione `--force-uid/gid` w `make_release.sh` i pilnowane sekcją
+   M w `tools/test_release.sh` (M2 dowodzi, że *bez* flagi błąd wraca).
+3. Zawartości prawdziwego `/product` z paczki 6,4 GB (wydanie idzie na drzewie 65/132 plików).
+4. Tego, że `--exclude-regex '\.komentarz\.txt$'` nie wyciął niczego potrzebnego — w `system/etc/vintf`
+   jest 0 takich plików (zmierzone `fsck --extract`), ale to wycinek, nie pełny audyt.
+5. Rzeczywistych rozmiarów slotów na Twoim egzemplarzu (D liczy na atrapie).

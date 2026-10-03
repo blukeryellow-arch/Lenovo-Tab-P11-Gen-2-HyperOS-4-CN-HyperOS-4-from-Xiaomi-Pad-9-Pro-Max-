@@ -1,0 +1,595 @@
+# Stan pracy i rzeczy zablokowane (23–24 IX 2026)
+
+Notatka dla kontynuacji — skrót tego, co jest zmierzone, a co tylko napisane.
+
+## Wydanie: co jest gotowe
+
+`dist/release/HyperOS4_P11Gen2` (lekki: fonty) i `-full` (fonty + 67 nakładek RRO). Pliki w
+każdym: `product_hyperos4_p11g2.img`, `system_hyperos4_p11g2.img`, `vbmeta_hyperos4_p11g2.img`,
+`flash-all.sh`, `rollback.sh`, `device-probe.sh` (krok 0), `release-manifest.tsv`,
+`SHA256SUMS.txt` (8 pozycji, `sha256sum -c` = 8/8 OK w obu wariantach) i `README.md`
+z blokiem `ROZMIARY-KONTRAKT`, który utrzymuje builder (§6.25), `build-info.txt`,
+logi `mkfs.log` / `fsck.log` / `system-verify.log`.
+
+| ładunek | bajty | sha256 (prefiks) | zweryfikowane |
+|---|---|---|---|
+| `product` lekki | 75 198 464 | `a961bec46085883d6d9c…` | ekstrakcja 1:1, 67/67 wpisów; DAC `0:0` |
+| `product` -full | 150 560 768 | `da17ffcd20c0ab4e8d0d…` | 147/147; DAC `0:0` |
+| `system` lekki (przebudowa VINTF 24 IX) | 920 039 424 | `4836dcd4c8d5f6c0…` | 4 563/4 563 (3 890 plików + 409 symlinków + 264 katalogi) |
+| `system` -full (legacy 23 IX, kaskada) | 920 047 616 | `cf0b889d45a6bb4f6af3…` | 4 565/4 565 (3 892 pliki + 409 symlinków + 264 katalogi) |
+| `vbmeta` | 4 096 | `9cf2e7e4e165687a…` | `avbtool info_image`: Flags 3, rollback 0, SHA256_RSA2048, klucz testowy `cdbb7717…`, **jeden deskryptor: fingerprint** |
+
+Odtwarzalność: cztery niezależne kompilacje `mkfs.erofs` z tego samego kodu dają **identyczne
+bajty** obrazu na tym samym drzewie (`a961bec4…`, `cmp` bez różnicy). Przepis jest w README
+wydania; decydują `-T 0`, `--force-uid=0 --force-gid=0` i UUID-obrazu.
+
+## Co twierdzę, a czego nie twierdzę
+
+Zmierzone tutaj: struktura obrazów (fsck, ekstrakcja 1:1, `dump.erofs` dla DAC-a i trybów),
+rozmiar vs sloty (bramka w `flash-all.sh`, pięć scenariuszy na atrapie), spójność sum w
+dokumentach, determinizm budowania, higiena pisma, werdykty `device-probe.sh` (osiem
+scenariuszy atrapy + dwie kontrole formy wypowiedzi).
+
+**Niezmierzone i nie do zmierzenia w tym sandboxie: bootowalność na TB350FU.** Nic z tego nie
+wynika z faktu, że obraz jest poprawny strukturalnie. Kolejność decyzji na urządzeniu:
+`device-probe.sh` (krok 0) → flash lekkiego wariantu → `adb shell mount | grep erofs`.
+Wariant `-full` dokłada nakładki, które mogą nadpisać `config_*` frameworku — do pierwszego
+boota jest gorszym podejrzanym, więc jeśli coś nie wstanie, zacznij od lekkiego.
+
+## Zablokowane po stronie narzędzi (nie kodu)
+
+1. **`GH_TOKEN` działa i nie działa — raz na kilka minut.** Naprawione 24 IX ~00:50 UTC
+   (pushy poszły), ale ~02:30 UTC `gh api` zwracało `401 Bad credentials`, a `git ls-remote`
+   „could not read Username", więc **wyniku biegu dla `059b850` nie znam** i nie podaję go.
+   Co wiem z pewnych odczytów: gałąź jest na remote (`1a8adf8..059b850` potwierdzone przez sam
+   `git push`), `release-selftest` na `d84c3cc` = **35927660767, 15/15 kroków success**, a
+   `build-hyperos-look` na `b4934a4` = **35927919967 success / 35927918927 failure**. Ten
+   failure nie jest czerwonym testem: to mój zepsuty `build.yml` (patrz §6.28), zero jobów,
+   nic nie było sprawdzane — i dokładnie dla tego istnieje sekcja R.
+   To pierwszy bieg w historii, w którym „success" znaczy, że
+   `tools/test_release.sh` **wyszedł zerem**: poprzednie (w tym chwalone 13/13 z `35918777924`)
+   liczyły status `tee`, więc suita mogła failować do woli — `docs/06` §6.27. Sekcje K–N, P i Q
+   widziały runnera dopiero teraz, realnie.
+2. **~~`codeload.github.com` zwracał 404~~ — minęło.** 24 IX ~01:55 UTC oba tarballe
+   (`madler/zlib` v1.3.1, `erofs/erofs-utils` master) odpowiadają `HTTP/2 200`. Cache
+   `/tmp/erofs-c` nadal jest najszybszą ścieżką, ale odbudowa od zera znowu jest możliwa.
+3. **Sandbox bywa przywracany ze snapshotu w trakcie pracy.** 24 IX ~03:38 UTC `git rev-parse HEAD`
+   nagle zwracał `5b03aea` (korzeń `main`), a `reflog` miał jeden wpis: `clone: from https://github.com/…`.
+   Cała praca była na dysku jako pliki **nieśledzone** (reset --hard je nadpisuje bez ostrzeżenia), a
+   na remote sięgała do `059b850`. Procedura, która przeszła: `tar --exclude=.git -cf /tmp/kopia.tar .`
+   → `git fetch` + `git reset --hard FETCH_HEAD` → porównanie dwóch interesujących plików z kopią →
+   przywrócenie ich z kopii. Dlatego commit `0ec000d` (docs/07 + docs/08) istnieje podwójnie: raz
+   zgubiony przez re-clone, raz odzyskany.
+
+4. **Logi Actions pozostają nieczytelne z tej piaskownicy**: `gh run view --log` zwraca pusty
+   wynik, a `gh run download` na artefakt `weryfikacja-log` 3 razy dostał EOF od
+   `blob.core.windows.net`. Widoczne są więc statusy kroków i adnotacje (`::error::`/`::notice::`),
+   nie treść logu — i o tym trzeba pamiętać, czytając moje „CI zielone".
+
+## Odtwarzanie środowiska jest tanie — `--real` też (aktualizacja 24 IX ~14:00 UTC)
+
+Po re-clone sandboxa (`/tmp` pusty, `~/romtools` skasowane) łańcuch narzędzi wraca w minutę:
+
+```
+tools/build_comp_libs.sh /tmp/comp-build      # 11 s, od zera, bez cache: libz.a 150 244 B + liblz4.a 277 634 B
+tools/build_erofs_local.sh /tmp/erofs-c       # ~30 s: mkfs 588 376 B, fsck 580 496 B, dump 571 776 B
+tools/test_release.sh --erofs-dir /tmp/erofs-c        # 173 PASS / 0 FAIL (sekcje F2/F3/V/W/X/Y/Z/ZC/AA/AB)
+```
+
+To przebieg **niezależny od wszystkiego, co miałem wczoraj**: identyczne liczniki, jakich wymaga
+sekcja Q (16 pozycji kontraktu, `absent-skip 3`, wiersze `docs/07` 2/2) — czyli dokładnie ten kształt,
+który widzi runner, bo oba katalogi wydania mają na czystym checkoutcie tyle samo plików co u mnie.
+Z tą różnicą, że ciemna strona jest moja: **`--real` (181 PASS) wymaga drzew donora w `/tmp`
+i `~/romtools/avb`, a te nie są w gicie i nie odtwarzają się same** — `system.img` (920 MB) i
+`product.img` wariantu `-full` (150 MB) przekraczają limit GitHuba. Dlatego po reboocie mam prawo
+napisać „88/0", a nie „96/0". **Aktualizacja 24 IX ~14:00 UTC: to prawo przestało być potrzebne.**
+Drugie mrugnięcie snapshotu zabrało właśnie te trzy nieśledzone obrazy, a odbudowa z
+`transfer-spool` odtworzyła je **bajt w bajt** w kwadrans (receptura: sekcja na końcu pliku).
+`--real` jest odtwarzalny w pełni: pełne PASS potwierdzone po odbudowie (96/0 w chwili odbudowy;
+161/0 po dodaniu sekcji F3, V, W, X, Y i Z jeszcze tego samego dnia (noc 24/25 IX); 26 IX sekcja ZC (wariant CLEAN) podnosi do **166/174**, tego samego dnia AA (df-guard) do **170/178** i AB (anty-regresja NEED_S) do **173/181** — liczby historyczne niżej
+dotyczą suity sprzed F3/V/W/X/Y). `sha256sum -c`
+na czystym checkoutcie wychodzi
+7/8 (lekki) i 6/8 (`-full`), a każde `FAILED open or read` to właśnie ten brakujący duży obraz —
+nie niezgodność; lokalnie po odtworzeniu obrazów (24 IX) oba katalogi mają 8/8. Skrypty generowane
+(`flash-all.sh` 8 776 w lekkim i 6 749 w `-full`, `rollback.sh` 1 152, `device-probe.sh` 6 533)
+przechodzą `bash -n` i mają rozmiary zgodne z kontraktami README.
+
+## Jak odtworzyć środowisko po reboocie sandboxa
+
+```
+tools/build_comp_libs.sh /tmp/comp-build            # zlib + lz4 (wymaga sieci na tarball)
+tools/build_erofs_local.sh /tmp/erofs-c             # mkfs/fsck/dump, selfcheck na 3 binarkach
+tools/test_release.sh --erofs-dir /tmp/erofs-c --real    # oczekiwane: 181 PASS / 0 FAIL z drzewami sesji (bez --real: 173)
+```
+
+Drzewa `staging/`, `images/`, `rom/` i wszystko w `/tmp` **nie są w gicie** (patrz `.gitignore`):
+po reboocie zostaje sam kod narzędzi, a odtworzenie drzewa `product` to `tools/enrich_product.sh`
++ ekstrakcja z plików źródłowych ROM-u (inicjatywa: `diagnostics/drive-inventory.tsv`).
+
+## Dług wobec CI — zamknięty 24 IX
+
+Poprzednie zdanie („CI nie powtórzy tego na `df32841`") zestarzało się: `aaa5919` (sekcje A–S)
+przeszedł na runnerze — `release-selftest` = `success`, a w nim krok `suite wydania (selftest,
+determinizm, testy negatywne, bramka rozmiaru)` = `success`. To już coś znaczy, bo od `d843cc`
+krok bierze `PIPESTATUS[0]`, a nie status `tee` (patrz §głuchota w `docs/08` wyżej i `docs/06`).
+
+Drugi dług też zamknięty 24 IX: **`--real` przebiegł na odzyskanych drzewach donora** — 67 PASS /
+0 FAIL po przebudowie lekkiego, a po odtworzeniu obrazów `-full` (hash-orakul `da17ffcd…`,
+`cf0b889d…`) ten sam przebieg daje 79 PASS / 0 FAIL z czterema obrazami sprawdzonymi 1:1.
+
+## Odzysk drzewa donora — ROZWIĄZANE 24 IX, odpowiedź leżała w repo
+
+Pierwsza wersja tej sekcji (dopisana kilka godzin wcześniej) mówiła, że drogi do pliku są
+zamknięte i że potrzebuję kliknięcia po stronie użytkownika: publiczny link na Dysku albo dispatch
+workflowu z HuggingFace. **Nie było takiej potrzeby** — i to jest główna lekcja tej sekcji, a nie
+lista adresów.
+
+Wszystkie szyni drogi z tamtej tabeli były prawdziwe i pozostają prawdziwe (limit konektora
+104 857 600 B/plik; `return_download_url` zablokowany w schemacie; prywatne pliki na Dysku dają
+redirect na `accounts.google.com/v3/signin` dla anonimowego curla; sandbox nie ma wyjścia na
+`huggingface.co` (`SSL_ERROR_SYSCALL`); `gh run download` kończy się EOF-em z `blob.core.windows.net`).
+Zabrakło kroku zero: **sprawdzić, czy te bajty już nie leżą w repo.** Leżały.
+
+`origin/transfer-spool` — gałąź, którą dla tego projektu wymyślono właśnie po to, żeby duży ładunek
+nie musiał przechodzić przez sandbox — trzymała kawałki `rom-kit.tar.gz` z biegu `35897100768`
+(16 × 94 371 840 B). `tools/assemble_raw_parts.py` złożył je z pełną weryfikacją
+(`ZGODNY z runnerem`, suma rodzica), a w środku było `system_tree` w całości: 4568 wpisów,
+1,3 GB — czyli dokładnie drzewo donora, którego szukałem. To samo dla assetów `/product` donora
+(134 808 062 B w dwóch kawałkach).
+
+Co z tego wynika dla przyszłych sesji:
+1. Zanim poprosisz użytkownika o cokolwiek, sprawdź gałęzie `transfer-spool` i `reports/` w tym
+   samym repo. GitHub jest jedyną siecią, którą sandbox ma na pewno.
+2. `git archive origin/transfer-spool` daje zawartość bez zmieniania gałęzi roboczej.
+3. Jeśli plik ma w `MANIFEST.tsv`/`RAW_MANIFEST.tsv` sumy — weryfikuj je składając; to nie jest
+   formalność, bo dziś właśnie te sumy pozwoliły uznać drzewo za kompletne.
+
+## Odbudowa obrazów wydań z `transfer-spool` — WYKONANA 24 IX ~14:00 UTC, bajt w bajt
+
+Drugie mrugnięcie snapshotu (24 IX, opis w §3 wyżej) zabrało trzy **nieśledzone** obrazy wydań:
+`system` lekkiego, `system` i `product` wariantu `-full`. Orakulem były sumy w śledzonych
+`SHA256SUMS.txt` obu katalogów — i wszystkie cztery duże obrazy (łącznie z lekkim `product`,
+który przetrwał) odbudowały się **bajt w bajt**:
+
+| obraz | rozmiar | sha256 (prefiks) | status |
+|---|---|---|---|
+| lekki `system` | 920 039 424 | `4836dcd4…` | ZGODNY |
+| lekki `product` | 75 198 464 | `a961bec4…` | ZGODNY (przebudowany dla kontroli) |
+| `-full` `system` | 920 047 616 | `cf0b889d…` | ZGODNY |
+| `-full` `product` | 150 560 768 | `da17ffcd…` | ZGODNY |
+
+Po odbudowie: `sha256sum -c` = 8/8 w obu katalogach, suita `--real` z drzewami = **96 PASS /
+0 FAIL**. Całość zmierzona dwukrotnie: pierwsza odbudowa (z rekonstrukcją receptury z pomiarów)
+trwała ~15 minut; **replay dosłowny** — blok kodu poniżej wycięty z TEGO pliku i wykonany bez
+zmian po wyczyszczeniu ścieżek — trwał **189 s** i zakończył się rc=0: oba tarballe ZGODNE
+z runnerem, oba buildy, 16/16 sum, 96 PASS / 0 FAIL. **Powtórzony po dodaniu F3/V/W/X**
+(finalne HEAD dnia, ten sam blok kodu dosłownie): 212 s, rc=0, **134 PASS / 0 FAIL** — czyli
+receptura dalej wykonuje się słowo w słowo, a jej oczekiwane wyjście rośnie razem z suitą.
+**Trzeci raz 24 IX o ~18:17** — pomiar najcenniejszy: mrugnięcie snapshotu po raz trzeci zabrało
+WSZYSTKO (świeży klon na `5b03aea`, `/tmp` starte: spool, toolchain, drzewa, 3 nieśledzone
+obrazy). Odzysk: `git fetch` + `reset --hard` (cała treść była na remote — nic nie zginęło),
+potem ten sam blok receptury od zera — **5 min 09 s**, rc=0, oba tarballe ZGODNE, 16/16 sum,
+pełna suita `--real` **143 PASS / 0 FAIL**. Zimny start z gołego klonu do pełnego stanu
+roboczego to pięć minut; Toolchain od zera to dodatkowe ~45 s;
+na ciepłym `/tmp` skrypty same się skracają (»już zbudowane«, »już pobrane«), więc recepturę
+można bezpiecznie odpalać ponownie.
+
+Receptura krok po kroku (ścieżki jak w sesji 24 IX):
+
+```
+set -e   # 26 IX: urwane cp przy ENOSPC musi PRZERWAC recepture, nie nadpisywac dist.
+        # Blok sam czyści swoje pośrednie katalogi (extract/tree-product) - idempotentny
+        # na cieplym /tmp (fsck --extract na istniejacym drzewie degraduje tryby do 0700!).
+# 0) toolchain (jeśli /tmp/erofs-c nie żyje)
+tools/build_comp_libs.sh /tmp/comp-build
+tools/build_erofs_local.sh /tmp/erofs-c
+
+# 1) spool -> dwa tarballe (sumy weryfikuje skrypt, rc 0 = ZGODNY z runnerem)
+mkdir -p /tmp/spool /tmp/romkit /tmp/ta-product
+git fetch origin transfer-spool                 # UWAGA: na czystym klonie ref origin/transfer-spool
+git archive FETCH_HEAD | tar -x -C /tmp/spool   # NIE istnieje - archive idzie po FETCH_HEAD
+tools/assemble_raw_parts.py --parts /tmp/spool/transfer --out /tmp/rom-kit.tar.gz \
+    --expect-sha256 537eb4ea0c98f4b87bd1ccdb2e0ab502745dfd0820ef1deefb9d42e2a5b0923b
+tar -xzf /tmp/rom-kit.tar.gz -C /tmp/romkit          # w srodku m.in. system_tree (4568 wpisow)
+rm -f /tmp/rom-kit.tar.gz                             # higiena dysku: tarball zuzyty (1,4 GB)
+tools/assemble_raw_parts.py --parts /tmp/spool/transfer \
+    --out /tmp/ta-product/drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz \
+    --expect-sha256 a53ff508fb4e9224350635fb87a5bc60e8829504b93f86a61e4ae1963c063ff6
+tar -xzf /tmp/ta-product/drive-*.tar.gz -C /tmp/ta-product   # 172 wpisy: etc/ fonts/ overlay/
+#    (oba --expect-sha256 to sumy z RAW_MANIFEST*.tsv / MANIFEST.tsv na spoolu - nie trzeba
+#     ich pamietac, sa w plikach; skrypt sam znajduje manifesty z sufiksem biegu)
+#    Noc 24/25 IX: spool ma TEZ donorski system_ext (bieg 36030150849, 7 czesci):
+tools/assemble_raw_parts.py --parts /tmp/spool/transfer \
+    --out /tmp/donor/drive-13e-okLFNX3m7feTp8AlYoGME2rKFFitr.img \
+    --expect-sha256 7340a8367d3da8e4bdcf56a0f53dd7b77d87f81389d08b2a7e9e449fc02a5385
+test "$(md5sum /tmp/donor/drive-13e-*.img | awk '{print $1}')" = f879747f3f7ebb5eb026eddeb02f8d13 \
+    || { echo "system_ext: md5 != suma Google"; exit 1; }
+rm -rf /tmp/spool                                      # higiena dysku: spool skonsumowany (2,1 GB);
+                                                       # build_clean_kit nie pobiera go ponownie, bo
+                                                       # donor i lekki system juz sa na miejscu
+
+# 2) cztery drzewa (artrytmyka wpisow sprawdza sie przy kazdym kroku)
+rm -rf /tmp/donor/system_tree /tmp/tree2 /tmp/tree-full   # idempotencja: cp -al/cp -a na istniejacym
+mkdir -p /tmp/donor                                    # katalogu GNIEZDZI kopie (wewnatrz niego) - dlatego czyscimy
+cp -al /tmp/romkit/system_tree /tmp/donor/            # FULL system: 4568 (obraz: -3 komentarze = 4565)
+mkdir /tmp/tree2 && cp -al /tmp/romkit/system_tree /tmp/tree2/
+rm -f /tmp/tree2/system_tree/system/etc/vintf/compatibility_matrix.{4,5,6}.{xml,komentarz.txt}
+                                                      # LEKKI system: 4562 (build doklada macierz 5 -> 4563)
+rm -rf /tmp/prod-lekki-extract && mkdir -p /tmp/prod-lekki-extract   # wyciag z LEKKIEGO product (z GITA). UWAGA: fsck.erofs
+                                                      # --extract NIE jest idempotentny wobec trybow katalogow -
+                                                      # na istniejacym drzewie zostawia katalogi 0700 (pierwszy
+                                                      # extract na pustym daje 0755). Zawsze kasuj przed extractem.
+/tmp/erofs-c/fsck.erofs --extract=/tmp/prod-lekki-extract \
+    dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img    # (flaga --extract=, nie --out)
+rm -rf /tmp/tree-product && cp -a /tmp/prod-lekki-extract /tmp/tree-product   # LEKKI product: 67 (etc/{passwd,group} + 63 fonty); rm -rf = odpornosc na powtorke receptury
+mkdir -p /tmp/tree-full/etc                          # FULL product: 147 (132 pliki + 15 katalogow)
+cp -a /tmp/ta-product/fonts /tmp/ta-product/overlay /tmp/tree-full/
+cp -a /tmp/prod-lekki-extract/etc/passwd /tmp/prod-lekki-extract/etc/group /tmp/tree-full/etc/
+                                                      # UWAGA: etc/{permissions,sysconfig,vintf} z tara
+                                                      # NIE wchodza; puste katalogi usuniete (inaczej 150!=147)
+
+# 3) dwa buildy (vbmeta NIE budowac - 9cf2e7e4… zyje w gicie)
+tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree \
+    --vintf-level 5 --vintf-optional-missing --out /tmp/rebuild-lekki \
+    --erofs-dir /tmp/erofs-c --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
+tools/make_release.sh --product-tree /tmp/tree-full --system-tree /tmp/donor/system_tree \
+    --out /tmp/rebuild-full --erofs-dir /tmp/erofs-c \
+    --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
+#    pelne sumy sprawdz względem dist/release/*/SHA256SUMS.txt; wygenerowana macierz lekkiego
+#    musi wyjsc 19197 B sha256 9ada17034a4880b5… (kontrola zrodla kaskady)
+
+# 4) kopiuje sie TYLKO brakujace obrazy (flash-all/vbmeta/README juz sa z gita)
+cp /tmp/rebuild-lekki/system_hyperos4_p11g2.img dist/release/HyperOS4_P11Gen2/
+cp /tmp/rebuild-full/{system,product}_hyperos4_p11g2.img dist/release/HyperOS4_P11Gen2-full/
+#    wariant coherent: system/product/vbmeta z gitowych wydaj + system_ext z powyzszego
+cp /tmp/donor/drive-13e-*.img dist/coherent-release/HyperOS4_P11Gen2-coherent/system_ext_hyperos4_p11g2.img
+cp dist/release/HyperOS4_P11Gen2/{system,product,vbmeta}_hyperos4_p11g2.img \
+   dist/coherent-release/HyperOS4_P11Gen2-coherent/
+rm -rf /tmp/rebuild-lekki /tmp/rebuild-full            # higiena dysku: buildy skonsumowane (2,1 GB)
+
+# 5) dowod
+(cd dist/release/HyperOS4_P11Gen2 && sha256sum -c SHA256SUMS.txt)        # 8/8
+(cd dist/release/HyperOS4_P11Gen2-full && sha256sum -c SHA256SUMS.txt)   # 8/8
+(cd dist/coherent-release/HyperOS4_P11Gen2-coherent && sha256sum -c SHA256SUMS.txt)  # 9/9
+
+# 5b) wariant CLEAN (system_ext minus 7 pakietow diagnostyki) - builder idempotentny,
+#     korzysta z powyzszych krokow (toolchain, spool, drzewa). Od 26 IX NIE robi
+#     'git reset --hard' bez jawnej flagi --force-git-restore.
+bash tools/build_clean_kit.sh
+(cd dist/clean-release/HyperOS4_P11Gen2-clean && sha256sum -c SHA256SUMS.txt)  # 10/10
+
+SYSTREE=/tmp/tree2/system_tree SYSTREE_FULL=/tmp/donor/system_tree \
+PRODTREE=/tmp/tree-product PRODTREE_FULL=/tmp/tree-full \
+    tools/test_release.sh --erofs-dir /tmp/erofs-c --real               # 174 PASS / 0 FAIL (ZC od 26 IX; replay 24 IX: 96, noc 24/25: 161)
+```
+
+Dwa szczególy, które kosztowaly najwiecej namyslu przy rekonstrukcji receptury:
+- **lekki vs full system**: drzewo lekkiego to donor minus SZESC plikow runnera w `etc/vintf/`
+  (trzy macierze kaskadowe `.4/.5/.6.xml` i trzy `.komentarz.txt`) — macierz 5 generuje sie
+  na czas budowy (19197 B) i jest sprzatana; drzewo `-full` to donor w calosci, a `.komentarz.txt`
+  wylacza `--exclude-regex`. Rownowazne byloby zostawienie komentarzy w drzewie i wylaczenie
+  ich flaga — obraz wychodzi ten sam.
+- **lekki vs full product**: lekki to tylko `etc/{passwd,group}` + 63 fonty (67 wpisow); `-full`
+  doklada `overlay/` (67 apk w 12 podkatalogach) z assetow donora, ale NIE doklada 24 plikow
+  `etc/` donora (`build.prop`, `permissions/`, `sysconfig/`, `vintf/`) — passwd/group pochodza
+  z lekkiego obrazu, nie z tara donora.
+
+## Maraton 24 IX (popołudnie): od trzech brakujących obrazów do 143/0
+
+Godziny ~15:55–17:45: (1) odbudowa trzech nieśledzonych obrazów z `transfer-spool` **bajt w bajt**
+(4/4 hashe — sekcja wyżej), (2) utwardzenie receptury trzema poprawkami znalezionymi dopiero przy
+sprawdzaniu na czystym klonie (`git fetch origin transfer-spool` przed `git archive FETCH_HEAD`;
+składanie assetów product donora przez `assemble_raw_parts.py`, nie `cat`; dokładna linijka
+`fsck.erofs --extract=` zamiast komentarza), (3) **replay dosłowny** — blok kodu wycięty z tego
+pliku wykonany bez zmian: 189 s, rc=0, (4) trzy nowe sekcje suity w schemacie F2/P2
+(„ładunek wydania, którego żadna sekcja nigdy nie odpalała"):
+
+| sekcja | co domknęła | kontroli |
+|---|---|---:|
+| F3 | `rollback.sh` — jedyny skrypt wydania nigdy nie wykonany: bash -n, sloty a/b, flash `vbmeta_stock_*`, heredoc „NIE przywraca product ani system", samolokalizacja z cudzego cwd, negatyw | 13 |
+| V | wnętrze `vbmeta` — `flags=3`, testkey AOSP (sha1 `cdbb7717…` wg docs/03 §A.1), parsowane bez avbtoola; pułapka: offsety klucza względne wobec bloku AUX, nie początku pliku | 16 |
+| W | `release-manifest.tsv` 1:1 — kolumna sha256 i wiersze skryptów nie były porównywane z plikami; zgodność manifest↔`SHA256SUMS` także dla plików nieobecnych (>100 MiB); negatyw z dwiema klasami błędu | 3 |
+| X | `dist/modules` + `dist/rom-kit` — pozostałe ładunki w gicie, których suita nie dotykała: modul Magisk (trzy kopie sumy, struktura, CRC), rom-kit (`bash -n`, sumy gita 1:1), świadoma różnica vbmeta donor `3506d20e…` vs wydanie testkey `9cf2e7e4…`, oraz **wykonanie `rom-kit/flash.sh`**: bez `system.img` (stan z czystego gita) → czysta odmowa; z oboma → 4 flashy + 2 kopie `fetch`, bez `erase userdata`; z bootloadera → `reboot fastboot` + kontynuacja | 9 |
+| Y | `assemble_raw_parts.py` na syntetycznych cząstkach — narzędzie, od którego wisi receptura odzysku, do tej pory tylko w replayach sesyjnych: rc 0/1/2/3 + adopcja sierot (bieg 35892866524) | 6 |
+
+Liczniki suity: **88/96 → 129/137** (popołudnie, F3/V/W/X/Xb/Y) → **153/161** (noc, sekcja Z) → **166/174** (26 IX, sekcja ZC wariantu CLEAN) → **170/178** (26 IX po południu, sekcja AA: df-guard) → **173/181** (26 IX wieczorem, sekcja AB: anty-regresja NEED_S).
+CI zielone dla `4e3452e` (F2), `9437ffa` (F3), `33ecec0` (V)
+i `d4cebe2` (W), `d55ef27` (X), `f67b560` (Xb) — oba workflow; Y (`fb51263`..`fa24354`) dojechała
+na remote o 18:09, gdy token GH odżył po ~80 min przerwy (commity czekały lokalnie — drzewo
+czyste, nic nie przepadło); sekcja W przeszła na runnerze z trzema nieobecnymi obrazami
+(absent-skip + zgodność manifest↔SHA256SUMS dla nieobecnych — dokładnie po to jest ta gałąź
+kontroli). Lekcja dnia numer jeden: dokument, który
+opisuje procedurę odzysku, sam jest ładunkiem — dopóki nie został wykonany słowo w słowo, jest
+hipotezą (a był w nim błąd: `git archive origin/transfer-spool` pada na czystym klonie).
+
+## Noc 24/25 IX: wariant coherent — ROZWIĄZANE, co się dało bez tabletu
+
+Godziny ~20:30–~20:00+: (1) **wywiad targetu** — z Dysku przez konektor pobrane `boot.img`,
+`vendor_boot.img`, `vbmeta.img` (md5 = sumy serwera Google; każde <100 MB); rozpakowane własnym
+dekoderem lz4-legacy + cpio (nie ma binaria `lz4` w sandboxie). Wynik (docs/09): MT6789,
+kernel 5.10.233 GKI android12, vendor **A12** (VNDK 31), stock **LGSIU A14**, boot = **Google GSI**
++ klucze GSI w fstab — urządzenie jest oficjalnym celem GSI, a stock sam trzyma system o dwie
+wersje nad vendor. (2) **donorski system_ext** (632 MB) — konektor tnie na 100 MB, więc bieg
+`drive-probe 36030150849` (publiczny link na czas pobrania, zamknięty natychmiast, uprawniona
+tylko owner — zweryfikowane) → 7 części na spool → `assemble_raw_parts.py` → **md5 Google
+zgadza się co do bajta**. (3) **wariant coherent** (`dist/coherent-release/`, sekcja Z suity,
+README z uczciwą tabelą szans) — system + donorski system_ext + lekki product + vbmeta. (4)
+**`tools/postflash_triage.sh`** — diagnoza po flashu z logcatu, listy podejrzanych znane z góry.
+
+Przy okazji naprawione w `build.yml` dwa utajone bugi, które wyszły dopiero przy no-op biegu:
+raport po `push_spool_branch` szedł z HEAD-a orphan spoolu (non-fast-forward, teraz z
+`GITHUB_SHA`), a krok „Wczytaj zapytanie" padał na `bash -e` + pipefail, gdy request to same
+komentarze (grep bez trafień = rc 1 — `|| true` w pipeline). Trzeci utajony bug: **runner
+nadpisuje jezioro transfer-spool bez scalania** (płytki checkout nie ma obiektów poprzedniego
+spoola — `git archive $prev` cicho pada) — tej nocy scalone ręcznie z sandboxa (`d7b8061`:
+rom-kit + product-assets + system_ext, 30 plików), do naprawy w `push_spool_branch.sh` przy
+kolejnym biegu.
+
+Lekcja nocy: „100% pewności bootu" nie istnieje bez urządzenia — ale istnieje **zmiana tego,
+co wiadomo**: założenia („vendor 12L z Amazona") zastąpione pomiarem (vendor A12/VNDK 31,
+GSI boot, rozmiary partycji z hashtree AVB), a każda liczba w ocenie szans ma teraz źródło
+w bajtach (docs/09 §5). Kolejny ruch należy do tabletu: `device-probe.sh` → `flash-all.sh`
+(coherent) → `postflash_triage.sh` na logcacie.
+
+## Wariant CLEAN (25 IX, wieczor) — coherent minus diagnostyka/telemetria
+
+Zadanie usera: „usun MSA i bloatware, dostosuj propsy". Audyt drzew wykazal, ze
+MSA/GetApps/reklamy w obrazach tego projektu **nie wystepuja** (zycza w donorskim
+product, ktorego nie wgrywamy — nasz product to fonty + passwd). Prawdziwy debloat
+zaszedl w system_ext: usuniete 7 pakietow (EngineerMode 16 MB, DebugLoggerUI,
+MiSightService 9,4 MB, VsimCore, CameraMind 4,5 MB, PowerInsight, RtMiCloudSDK) —
+1910 -> 1867 wpisow. Framework (`miuix`, `miuisystem`, `MiuiSystemUI`, `Settings`)
+zostal NIE dotkniety: to fundament HyperOS 4, nie bloat (byly MIUI -> HyperOS to
+zmiana nazwy, nie usuniecie kodu — stąd paczki com.miui.* w srodku HyperOS 4).
+
+Propsy: fingerprint/rozdzielczosc/density **nie wymagaly zmian** — system_ext nie
+deklaruje feature fingerprint (tab nie ma czytnika), a `ro.sf.lcd_density` w obrazach
+nie istnieje (przyjdzie z vendora Lenovo). Niczego nie trzeba klamac.
+
+Budowa: `tools/build_clean_kit.sh` (idempotentny, przezywa resety sandboxa):
+spool -> donorski system_ext (md5 = suma Google) -> czyszczenie -> mkfs
+`-T 0 -U a11ce5a1-… -zlz4hc,9 --force-uid=0 --force-gid=0` -> **602 189 824 B**
+(slot 744 968 192 — zapas 142 MB) -> `verify_image.sh` **1:1** (1866 wpisow:
+1683 pliki + 21 symlinki + 162 katalogi, 0 rozbieznosci). Kit w
+`dist/clean-release/HyperOS4_P11Gen2-coherent… clean/`: system (identyczny z lekkim,
+sha `4836dcd4…`), system_ext CLEAN (sha `53dd7dfb…`), product, vbmeta, flash-all
+(5 scenariuszy na atrapie fastboot: sumy/rozmiary/jednokierunkowy zgody/reboot —
+wszystkie zielone), README z ROZMIARY-KONTRAKT, SHA256SUMS 10/10.
+
+Dwie lekcje z tego przebiegu:
+1. **ENOSPC zepsul weryfikacje 1:1** — fsck --extract padal po cichu przy pelnym
+   dysku (obraz zbudowany, ekstrakcja nie), a make_release zglosil to dopiero jako
+   „NIE przechodzi weryfikacji". Przy 98% zapełnienia najpierw sprawdzic df.
+2. **64-znakowe sumy przepisuje manifestem, nie reka** — moj reczny `--expect-sha256`
+   mial literowke niewidoczna w terminalu (plik == manifest == OK, a skrypt krzyczal
+   NIEZGODNY, bo porownywal z moja literowka): `EXP=$(awk … MANIFEST.tsv)` i po sprawie.
+
+Suite po odbudowie wszystkich wydaj (resety VM zabieraly nie sledgerowane obrazy
+duze; -full po odbudowie: absent-skip -> realne kontrole): **161 PASS / 0 FAIL**
+(--real, drzewa jak wyzej). Upload na Dysk Google: **WSTRZYMANY na sygnal usera**.
+26 IX: sekcja ZC podnosi liczniki do **166/174** (test negatywny anty-zamiennej sprawdzony).
+
+## Dysk Google UKONCZONY (25 IX, ~19:40 UTC)
+
+Upload kitu CLEAN dokonczony po przerwaniu (rownolegla/przerwana sesja zdazyla wgrac
+male pliki + 16/16 czesci systemu + 2/11 system_ext i umarla o 19:09 UTC). Doliczono
+9 czesci system_ext + 2 product; **40/40 plikow w folderze `clean`, md5 kazdej czesci
+wg serwera Google = lokalnemu cieciu** (konwencja: 60 000 000 B, `.bin`, sklejanie
+`zloz.sh`/`zloz.bat`, sumy w `CZESCI-MD5.txt`, vbmeta jako `.b64`). Inwentarz ID:
+`diagnostics/drive-clean-kit.tsv`. przy okazji: **bug build_clean_kit.sh kroku 7**
+nadpisywal flash-all cleana wersja coherent (8177→7662 B) - naprawiony (copy tylko
+gdy brak); na Dysku zawsze byla wersja z commita (c40d7486…). Sprzatnieto: 5 folderow
+przerwanych prob + testowe pliki z kosza (bintest*/proba*/p0-test); pliki usera
+(SpinjitzuLegends_*, stary vbmeta.img) nietkniete. Stare foldery nocy (lekki/full/
+coherent) zniknely wczesniej (trwale, przez tamta sesje) - pelne wydania odbuduje
+receptura, na Dysku zostaje wariant CLEAN jako jedyny flashowalny komplet.
+
+## Noc 25/26 IX: sekcja ZC, flake CI, dwie lekcje infra
+
+1. **Czerwony release-selftest na b69ff4c = FLAKE runnera.** Logi biegu 36170136811
+   niepobieralne (EOF z results-receiver), GitHub odmawial rerunu ("workflow file may
+   be broken"), artefakt za zablokowanym Azure-blobem. Dowod przez tag: tag
+   `ci-repro-b69ff4c` na tym SAMYM commicie odpalil identyczny bieg (36218670479) —
+   **zielony, 1m27s**. Tag skasowany po eksperymencie.
+2. **Sekcja ZC** (13 kontroli wariantu CLEAN): bash -n ×3, sumy+kontrakt, ANTY-ZAMIENNA
+   (system_ext = 53dd7dfb CLEAN, nie 7340a836 donorski — test negatywny: podmiana sumy
+   daje FAIL), ANTY-NADPIS (naglowek WARIANT CLEAN w flash-all — wczorajszy bug krok 7),
+   build-info 7/7 pakietow, vbmeta/product cmp z lekkim, manifest 1:1, atrapa oneway
+   (bez zgody rc=1/0 flashow; ze zgoda 7 flashow, system_ext 1x bez sufiksu).
+   Liczniki: **166/174**.
+3. **Lekcja buildera**: krok 0 build_clean_kit.sh robil `git reset --hard origin/arena`
+   — odpalony przy niezacommitowanej pracy ZNIOSL niezacommitowana sekcje ZC z
+   test_release.sh (i to w nocy, przy pelnym dysku). Fix: reset tylko z jawna flaga
+   `--force-git-restore`. Trzecia lekcja tego buildera (po krok 7 i ENOSPC).
+4. **ENOSPC przy mkfs**: dysk 100% zabil build system_ext (407/602 MB) i selftest
+   suity ("brak linii determinizmu" = selftest padl w polowie na pelnym dysku).
+   Zasada: `df` przed kazdym mkfs/buildem; duplikaty obrazow w /tmp to pierwsze
+   do skasowania.
+5. **Zrodlo donora**: docs/04 (miuirom.org, yingtian/M367FC, build 260916 ~= 4.0.11.0).
+
+## Maraton 26 IX (rano): zloz.sh end-to-end, README, trzecia odsłona ENOSPC → utwardzenia
+
+1. **Test zloz.sh dokładnie ścieżką użytkownika**: skrypt pobrany z Dysku (md5 1:1
+   z serwerem), części 60 000 000 B pocięte z `dist/clean-release` (te same bajty,
+   które leżą na Dysku — md5 serwera=lokalne udowodnione przy uploadzie), SHA256SUMS
+   z dist, `bash zloz.sh` → **4/4 obrazy (system/system_ext/product/vbmeta) IDENTYCZNE
+   z wydaniem co do bajta**, drugi przebieg idempotentny ("pomijam"). Review zloz.bat:
+   copy /b + certutil, logika spójna. Uprawnienia folderu `clean`: owner-only ✓.
+2. **Negatywny test anty-nadpis ZC**: podmiana flash-all cleana na wersję coherent
+   → **3× FAIL** ("ZC: flash-all wydaje sie coherentem"); przywrócenie → 166/0.
+   Obie kontrole ZC (anty-zamienna i anty-nadpis) dowiedzione w obie strony.
+3. **README main**: nowa sekcja „Wydania ROM — cztery warianty" (tabela różnic+szans,
+   CLEAN na Dysku, dowód zloz, 166/174), korekta kanału obrazów (transfer-spool+Dysk,
+   nie Hugging Face). docs/06: wzmianka o build_clean_kit. Receptura: krok 5b (CLEAN).
+4. **Wypadek: replay dosłowny przy 6,4 GB wolnego** → dysk 100% w trakcie suity, ale
+   **wcześniej**: cp z urwanymi bajtami nadpisał `system.img` w trzech wariantach
+   dist (lekki 920 027 136 vs 920 039 424 B; -full 385 581 056 vs 920 047 616 B).
+   Blok receptury nie miał `set -e`, więc błąd cp nie przerwał biegu — dist cicho
+   zepsuty aż do suity (W/Z złapały w 2 kontrole po jednym FAIL-u na wariant).
+   **Naprawa**: odbudowa lekkiego i -full z receptury, cp z powrotem, sumy 8/8, 8/8,
+   9/9, 10/10, suite **166/174**. **Utwardzenia** (trzy warstwy):
+   - `set -e` w bloku receptury (urwane cp PRZERYWA, nie nadpisuje dist);
+   - `rm -rf /tmp/tree-product && cp -a …` (powtórka receptury na ciepłym /tmp
+     dotąd zanieczyszczała drzewo: cp kopiował extract DO ŚRODKA istniejącego
+     katalogu → 173/1; po czyszczeniu 174/0 — obraz był cały czas dobry);
+   - **df-guard w make_release.sh i build_clean_kit.sh**: <3000 MB wolnego na
+     katalog wyjściowy → FATAL przed jakąkolwiek budową (ENOSPC ucina mkfs/cp
+     bez błędu — dziś udowodnione po raz trzeci). Logika guardu zweryfikowana,
+     make_release --selftest rc=0 po zmianach.
+5. **Sekcja AA (df-guard) w suite**: pierwsza wersja guardu parsowała output `df`
+   przez `tr -dc '0-9'` na CAŁEJ linii — test izolacyjny ze stubem `df` w PATH
+   pokazał, że z pełnej tabeli df zbiera cyfry z wszystkich kolumn (11 GB z linii
+   "12345 6789 101112") i fail-open przepuszczał. Poprawka: `awk 'END{print $1}'`
+   + `case *[!0-9]*` = fail-closed. AA testuje 4 kontrolami (niskie miejsce →
+   FATAL przed budową i zero obrazów; nieczytelny df → FATAL; build_clean_kit →
+   FATAL; wzorzec fail-closed statycznie). Liczniki: **170/178**.
+
+## Maraton 26 IX (przegląd adwersarza): latentny bug NEED_S w device-probe
+
+Przegląd skryptów wydania pod kątem błędów, których suita nie łapie (suite testuje
+atrapą fastboot na ŚWIADOMIE dobranych scenariuszach — przegląd szuka tych, których
+scenariusz nie przewidział):
+
+1. **`device_probe.sh`, sekcja 2/4**: `awk '$1 ~ /^system_/'` brał PIERWSZY wiersz
+   manifestu zaczynający się od "system_" — a to pasuje też do `system_ext_...`.
+   W wariancie **coherent** system_ext był w manifeście pierwszy, więc probe
+   porównywał slot `system_a` z 602/632 MB (rozmiarem system_ext) zamiast 920 MB
+   (system): **fałszywe GO na slotach 633–919 MB** — dokładnie ten typ "wydmuszki",
+   przed którym projekt się chroni (patrz historia getvar w docs/06). W lekkim
+   (-full, clean) ratowała kolejność wierszy manifestu. Fix: jawne nazwy plików
+   (`$1 == "system_hyperos4_p11g2.img"`). Poprawka w tools/device_probe.sh
+   + 4 katalogi wydań; sumy w SHA256SUMS/manifestach i ROZMIARY-KONTRAKT README
+   odświeżone (device-probe.sh: 6533→6897 B); suite po wszystkim **170/178**.
+   *Czego to uczy: prefiksowe dopasowanie nazw plików wydania to ukryta zależność
+   od kolejności wierszy manifestu — bramki rozmiarowe muszą pytać o konkret.*
+2. **Lekcja narzędziowa (konektor Drive)**: `update_file_content` zniekształca
+   UTF-8 (polskie znaki/em-dash → inne bajty) i zjada trailing newline — na
+   serwerze ląduje plik różniący się od lokalnego. Wszystkie porównania md5 to
+   wyłapały od razu. **Bajt-dokładne pliki na Dysk: wyłącznie `upload_file`
+   z pliku** (delete starego + upload nowego) — tak szły części .bin i tak
+   poszły 4 podmienione pliki kitu (zweryfikowane md5 po pobraniu 4/4).
+3. Dysk po synchronizacji: 40/40, uprawnienia owner-only, inwentarz
+   (diagnostics/drive-clean-kit.tsv) odświeżony o nowe ID.
+4. **zloz.sh wzmacniany**: poprzednia wersja (25 IX) tylko WYPISYWARA sumy obrazów
+   — porównanie z SHA256SUMS.txt zostawiała userowi (łatwe do pominięcia przy
+   4×64 znakach). Nowa wersja (tools/zloz.sh, wersjonowana; na Dysku od 26 IX
+   ~06:38) **sama weryfikuje sklejone obrazy**: `OK/ZLE` per plik, przy rozjeździe
+   instrukcja "NIE flashuj, pobierz folder jeszcze raz" + **exit 1**. Testy e2e:
+   pozytywny (4× OK, "SUMY ZGODNE", rc=0), negatywny (przekłamany 1 bajt w części
+   007 → ZLE + rc=1), idempotentny ("pomijam" ×3), obrazy byte-w-byte z wydaniem.
+   Wieloplatformowość: sha256sum (Linux) z fallbackiem shasum -a 256 (macOS).
+5. **Sekcja AB (anty-regresja NEED_S)**: trzy kontrolę — (1) manifest z system_ext
+   PIERWSZYM + slot 672 MiB → NO-GO z porównaniem do 920 039 424 (stary kod dałby
+   fałszywe GO); (2) slot ~992 MiB → GO (bramka nie nadgorliwa); (3) statycznie:
+   NEED_S pyta o jawną nazwę pliku. **Negatyw testu**: podsunięcie starego wzorca
+   `^system_` (sed) → 2× FAIL (REGRESJA + kontrola statyczna) — test jest ostry
+   w obie strony. Liczniki: **173/181**.
+6. **Czwarta lekcja dnia: `fsck.erofs --extract` nie jest idempotentny wobec trybów.**
+   Finałowy replay receptury (po dopisaniu set -e + kroku 5b) przerwał się
+   natychmiast na `git fetch` (wygasły token GitHub w sesji) — i to jest dodatkowy
+   dowód działania set -e: zero dalszych kroków, dist nietknięty (8/8, 8/8, 9/9,
+   10/10). Dokończenie od kroku 2 (drzewa lokalne, sumy tarballi potwierdzone
+   rano) wykopało nową niejednoznaczność: sekcja J padła na `etc` 0700 vs 0755.
+   Eksperyment: pierwszy `--extract` na pustym katalogu daje 0755; **powtórny na
+   istniejącym pełnym drzewie zostawia katalogi 0700** (i nie czyści starych
+   plików — stary plik w fonts/ zostaje). Stąd oba dzisiejsze "633-919 MB"-styl
+   rozjazdy drzewa: replay na ciepłym /tmp. Fix w recepturze: `rm -rf` przed
+   KAŻDYM extractem (jak przy tree-product). Po naprawie: **173/181**.
+   *Zasada ogólna: narzędzia upstreamowe bywają idempotentne tylko na świeżym
+   stanie — każdy krok receptury, który coś wypakowuje, ma zacząć się od kasowania
+   celu.*
+
+## Maraton 26 IX (finał replay, ~09:10 UTC): guard zadziałał w produkcie + piąta lekcja
+
+Finałowy pełny replay (po reconnect GitHub, commit `88e1421` z idempotencją tree2/
+tree-full) na zaśmieconym sandboxie dał EPIZOD, który domknął cały dzień:
+
+1. **df-guard zatrzymał build pełnego wariantu przy 2048 MB wolnego** (rc=2, zero
+   obrazów) — pierwszy raz w produkcie, nie w tescie. Po odzyskaniu miejsca
+   (skasowanie zużytego spoola) replay wznowiony.
+2. **Piąta lekcja: builder sam potrafi sprowadzić dysk pod prog w TRAKCIE biegu.**
+   Start-owy guard w `build_clean_kit` minął (było >3 GB), ale własne kroki buildera
+   (spool 2,1 GB + drzewa + mkfs + kontrolna ekstrakcja) zjadły dysk w locie —
+   weryfikacja 1:1 padła na ekstrakcji ("ekstrakcja nieudana") i builder słusznie
+   odmówił (exit 1, dist nietknięty). Fix: **mid-run `need_space MB`** przed każdym
+   ciężkim krokem (spool, budowa lekkiego, ekstrakcja system_ext, mkfs, weryfikacja).
+3. **Suite przy 360 MB wolnego dawała 35 mylących FAIL-y** (wbudowane buildy
+   blokowane przez df-guard raportowane jako awarie kodu). Fix: **pre-check miejsca
+   na starcie suity** (<3000 MB → jasny FATAL "posprzataj", zero zaszumionego
+   raportu; ciąg dalszy po odzyskaniu miejsca).
+4. **Szczelniejszy warunek skipu mkfs**: skip tylko przy DOKŁADNEJ sumie CLEAN
+   (`53dd7dfb…`), nie samym rozmiarze — obraz ucięty przez ENOSPC ma "poprawny"
+   częściowy rozmiar i stary warunek by go przepuścił (złapałaby go dopiero
+   weryfikacja). Plus `rm -rf` przed ekstraktem product (lekcja #4) i przed
+   częściowym `ext-clean` z przerwanego biegu.
+5. Notatka techniczna o wznawianiu: wycięcie fragmentu receptury od środka
+   ODCINA nagłówek `set -e` — wznowiony fragment biegnie bez niego (to się
+   stało tutaj: builder padł, a fragment poszedł dalej). Receptura jest jednym
+   blokiem albo niczym.
+
+**Bieg końcowy**: build_clean_kit od zera (spool → donor → czyszczenie 1910→1867
+→ mkfs → weryfikacja 1:1 ZGODNE 1866/0 → skompletowanie kitu) — **rc=0, 73 s,
+sha system_ext CLEAN = `53dd7dfb…`** (determinizm po raz kolejny). Suite po
+wszystkim: **173 PASS / 0 FAIL** i **181 / 0** (`--real`). Dist cały: 8/8, 8/8,
+9/9, 10/10.
+
+## Maraton 26 IX (zamkniecie, ~09:45 UTC): replay #7 — finalna receptura w jednym strzale
+
+Po wszystkich poprawkach dnia (set -e, idempotencja drzew, higiena ekstraktów,
+mid-run need_space, pre-check suity, higiena dysku: spool/tarball/rebuild dirs
+kasowane po skonsumowaniu) **replay #7**: /tmp wyczyszczone do zera (zostaje
+tylko toolchain erofs-c), blok receptury wycięty z TEGO pliku dosłownie
+(wraz z nagłówkiem set -e), wykonany bez żadnej ingerencji:
+
+- **rc=0, 413 s** (składanie 3× ZGODNY z runnerem → drzewa → 2 buildy → cp →
+  sumy 8/8, 8/8, 9/9 → build_clean_kit → 10/10 → **suite 181 PASS / 0 FAIL**),
+- szczyt zajętości ~8 GB przy 12 GB wolnego (higiena dysku w recepturze działa:
+  po biegu zostaje 3,7 GB wolnego zamiast ~0),
+- dist po replayu: 8/8, 8/8, 9/9, 10/10; sha system_ext CLEAN zbudowanego
+  od zera = `53dd7dfb…` (identyczny z wydaniem i Dyskiem).
+
+To jest stan, w jakim receptura ma być czytana przez kogokolwiek innego:
+jednym blokiem, na czystym /tmp, bez dopisywania kroków z pamięci.
+
+## Incydent 26 IX ~07:50 UTC: reset sandboxa (ósmy) — odzyskanie w 10 minut
+
+Platforma zresetowała środowisko PO ostatnim pushu: `.git` wrócił do stanu
+początkowego sesji (HEAD = `5b03aea`, gałąź arena zniknęła lokalnie), `/tmp`
+wyczyszczone, a z dist zniknęły dokładnie obrazy >100 MB (lekki: system; -full:
+system+product; coherent/clean: system+system_ext). Przetrwały: wszystkie małe
+pliki kitu, product lekkiego (75 MB), gity zdalne i Dysk.
+
+Odzyskanie, krok po kroku (łącznie ~10 min):
+1. `git fetch origin <branch>` + `git checkout -f -B arena/… FETCH_HEAD`
+   → HEAD = `3a42aca`; md5 5 kluczowych plików przed/po IDENTYCZNE (zero strat).
+2. **Replay #8**: toolchain od zera (25 s) + pełny blok receptury z TEGO pliku,
+   bez ingerencji → **rc=0, 439 s**: 3× ZGODNY z runnerem, sha CLEAN `53dd7dfb…`,
+   **suite 181/0**, dist 8/8+8/8+9/9+10/10.
+
+To jest najmocniejszy dowód dnia: utrata całego stanu poza git+Dysk kosztuje
+10 minut i kończy się identycznymi bajtami. Receptura jest nie tylko dokumentem
+"jak zbudowano", ale realnym planem awaryjnym.
+
+## 26 IX ~08:05-08:11 UTC: Dysk czyszczony i przeładowany na zestaw minimalny (polecenie usera)
+
+User: "usun wszystkie pliki z dysku google i uploaduj ten system i vbmeta".
+
+1. **Kasacja (trwala, delete_file)**: folder `HyperOS4_P11Gen2-release` (z kitem
+   CLEAN 40 plikow) + 8 plikow korzenia: `system_ext.img` (donorski, 632 MB —
+   zabezpieczony w transfer-spool), `product.img` (6,4 GB — assety w transfer-spool),
+   `boot.img`/`vendor_boot.img` (target, analizy w docs/03-04; obrazy tylko na Dysku
+   — odtwarzalne z oficjalnego firmware Lenovo), `vendor_mystical.img` (665 MB),
+   `odm.img` (3,1 GB), `system.img` (937 MB), `vbmeta.img` (stary, 8 KB).
+   **Kosz nietkniety** (pliki SpinjitzuLegends usera + vbmeta — tam przeniesione
+   wczesniej). Weryfikacja: listing 0 plikow.
+2. **Upload (zestaw minimalny, 22 pliki w korzeniu)**: 16 czesci systemu po
+   60 000 000 B (z `dist/release/HyperOS4_P11Gen2`, wariant lekki, sha `4836dcd4…`)
+   + `vbmeta…img.b64` (4 096 B → dekoduje zloz, sha `9cf2e7e4…`) + zloz.sh (sam
+   weryfikuje sumy: OK/ZLE + exit 1) + zloz.bat + SHA256SUMS + CZESCI-MD5 + README
+   (co to, jak skleic, jak flashowac system+vbmeta, szanse).
+3. **Weryfikacja**: md5 serwera = lokalne **22/22 1:1** (metadata md5Checksum);
+   uprawnienia owner-only; zloz.sh przetestowany e2e PRZED uploadem (pozytyw:
+   SUMY ZGODNE rc=0; negatyw: przeklamany bajt w czesci 005 → ZLE + rc=1;
+   idempotentny; obrazy identyczne z wydaniem 2/2).
+4. Inwentarz: `diagnostics/drive-system-vbmeta.tsv`; stary `drive-clean-kit.tsv`
+   oznaczony HISTORYCZNY (ID niezywe, odbudowa kitu: receptura + build_clean_kit).

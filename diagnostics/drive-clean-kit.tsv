@@ -1,0 +1,34 @@
+# HISTORYCZNY: kit CLEAN na Google Drive, stan 2026-09-25 ~19:40 UTC.
+# 26 IX ~08:05 UTC wlasciciel kazal usunac WSZYSTKIE aktywne pliki z Dysku i wgrac
+# zestaw minimalny (system + vbmeta) - patrz drive-system-vbmeta.tsv. Kit ponzij
+# odbudujesz z repo (docs/08 receptura + tools/build_clean_kit.sh); ponizsze ID
+# juz NIE sa zywe (pliki trwale skasowane). Zestaw ponizej opisuje stan sprzed kasacji.
+# Kit CLEAN na Google Drive - stan 2026-09-25 ~19:40 UTC (po ukonczeniu uploadu)
+# Folder nadrzedny: HyperOS4_P11Gen2-release (1SocwHFQY4mxR1jnGCU7TYdZ1ctdoT1l6)
+# Folder kitu:     clean (1XHQnXDkzfwZTVjU53fwK8_AcEhVUFsZc) - 40 plikow, md5 zweryfikowane
+# Czesci: 60 000 000 B (.bin); sklejanie: zloz.sh / zloz.bat; sumy czesci: CZESCI-MD5.txt
+# vbmeta jedzie jako .b64 (dekoduje zloz.sh). Wszystkie md5 serwera Google = lokalne cięcia.
+# plik<TAB>id<TAB>bajty
+system_hyperos4_p11g2.img.part-000.bin	125Q1fJ7sjOaQvZu6GP70bjJShPuOCsed	60000000
+system_hyperos4_p11g2.img.part-015.bin	1AKDNX7J0Vi0geNCoxr429zsqqNzzdYrV	20039424
+system_ext_hyperos4_p11g2.img.part-010.bin	11TDw1XW-CXGdJdkhKb2FuD2DPCgBEB7t	2189824
+product_hyperos4_p11g2.img.part-001.bin	1TwT-kBywBehHLRAXvW7zr2K5M--2thzo	15198464
+flash-all.sh	1vFVbUby46viZWX0HUocNR1LXdPZfZXMw	8177
+SHA256SUMS.txt	1JNRXVDZSYqQBVEo8UXsJx34h1boHU7i0	856
+CZESCI-MD5.txt	1nwNvGno6EqIsSoj7YXHuqmy4KBc0g8xo	2316
+zloz.sh	1zmT8G4eyF2QcMws1DKxcaAid2ISI2AF5	2251
+zloz.bat	1FIMbxYjGRqfU4FuoiaoNhgc_81XSTGDl	1874
+README.md	1kdzQ_sCDRE2CJ7g0NMj0TnJcOdFEWjrz	4866
+vbmeta_hyperos4_p11g2.img.b64	1lebbCJyqz_8aP2wKLNnBxop4IIr6g-yQ	5536
+# (pozostale 29 czesci patrz listing folderu; komplet = 16+11+2 czesci + 12 plikow kitu)
+# Update 26 IX ~06:33 UTC (przeglad adwersarza: device-probe NEED_S lapanl system_ext):
+#   podmienione 4 pliki = device-probe.sh 6897 B (1jkx0Xu4j2Hoo6_aUO-FSvUKA1_F7Srx6),
+#   SHA256SUMS.txt (suma device-probe/README/manifest), release-manifest.tsv 754 B
+#   (1bJ2osRkKBdD6ODHnWPNAH3cmOcOjjIvi), README.md (kontrakt device-probe=6897).
+#   Wszystkie 4 zweryfikowane bajt-w-bajt po pobraniu (md5 1:1). Czesci .bin nietkniete.
+#   ~06:38 UTC: zloz.sh podmieniony na wersje auto-weryfikujaca sumy (2251 B, md5 1:1;
+#   test e2e: pozytywny 4x OK, negatywny przeklamana czesc -> ZLE + rc=1, idempotentny).
+#   UWAGA narzedziowa: update_file_content znieksztalca UTF-8 i zjada trailing newline -
+#   bajt-dokladne pliki wgrac przez upload_file z pliku (delete + upload).
+# Skasowano (trwale, 25 IX wieczor): 5 folderow prob z przerwanych uploadow + testowe
+# pliki z kosza. NIE tknieto: SpinjitzuLegends_* i starego vbmeta.img (wlasnosc usera).

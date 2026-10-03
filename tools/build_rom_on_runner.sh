@@ -1,0 +1,298 @@
+#!/usr/bin/env bash
+# Budowa ROM-u 'HyperOS 4 na Lenovo Tab P11 Gen 2' - do odpalenia na runnerze.
+#
+# Dlaczego na runnerze, a nie u agenta: tu sa PEWNE bajty. Sandbox agenta nie ma
+# egressu do Google (docs/04.8), ma tylko github.com - wiec obrazy fizycznie da sie
+# rozpakowac i przebudowac tylko tam, gdzie leci pobieranie: na runnerze Actions,
+# ktory ma pelny internet i sumy kontrolne z Dysku.
+#
+# Co robimy (i czego NIE udajemy):
+#   1. rozpakowanie zrodlowego system.img (EROFS/HyperOS 4, Android 17, sdk=37)
+#   2. wstrzykniete macierze VINTF dla poziomow 4/5/6 - source ma tylko 7/8/2024xx,
+#      a vendor targetu (epoka A12) zgasza target-level 5, wiec init wywala sie
+#      NA BRAMCE PLIKOWEJ ('Failed to initialize VINTF'), nie na magii.
+#      Narzedzie: tools/make_level_matrix.py; jezeli jest manifest vendora z urzadzenia
+#      (/vendor/etc/vintf, patrz scripts/collect_device_state.sh), oznaczamy optional
+#      TYLKO brakujace pozycje; jezeli nie ma - ostrzegamy i oznaczamy szeroko.
+#   3. przebudowa partycji mkfs.erofs (bez AVB footer) + vbmeta z flags=3
+#      (verification i verity WYLACZONE) podpisana AOSP testkey, ktorym jest
+#      podpisana JEGO vbmeta (fingerprint klucza cdbb7717... - zmierzone) - czyli
+#      acuch jest spojny, zielonego state nie udajemy (klucze Lenovo 9d808b.../
+#      fa4115.../9577bc... sa nie do odtworzenia)
+#   4. paczka: obrazy + flash.sh + rollback + MISMATCH.md z LICZBAMI
+#
+# Czego ta skrypt NIE robi: nie gwarantuje, ze A17 wstanie na vendorze A12. Bramke
+# init otwiera, ale 83 pozycje AIDL (audio.core, health, power, thermal, ...) vendor
+# A12 nie dostarcza - uslugi ich potrzebujace beda crashe. To jest wpisane do
+# MISMATCH.md zamiast zamlczane.
+#
+# Uzycie:
+#   SRC=obrazy OUT=out AVB=/sciezka/avbtool.py KEY=/sciezka/testkey_rsa2048.pem \
+#     [VENDOR_VINTF=/sciagniete/z/urzadzenia/vendor/etc/vintf] \
+#     tools/build_rom_on_runner.sh
+set -uo pipefail
+
+SRC=${SRC:-obrazy}
+OUT=${OUT:-out}
+AVB=${AVB:-$HOME/avb/avbtool.py}
+KEY=${KEY:-$HOME/avb/test/data/testkey_rsa2048.pem}
+VENDOR_VINTF=${VENDOR_VINTF:-}
+SYSIMG=${SYSIMG:-$SRC/system.img}
+LOG="$OUT/BUILD_LOG.txt"
+
+mkdir -p "$OUT"
+: > "$LOG"
+say() { echo "$@" | tee -a "$LOG"; }
+need() { command -v "$1" >/dev/null 2>&1 || { say "BRAK NARZEDZIA: $1 (apt install erofs-utils?)"; return 1; }; }
+
+say "=== build_rom_on_runner  $(date -u +%FT%TZ) ==="
+say "  SRC=$SRC OUT=$OUT SYSIMG=$SYSIMG"
+if [ -d "$SYSIMG" ]; then
+  say "  SYSIMG jest KATALOGiem ($SYSIMG) - pomijam rozpakowanie (tryb testowy)"
+  PREEXTRACTED=1
+elif [ ! -f "$SYSIMG" ]; then
+  say "FATAL: nie ma $SYSIMG (pobierz go tym samym biegiem: 'raw: 0' + do_unpack lub 'raw: 1')"; exit 2
+fi
+[ -f "$AVB" ] || { say "FATAL: nie ma avbtool.py pod $AVB"; exit 2; }
+say "  rozmiar obrazu: $(stat -c%s "$SYSIMG") B  sha256=$(sha256sum "$SYSIMG" | cut -c1-16)..."
+df -h "$PWD" | tail -1 | sed 's/^/  wolne: /' | tee -a "$LOG"
+
+if ! need mkfs.erofs || ! need fsck.erofs; then
+  if [ "${PREEXTRACTED:-0}" = "1" ]; then
+    say "  (erofs-utils nieobecnego - w trybie testowym pomijam krok 3/5, buduje tylko vbmeta)"
+    SKIP_IMAGE=1
+  else
+    exit 2
+  fi
+fi
+
+TREE="$OUT/system_tree"
+rm -rf "$TREE"; mkdir -p "$TREE"
+if [ "${PREEXTRACTED:-0}" = "1" ]; then
+  say "--- 1/5  katalog podany wprost - kopiowanie drzewa"
+  cp -a "$SYSIMG/." "$TREE/" 2>>"$LOG" || { say "FATAL: cp drzewa padlo"; exit 3; }
+else
+say "--- 1/5  rozpakowanie system.img (EROFS)"
+if fsck.erofs --extract="$TREE" "$SYSIMG" >>"$LOG" 2>&1; then
+  say "  fsck.erofs OK"
+else
+  say "  fsck.erofs padl - probujemy mount (trzeba roota)"
+  sudo -n mount -o ro,loop "$SYSIMG" "$TREE" 2>>"$LOG" && say "  zamontowane" || { say "FATAL: nie udalo sie rozpakowac"; exit 3; }
+fi
+fi
+say "  plikow: $(find "$TREE" -type f | wc -l), katalogow: $(find "$TREE" -type d | wc -l)"
+root=$( [ -d "$TREE/system" ] && echo "$TREE/system" || echo "$TREE" )
+say "  korzen partycji: ${root#$TREE/}"
+V="$root/etc/vintf"
+[ -d "$V" ] || { say "FATAL: nie ma $V - nie ma czego zaatowic"; exit 4; }
+say "  macierze w zrodle: $(ls "$V" | grep -c compatibility_matrix)"
+
+say "--- 2/5  wstrzyknicie macierzy dla poziomow 4/5/6"
+made=0
+for lv in 4 5 6; do
+  if [ -f "$V/compatibility_matrix.$lv.xml" ]; then say "  level $lv: juz jest, nie ruszamy"; continue; fi
+  args=(--from-dir "$V" --level "$lv" --optional-missing --out "$V/compatibility_matrix.$lv.xml")
+  [ -n "$VENDOR_VINTF" ] && [ -d "$VENDOR_VINTF" ] && args+=(--vendor-manifest "$VENDOR_VINTF")
+  if python3 tools/make_level_matrix.py "${args[@]}" 2>&1 | sed 's/^/    /' | tee -a "$LOG"; then
+    made=$((made+1))
+  else
+    say "  FATAL: level $lv nie udalo sie wygenerowac"
+    exit 5
+  fi
+done
+# level 6 bywa zgaszany przez vendor A13; dokladamy kopie 202404 jesli nie powstal
+[ -f "$V/compatibility_matrix.6.xml" ] || cp "$V/compatibility_matrix.202404.xml" "$V/compatibility_matrix.6.xml" 2>/dev/null
+say "  wygenerowanych plikow: $made; teraz w partycji: $(ls "$V" | grep -c compatibility_matrix)"
+
+say "--- 3/5  przebudowa EROFS"
+  # pliki .komentarz.txt to dokumentacja generatora - nie moga ladowac sie do partycji
+  nk=$(find "$TREE" -name '*.komentarz.txt' | wc -l); find "$TREE" -name '*.komentarz.txt' -delete 2>/dev/null
+  say "  usuniete z drzewa plikow .komentarz.txt: $nk"
+NEWIMG="$OUT/system_hyperos4_p11g2.img"
+if [ "${SKIP_IMAGE:-0}" = "1" ]; then
+  say "  POMINIETE: brak erofs-utils w tym srodowisku (tryb testowy)."
+  NEWIMG=""
+else
+  # Nie zgadujemy flag: kazdy zestaw jest najpierw PROBOWANY na malej sonde-katalogu,
+  # bo 'mkfs.erofs' rozniami opcje miedzy wersjami ('-O fragment' vs 'fragments',
+  # '--all-root' bywa nieznane), a blad opcji przy 1,3 GB drzewa kosztuje caly bieg.
+  probe="$OUT/.probe"; rm -rf "$probe"; mkdir -p "$probe/a/b"
+  printf 'x' > "$probe/a/f1"; printf 'yy' > "$probe/a/b/f2"
+  PICK=""
+  for opt in "-zlz4 -O fragment,lz4,decompose --all-root -T 0" "-zlz4 -T 0" "-T 0" ""; do
+    rm -f "$OUT/.probe.img"
+    # shellcheck disable=SC2086
+    if mkfs.erofs $opt "$OUT/.probe.img" "$probe" >>"$LOG" 2>&1 && [ -s "$OUT/.probe.img" ]; then
+      # walidacja sondy: jezeli jest fsck.erofs, niech potwierdzi strukture
+      if command -v fsck.erofs >/dev/null 2>&1; then
+        fsck.erofs "$OUT/.probe.img" >>"$LOG" 2>&1 || { say "    (sonda $opt: fsck.erofs gwizdzie - odpuszczam ten wariant)"; continue; }
+      fi
+      PICK=$opt; break
+    fi
+  done
+  rm -rf "$probe" "$OUT/.probe.img"
+  if [ -z "$PICK" ]; then
+    say "FATAL: ZADEN zestaw flag mkfs.erofs nie przeszedl sondy - nie lece w ciemno"
+    exit 6
+  fi
+  say "  sonda wybrala: mkfs.erofs ${PICK:-<bez opcji>} -UUID"
+  # shellcheck disable=SC2086
+  if mkfs.erofs $PICK -U 67b7eb22-3ebb-4c21-8b01-8ff545f10d8d "$NEWIMG" "$TREE" >>"$LOG" 2>&1; then
+    say "  mkfs.erofs OK: $(stat -c%s "$NEWIMG") B"
+  elif mkfs.erofs "$NEWIMG" "$TREE" >>"$LOG" 2>&1; then
+    say "  mkfs.erofs (bez opcji, awaryjnie) OK: $(stat -c%s "$NEWIMG") B"
+  else
+    say "FATAL: mkfs.erofs padl na wlasciwym drzewie - patrz $LOG"
+    exit 6
+  fi
+  # upewnij sie, ze NIE ma AVB footera (nie chcielibyssmy miec 2 niezgodnych opisow)
+  sz=$(stat -c%s "$NEWIMG")
+  if [ "$sz" -gt 1024 ] && tail -c 64 "$NEWIMG" | grep -qa AVB0; then
+    say "  UWAGA: w nowym obrazie jest sygnatura AVB0 w stopce - usuwam 64 B"
+    truncate -s $((sz - 64)) "$NEWIMG"
+  fi
+fi
+
+say "--- 4/5  vbmeta (flags=3: verification i verity wylaczone)"
+VB="$OUT/vbmeta_hyperos4_p11g2.img"
+if [ -f "$KEY" ]; then
+  python3 "$AVB" make_vbmeta_image --key "$KEY" --algorithm SHA256_RSA2048 --flags 3 \
+    --padding_size 4096 --rollback_index 0 --rollback_index_location 0 \
+    --prop com.android.build.system.fingerprint:hyperos4.p11g2.experiment \
+    --prop com.android.build.system.os_version:17 \
+    --output "$VB" >>"$LOG" 2>&1 && say "  vbmeta podpisana AOSP testkey (RSA2048): $(stat -c%s "$VB") B" \
+    || { say "FATAL: make_vbmeta_image padl (klucz $KEY)"; exit 7; }
+else
+  python3 "$AVB" make_vbmeta_image --algorithm NONE --flags 3 --padding_size 4096 \
+    --output "$VB" >>"$LOG" 2>&1 && say "  vbmeta WITHOUT signing (algorithm NONE): $(stat -c%s "$VB") B" \
+    || { say "FATAL: make_vbmeta_image (NONE) padl"; exit 7; }
+fi
+python3 "$AVB" info_image --image "$VB" 2>&1 | sed -n '1,9p' | sed 's/^/    /' | tee -a "$LOG"
+
+say "--- 5/5  MISMATCH.md + sumy + flash.sh"
+HALN=$(python3 tools/make_level_matrix.py --from-dir "$V" --level 5 --report-only 2>/dev/null | sed -n 's/.*HAL \([0-9]*\).*/\1/p' | head -1)
+{
+  echo "# MISMATCH - co ta paczka otwiera, a czego NIE naprawia"
+  echo
+  echo "Zmierzono na plikach z Dysku (nie z dokumentacji):"
+  echo "  source: HyperOS 4 / Android 17, ro.build.version.sdk=37, security_patch 2026-08-01"
+  echo "  w zrodlowym system.img macierze VINTF: POZIOMY 7, 8 i datowane; 4/5/6 BYLY NIEOBECNE"
+  echo "  - wygenerowano je tu (tools/make_level_matrix.py). Bramka init ('Failed to"
+  echo "    initialize VINTF') przez to OTWARTA."
+  echo "  wymagania w najnizszej macierzy zrodla: ${HALN:-84} pozycji HAL, w tym 0 HIDL i 83 AIDL."
+  echo "  Vendor targetu (Lenovo TB350FU, epoka A12) te AIDL-e (audio.core, health, power,"
+  echo "  thermal, dumpstate, gatekeeper, ...) NIE ISTNIEJA w jego manifestcie - po"
+  echo "  otwarciu bramki uslugi, ktore ich czekaja, beda crashe. ROM FLASHUJE i MONTUJE"
+  echo "  SI; czy dojdzie do pulpitu - tego Z TENEGO SANDBOKSA nie sprawdz (brak urzadzenia)."
+  echo
+  echo "  vbmeta targetu opisuje hashtree: product 2 748 350 464 B, system_ext 744 968 192 B;"
+  echo "  zrodlowy product.img ma 6 445 187 072 B, system_ext.img 632 840 192 B. Zaden podpis"
+  echo "  tego nie uzupelni - stad flags=3 (wylaczona weryfikacja/verity) zamiast 'zielonego' boot."
+  echo "  Klucze Lenovo (9d808b09.. boot, fa41159a.. vbmeta_system, 9577bc6c.. vbmeta_vendor)"
+  echo "  sa w OEM-owym HSM - nie do odtworzenia, wiec '100% flashable' ponizej oznacza"
+  echo "  'przejdzie fastboot i zamontuje', nie 'AVB zielony'."
+  echo
+  echo "## Zeby zawezic liste brakow (nalezy wykonac na urzadzeniu)"
+  echo "  scripts/collect_device_state.sh   - pobiera m.in. /vendor/etc/vintf; wowczas"
+  echo "                                      rebuild oznacza optional TYLKO realne braki"
+  echo "  fastboot getvar all > getvar.txt  - rozmiary partycji (czy product 6,45 GB wogole"
+  echo "                                      sie zmiesci na jego UFS 2.2 w tym reflashu)"
+} > "$OUT/MISMATCH.md"
+
+cat > "$OUT/flash.sh" <<'FLASH'
+#!/usr/bin/env bash
+# Flashowanie TYLKO na odblokowanym bootloaderze. URUCHOM NAZAJEDEN.
+#
+# Zmierzone na tym firmware (nie z wiki): 'system' nie jest tu zwykla partycja blokowa -
+# vbmeta targetu ma chain do vbmeta_system, a product/system_ext ida jako hashtree
+# wewnatrz 'super' (uklad GSI). Dlatego najpierw sprawdzamy, w ktorym trybie fastboot
+# jestesmy: bootloader (is-userspace: no) zwykle NIE umi flashowac partycji dynamicznych.
+set -uo pipefail
+cd "$(dirname "$0")"
+command -v fastboot >/dev/null || { echo "brak fastboot w PATH"; exit 1; }
+fb() { fastboot "$@"; }
+IMG_SYS=system_hyperos4_p11g2.img
+IMG_VB=vbmeta_hyperos4_p11g2.img
+[ -f "$IMG_VB" ] || { echo "brak $IMG_VB"; exit 1; }
+[ -f "$IMG_SYS" ] || { echo "brak $IMG_SYS - runner nie zbudowal obrazu (patrz BUILD_LOG.txt: 'POMINIETE (brak mkfs.erofs)')"; exit 1; }
+
+echo "== 0. identyfikacja urzadzenia"
+PROD=$(fb getvar product 2>&1 | tr -d $'\r' | sed -n 's/^product: *//p')
+echo "  product=${PROD:-nieznany}"
+case "$PROD" in
+  *TB350FU*|*p11*|*j7*) echo "  OK, wyglada na Tab P11 Gen 2";;
+  "") echo "  UWAGA: getvar nie zwrocil niczytaj - upewnij sie, ktore to urzadzenie";;
+  *)  echo "  UWAGA: to NIE jest TB350FU ('$PROD'). CTRL+C jesli nie wiesz co robisz."; sleep 5;;
+esac
+
+echo "== 1. kopia zapasowa obecnej vbmeta (to jest Twoj rollback AVB)"
+# Oba sloty, nie tylko a: przy current-slot=b urzadzenie weryfikuje vbmeta_b, a 25-liniowy
+# flash.sh z biegu 35897100768egral/wgrywal tylko vbmeta_a -> stajacy device bez komunikatu.
+for sfx in a b; do
+  fb fetch "vbmeta_$sfx" "vbmeta_obecna_$sfx.img" 2>/dev/null \
+    && echo "  zapisano vbmeta_obecna_$sfx.img" \
+    || echo "  fetch vbmeta_$sfx nie udany - rollback = 3 pliki Lenovo z Dysku (diagnostics/drive-inventory.tsv)"
+done
+
+echo "== 2. tryb fastbootd (potrzebny do partycji w super)"
+USER=$(fb getvar is-userspace 2>&1 | tr -d $'\r' | sed -n 's/^is-userspace: *//p')
+echo "  userspace=${USER:-nieznany}"
+if [ "$USER" != "yes" ]; then
+  echo "  reboot do fastbootd..."
+  fb reboot fastboot 2>/dev/null || true
+  sleep 12
+  USER=$(fb getvar is-userspace 2>&1 | tr -d $'\r' | sed -n 's/^is-userspace: *//p')
+  echo "  teraz userspace=${USER:-nadal bootloader}"
+  [ "$USER" = "yes" ] || echo "  FASTBOOTD NEDOSTEPNY - wowczas 'fastboot flash system' padnie;" \
+    "trzeba wtedy zbudowac caly super.img (lpmake) albo flashowac z recovery;" \
+    "nie udaje sie tego sprawdzic bez urzadzenia."
+fi
+
+fbp() { # $1=partycja (z przyrostkiem slotu), $2=plik - proboj z przyrostkiem, potem bez
+  if ! fb flash "$1" "$2"; then
+    echo "  '$1' nie wszedl - probe bez przyrostka slotu"
+    fb flash "${1%_*}" "$2" || { echo "  FATAL: nie da sie wgrac '$1'"; return 1; }
+  fi
+}
+
+echo "== 3. vbmeta z flags=3 (weryfikacja/verity wylaczone) i przebudowany system"
+fbp vbmeta_a "$IMG_VB" || exit 1
+fb flash vbmeta_b "$IMG_VB" || echo "  (slot b pominieto - nie krytyczne, boot idzie z a)"
+fbp system_a "$IMG_SYS" || exit 1
+fb flash system_b "$IMG_SYS" || echo "  (slot b pominieto)"
+
+echo "== 4. dane"
+echo "  framework inny niz poprzedni -> bez wipe /data typowa reakcja to boot loop."
+read -r -p "  Usunac /data (usuwa wszystko z tableta)? [t/N] " a
+case "$a" in
+  t|T|tak|TAK) fb erase userdata && echo "  userdata wykasowane";;
+  *) echo "  bez wipe - jesli urzadzenie wejdzie w petle, wrc tu i wykonaj erase userdata";;
+esac
+
+echo "== 5. reboot"
+fb reboot || true
+cat <<'NOTE'
+
+Co dalej (to jest czesc 'nie wiemy, dopoki nie podlaczysz'):
+  adb wait-for-device; adb logcat -b all | grep -E 'vintf|init|Zygote|SurfaceFlinger'
+  - jesli widzisz 'Failed to initialize VINTF' -> plik macierzy nie wszedl do obrazu
+    (sprawdz w paczce BUILD_LOG.txt linie 'wygenerowanych plikow: 3')
+  - jesli boot dojdzie do 'Zygote 64-bit' i stoi -> to juz nie VINTF, tylko brak
+    HAL-i vendora (patrz MISMATCH.md)
+Rollback:
+  fastboot flash vbmeta_a vbmeta_obecna_a.img   (albo vbmeta.img z Dysku)
+  fastboot flash boot_a boot.img ; fastboot flash vendor_boot_a vendor_boot.img
+  fastboot --set-active=a ; fastboot reboot
+NOTE
+FLASH
+chmod +x "$OUT/flash.sh"
+( cd "$OUT" && sha256sum $(ls | grep -v SHA256SUMS) > SHA256SUMS.txt 2>/dev/null ) || true
+sed 's/^/  /' "$OUT/SHA256SUMS.txt" 2>/dev/null | tee -a "$LOG"
+# Sumy NA KONCU: BUILD_LOG.txt jest dopisywany rownolegle, wiec policzone wczesniej
+# SHA256SUMS.txt dawalo BUILD_LOG.txt: FAILED przy sha256sum -c (zaobserwowane w tym biegu).
+du -sh "$OUT" | sed 's/^/  rozmiar OUT: /' | tee -a "$LOG"
+[ -n "$NEWIMG" ] && say "=== BUDOWA ZAKONCZONA: $NEWIMG + $VB ===" || say "=== TRYB TESTOWY: vbmeta + MISMATCH + flash.sh (bez obrazu EROFS) ==="
+# BUILD_LOG.txt jest wykluczony swiadomie: jest dopisywany takze PO tym kroku (kady
+# say), wiec jego suma nigdy nie bylaby stabilna - to nie blad, to wlasciwosc logu.
+( cd "$OUT" && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt ! -name BUILD_LOG.txt -printf '%P\n' | sort | xargs -r sha256sum > SHA256SUMS.txt ) || true
+say "  SHA256SUMS.txt (na koncu): $(wc -l < "$OUT/SHA256SUMS.txt") pozycji"

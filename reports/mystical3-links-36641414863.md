@@ -1,0 +1,47 @@
+### MysticalOS 3 (super.img TB350FU) links (run 36641414863)
+release: mysticalos-3-super
+transplant: 
+purge product/system_ext: 
+
+--- gofile (3 tary) ---
+(brak)
+--- manifest stream_lpunpack (baza) ---
+(brak)
+--- manifest super_patch ---
+(brak)
+--- sondy URL ---
+(brak)
+--- manifest ---
+(brak)
+--- geometria fabryczna ---
+== GEOMETRY ==
+  magic: 0x616c4467
+  struct_size: 52
+  metadata_max_size: 65536
+  metadata_slot_count: 3
+  logical_block_size: 4096
+== BLOCK DEVICES ==
+  super: size=9663676416 (9.664 GB) align=1048576 flags=0x0
+== GROUPS ==
+  default: max_size=0 (0.000 GB) flags=0x0
+  main_a: max_size=9661579264 (9.662 GB) flags=0x0
+  main_b: max_size=9661579264 (9.662 GB) flags=0x0
+== PARTITIONS ==
+  odm_dlkm_a: group=main_a attrs=0x1 extents=0
+  odm_dlkm_b: group=main_b attrs=0x1 extents=0
+  product_a: group=main_a attrs=0x1 extents=0
+  product_b: group=main_b attrs=0x1 extents=0
+  system_a: group=main_a attrs=0x1 extents=0
+  system_b: group=main_b attrs=0x1 extents=0
+  system_ext_a: group=main_a attrs=0x1 extents=0
+  system_ext_b: group=main_b attrs=0x1 extents=0
+  vendor_a: group=main_a attrs=0x1 extents=0
+  vendor_b: group=main_b attrs=0x1 extents=0
+  vendor_dlkm_a: group=main_a attrs=0x1 extents=0
+  vendor_dlkm_b: group=main_b attrs=0x1 extents=0
+--- metadane bazowego super ---
+(brak)
+--- geometria zbudowana ---
+(brak)
+--- purge GMS ---
+(brak)

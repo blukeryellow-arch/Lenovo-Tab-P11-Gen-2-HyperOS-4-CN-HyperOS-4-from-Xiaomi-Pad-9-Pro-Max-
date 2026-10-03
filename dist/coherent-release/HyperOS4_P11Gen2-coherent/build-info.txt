@@ -1,0 +1,9 @@
+# parametry budowy (notatka; weryfikuja je SHA256SUMS.txt, nie ten plik)
+wariant	coherent: donorski system + donorski system_ext + lekki product + vbmeta flags=3
+system	ten sam obraz co wydanie lekkie: 4836dcd4… (macierz poziomu 5, wariant miekki NA SZEROKO)
+system_ext	donor ORYGINAL (bez przebudowy): sha256 7340a836…, md5 Google f879747f… = TE SAME bajty co na Dysku
+system_ext_pochodzenie	Xiaomi Pad 9 Pro Max, HyperOS 4 (missi), A17 sdk 37, 1 909 wpisow; bieg drive-probe 36030150849 -> transfer-spool (raw, 7 czesci)
+product	ten sam obraz co wydanie lekkie: a961bec4… (etc/passwd,group + 63 fonty MiSans)
+vbmeta	ten sam plik co wydanie lekkie: 9cf2e7e4… (SHA256_RSA2048 testkey AOSP, Flags 3)
+uzasadnienie	docs/09-analiza-targetu.md: stockowy system_ext (LGSIU A14) wymieszany z systemem A17 = chaos klas; donorski usuwa te niespojnosc. Pozostaje luka vendor A12 (VNDK 31) <-> A17 — rozdzial 5 docs/09
+system_ext_bez_slotow	UWAGA: jezeli urzadzenie nie ma system_ext_a/b, flash jest jednokierunkowy (flash-all.sh wymaga I_ACCEPT_SYSTEM_EXT_ONEWAY=yes)

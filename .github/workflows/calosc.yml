@@ -1,0 +1,148 @@
+name: calosc
+# v2.1 (3 X 19:00): refresh trigger - rebuild CALOSC z iteracji 2 (miui-framework w super)
+# JEDEN ZIP ZE WSZYSTKIM: MysticalOS3-CALOSC.zip = super_mystical3.img
+# (sklejony i zweryfikowany) + 3x vbmeta_disable + boot_TB350FU + FLASH-M3.md
+# + SHA256SUMS + sprawdz.sh + simg2img.py + FLASH-ALL.bat/.sh (dwuklik = flash).
+#
+# Po co: user dostaje JEDEN plik do pobrania (artifact runu, limit 10 GB -
+# obejscie limitu 2 GiB na assety release), rozpakowuje i dwuklik FLASH-ALL.bat.
+# Zero recznego sklejania czesci, zero osobnych pobieran vbmeta/boot.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/calosc.yml', 'kit-mysticalos3/FLASH-ALL.bat', 'kit-mysticalos3/FLASH-ALL.sh']
+
+concurrency:
+  group: calosc
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  calosc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      WORK: /tmp/calosc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "1. Pobierz caly release mysticalos-3-super"
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK/kit"
+          df -h / | tail -1
+          gh release download mysticalos-3-super --clobber --dir "$WORK/rel"
+          echo "assetow: $(ls "$WORK/rel" | wc -l)"
+
+      - name: "2. Weryfikacja czesci + sklejenie super_mystical3.img"
+        run: |
+          set -euo pipefail
+          cd "$WORK/rel"
+          sha256sum -c SHA256SUMS.txt
+          cat super_mystical3.part.* > "$WORK/kit/super_mystical3.img"
+          SZ=$(stat -c%s "$WORK/kit/super_mystical3.img")
+          WANT=$(sed -n 's/^size_sparse=//p' super.manifest | head -1)
+          SHA=$(sha256sum "$WORK/kit/super_mystical3.img" | cut -d' ' -f1)
+          WANTSHA=$(sed -n 's/^sha256_sparse_zlozony=//p' super.manifest | head -1)
+          [ "$SZ" = "$WANT" ] || { echo "::error::rozmiar $SZ != $WANT"; exit 1; }
+          [ "$SHA" = "$WANTSHA" ] || { echo "::error::sha niezgodny"; exit 1; }
+          echo "super_mystical3.img OK: $SZ B (sha = manifest builda)"
+          df -h / | tail -1
+
+      - name: "3. Skompletuj kit (vbmeta + boot + flashery + docy)"
+        run: |
+          set -euo pipefail
+          cd "$WORK/rel"
+          cp vbmeta_disable.img vbmeta_system_disable.img vbmeta_vendor_disable.img "$WORK/kit/"
+          cp boot_TB350FU_*.img "$WORK/kit/" 2>/dev/null || echo "::warning::brak boot.img w release"
+          cp FLASH-M3.md SHA256SUMS.txt sprawdz.sh simg2img.py super.manifest "$WORK/kit/" 2>/dev/null || true
+          cp "$GITHUB_WORKSPACE/kit-mysticalos3/FLASH-ALL.bat" "$WORK/kit/"
+          cp "$GITHUB_WORKSPACE/kit-mysticalos3/FLASH-ALL.sh" "$WORK/kit/"
+          cat > "$WORK/kit/CZYTAJ-TO.txt" <<'EOF'
+          MYSTICALOS 3 - CALOSC (jeden folder, jedno pobranie)
+
+          JAK WGRAC (3 kroki):
+          1. Zainstaluj platform-tools (fastboot): developer.android.com/tools/releases/platform-tools
+             i wrzuc fastboot.exe do TEGO folderu,
+          2. Wylacz tablet -> trzymaj Vol- + Power -> ekran fastboot -> kabel USB,
+          3. DWUKLIK na FLASH-ALL.bat (Linux: bash FLASH-ALL.sh) i czekaj na GOTOWE.
+
+          W srodku masz wszystko: super_mystical3.img (zweryfikowany), 3x vbmeta_disable,
+          boot_TB350FU (awaryjny), FLASH-M3.md (instrukcja reczna), SHA256SUMS.txt.
+
+          Pierwszy boot: 10-15 min czarnego ekranu = NORMALNE.
+          Rollback do stock: fastboot --set-active=b
+          EOF
+          ls -la "$WORK/kit"
+          df -h / | tail -1
+
+      - name: "4. Zip bez kompresji (python zipfile STORED; zip CLI zniknal z runera)"
+        run: |
+          set -euo pipefail
+          python3 - "$WORK/kit" "$WORK/MysticalOS3-CALOSC.zip" <<'EOF'
+          import os, sys, zipfile, time
+          src, dst = sys.argv[1], sys.argv[2]
+          n = 0
+          with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
+              for root, _dirs, files in os.walk(src):
+                  for f in sorted(files):
+                      p = os.path.join(root, f)
+                      arc = os.path.relpath(p, src)
+                      z.write(p, arc)
+                      n += 1
+          print("plikow w zipie:", n, "| rozmiar:", os.path.getsize(dst), "B")
+          # weryfikacja spisu + rozmiarow w zipie
+          with zipfile.ZipFile(dst) as z:
+              bad = z.testzip()
+              assert bad is None, "uszkodzony wpis: %s" % bad
+              for i in z.infolist():
+                  assert i.file_size > 0, "pusty wpis: %s" % i.filename
+          print("zip weryfikowany OK (testzip)")
+          EOF
+          df -h / | tail -1
+
+      - name: "5. Artifact: JEDEN zip NA GITHUBIE (do pobrania ze strony runu)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: MysticalOS3-CALOSC
+          path: /tmp/calosc/kit/*
+          retention-days: 90
+          compression-level: 0
+
+      - name: "6. Publiczne mirrory zipa (bez logowania)"
+        run: |
+          set -uo pipefail
+          HOSTS="transferarch gofile bashupload tempsh" UP_MAX_TIME=7200 \
+            bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
+            "$WORK/MysticalOS3-CALOSC.zip" /tmp/links-calosc.md || true
+          cat /tmp/links-calosc.md
+
+      - name: "7. Evidence (reports/)"
+        if: always()
+        run: |
+          set -uo pipefail
+          cd "$GITHUB_WORKSPACE"
+          R="reports/calosc-${GITHUB_RUN_ID}.md"
+          {
+            echo "# calosc run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## zawartosc kitu"; echo '```'; ls -la "$WORK/kit"; echo '```'
+            echo "## mirrory"; echo '```'; cat /tmp/links-calosc.md 2>/dev/null; echo '```'
+            echo "## dysk"; echo '```'; df -h /; echo '```'
+          } > "$R"
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          git add "$R" || true
+          git commit -m "calosc: evidence run ${GITHUB_RUN_ID} (MysticalOS3-CALOSC.zip: jeden zip = img+vbmeta+boot+flashery)" \
+            || echo "nic do commitu"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done
