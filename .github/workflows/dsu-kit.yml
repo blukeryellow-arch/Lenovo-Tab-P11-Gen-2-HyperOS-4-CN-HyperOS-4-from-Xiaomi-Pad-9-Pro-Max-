@@ -24,6 +24,10 @@ name: dsu-kit
 #     zyczenia usera), debug.sf.disable_hwc=1 - WSZYSTKIE 5/5, wstrzykiete
 #     do build.prop ORAZ etc/prop.default (v1.0 mial 4/5 tylko build.prop).
 #     Zip: MysticalOS_V16_DSU_ForcedCPU.zip (nazwa wg spec usera).
+# v1.2 (5. polecenie, 4 X ~01:05 - "PURE GSI, stop containers"): standalone
+#     system.img bez zmian kontenerowych (layout DSU "1 of 2"), nazwa
+#     MysticalOS_V16_PureGSI_SoftRender.zip + jawny test NON-SPARSE
+#     (raw EROFS: offset 0 != 0xED26FF3A, offset 1024 = EROFS magic).
 #   Propsy SA TYLKO w podgladzie DSU - do obrazu docelowego (m3) NIE
 #   wchodza (persist.sys.composition.type=cpu to prop z epoki MTK; gdyby
 #   SF Lenova go czytal, zepsulby wydladnosci na PRAWDZIWYM flashu).
@@ -111,11 +115,12 @@ jobs:
           SZ=$(stat -c%s "$S")
           [ "$SZ" -gt 2000000000 ] || { echo "::error::system.img ${SZ}B < 2G?"; exit 1; }
           python3 - "$S" <<'EOF'
-          import os, sys
+          import os, struct, sys
           with open(sys.argv[1], "rb") as f:
-              f.seek(1024); m = f.read(4)
+              head = f.read(4); f.seek(1024); m = f.read(4)
+          assert struct.unpack("<I", head)[0] != 0xED26FF3A, "SPARSE magic?! (wymagany raw)"
           assert m == bytes.fromhex("e2e1f5e0"), "zly magic EROFS: %s" % m.hex()
-          print("system.img: EROFS OK, %d B" % os.path.getsize(sys.argv[1]))
+          print("system.img: EROFS OK, NON-SPARSE (raw), %d B" % os.path.getsize(sys.argv[1]))
           EOF
 
       - name: "3. Propsy forced-CPU (extract -> build.prop -> mkfs EROFS)"
@@ -201,12 +206,13 @@ jobs:
           cd "$WORK/out"
           cat > CZYTAJ-TO-DSU.txt <<'XEOF'
           ====================================================================
-          MysticalOS V16 DSU FORCED-CPU (software rendering) - BEZ FLASHOWANIA
+          MysticalOS V16 PureGSI SoftRender - standalone system.img (DSU)
           ====================================================================
-          PROPSY WLACZONE (5/5, w build.prop I etc/prop.default):
+          CZYSTY STANDALONE system.img (layout DSU "1 of 2"; ZERO kontenerow).
+          Niesparse (raw EROFS). Propsy 5/5 (build.prop + etc/prop.default):
             debug.sf.hw=0 | debug.egl.hw=0 | persist.sys.composition.type=cpu
             ro.hardware.egl=android (SwiftShader, CPU GL) | debug.sf.disable_hwc=1
-          CZEKAJ: UI bedzie dzialac WOLNIEJ niz zwykle - to cel tego testu
+          CZEKAJ: UI dziala WOLNIEJ niz zwykle - to cel tego testu
           (pelna kompozycja CPU, zero HWC). Wyjscie: Discard = wszystko znika.
 
           CO TO JEST:
@@ -257,7 +263,7 @@ jobs:
           XEOF
           python3 - <<'EOF'
           import os, zipfile
-          dst = "MysticalOS_V16_DSU_ForcedCPU.zip"
+          dst = "MysticalOS_V16_PureGSI_SoftRender.zip"
           with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
               z.write("system.img")
               z.write("CZYTAJ-TO-DSU.txt")
@@ -274,9 +280,9 @@ jobs:
       - name: "6. Artifact (zip + README do pobrania ze strony runu)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS_V16_DSU_ForcedCPU
+          name: MysticalOS_V16_PureGSI_SoftRender
           path: |
-            /tmp/dsu/out/MysticalOS_V16_DSU_ForcedCPU.zip
+            /tmp/dsu/out/MysticalOS_V16_PureGSI_SoftRender.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -285,7 +291,7 @@ jobs:
           set -uo pipefail
           HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
             bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
-            "$WORK/out/MysticalOS_V16_DSU_ForcedCPU.zip" \
+            "$WORK/out/MysticalOS_V16_PureGSI_SoftRender.zip" \
             "$WORK/out/dsu-links.md" || true
           cat "$WORK/out/dsu-links.md" || true
 
