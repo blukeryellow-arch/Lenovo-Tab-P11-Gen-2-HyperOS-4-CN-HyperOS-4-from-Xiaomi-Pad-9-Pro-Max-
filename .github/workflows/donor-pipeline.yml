@@ -589,37 +589,40 @@ jobs:
           sudo mount -t erofs -o ro,loop "$SEIMG" "$MNT/se" 2>/dev/null \
             || { echo "::error::montaz system_ext.img padl"; exit 1; }
           # ---- 1) deklaracje + wskazane jary (system_ext pierwszy = priorytet HyperOS) ----
+          # v1.5.1 (receipt 37126543575): warunek TYLKO na zawartosc <library> -
+          # basename-match lapy tez pliki bez <library> (np. allowlisty shareduid),
+          # a read w potoku ubijal krok bez komunikatu. while na process
+          # substitution (bez subshell-pipe).
           mkdir -p "$KEEP/framework" "$KEEP/permissions"
           for BASE in "$MNT/se" "$MNT/sys"; do
             PDIR="$BASE/etc/permissions"
             [ -d "$PDIR" ] || continue
             for XML in "$PDIR"/*.xml; do
               [ -f "$XML" ] || [ -L "$XML" ] || continue
-              if grep -qiE '<library[^>]*(name|file)="[^"]*miui' "$XML" 2>/dev/null \
-                 || basename "$XML" | grep -qi miui; then
-                { cp -aL "$XML" "$KEEP/permissions/" 2>/dev/null \
-                  || sudo cp -aL "$XML" "$KEEP/permissions/"; } || true
-                echo "  deklaracja: $(basename "$XML") [z ${BASE##*/}]"
-                grep -oE 'file="[^"]+"' "$XML" 2>/dev/null | sed 's/file="//;s/"$//' | while read -r F; do
-                  case "$F" in
-                    /system/framework/*)     SRC="$MNT/sys/${F#/system/}" ;;
-                    /system_ext/framework/*) SRC="$MNT/se/${F#/system_ext/}" ;;
-                    *) continue ;;
-                  esac
-                  if [ -f "$SRC" ]; then
-                    SZX=$(stat -c%s "$SRC" 2>/dev/null || echo 999999999)
-                    if [ "$SZX" -le 157286400 ]; then
-                      { cp -aL "$SRC" "$KEEP/framework/" 2>/dev/null \
-                        || sudo cp -aL "$SRC" "$KEEP/framework/"; } || true
-                      echo "  lib: $(basename "$F") ($SZX B) [z ${BASE##*/}]"
-                    else
-                      echo "  pomijam lib (${SZX}B > 150M): $F"
-                    fi
+              grep -q '<library' "$XML" 2>/dev/null || continue
+              grep -qiE '<library[^>]*(name|file)="[^"]*miui' "$XML" 2>/dev/null || continue
+              { cp -aL "$XML" "$KEEP/permissions/" 2>/dev/null \
+                || sudo cp -aL "$XML" "$KEEP/permissions/"; } || true
+              echo "  deklaracja: $(basename "$XML") [z ${BASE##*/}]"
+              while IFS= read -r F; do
+                case "$F" in
+                  /system/framework/*)     SRC="$MNT/sys/${F#/system/}" ;;
+                  /system_ext/framework/*) SRC="$MNT/se/${F#/system_ext/}" ;;
+                  *) continue ;;
+                esac
+                if [ -f "$SRC" ]; then
+                  SZX=$(stat -c%s "$SRC" 2>/dev/null || echo 999999999)
+                  if [ "$SZX" -le 157286400 ]; then
+                    { cp -aL "$SRC" "$KEEP/framework/" 2>/dev/null \
+                      || sudo cp -aL "$SRC" "$KEEP/framework/"; } || true
+                    echo "  lib: $(basename "$F") ($SZX B) [z ${BASE##*/}]"
                   else
-                    echo "  UWAGA: $F wskazany w deklaracji, nie ma go w system/system_ext"
+                    echo "  pomijam lib (${SZX}B > 150M): $F"
                   fi
-                done
-              fi
+                else
+                  echo "  UWAGA: $F wskazany w deklaracji, nie ma go w system/system_ext"
+                fi
+              done < <(grep -oE 'file="[^"]+"' "$XML" 2>/dev/null | sed 's/file="//;s/"$//')
             done
           done
           # ---- 2) safety net: wszystkie miui*.jar z obu /framework ----
