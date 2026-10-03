@@ -511,27 +511,23 @@ jobs:
           df -h /
           echo "== harvest: $(find "$KEEP/app" -name '*.apk' | wc -l) apk, $(du -sm "$KEEP" | cut -f1) MB =="
 
-      - name: "5.5. System donora: miui-framework + deklaracje bibliotek (CDN-R | Drive)"
-        # ITERACJA 2 (wymog usera: "nie przepisuj vendora - podpasuj apki pod
-        # vendor Lenovo, np. inne biblioteki"): apki MIUI z product donora
-        # odwoluja sie w dex do klas miui.* oraz w AndroidManifest do
-        # uses-library "miui*". Te klasy/deklaracje siedza w SYSTEM.img donora
-        # (/system/framework/miui*.jar + /system/etc/permissions/*.xml z
-        # <library name="..." file="..."/>). Bez nich PackageManager wylacza
-        # apke ("Missing shared library") albo pada ClassNotFound.
-        # Vendor Lenovo zostaje NIETKNIETY - dokladamy wylacznie warstwe
-        # userland (framework jars + deklaracje), ladowane tylko przez apki,
-        # ktore ich uzyzywaja (Lenovo apps nie deklaruja uses-library miui*).
+      - name: "5.5. System+system_ext donora: miui-framework + deklaracje (CDN-R | Drive)"
+        # v1.5 (receipt 37124760440 + 37123502013): (a) harvest rozszerzony na
+        # SYSTEM_EXT - w system.img HyperOS 4 yingtian sa tylko vdexy +
+        # MiuiBooster.jar; miui-framework.jar (wskazywany w deklaracjach
+        # <library file="/system/framework/...">) realnie siedzi w
+        # system_ext/framework. (b) set -x + PS4=L$LINENO - log 37124760440
+        # urywal sie bez komunikatu bledu, trace da linie padniecia.
+        # (c) cp -aL (dereference) - wpisy w EROFS moga byc symlinkami,
+        # cp -a zrobiloby martwe linki w harvestcie.
         run: |
           set -uo pipefail
+          export PS4='+ L$LINENO: '
           exec > >(tee "$WORK/framework.log") 2>&1
-          SYSIMG="$WORK/system.img"
+          set -x
+          SYSIMG="$WORK/system.img"; SEIMG="$WORK/system_ext.img"
           MNT="$WORK/smnt"; EXT="$WORK/sext"; KEEP="$WORK/keep"
-          # ---- zrodla: CDN-R recovery zip (proven, receipt 37037434755) -> Drive OTA ----
-          # v1.4.1 FIX (receipt 37114050267: 2,5h w ekstrakcji = najpewniej wolny
-          # 1. mirror z HTML x 2 proby bez limitu): sonduj 10MB kazdy mirror,
-          # sortuj wg speed_download (wzorzec cdn_mirrors z kroku 3) + twardy
-          # `timeout 2700` na probe (45 min) - wisiowar uciete, nastepny mirror.
+          # ---- zrodla: sonda 10MB + sort wg szybkosci (wzorzec kroku 3) ----
           ROM_PAGE="https://xmfirmwareupdater.com/hyperos/yingtian/stable/OS4.0.11.0.XBMCNXM/"
           ROM_ZIP="yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip"
           RAW=""
@@ -545,125 +541,111 @@ jobs:
               echo "SONDA CDN $CC $CU"
               [ "$CC" = "200" ] && RAW="$RAW $CU"
             done
-          else
-            echo "CDN-R mirrory z HTML:"
-            printf '%s\n' $RAW
           fi
           [ -n "$RAW" ] || { echo "::error::brak mirrorow CDN-R ($ROM_ZIP)"; exit 1; }
-          # ---- sort wg szybkosci (sonda 10 MB, jak krok 3) ----
           for U in $RAW; do
             SPD=$(curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 "$U" 2>/dev/null || echo 0)
-            echo "CDN speed ${SPD%.*} B/s: $U"
             printf '%012.0f %s\n' "${SPD:-0}" "$U" 2>/dev/null || echo "000000000000 $U"
           done | sort -rn | cut -d' ' -f2- > /tmp/mirror-speed.txt || true
-          SORTED=$(grep -E '^https?://' /tmp/mirror-speed.txt 2>/dev/null || true)
-          [ -n "$SORTED" ] || SORTED="$RAW"
-          echo "== mirrory wg szybkosci =="; printf '%s\n' $SORTED
-          SOURCES="$SORTED"
-          if [ -n "${OTA_PICK:-}" ]; then
-            echo "fallback: Drive OTA (OTA_PICK z kroku 2): $OTA_PICK"
-            SOURCES="$SOURCES $OTA_PICK"
-          fi
-          # ---- ekstrakcja: 1 proba na mirror z timeoutem 45 min ----
-          SOK=0
-          for U in $SOURCES; do
-            AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
-            echo "== ekstrakcja system.img z $U (dysk ${AV}G, timeout 45 min) =="
-            [ "${AV:-0}" -ge 7 ] || { echo "::error::dysk ${AV}G < 7G na system.img"; exit 1; }
-            rm -f "$SYSIMG"
-            if timeout 2700 python3 tools/payload_extract.py \
-              --zip-url "$U" --entry payload.bin --partition system \
-              --out "$SYSIMG" --jobs 12 --chunk 16777216 --prefetch-ops 3 \
-              --erofs-check 2>&1 | tee "$WORK/system-extract.log"; then
-              SOK=1; break
-            fi
-            echo "::warning::proba na $U nie wyszla (timeout 45 min / blad) - nastepny mirror"
-          done
-          [ "$SOK" = 1 ] || { echo "::error::zaden mirror (CDN-R posortowane + Drive) nie oddal system.img w limicie; patrz system-extract.log"; exit 1; }
-          SSZ=$(stat -c%s "$SYSIMG")
-          # RECEIPT 37123502013: system HyperOS yingtian = sam rdzen ~894 MB
-          # (warstwa MIUI siedzi w product/odm/mi_ext!) - bramka "duzy system"
-          # z v1.4 (pisana pod system Lenovo 3,4G) odrzucila POPRAWNY plik.
-          # Walidacje przejmuja: magic EROFS + istnienie /framework (nizej).
-          [ "$SSZ" -gt 400000000 ] || { echo "::error::system.img ${SSZ}B < 400M?"; exit 1; }
-          python3 - "$SYSIMG" <<'MEOF'
+          SOURCES=$(grep -E '^https?://' /tmp/mirror-speed.txt 2>/dev/null || true)
+          [ -n "$SOURCES" ] || SOURCES="$RAW"
+          echo "== mirrory wg szybkosci =="; printf '%s\n' $SOURCES
+          if [ -n "${OTA_PICK:-}" ]; then SOURCES="$SOURCES $OTA_PICK"; fi
+          ex_part() { # $1=partycja $2=out.img
+            for U in $SOURCES; do
+              echo "== ekstrakcja $1 z $U (timeout 45 min) =="
+              rm -f "$2"
+              if timeout 2700 python3 tools/payload_extract.py \
+                --zip-url "$U" --entry payload.bin --partition "$1" \
+                --out "$2" --jobs 12 --chunk 16777216 --prefetch-ops 3 \
+                --erofs-check 2>&1 | tee "$WORK/extract-$1.log"; then
+                return 0
+              fi
+              echo "::warning::$1: proba na $U nie wyszla - nastepny mirror"
+            done
+            return 1
+          }
+          AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+          [ "${AV:-0}" -ge 6 ] || { echo "::error::dysk ${AV}G < 6G"; exit 1; }
+          ex_part system "$SYSIMG"    || { echo "::error::system.img: zaden mirror nie oddal"; exit 1; }
+          ex_part system_ext "$SEIMG" || { echo "::error::system_ext.img: zaden mirror nie oddal"; exit 1; }
+          set +x
+          for IMG in "$SYSIMG" "$SEIMG"; do
+            SZ=$(stat -c%s "$IMG")
+            [ "$SZ" -gt 300000000 ] || { echo "::error::$IMG ${SZ}B < 300M?"; exit 1; }
+            python3 - "$IMG" <<'MEOF'
           import sys
           with open(sys.argv[1], "rb") as f:
               f.seek(1024); m = f.read(4)
           assert m == bytes.fromhex("e2e1f5e0"), "zly magic EROFS: %s" % m.hex()
-          print("system.img: magic EROFS OK")
           MEOF
-          echo "system.img: $SSZ B ($(du -sm "$SYSIMG" | cut -f1) MB)"
-          # ---- montaz (proven: loop-mount erofs z product run 9) | fsck extract ----
-          rm -rf "$MNT" "$EXT"; mkdir -p "$MNT"
-          P=""
-          if sudo mount -t erofs -o ro,loop "$SYSIMG" "$MNT" 2>/dev/null; then
-            P="$MNT"
-            echo "montaz erofs OK"
-          else
-            EST=$(( SSZ / 1000000000 * 2 + 1 ))
-            AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
-            echo "montaz NIE wyszedl; dysk ${AV}G, szac. drzewo ~${EST}G"
-            if [ "${AV:-0}" -ge "$(( EST + 1 ))" ]; then
-              kit-mysticalos3/bin/fsck.erofs --extract="$EXT" "$SYSIMG" || true
-              P="$EXT"
-              [ -d "$EXT" ] || { echo "::error::fsck extract nie dal drzewa"; exit 1; }
-              echo "fsck extract OK"
-            else
-              echo "::error::za malo dysku na ekstrakcje system (${AV}G < ${EST}G)"
-              exit 1
-            fi
-          fi
-          # korzen system.img moze byc bezposrednio (framework/) albo w podkatalogu system/
-          if [ ! -d "$P/framework" ] && [ -d "$P/system/framework" ]; then P="$P/system"; fi
-          [ -d "$P/framework" ] || { echo "::error::system.img donora bez /framework"; exit 1; }
-          echo "== framework donora (miui*): =="; ls "$P/framework" 2>/dev/null | grep -i miui || echo "(brak w ls?)"
-          # ---- 1) deklaracje bibliotek miui* + pliki, na ktore wskazuja ----
-          mkdir -p "$KEEP/framework" "$KEEP/permissions"
-          for XML in "$P"/etc/permissions/*.xml; do
-            [ -f "$XML" ] || continue
-            if grep -qiE '<library[^>]*(name|file)="[^"]*miui' "$XML" \
-               || basename "$XML" | grep -qi miui; then
-              { cp -a "$XML" "$KEEP/permissions/" 2>/dev/null \
-                || sudo cp -a "$XML" "$KEEP/permissions/"; } || true
-              echo "  deklaracja: $(basename "$XML")"
-              grep -oE 'file="[^"]+"' "$XML" 2>/dev/null | sed 's/file="//;s/"$//' | while read -r F; do
-                case "$F" in
-                  /system/*) SRC="$P/${F#/system/}" ;;
-                  *) continue ;;
-                esac
-                if [ -f "$SRC" ]; then
-                  SZX=$(stat -c%s "$SRC" 2>/dev/null || echo 999999999)
-                  if [ "$SZX" -le 157286400 ]; then
-                    { cp -an "$SRC" "$KEEP/framework/" 2>/dev/null \
-                      || sudo cp -an "$SRC" "$KEEP/framework/"; } || true
-                    echo "  lib: $(basename "$F") ($SZX B)"
-                  else
-                    echo "  pomijam lib (rozmiar ${SZX}B > 150M): $F"
-                  fi
-                else
-                  echo "  UWAGA: $F wskazany w deklaracji, a nie ma go w system.img"
-                fi
-              done
-            fi
+            echo "$IMG: EROFS OK ($SZ B)"
           done
-          # ---- 2) safety net: wszystkie miui*.jar z framework (dedup: cp -n) ----
-          { find "$P/framework" -maxdepth 1 -iname 'miui*.jar' -size -150M \
-              -exec cp -an {} "$KEEP/framework/" \; 2>/dev/null \
-            || sudo find "$P/framework" -maxdepth 1 -iname 'miui*.jar' -size -150M \
-              -exec cp -an {} "$KEEP/framework/" \; ; } || true
-          sudo umount "$MNT" 2>/dev/null || true
-          rm -rf "$EXT" "$SYSIMG"
+          set -x
+          # ---- montaz obu (ro) ----
+          rm -rf "$MNT" "$EXT"; mkdir -p "$MNT/sys" "$MNT/se"
+          sudo mount -t erofs -o ro,loop "$SYSIMG" "$MNT/sys" 2>/dev/null \
+            || { echo "::error::montaz system.img padl"; exit 1; }
+          sudo mount -t erofs -o ro,loop "$SEIMG" "$MNT/se" 2>/dev/null \
+            || { echo "::error::montaz system_ext.img padl"; exit 1; }
+          # ---- 1) deklaracje + wskazane jary (system_ext pierwszy = priorytet HyperOS) ----
+          mkdir -p "$KEEP/framework" "$KEEP/permissions"
+          for BASE in "$MNT/se" "$MNT/sys"; do
+            PDIR="$BASE/etc/permissions"
+            [ -d "$PDIR" ] || continue
+            for XML in "$PDIR"/*.xml; do
+              [ -f "$XML" ] || [ -L "$XML" ] || continue
+              if grep -qiE '<library[^>]*(name|file)="[^"]*miui' "$XML" 2>/dev/null \
+                 || basename "$XML" | grep -qi miui; then
+                { cp -aL "$XML" "$KEEP/permissions/" 2>/dev/null \
+                  || sudo cp -aL "$XML" "$KEEP/permissions/"; } || true
+                echo "  deklaracja: $(basename "$XML") [z ${BASE##*/}]"
+                grep -oE 'file="[^"]+"' "$XML" 2>/dev/null | sed 's/file="//;s/"$//' | while read -r F; do
+                  case "$F" in
+                    /system/framework/*)     SRC="$MNT/sys/${F#/system/}" ;;
+                    /system_ext/framework/*) SRC="$MNT/se/${F#/system_ext/}" ;;
+                    *) continue ;;
+                  esac
+                  if [ -f "$SRC" ]; then
+                    SZX=$(stat -c%s "$SRC" 2>/dev/null || echo 999999999)
+                    if [ "$SZX" -le 157286400 ]; then
+                      { cp -aL "$SRC" "$KEEP/framework/" 2>/dev/null \
+                        || sudo cp -aL "$SRC" "$KEEP/framework/"; } || true
+                      echo "  lib: $(basename "$F") ($SZX B) [z ${BASE##*/}]"
+                    else
+                      echo "  pomijam lib (${SZX}B > 150M): $F"
+                    fi
+                  else
+                    echo "  UWAGA: $F wskazany w deklaracji, nie ma go w system/system_ext"
+                  fi
+                done
+              fi
+            done
+          done
+          # ---- 2) safety net: wszystkie miui*.jar z obu /framework ----
+          for FDIR in "$MNT/se/framework" "$MNT/sys/framework"; do
+            [ -d "$FDIR" ] || continue
+            { find "$FDIR" -maxdepth 1 -iname 'miui*.jar' -size -150M \
+                -exec cp -aLn {} "$KEEP/framework/" \; 2>/dev/null \
+              || sudo find "$FDIR" -maxdepth 1 -iname 'miui*.jar' -size -150M \
+                -exec cp -aLn {} "$KEEP/framework/" \; ; } || true
+          done
+          sudo umount "$MNT/sys" 2>/dev/null || true
+          sudo umount "$MNT/se" 2>/dev/null || true
+          rm -rf "$EXT" "$SYSIMG" "$SEIMG"
+          set +x
           df -h /
-          # ---- bramki: harvest bez frameworku = NIE publikujemy (chain integrity) ----
           NJ=$(find "$KEEP/framework" -name '*.jar' 2>/dev/null | wc -l)
           NP=$(find "$KEEP/permissions" -name '*.xml' 2>/dev/null | wc -l)
           FWM=$(du -sm "$KEEP/framework" 2>/dev/null | cut -f1)
           echo "== framework harvest: $NJ jar, $NP deklaracji, ${FWM} MB =="
           ls -la "$KEEP/framework" "$KEEP/permissions" 2>/dev/null
-          [ "$NJ" -ge 1 ] || { echo "::error::0 miui jar w system.img donora - nie publikujemy harvestu bez frameworku"; exit 1; }
-          [ "$NP" -ge 1 ] || { echo "::error::0 deklaracji bibliotek miui w system.img donora"; exit 1; }
-          [ "${FWM:-0}" -le 400 ] || { echo "::error::framework harvest ${FWM}MB > 400M (cos nie tak)"; exit 1; }
+          if ! ls "$KEEP/framework" 2>/dev/null | grep -qi framework; then
+            echo "::warning::brak *framework*.jar w harvest - apki MIUI moga nie dostac klas miui.*"
+          fi
+          [ "$NJ" -ge 1 ] || { echo "::error::0 miui jar - nie publikujemy harvestu bez frameworku"; exit 1; }
+          [ "$NP" -ge 1 ] || { echo "::error::0 deklaracji bibliotek miui"; exit 1; }
+          [ "${FWM:-0}" -le 400 ] || { echo "::error::framework harvest ${FWM}MB > 400M"; exit 1; }
           echo "FRAMEWORK_OK=1" >> "$GITHUB_ENV"
 
       - name: "6. Pakowanie donor-harvest + donor-product (split + manifesty)"
@@ -789,8 +771,9 @@ jobs:
             echo "## ekstrakcja (tail 100)"; echo '```'; tail -100 "$WORK/extract.log" 2>/dev/null || true; echo '```'
             echo "## release (krok 7, tail 120)"; echo '```'; tail -120 "$WORK/release.log" 2>/dev/null || true; echo '```'
             echo "## harvest (tail 120)"; echo '```'; tail -120 "$WORK/harvest.log" 2>/dev/null || true; echo '```'
-            echo "## framework (krok 5.5, tail 200)"; echo '```'; tail -200 "$WORK/framework.log" 2>/dev/null || true; echo '```'
-            echo "## system-extract (tail 60)"; echo '```'; tail -60 "$WORK/system-extract.log" 2>/dev/null || true; echo '```'
+            echo "## framework-podsumowanie (bez set -x trace)"; echo '```'; grep -aE "deklaracja:|lib:|UWAGA:|pomijam|SONDA|mirrory wg|ekstrakcja .* z |EROFS OK|framework harvest|::error|::warning|jars?|jar," "$WORK/framework.log" 2>/dev/null | grep -av "^+ L" | tail -120 || true; echo '```'
+            echo "## framework (krok 5.5, tail 500 z trace L\$LINENO)"; echo '```'; tail -500 "$WORK/framework.log" 2>/dev/null || true; echo '```'
+            echo "## system-extract (tail 60)"; echo '```'; tail -60 "$WORK/extract-system.log" 2>/dev/null || true; tail -60 "$WORK/extract-system_ext.log" 2>/dev/null || true; echo '```'
             echo "## manifesty"; echo '```'; cat "$WORK/donor-harvest.manifest" 2>/dev/null || true; cat "$WORK/donor-product.manifest" 2>/dev/null || true; echo '```'
             echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
           } > "$R"
