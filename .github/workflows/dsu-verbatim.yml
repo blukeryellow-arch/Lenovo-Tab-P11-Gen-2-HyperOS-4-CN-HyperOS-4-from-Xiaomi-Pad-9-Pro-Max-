@@ -1,0 +1,259 @@
+name: dsu-verbatim
+# v1.0 - VERBATIM wykonanie spec usera (3. identyczne polecenie, 3 X ~23:45):
+# "super z full multi-partition geometry layout jako system.img w zipie
+# MysticalOS_V16_DSU_ForcedCPU.zip" + propsy 5/5 (debug.sf.hw=0,
+# debug.egl.hw=0, persist.sys.composition.type=cpu, ro.hardware.egl=android,
+# debug.sf.disable_hwc=1) w system/build.prop ORAZ system/etc/prop.default.
+#
+# UCZCIWIE (stanowisko agenta, utrzymane): gsid/DSU wpisuje bajty obrazu do
+# JEDNEJ partycji system goscia (dd, nie parser) - kontener LP (super) prawie
+# na pewno NIE zamontuje sie jako system i gosc nie wstanie. Budowane na
+# wyrazne 3-krotne zyczenie usera; ryzyko = zero dla sprzetu (DSU nie rusza
+# slotow A/B; po crashach goscia gsid auto-discard -> powrot do hosta).
+#
+# DZIALAJACY wariant (prawdziwy system.img z TYMI SAMYMI propsami 5/5):
+# artifact MysticalOS_V16_DSU_ForcedCPU z runu 37140614875 (zywy).
+#
+# Pipeline: release parts (6,3G) -> super (sha pin) -> stream_lpunpack ALL
+# -> system: extract + propsy 5/5 (oba pliki) + mkfs EROFS z kontekstami
+# -> lpmake -S (geometria fabryczna m3, slot A) -> super_forced.img
+# -> mv -> system.img (VERBATIM nazwa wg spec) -> zip STORED -> artifact.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/dsu-verbatim.yml']
+
+concurrency:
+  group: dsu-verbatim
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  verbatim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      WORK: /tmp/dsuverb
+      KDIR: ${{ github.workspace }}/kit-mysticalos3
+      SUPER_SIZE: "9663676416"
+      MAIN_GROUP_SIZE: "9661579264"
+      IMG_SHA256: 1d5f480922e5db47455915c822705ab749025f0004c776203b9d21ee1985b16e
+      IMG_SIZE: "6313495592"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "0. Zaleznosci + dysk"
+        run: |
+          set -e
+          command -v python3 >/dev/null
+          for B in mkfs.erofs fsck.erofs lpmake; do
+            [ -x "$KDIR/bin/$B" ] || { echo "::error::brak $KDIR/bin/$B"; exit 1; }
+          done
+          df -h /
+          AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+          [ "$AV" -ge 18 ] || { echo "::error::dysk ${AV}G < 18G (parts+super 12,6G + partycje 8G z usuwaniem)"; exit 1; }
+          mkdir -p "$WORK/parts" "$WORK/img" "$WORK/out" reports
+
+      - name: "1. Czesci super z release mysticalos-3-super (retry)"
+        run: |
+          set -euo pipefail
+          OK=0
+          for A in 1 2 3; do
+            if gh release download mysticalos-3-super --clobber \
+                 -p 'super_mystical3.part.*' --dir "$WORK/parts"; then OK=1; break; fi
+            echo "::warning::download super: proba $A/3 - pauza 30s"; sleep 30
+          done
+          [ "$OK" = 1 ] || { echo "::error::nie pobraly sie czesci super"; exit 1; }
+          N=$(ls "$WORK/parts"/super_mystical3.part.* | wc -l)
+          echo "czesci: $N"; df -h /
+          [ "$N" -ge 30 ] || { echo "::error::czesci $N < 30"; exit 1; }
+
+      - name: "2. Sklejenie super + weryfikacja (sha256 pin)"
+        run: |
+          set -euo pipefail
+          cat "$WORK/parts"/super_mystical3.part.* > "$WORK/super.img"
+          rm -rf "$WORK/parts"
+          SZ=$(stat -c%s "$WORK/super.img")
+          [ "$SZ" = "$IMG_SIZE" ] || { echo "::error::super.img $SZ != pin $IMG_SIZE"; exit 1; }
+          SHA=$(sha256sum "$WORK/super.img" | cut -d' ' -f1)
+          echo "sha256: $SHA (pin $IMG_SHA256)"
+          [ "$SHA" = "$IMG_SHA256" ] || { echo "::error::sha256 niezgodne"; exit 1; }
+          df -h /
+
+      - name: "3. Stream: super -> wszystkie partycje (simg2img | lpunpack)"
+        run: |
+          set -euo pipefail
+          python3 tools/simg2img_stream.py < "$WORK/super.img" \
+            | python3 tools/stream_lpunpack.py --stdin --out "$WORK/img" \
+              --only system,system_ext,product,vendor,vendor_dlkm,odm_dlkm \
+            | tee "$WORK/stream-manifest.txt"
+          for P in system system_ext product vendor vendor_dlkm odm_dlkm; do
+            awk -F'\t' -v p="$P" '$1=="P"&&$2==p{f=1} END{exit f?0:1}' "$WORK/stream-manifest.txt" \
+              || { echo "::error::brak $P w stream-manifest"; exit 1; }
+            awk -F'\t' -v p="$P" '$1=="W"&&$2==p&&$5!="OK"&&$5!="SKIP"{bad=1} END{exit bad?1:0}' \
+              "$WORK/stream-manifest.txt" || { echo "::error::$P NIEPELNY"; exit 1; }
+          done
+          rm -f "$WORK/super.img"    # 6,3G wolne
+          df -h /
+          ls -la "$WORK/img"
+
+      - name: "4. Propsy 5/5 do systemu (extract -> oba pliki -> mkfs)"
+        run: |
+          set -euo pipefail
+          T="$WORK/tree"
+          "$KDIR/bin/fsck.erofs" --extract="$T" "$WORK/img/system.img" >/dev/null 2>&1 \
+            || { echo "::error::fsck.erofs extract padl"; exit 1; }
+          if [ ! -d "$T/app" ] && [ ! -d "$T/priv-app" ]; then
+            INNER=$(find "$T" -maxdepth 2 -type d -name app | head -1)
+            [ -n "$INNER" ] || { echo "::error::extract bez /app"; exit 1; }
+            INNER=$(dirname "$INNER")
+            mv "$INNER" "$WORK/tree_i"; rm -rf "$T"; mv "$WORK/tree_i" "$T"
+          fi
+          # v1.0 FULL SPEC: 5/5 propsow w OBU plikach (build.prop + prop.default)
+          for TARGET in "$T/build.prop" "$T/etc/prop.default"; do
+            mkdir -p "$(dirname "$TARGET")"
+            [ -f "$TARGET" ] || : > "$TARGET"
+            { echo ""
+              echo "# === DSU FORCED-CPU (user spec 5/5) ==="
+              echo "debug.sf.hw=0"
+              echo "debug.egl.hw=0"
+              echo "persist.sys.composition.type=cpu"
+              echo "ro.hardware.egl=android"
+              echo "debug.sf.disable_hwc=1"; } >> "$TARGET"
+            echo "propsy 5/5 -> $TARGET"
+          done
+          FC="$T/etc/selinux/plat_file_contexts"
+          [ -f "$FC" ] || FC=$(find "$T" -name plat_file_contexts -type f | head -1)
+          [ -f "$FC" ] || { echo "::error::brak plat_file_contexts"; exit 1; }
+          TM_AV=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
+          [ "$TM_AV" -ge 3500 ] || { echo "::error::tmpfs ${TM_AV}M < 3500M"; exit 1; }
+          "$KDIR/bin/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c0000000f \
+            --file-contexts="$FC" /dev/shm/system_forced.img "$T" \
+            || { echo "::error::mkfs padl"; exit 1; }
+          rm -rf "$T"
+          mv /dev/shm/system_forced.img "$WORK/img/system.img"
+          df -h /
+          echo "system_forced.img: $(stat -c%s "$WORK/img/system.img") B"
+
+      - name: "5. lpmake -S: super z propsami (geometria fabryczna m3, slot A)"
+        run: |
+          set -euo pipefail
+          TOTAL=0; ARGS=()
+          for P in system system_ext product vendor vendor_dlkm odm_dlkm; do
+            SZ=$(stat -c%s "$WORK/img/$P.img")
+            SZR=$(( (SZ + 4095) / 4096 * 4096 ))
+            TOTAL=$(( TOTAL + SZR ))
+            ARGS+=(--partition="${P}_a:readonly:$SZR:main_a" --image="${P}_a=$WORK/img/$P.img")
+            echo "  ${P}_a: $SZ B"
+          done
+          echo "  SUMA: $TOTAL / $MAIN_GROUP_SIZE"
+          [ "$TOTAL" -le "$MAIN_GROUP_SIZE" ] || { echo "::error::partycje nie mieszcza sie w main_a"; exit 1; }
+          "$KDIR/bin/lpmake" \
+            --device-size="$SUPER_SIZE" --metadata-size=65536 --metadata-slots=3 \
+            --block-size=4096 --alignment=1048576 --super-name=super -S \
+            --group="main_a:$MAIN_GROUP_SIZE" "${ARGS[@]}" \
+            -o "$WORK/super_forced.img" || { echo "::error::lpmake padl"; exit 1; }
+          rm -f "$WORK/img"/*.img    # 8G wolne
+          SSZ=$(stat -c%s "$WORK/super_forced.img")
+          echo "super_forced.img: $SSZ B (sparse)"
+          [ "$SSZ" -gt 5000000000 ] || { echo "::error::super ${SSZ}B < 5G?"; exit 1; }
+          python3 - "$WORK/super_forced.img" <<'EOF'
+          import struct, sys
+          with open(sys.argv[1], "rb") as f:
+              magic = struct.unpack("<I", f.read(4))[0]
+          assert magic == 0xED26FF3A, "to nie sparse: %#x" % magic
+          print("sparse magic OK (0xED26FF3A)")
+          EOF
+          df -h /
+
+      - name: "6. VERBATIM: super -> system.img + README + zip STORED"
+        run: |
+          set -euo pipefail
+          cd "$WORK/out"
+          mv "$WORK/super_forced.img" ./system.img
+          cat > README-VERBATIM.txt <<'XEOF'
+          ====================================================================
+          MysticalOS V16 DSU FORCED-CPU - WARIANT VERBATIM (super jako system.img)
+          ====================================================================
+          ZAWARTOSC: system.img = PELNY SUPER (geometria logiczna: system z
+          propsami 5/5 + product + system_ext + vendor + vendor_dlkm + odm_dlkm,
+          slot A) o nazwie system.img - dokladnie wg specyfikacji.
+
+          PROPSY (wewnatrz partycji system, w build.prop i etc/prop.default):
+            debug.sf.hw=0 | debug.egl.hw=0 | persist.sys.composition.type=cpu
+            ro.hardware.egl=android (SwiftShader) | debug.sf.disable_hwc=1
+
+          UCZCIWA UWAGA (stanowisko agenta): gsid/DSU wpisuje bajty obrazu do
+          JEDNEJ partycji system goscia - nie parsuje geometrii super. Ten
+          wariant najprawdopodobniej NIE uruchomi goscia (montaz kontenera
+          jako system sie nie powiedzie). Po nieudanych bootach gsid odrzuci
+          DSU (auto-discard) i wrócisz do systemu hosta - nic na stale.
+
+          DZIALAJACY WARIANT (prawdziwy system.img, te same propsy 5/5):
+          Actions -> run 37140614875 -> Artifacts -> MysticalOS_V16_DSU_ForcedCPU
+
+          WYJSCIE Z DSU ZAWSZE: DSU Sideloader -> Discard (albo restarty -
+          po crashach gosc wraca sam do hosta). Sloty A/B hosta nietkniete.
+          XEOF
+          python3 - <<'EOF'
+          import os, zipfile
+          dst = "MysticalOS_V16_DSU_ForcedCPU.zip"
+          with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
+              z.write("system.img")
+              z.write("README-VERBATIM.txt")
+          with zipfile.ZipFile(dst) as z:
+              bad = z.testzip()
+              assert bad is None, "testzip: %s" % bad
+              for i in z.infolist():
+                  print("zip: %s %d B" % (i.filename, i.file_size))
+          print("zip OK: %s (%d B)" % (dst, os.path.getsize(dst)))
+          EOF
+          rm -f system.img    # artifact niesie zip
+          df -h /
+
+      - name: "7. Artifact (zip do pobrania ze strony runu)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: MysticalOS_V16_DSU_ForcedCPU-SUPER
+          path: /tmp/dsuverb/out/MysticalOS_V16_DSU_ForcedCPU.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: "8. Publiczne mirrory (bez logowania, best-effort)"
+        run: |
+          set -uo pipefail
+          HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
+            bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
+            "$WORK/out/MysticalOS_V16_DSU_ForcedCPU.zip" \
+            "$WORK/out/dsu-verbatim-links.md" || true
+          cat "$WORK/out/dsu-verbatim-links.md" || true
+
+      - name: "9. Evidence (reports/)"
+        if: always()
+        run: |
+          set -uo pipefail
+          R="reports/dsu-verbatim-${GITHUB_RUN_ID}.md"
+          {
+            echo "# dsu-verbatim run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## stream-manifest"; echo '```'; cat "$WORK/stream-manifest.txt" 2>/dev/null || true; echo '```'
+            echo "## linki publiczne"; echo '```'; cat "$WORK/out/dsu-verbatim-links.md" 2>/dev/null || true; echo '```'
+            echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
+          } > "$R"
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          git add "$R" || true
+          git commit -m "dsu-verbatim: evidence run ${GITHUB_RUN_ID}" \
+            || echo "nic do commitu"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done
+          echo "RAPORT: $R"
