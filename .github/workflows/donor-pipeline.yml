@@ -44,6 +44,18 @@ name: donor-pipeline
 #   (fallback --target=<branch>), upload czesci PER-PART x5 retry (receipt m3:
 #   uploads.github.com daje 408 na duzych assetach), caly krok 7 teee do
 #   release.log -> sekcja w evidence raporcie (krok 8).
+#
+# v1.4 (ITERACJA 2 - wymog usera: podpasowanie apek pod vendor Lenovo, bez
+#   dotykania vendora): nowy krok 5.5 - range-extraction SYSTEM.img donora
+#   (CDN-R recovery zip, fallback Drive OTA) + harvest miui-framework:
+#   /system/framework/miui*.jar + pliki wskazane przez <library file=...> w
+#   /system/etc/permissions/*.xml (deklaracje tez do harvestu). Bez tego apki
+#   MIUI z product donora padaja na "Missing shared library"/ClassNotFound -
+#   dex odwoluje sie do klas miui.*, a uses-library "miui*" nie jest
+#   zadeklarowane. Bramka: harvest bez frameworku = fail (nie publikujemy).
+#   Krok 6: harvest pakowany na /dev/shm + product.img kasowany po splicie
+#   (peak dysku jak w run 9 mimo dodatkowego frameworku); manifest zyskuje
+#   framework=<lista plikow>.
 
 on:
   workflow_dispatch:
@@ -499,21 +511,166 @@ jobs:
           df -h /
           echo "== harvest: $(find "$KEEP/app" -name '*.apk' | wc -l) apk, $(du -sm "$KEEP" | cut -f1) MB =="
 
+      - name: "5.5. System donora: miui-framework + deklaracje bibliotek (CDN-R | Drive)"
+        # ITERACJA 2 (wymog usera: "nie przepisuj vendora - podpasuj apki pod
+        # vendor Lenovo, np. inne biblioteki"): apki MIUI z product donora
+        # odwoluja sie w dex do klas miui.* oraz w AndroidManifest do
+        # uses-library "miui*". Te klasy/deklaracje siedza w SYSTEM.img donora
+        # (/system/framework/miui*.jar + /system/etc/permissions/*.xml z
+        # <library name="..." file="..."/>). Bez nich PackageManager wylacza
+        # apke ("Missing shared library") albo pada ClassNotFound.
+        # Vendor Lenovo zostaje NIETKNIETY - dokladamy wylacznie warstwe
+        # userland (framework jars + deklaracje), ladowane tylko przez apki,
+        # ktore ich uzyzywaja (Lenovo apps nie deklaruja uses-library miui*).
+        run: |
+          set -uo pipefail
+          exec > >(tee "$WORK/framework.log") 2>&1
+          SYSIMG="$WORK/system.img"
+          MNT="$WORK/smnt"; EXT="$WORK/sext"; KEEP="$WORK/keep"
+          # ---- zrodla: CDN-R recovery zip (proven, receipt 37037434755) -> Drive OTA ----
+          ROM_PAGE="https://xmfirmwareupdater.com/hyperos/yingtian/stable/OS4.0.11.0.XBMCNXM/"
+          ROM_ZIP="yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip"
+          SOURCES=""
+          PAGE2=$(curl -sSL --connect-timeout 30 --max-time 120 "$ROM_PAGE" || true)
+          [ -n "$PAGE2" ] && SOURCES=$(printf '%s' "$PAGE2" | sed 's/&amp;/\&/g' \
+            | grep -oE "https://[^\"'<> ]+/${ROM_ZIP}" | sort -u || true)
+          if [ -z "$SOURCES" ]; then
+            for CDNB in cdnorg.d.miui.com bigota.d.miui.com bn.d.miui.com hugeota.d.miui.com cdn-ota.azureedge.net; do
+              CU="https://$CDNB/OS4.0.11.0.XBMCNXM/$ROM_ZIP"
+              CC=$(curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$CU" 2>/dev/null || echo ERR)
+              echo "SONDA CDN $CC $CU"
+              [ "$CC" = "200" ] && { SOURCES="$CU"; break; }
+            done
+          else
+            echo "CDN-R mirrory z HTML:"
+            printf '%s\n' "$SOURCES"
+          fi
+          if [ -n "${OTA_PICK:-}" ]; then
+            echo "fallback: Drive OTA (OTA_PICK z kroku 2)"
+            SOURCES="$SOURCES $OTA_PICK"
+          fi
+          [ -n "$SOURCES" ] || { echo "::error::brak zrodel system.img (CDN-R + Drive)"; exit 1; }
+          # ---- ekstrakcja system.img (proba x2 na zrodlo, cooldown 3 min) ----
+          SOK=0
+          for U in $SOURCES; do
+            for A in 1 2; do
+              AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+              echo "== ekstrakcja system.img, zrodlo $U, proba $A/2 (dysk ${AV}G) =="
+              [ "${AV:-0}" -ge 7 ] || { echo "::error::dysk ${AV}G < 7G na system.img"; exit 1; }
+              rm -f "$SYSIMG"
+              if python3 tools/payload_extract.py \
+                --zip-url "$U" --entry payload.bin --partition system \
+                --out "$SYSIMG" --jobs 12 --chunk 16777216 --prefetch-ops 3 \
+                --erofs-check 2>&1 | tee "$WORK/system-extract.log"; then
+                SOK=1; break
+              fi
+              [ "$A" -lt 2 ] && { echo "pauza 3 min (cooldown)..."; sleep 180; }
+            done
+            [ "$SOK" = 1 ] && break
+          done
+          [ "$SOK" = 1 ] || { echo "::error::ani CDN-R, ani Drive nie oddaly system.img"; exit 1; }
+          SSZ=$(stat -c%s "$SYSIMG")
+          [ "$SSZ" -gt 2000000000 ] || { echo "::error::system.img ${SSZ}B < 2G?"; exit 1; }
+          python3 - "$SYSIMG" <<'MEOF'
+          import sys
+          with open(sys.argv[1], "rb") as f:
+              f.seek(1024); m = f.read(4)
+          assert m == bytes.fromhex("e2e1f5e0"), "zly magic EROFS: %s" % m.hex()
+          print("system.img: magic EROFS OK")
+          MEOF
+          echo "system.img: $SSZ B ($(du -sm "$SYSIMG" | cut -f1) MB)"
+          # ---- montaz (proven: loop-mount erofs z product run 9) | fsck extract ----
+          rm -rf "$MNT" "$EXT"; mkdir -p "$MNT"
+          P=""
+          if sudo mount -t erofs -o ro,loop "$SYSIMG" "$MNT" 2>/dev/null; then
+            P="$MNT"
+            echo "montaz erofs OK"
+          else
+            EST=$(( SSZ / 1000000000 * 2 + 1 ))
+            AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+            echo "montaz NIE wyszedl; dysk ${AV}G, szac. drzewo ~${EST}G"
+            if [ "${AV:-0}" -ge "$(( EST + 1 ))" ]; then
+              kit-mysticalos3/bin/fsck.erofs --extract="$EXT" "$SYSIMG" || true
+              P="$EXT"
+              [ -d "$EXT" ] || { echo "::error::fsck extract nie dal drzewa"; exit 1; }
+              echo "fsck extract OK"
+            else
+              echo "::error::za malo dysku na ekstrakcje system (${AV}G < ${EST}G)"
+              exit 1
+            fi
+          fi
+          # korzen system.img moze byc bezposrednio (framework/) albo w podkatalogu system/
+          if [ ! -d "$P/framework" ] && [ -d "$P/system/framework" ]; then P="$P/system"; fi
+          [ -d "$P/framework" ] || { echo "::error::system.img donora bez /framework"; exit 1; }
+          echo "== framework donora (miui*): =="; ls "$P/framework" 2>/dev/null | grep -i miui || echo "(brak w ls?)"
+          # ---- 1) deklaracje bibliotek miui* + pliki, na ktore wskazuja ----
+          mkdir -p "$KEEP/framework" "$KEEP/permissions"
+          for XML in "$P"/etc/permissions/*.xml; do
+            [ -f "$XML" ] || continue
+            if grep -qiE '<library[^>]*(name|file)="[^"]*miui' "$XML" \
+               || basename "$XML" | grep -qi miui; then
+              { cp -a "$XML" "$KEEP/permissions/" 2>/dev/null \
+                || sudo cp -a "$XML" "$KEEP/permissions/"; } || true
+              echo "  deklaracja: $(basename "$XML")"
+              grep -oE 'file="[^"]+"' "$XML" 2>/dev/null | sed 's/file="//;s/"$//' | while read -r F; do
+                case "$F" in
+                  /system/*) SRC="$P/${F#/system/}" ;;
+                  *) continue ;;
+                esac
+                if [ -f "$SRC" ]; then
+                  SZX=$(stat -c%s "$SRC" 2>/dev/null || echo 999999999)
+                  if [ "$SZX" -le 157286400 ]; then
+                    { cp -an "$SRC" "$KEEP/framework/" 2>/dev/null \
+                      || sudo cp -an "$SRC" "$KEEP/framework/"; } || true
+                    echo "  lib: $(basename "$F") ($SZX B)"
+                  else
+                    echo "  pomijam lib (rozmiar ${SZX}B > 150M): $F"
+                  fi
+                else
+                  echo "  UWAGA: $F wskazany w deklaracji, a nie ma go w system.img"
+                fi
+              done
+            fi
+          done
+          # ---- 2) safety net: wszystkie miui*.jar z framework (dedup: cp -n) ----
+          { find "$P/framework" -maxdepth 1 -iname 'miui*.jar' -size -150M \
+              -exec cp -an {} "$KEEP/framework/" \; 2>/dev/null \
+            || sudo find "$P/framework" -maxdepth 1 -iname 'miui*.jar' -size -150M \
+              -exec cp -an {} "$KEEP/framework/" \; ; } || true
+          sudo umount "$MNT" 2>/dev/null || true
+          rm -rf "$EXT" "$SYSIMG"
+          df -h /
+          # ---- bramki: harvest bez frameworku = NIE publikujemy (chain integrity) ----
+          NJ=$(find "$KEEP/framework" -name '*.jar' 2>/dev/null | wc -l)
+          NP=$(find "$KEEP/permissions" -name '*.xml' 2>/dev/null | wc -l)
+          FWM=$(du -sm "$KEEP/framework" 2>/dev/null | cut -f1)
+          echo "== framework harvest: $NJ jar, $NP deklaracji, ${FWM} MB =="
+          ls -la "$KEEP/framework" "$KEEP/permissions" 2>/dev/null
+          [ "$NJ" -ge 1 ] || { echo "::error::0 miui jar w system.img donora - nie publikujemy harvestu bez frameworku"; exit 1; }
+          [ "$NP" -ge 1 ] || { echo "::error::0 deklaracji bibliotek miui w system.img donora"; exit 1; }
+          [ "${FWM:-0}" -le 400 ] || { echo "::error::framework harvest ${FWM}MB > 400M (cos nie tak)"; exit 1; }
+          echo "FRAMEWORK_OK=1" >> "$GITHUB_ENV"
+
       - name: "6. Pakowanie donor-harvest + donor-product (split + manifesty)"
+        # Dysk: harvest (tgz+czesci ~1G) pakujemy na /dev/shm (tmpfs), a
+        # product.img kasujemy ZARAZ po splitcie - peak dysku = run 9 mimo
+        # dodatkowego frameworku w harvestcie.
         run: |
           set -euo pipefail
           cd "$WORK"
           du -sm keep product.img
+          SHMP=/dev/shm/pack
+          rm -rf "$SHMP"; mkdir -p "$SHMP"
           tar --sort=name --owner=0 --group=0 --numeric-owner \
-            -czf donor-harvest.tar.gz -C keep .
-          SZ=$(stat -c%s donor-harvest.tar.gz)
-          MD5=$(md5sum donor-harvest.tar.gz | cut -d' ' -f1)
+            -czf "$SHMP/donor-harvest.tar.gz" -C keep .
+          SZ=$(stat -c%s "$SHMP/donor-harvest.tar.gz")
+          MD5=$(md5sum "$SHMP/donor-harvest.tar.gz" | cut -d' ' -f1)
           # split (python; czesci <1.9G, limit assetu 2 GiB)
           rm -f donor-harvest.part.* donor-product.part.*
           python3 - <<'EOF'
           import hashlib, os
 
-          def split(src, prefix, part):
+          def split(src, prefix, outdir, part):
               idx = 0
               md5 = hashlib.md5()
               with open(src, "rb") as f:
@@ -522,31 +679,40 @@ jobs:
                       if not b:
                           break
                       md5.update(b)
-                      with open("%s.part.%03d" % (prefix, idx), "wb") as o:
+                      with open(os.path.join(outdir, "%s.part.%03d" % (prefix, idx)), "wb") as o:
                           o.write(b)
                       idx += 1
               return idx, md5.hexdigest(), os.path.getsize(src)
 
-          hp, hmd5, hsz = split("donor-harvest.tar.gz", "donor-harvest",
-                                1_800_000_000)
-          with open("donor-harvest.manifest", "w") as f:
+          hp, hmd5, hsz = split("/dev/shm/pack/donor-harvest.tar.gz", "donor-harvest",
+                                "/dev/shm/pack", 1_800_000_000)
+          fw = sorted(os.listdir("keep/framework")) if os.path.isdir("keep/framework") else []
+          with open("/dev/shm/pack/donor-harvest.manifest", "w") as f:
               f.write("md5=%s\nsize=%d\nparts=%d\n" % (hmd5, hsz, hp))
               f.write("apps=%s\n" % ",".join(sorted(os.listdir("keep/app"))))
               f.write("fonts=%d\n" % len(os.listdir("keep/fonts")))
+              f.write("framework=%s\n" % ",".join(fw))
               f.write("source=%s\n" % open("source.txt").read().strip()
                       if os.path.isfile("source.txt")
                       else "source=nieznany\n")
               f.write("created=%s\n" % __import__("time")
                       .strftime("%Y-%m-%dT%H:%M:%SZ", __import__("time")
-                                .gmtime()))
-          pp, pmd5, psz = split("product.img", "donor-product", 1_800_000_000)
+                      .gmtime()))
+          pp, pmd5, psz = split("product.img", "donor-product", os.getcwd(),
+                                1_800_000_000)
           with open("donor-product.manifest", "w") as f:
               f.write("md5=%s\nsize=%d\nparts=%d\n" % (pmd5, psz, pp))
-          print("donor-harvest: %d B, %d czesci (md5 %s)" % (hsz, hp, hmd5))
+          print("donor-harvest: %d B, %d czesci (md5 %s, framework: %d plikow)"
+                % (hsz, hp, hmd5, len(fw)))
           print("donor-product: %d B, %d czesci (md5 %s)" % (psz, pp, pmd5))
           EOF
           echo "sha256(product.img)=$(sha256sum product.img | cut -d' ' -f1)" \
             >> donor-product.manifest
+          # product.img juz zbedny (czesci + manifesty zapisane) - zwalniamy 6,4G
+          rm -f product.img
+          mv "$SHMP"/* .
+          rmdir "$SHMP" 2>/dev/null || true
+          df -h /
           cat donor-harvest.manifest
           cat donor-product.manifest
           ls -la donor-harvest.* donor-product.* | head -20
@@ -576,7 +742,7 @@ jobs:
           for A in 1 2 3; do
             if gh release create donor-cache $RELTARGET \
               --title "donor-cache: product + harvest HyperOS yingtian" \
-              --notes "donor-pipeline run ${GITHUB_RUN_ID}. Zawartosc: (a) donor-harvest.tar.gz (app/fonts/themes z product.img donora; format TIER A2 m3) oraz (b) product.img donora w czesciach donor-product.part.* (format TIER A m3; md5/size/sha256 w donor-product.manifest). Zrodlo: patrz source= w donor-harvest.manifest." \
+              --notes "donor-pipeline run ${GITHUB_RUN_ID}. Zawartosc: (a) donor-harvest.tar.gz (app/fonts/themes + framework/miui-framework.jar + permissions/deklaracje bibliotek; format TIER A2 m3; iteracja 2: podpasowanie apek MIUI pod vendor Lenovo) oraz (b) product.img donora w czesciach donor-product.part.* (format TIER A m3; md5/size/sha256 w donor-product.manifest). Zrodlo: patrz source= w donor-harvest.manifest." \
               donor-harvest.manifest donor-product.manifest; then OK=1; break; fi
             echo "::warning::release create: proba $A/3 nie wyszla - pauza 60s"; sleep 60
           done
