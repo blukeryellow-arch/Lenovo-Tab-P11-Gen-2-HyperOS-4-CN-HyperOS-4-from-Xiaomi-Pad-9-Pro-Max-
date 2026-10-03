@@ -528,47 +528,58 @@ jobs:
           SYSIMG="$WORK/system.img"
           MNT="$WORK/smnt"; EXT="$WORK/sext"; KEEP="$WORK/keep"
           # ---- zrodla: CDN-R recovery zip (proven, receipt 37037434755) -> Drive OTA ----
+          # v1.4.1 FIX (receipt 37114050267: 2,5h w ekstrakcji = najpewniej wolny
+          # 1. mirror z HTML x 2 proby bez limitu): sonduj 10MB kazdy mirror,
+          # sortuj wg speed_download (wzorzec cdn_mirrors z kroku 3) + twardy
+          # `timeout 2700` na probe (45 min) - wisiowar uciete, nastepny mirror.
           ROM_PAGE="https://xmfirmwareupdater.com/hyperos/yingtian/stable/OS4.0.11.0.XBMCNXM/"
           ROM_ZIP="yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip"
-          SOURCES=""
+          RAW=""
           PAGE2=$(curl -sSL --connect-timeout 30 --max-time 120 "$ROM_PAGE" || true)
-          [ -n "$PAGE2" ] && SOURCES=$(printf '%s' "$PAGE2" | sed 's/&amp;/\&/g' \
+          [ -n "$PAGE2" ] && RAW=$(printf '%s' "$PAGE2" | sed 's/&amp;/\&/g' \
             | grep -oE "https://[^\"'<> ]+/${ROM_ZIP}" | sort -u || true)
-          if [ -z "$SOURCES" ]; then
+          if [ -z "$RAW" ]; then
             for CDNB in cdnorg.d.miui.com bigota.d.miui.com bn.d.miui.com hugeota.d.miui.com cdn-ota.azureedge.net; do
               CU="https://$CDNB/OS4.0.11.0.XBMCNXM/$ROM_ZIP"
               CC=$(curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$CU" 2>/dev/null || echo ERR)
               echo "SONDA CDN $CC $CU"
-              [ "$CC" = "200" ] && { SOURCES="$CU"; break; }
+              [ "$CC" = "200" ] && RAW="$RAW $CU"
             done
           else
             echo "CDN-R mirrory z HTML:"
-            printf '%s\n' "$SOURCES"
+            printf '%s\n' $RAW
           fi
+          [ -n "$RAW" ] || { echo "::error::brak mirrorow CDN-R ($ROM_ZIP)"; exit 1; }
+          # ---- sort wg szybkosci (sonda 10 MB, jak krok 3) ----
+          for U in $RAW; do
+            SPD=$(curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 "$U" 2>/dev/null || echo 0)
+            echo "CDN speed ${SPD%.*} B/s: $U"
+            printf '%012.0f %s\n' "${SPD:-0}" "$U" 2>/dev/null || echo "000000000000 $U"
+          done | sort -rn | cut -d' ' -f2- > /tmp/mirror-speed.txt || true
+          SORTED=$(grep -E '^https?://' /tmp/mirror-speed.txt 2>/dev/null || true)
+          [ -n "$SORTED" ] || SORTED="$RAW"
+          echo "== mirrory wg szybkosci =="; printf '%s\n' $SORTED
+          SOURCES="$SORTED"
           if [ -n "${OTA_PICK:-}" ]; then
-            echo "fallback: Drive OTA (OTA_PICK z kroku 2)"
+            echo "fallback: Drive OTA (OTA_PICK z kroku 2): $OTA_PICK"
             SOURCES="$SOURCES $OTA_PICK"
           fi
-          [ -n "$SOURCES" ] || { echo "::error::brak zrodel system.img (CDN-R + Drive)"; exit 1; }
-          # ---- ekstrakcja system.img (proba x2 na zrodlo, cooldown 3 min) ----
+          # ---- ekstrakcja: 1 proba na mirror z timeoutem 45 min ----
           SOK=0
           for U in $SOURCES; do
-            for A in 1 2; do
-              AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
-              echo "== ekstrakcja system.img, zrodlo $U, proba $A/2 (dysk ${AV}G) =="
-              [ "${AV:-0}" -ge 7 ] || { echo "::error::dysk ${AV}G < 7G na system.img"; exit 1; }
-              rm -f "$SYSIMG"
-              if python3 tools/payload_extract.py \
-                --zip-url "$U" --entry payload.bin --partition system \
-                --out "$SYSIMG" --jobs 12 --chunk 16777216 --prefetch-ops 3 \
-                --erofs-check 2>&1 | tee "$WORK/system-extract.log"; then
-                SOK=1; break
-              fi
-              [ "$A" -lt 2 ] && { echo "pauza 3 min (cooldown)..."; sleep 180; }
-            done
-            [ "$SOK" = 1 ] && break
+            AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+            echo "== ekstrakcja system.img z $U (dysk ${AV}G, timeout 45 min) =="
+            [ "${AV:-0}" -ge 7 ] || { echo "::error::dysk ${AV}G < 7G na system.img"; exit 1; }
+            rm -f "$SYSIMG"
+            if timeout 2700 python3 tools/payload_extract.py \
+              --zip-url "$U" --entry payload.bin --partition system \
+              --out "$SYSIMG" --jobs 12 --chunk 16777216 --prefetch-ops 3 \
+              --erofs-check 2>&1 | tee "$WORK/system-extract.log"; then
+              SOK=1; break
+            fi
+            echo "::warning::proba na $U nie wyszla (timeout 45 min / blad) - nastepny mirror"
           done
-          [ "$SOK" = 1 ] || { echo "::error::ani CDN-R, ani Drive nie oddaly system.img"; exit 1; }
+          [ "$SOK" = 1 ] || { echo "::error::zaden mirror (CDN-R posortowane + Drive) nie oddal system.img w limicie; patrz system-extract.log"; exit 1; }
           SSZ=$(stat -c%s "$SYSIMG")
           [ "$SSZ" -gt 2000000000 ] || { echo "::error::system.img ${SSZ}B < 2G?"; exit 1; }
           python3 - "$SYSIMG" <<'MEOF'
@@ -774,6 +785,8 @@ jobs:
             echo "## ekstrakcja (tail 100)"; echo '```'; tail -100 "$WORK/extract.log" 2>/dev/null || true; echo '```'
             echo "## release (krok 7, tail 120)"; echo '```'; tail -120 "$WORK/release.log" 2>/dev/null || true; echo '```'
             echo "## harvest (tail 120)"; echo '```'; tail -120 "$WORK/harvest.log" 2>/dev/null || true; echo '```'
+            echo "## framework (krok 5.5, tail 200)"; echo '```'; tail -200 "$WORK/framework.log" 2>/dev/null || true; echo '```'
+            echo "## system-extract (tail 60)"; echo '```'; tail -60 "$WORK/system-extract.log" 2>/dev/null || true; echo '```'
             echo "## manifesty"; echo '```'; cat "$WORK/donor-harvest.manifest" 2>/dev/null || true; cat "$WORK/donor-product.manifest" 2>/dev/null || true; echo '```'
             echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
           } > "$R"
