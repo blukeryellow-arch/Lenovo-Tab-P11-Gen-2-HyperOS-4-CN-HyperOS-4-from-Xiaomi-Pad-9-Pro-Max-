@@ -18,13 +18,12 @@ name: dsu-kit
 #   - transplant apek MIUI + fontow + motywow (z product donora),
 #   - od iteracji 2: miui-framework.jar + deklaracje <library> (bez nich
 #     apki MIUI dostaja "Missing shared library"/ClassNotFound),
-#   - PROPSY "forced CPU" (zadanie usera): debug.sf.hw=0, debug.egl.hw=0,
-#     persist.sys.composition.type=cpu, debug.sf.disable_hwc=1.
-#     Pominiety CELOWO: ro.hardware.egl=android - jedyny z listy ktory
-#     realnie dziala na A13+, wymusza SwiftShader (softwarowy EGL/GLES)
-#     -> UI 1-5 fps na tablet 2K; w M3 nie ma konfliktu SF/HWC do
-#     obejscia (SF Lenova + HWC Lenova), wiec dolozylby tylko szkode.
-#     W razie realnych glitchy w podgladzie: dorobic wariant B na zadanie.
+#   - PROPSY "forced CPU" (v1.1 - FULL SPEC usera po re-send 3 X 19:30):
+#     debug.sf.hw=0, debug.egl.hw=0, persist.sys.composition.type=cpu,
+#     ro.hardware.egl=android (SwiftShader - CPU GL; UI wolniejsze, wg
+#     zyczenia usera), debug.sf.disable_hwc=1 - WSZYSTKIE 5/5, wstrzykiete
+#     do build.prop ORAZ etc/prop.default (v1.0 mial 4/5 tylko build.prop).
+#     Zip: MysticalOS_V16_DSU_ForcedCPU.zip (nazwa wg spec usera).
 #   Propsy SA TYLKO w podgladzie DSU - do obrazu docelowego (m3) NIE
 #   wchodza (persist.sys.composition.type=cpu to prop z epoki MTK; gdyby
 #   SF Lenova go czytal, zepsulby wydladnosci na PRAWDZIWYM flashu).
@@ -138,14 +137,23 @@ jobs:
           [ -f "$FC" ] || { echo "::error::brak plat_file_contexts w system.img"; exit 1; }
           BP="$T/build.prop"
           [ -f "$BP" ] || { echo "::error::brak build.prop"; exit 1; }
-          { echo ""
-            echo "# === DSU PREVIEW: forced software composition (zadanie usera, 3 X) ==="
-            echo "# Bezpieczne na A13+ (no-op dla SF Lenova); ro.hardware.egl=android CELOWO"
-            echo "# POMINIETY (wymusza SwiftShader -> UI 1-5 fps; w M3 nie ma konfliktu HWC)."
-            echo "debug.sf.hw=0"
-            echo "debug.egl.hw=0"
-            echo "persist.sys.composition.type=cpu"
-            echo "debug.sf.disable_hwc=1"; } >> "$BP"
+          # v1.1 (zadanie usera, re-send 3 X 19:30 - FULL SPEC): wszystkie 5/5
+          # propsow (wlacznie z ro.hardware.egl=android = SwiftShader, wg
+          # zyczenia usera) w OBU plikach: build.prop + etc/prop.default
+          # (tworzony, jesli go nie ma). prop.default czyta init ZANIM
+          # build.prop - wazne dla ro.* (read-only, ustawiane raz).
+          for TARGET in "$T/build.prop" "$T/etc/prop.default"; do
+            mkdir -p "$(dirname "$TARGET")"
+            [ -f "$TARGET" ] || : > "$TARGET"
+            { echo ""
+              echo "# === DSU FORCED-CPU (user spec 5/5): CPU composition, HWC off, SwiftShader EGL ==="
+              echo "debug.sf.hw=0"
+              echo "debug.egl.hw=0"
+              echo "persist.sys.composition.type=cpu"
+              echo "ro.hardware.egl=android"
+              echo "debug.sf.disable_hwc=1"; } >> "$TARGET"
+            echo "propsy forced-CPU 5/5 -> $TARGET"
+          done
           echo "== mkfs system_dsu (EROFS + konteksty, tmpfs) =="
           TM_AV=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
           [ "$TM_AV" -ge 3500 ] || { echo "::error::tmpfs ${TM_AV}M < 3500M"; exit 1; }
@@ -164,11 +172,14 @@ jobs:
           sudo mount -t erofs -o ro,loop "$WORK/out/system.img" "$MNT" \
             || { echo "::error::montaz weryfikacyjny padl"; exit 1; }
           P="$MNT"; [ -d "$MNT/system" ] && P="$MNT/system"
-          for KV in "ro.mysticalos.version=3" "debug.sf.hw=0" "debug.egl.hw=0" \
-                    "persist.sys.composition.type=cpu" "debug.sf.disable_hwc=1"; do
-            grep -q "$KV" "$P/build.prop" || { echo "::error::brak $KV w obrazie"; exit 1; }
+          grep -q "ro.mysticalos.version=3" "$P/build.prop" || { echo "::error::brak mysticalos.version=3"; exit 1; }
+          for KV in "debug.sf.hw=0" "debug.egl.hw=0" "persist.sys.composition.type=cpu" \
+                    "ro.hardware.egl=android" "debug.sf.disable_hwc=1"; do
+            for F in build.prop etc/prop.default; do
+              grep -q "$KV" "$P/$F" || { echo "::error::brak $KV w $F"; exit 1; }
+            done
           done
-          echo "propsy forced-CPU: OK (4/4 wlaczone, egl=android pominiety celowo)"
+          echo "propsy forced-CPU: 5/5 w build.prop I etc/prop.default (pelna spec usera)"
           for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk"; do
             [ -f "$P/$CHK" ] || { echo "::error::brak $CHK"; exit 1; }
           done
@@ -190,8 +201,13 @@ jobs:
           cd "$WORK/out"
           cat > CZYTAJ-TO-DSU.txt <<'XEOF'
           ====================================================================
-          MysticalOS 3 - PODGLAD DSU (Dynamic System Update) - BEZ FLASHOWANIA
+          MysticalOS V16 DSU FORCED-CPU (software rendering) - BEZ FLASHOWANIA
           ====================================================================
+          PROPSY WLACZONE (5/5, w build.prop I etc/prop.default):
+            debug.sf.hw=0 | debug.egl.hw=0 | persist.sys.composition.type=cpu
+            ro.hardware.egl=android (SwiftShader, CPU GL) | debug.sf.disable_hwc=1
+          CZEKAJ: UI bedzie dzialac WOLNIEJ niz zwykle - to cel tego testu
+          (pelna kompozycja CPU, zero HWC). Wyjscie: Discard = wszystko znika.
 
           CO TO JEST:
           Prawdziwy system.img MysticalOS 3 (baza Lenovo + microG + Aurora +
@@ -241,7 +257,7 @@ jobs:
           XEOF
           python3 - <<'EOF'
           import os, zipfile
-          dst = "MysticalOS3_DSU_Preview.zip"
+          dst = "MysticalOS_V16_DSU_ForcedCPU.zip"
           with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
               z.write("system.img")
               z.write("CZYTAJ-TO-DSU.txt")
@@ -258,9 +274,9 @@ jobs:
       - name: "6. Artifact (zip + README do pobrania ze strony runu)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS3-DSU-Preview
+          name: MysticalOS_V16_DSU_ForcedCPU
           path: |
-            /tmp/dsu/out/MysticalOS3_DSU_Preview.zip
+            /tmp/dsu/out/MysticalOS_V16_DSU_ForcedCPU.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -269,7 +285,7 @@ jobs:
           set -uo pipefail
           HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
             bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
-            "$WORK/out/MysticalOS3_DSU_Preview.zip" \
+            "$WORK/out/MysticalOS_V16_DSU_ForcedCPU.zip" \
             "$WORK/out/dsu-links.md" || true
           cat "$WORK/out/dsu-links.md" || true
 
