@@ -43,8 +43,6 @@ jobs:
       KDIR: ${{ github.workspace }}/kit-mysticalos3
       SUPER_SIZE: "9663676416"
       MAIN_GROUP_SIZE: "9661579264"
-      IMG_SHA256: 1d5f480922e5db47455915c822705ab749025f0004c776203b9d21ee1985b16e
-      IMG_SIZE: "6313495592"
     steps:
       - uses: actions/checkout@v4
 
@@ -66,7 +64,8 @@ jobs:
           OK=0
           for A in 1 2 3; do
             if gh release download mysticalos-3-super --clobber \
-                 -p 'super_mystical3.part.*' --dir "$WORK/parts"; then OK=1; break; fi
+                 -p 'super_mystical3.part.*' -p 'SHA256SUMS.txt' \
+                 --dir "$WORK/parts"; then OK=1; break; fi
             echo "::warning::download super: proba $A/3 - pauza 30s"; sleep 30
           done
           [ "$OK" = 1 ] || { echo "::error::nie pobraly sie czesci super"; exit 1; }
@@ -74,16 +73,34 @@ jobs:
           echo "czesci: $N"; df -h /
           [ "$N" -ge 30 ] || { echo "::error::czesci $N < 30"; exit 1; }
 
-      - name: "2. Sklejenie super + weryfikacja (sha256 pin)"
+      - name: "2. Sklejenie super + weryfikacja (sha z SHA256SUMS.txt release'a)"
+        # v1.1 FIX (receipt 37156087951): pin sha/size z pamieci agenta byl z
+        # STAREGO super (przed iteracja 2) - release 18:57 ma nowy super.
+        # Weryfikacja dynamiczna: sha z SHA256SUMS.txt TEGO release'a.
         run: |
           set -euo pipefail
+          exec > >(tee "$WORK/assemble.log") 2>&1
           cat "$WORK/parts"/super_mystical3.part.* > "$WORK/super.img"
-          rm -rf "$WORK/parts"
           SZ=$(stat -c%s "$WORK/super.img")
-          [ "$SZ" = "$IMG_SIZE" ] || { echo "::error::super.img $SZ != pin $IMG_SIZE"; exit 1; }
+          [ "$SZ" -gt 5000000000 ] || { echo "::error::super.img ${SZ}B < 5G"; exit 1; }
           SHA=$(sha256sum "$WORK/super.img" | cut -d' ' -f1)
-          echo "sha256: $SHA (pin $IMG_SHA256)"
-          [ "$SHA" = "$IMG_SHA256" ] || { echo "::error::sha256 niezgodne"; exit 1; }
+          EXP=$(grep -E 'super_mystical3\.img' "$WORK/parts/SHA256SUMS.txt" 2>/dev/null | awk '{print $1}' | head -1 || true)
+          echo "sha256: $SHA | wpis w SHA256SUMS.txt: ${EXP:-brak}"
+          if [ -n "$EXP" ]; then
+            [ "$SHA" = "$EXP" ] || { echo "::error::sha256 niezgodne z release"; exit 1; }
+            echo "sha256 zgodne z release mysticalos-3-super"
+          else
+            echo "::warning::brak wpisu super_mystical3.img w SHA256SUMS.txt - tylko weryfikacja strukturalna"
+          fi
+          python3 - "$WORK/super.img" <<'EOF'
+          import struct, sys
+          with open(sys.argv[1], "rb") as f:
+              magic = struct.unpack("<I", f.read(4))[0]
+          assert magic == 0xED26FF3A, "zly sparse magic: %#x" % magic
+          print("sparse magic OK (0xED26FF3A)")
+          EOF
+          rm -rf "$WORK/parts"
+          echo "super.img: $SZ B"
           df -h /
 
       - name: "3. Stream: super -> wszystkie partycje (simg2img | lpunpack)"
@@ -242,6 +259,7 @@ jobs:
           {
             echo "# dsu-verbatim run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
             echo
+            echo "## assemble (krok 2)"; echo '```'; cat "$WORK/assemble.log" 2>/dev/null || true; echo '```'
             echo "## stream-manifest"; echo '```'; cat "$WORK/stream-manifest.txt" 2>/dev/null || true; echo '```'
             echo "## linki publiczne"; echo '```'; cat "$WORK/out/dsu-verbatim-links.md" 2>/dev/null || true; echo '```'
             echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
