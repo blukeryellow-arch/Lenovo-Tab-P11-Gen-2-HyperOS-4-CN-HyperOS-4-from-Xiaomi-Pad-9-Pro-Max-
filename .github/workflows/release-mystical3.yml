@@ -629,6 +629,33 @@ jobs:
               echo "  transplant: /system/app/$NAME"
             done
           fi
+          # ITERACJA 2: miui-framework + deklaracje bibliotek (podpasowanie apek
+          # MIUI pod vendor Lenovo - userland only, vendor nietkniety).
+          # Konflikt nazw = ZAWSZE zostaje plik Lenovo (nigdy nie nadpisujemy).
+          if [ -d "$WORK/keep/framework" ] && [ -n "$(ls "$WORK/keep/framework" 2>/dev/null)" ]; then
+            for F in "$WORK/keep/framework"/*; do
+              NAME=$(basename "$F")
+              if [ -e "$T/framework/$NAME" ]; then
+                echo "  framework KONFLIKT - zostaje plik Lenovo: $NAME"
+              else
+                cp -a "$F" "$T/framework/$NAME"
+                echo "  framework: /system/framework/$NAME ($(stat -c%s "$F") B)"
+              fi
+            done
+          else
+            echo "  framework: BRAK w harvest (tier != A2) - apki MIUI bez miui.*"
+          fi
+          if [ -d "$WORK/keep/permissions" ] && [ -n "$(ls "$WORK/keep/permissions" 2>/dev/null)" ]; then
+            for F in "$WORK/keep/permissions"/*; do
+              NAME=$(basename "$F")
+              if [ -e "$T/etc/permissions/$NAME" ]; then
+                echo "  permissions KONFLIKT - zostaje plik Lenovo: $NAME"
+              else
+                cp -a "$F" "$T/etc/permissions/$NAME"
+                echo "  deklaracja: /system/etc/permissions/$NAME"
+              fi
+            done
+          fi
           if [ -d "$WORK/keep/fonts" ] && [ -n "$(ls "$WORK/keep/fonts" 2>/dev/null)" ]; then
             cp -a "$WORK/keep/fonts"/*.ttf "$T/fonts/" 2>/dev/null || true
             echo "  fonty: $(ls "$T/fonts"/Mi*.ttf 2>/dev/null | wc -l) Mi + inne (fonts.xml nietkniety - inertne)"
@@ -672,7 +699,7 @@ jobs:
           FC="$T/etc/selinux/plat_file_contexts"
           test -f "$FC" || { echo "::error::brak plat_file_contexts w systemie Lenovo"; exit 1; }
           python3 tools/fc_fixup.py --contexts "$FC" --root "$T" --dry-run --report /tmp/fc-report.txt
-          if grep -E "MISS .*(priv-app/microG|priv-app/FakeStore|app/AuroraStore|app/Magisk|app/Miui|permissions-mystical|fonts/Mi|miui-themes)" /tmp/fc-report.txt; then
+          if grep -E "MISS .*(priv-app/microG|priv-app/FakeStore|app/AuroraStore|app/Magisk|app/Miui|permissions-mystical|fonts/Mi|miui-themes|framework/[Mm]iui|permissions/[Mm]iui)" /tmp/fc-report.txt; then
             echo "::error::dodane pliki bez kontekstu"; exit 1
           fi
           echo "pre-flight kontekstow: OK"
