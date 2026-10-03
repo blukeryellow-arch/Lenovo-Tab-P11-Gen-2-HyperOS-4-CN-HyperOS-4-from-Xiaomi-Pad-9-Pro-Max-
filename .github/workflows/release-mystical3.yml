@@ -1,4 +1,14 @@
 name: release-mystical3
+# v8.13.0 (ITERACJA 2, wymog usera: "podpasuj apki pod vendor Lenovo, inne
+# biblioteki - vendora nie przepisuj"): miui-framework.jar + deklaracje
+# <library name="miui*"> z SYSTEM.img donora (donor-pipeline v1.4 krok 5.5,
+# harvest w donor-cache) trafiaja do /system/framework + /system/etc/permissions
+# - bez tego apki MIUI mialby "Missing shared library" / ClassNotFound.
+# Vendor Lenovo nadal NETKANIETY (framework = shared library ladowana tylko
+# przez apki deklarujace uses-library; Lenovo apps nie deklaruja miui*).
+# Bramka TIER A2: harvest bez frameworku = FAIL (nie budujemy w pelnej wersji).
+# Nowy audyt: uses-library z string-poolu AndroidManifest (strings -el) vs
+# deklaracje; imgcheck sprawdza framework + permissions w obrazie.
 # v8.12.0 (FIX release-create: --target $GITHUB_SHA -> 422 'target_commitish is
 # invalid' dla SHA z galezi != domyslna, receipt 37037434755; tag przez git/refs
 # API + create bez --target, fallback --target=branch)
@@ -240,8 +250,15 @@ jobs:
                 ls "$WORK/keep/app" 2>/dev/null | grep -qi camera && KEY=$((KEY+1))
                 ls "$WORK/keep/app" 2>/dev/null | grep -qi notes && KEY=$((KEY+1))
                 if [ "$NA" -ge 1 ] && [ "$KEY" -eq 3 ]; then
+                  NFW=$(find "$WORK/keep/framework" -name '*.jar' 2>/dev/null | wc -l)
+                  NPERM=$(find "$WORK/keep/permissions" -name '*.xml' 2>/dev/null | wc -l)
+                  echo "A2 framework: $NFW jar, $NPERM deklaracji bibliotek"
+                  if [ "$NFW" -lt 1 ] || [ "$NPERM" -lt 1 ]; then
+                    echo "::error::TIER A2: donor-harvest BEZ miui-framework (stary donor-cache?) - apki MIUI dostana 'Missing shared library'/ClassNotFound. Odpal donor-pipeline v1.4+ (krok 5.5) i ponow."
+                    exit 1
+                  fi
                   DONE_A2=1
-                  echo "OK (tier A2 donor-harvest; $NA apk: $(ls "$WORK/keep/app" | tr '\n' ' '))" > /tmp/transplant.status
+                  echo "OK (tier A2 donor-harvest; $NA apk: $(ls "$WORK/keep/app" | tr '\n' ' '); framework: $(ls "$WORK/keep/framework" 2>/dev/null | tr '\n' ' '); deklaracje: $(ls "$WORK/keep/permissions" 2>/dev/null | tr '\n' ' '))" > /tmp/transplant.status
                 else
                   echo "::error::TIER A2: donor-harvest bez kluczowych apk ($KEY/3, NA=$NA) - wymog usera niespelniony, NIE budujemy bez tego"
                   exit 1
@@ -368,6 +385,9 @@ jobs:
                 echo "FALLBACK (brak donor-cache m1, brak PRODUCT_DONOR_DRIVE_ID, brak assets w spool; build bez transplantow)" > /tmp/transplant.status
               fi
             fi
+          fi
+          if [ -z "${DONE_A2:-}" ]; then
+            echo "::warning::TIER A/B/C: harvest bez miui-framework (tylko A2 go niesie - system.img donora) - apki MIUI moga zostac wylaczone (Missing shared library). Docelowo: donor-pipeline v1.4+ i TIER A2."
           fi
           cat /tmp/transplant.status || true
           rm -rf "$SHM/dcache" "$SHM/dmnt" "$SHM/dext"
@@ -622,6 +642,23 @@ jobs:
             REF=$(unzip -p "$APK" classes.dex 2>/dev/null | strings -a 2>/dev/null | grep -cE "^Lmiui/|^Lcom/miui/" || true)
             echo "  $(basename "$APK"): ${REF:-0} odniesien miui.*"
           done
+          echo "== audyt uses-library (string-pool AndroidManifest vs deklaracje) =="
+          DECL=$(grep -hoE '<library name="[^"]+"' "$T"/etc/permissions/*.xml 2>/dev/null | sed 's/.*name="//;s/"$//' | sort -u | tr '\n' ' ')
+          echo "  zadeklarowane biblioteki w /system/etc/permissions: ${DECL:-brak}"
+          for APK in $(find "$WORK/keep/app" -name '*.apk' 2>/dev/null); do
+            CAND=$(unzip -p "$APK" AndroidManifest.xml 2>/dev/null | strings -el 2>/dev/null | grep -iE '^miui' | sort -u | tr '\n' ' ')
+            if [ -n "$CAND" ]; then
+              MISSL=""
+              for CL in $CAND; do
+                case " $DECL " in *" $CL "*) ;; *) MISSL="$MISSL $CL" ;; esac
+              done
+              if [ -n "$MISSL" ]; then
+                echo "  UWAGA: $(basename "$APK"): kandydaci bibliotek bez deklaracji:$MISSL (heurystyka string-pool - zweryfikowac po boocie)"
+              else
+                echo "  $(basename "$APK"): biblioteki miui* pokryte deklaracjami ($CAND)"
+              fi
+            fi
+          done
           BP="$T/build.prop"
           { echo ""
             echo "# === MysticalOS 3 ==="
@@ -673,6 +710,19 @@ jobs:
           done
           if [ "$(cat /tmp/aurora.status 2>/dev/null || echo present)" = "present" ]; then
             test -f "$C/app/AuroraStore/AuroraStore.apk" || { echo "::error::imgcheck: BRAK AuroraStore.apk"; exit 1; }
+          fi
+          if [ -n "$(ls "$WORK/keep/framework" 2>/dev/null)" ]; then
+            for J in "$WORK/keep/framework"/*; do
+              JN=$(basename "$J")
+              test -f "$C/framework/$JN" || { echo "::error::imgcheck: BRAK framework/$JN"; exit 1; }
+            done
+            for X in "$WORK/keep/permissions"/*; do
+              XN=$(basename "$X")
+              test -f "$C/etc/permissions/$XN" || { echo "::error::imgcheck: BRAK etc/permissions/$XN"; exit 1; }
+            done
+            echo "imgcheck framework: OK ($(ls "$C/framework" | grep -ci miui) miui plikow, $(ls "$WORK/keep/permissions" | wc -l) deklaracji)"
+          else
+            echo "imgcheck framework: pominiety (harvest bez frameworku - tier != A2)"
           fi
           grep -q "mysticalos.version=3" "$C/build.prop" || { echo "::error::imgcheck: brak mysticalos.version=3"; exit 1; }
           grep -q "use_content_detection_for_refresh_rate=false" "$C/build.prop" || { echo "::error::imgcheck: brak display mitigation"; exit 1; }
