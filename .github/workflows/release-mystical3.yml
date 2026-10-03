@@ -656,6 +656,22 @@ jobs:
               fi
             done
           fi
+          # SAFETY-NET (receipt 37130547956 audyt uses-library): HyperOS trzyma
+          # miui-framework w BOOT CLASSPATH (vdex boot-miui-framework w systemie
+          # donora); my nie ruszamy boot.img Lenova, wiec apki z
+          # <uses-library name="miui"> potrzebuja jawnej deklaracji biblioteki -
+          # inaczej PackageManager je WYLACZY (Missing shared library).
+          # Deklaracja jest inertna dla apek, ktore jej nie uzywaja (lazy load).
+          if [ -f "$T/framework/miui-framework.jar" ]; then
+            { echo '<?xml version="1.0" encoding="utf-8"?>'
+              echo "<permissions>"
+              echo "    <library name=\"miui\" file=\"/system/framework/miui-framework.jar\"/>"
+              if [ -f "$T/framework/miuix.jar" ]; then
+                echo "    <library name=\"miuix\" file=\"/system/framework/miuix.jar\"/>"
+              fi
+              echo "</permissions>"; } > "$T/etc/permissions/mystical-miui-libs.xml"
+            echo "  deklaracja: mystical-miui-libs.xml (miui$( [ -f "$T/framework/miuix.jar" ] && echo '+miuix' ))"
+          fi
           if [ -d "$WORK/keep/fonts" ] && [ -n "$(ls "$WORK/keep/fonts" 2>/dev/null)" ]; then
             cp -a "$WORK/keep/fonts"/*.ttf "$T/fonts/" 2>/dev/null || true
             echo "  fonty: $(ls "$T/fonts"/Mi*.ttf 2>/dev/null | wc -l) Mi + inne (fonts.xml nietkniety - inertne)"
