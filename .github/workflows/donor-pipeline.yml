@@ -581,7 +581,11 @@ jobs:
           done
           [ "$SOK" = 1 ] || { echo "::error::zaden mirror (CDN-R posortowane + Drive) nie oddal system.img w limicie; patrz system-extract.log"; exit 1; }
           SSZ=$(stat -c%s "$SYSIMG")
-          [ "$SSZ" -gt 2000000000 ] || { echo "::error::system.img ${SSZ}B < 2G?"; exit 1; }
+          # RECEIPT 37123502013: system HyperOS yingtian = sam rdzen ~894 MB
+          # (warstwa MIUI siedzi w product/odm/mi_ext!) - bramka "duzy system"
+          # z v1.4 (pisana pod system Lenovo 3,4G) odrzucila POPRAWNY plik.
+          # Walidacje przejmuja: magic EROFS + istnienie /framework (nizej).
+          [ "$SSZ" -gt 400000000 ] || { echo "::error::system.img ${SSZ}B < 400M?"; exit 1; }
           python3 - "$SYSIMG" <<'MEOF'
           import sys
           with open(sys.argv[1], "rb") as f:
