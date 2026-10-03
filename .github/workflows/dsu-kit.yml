@@ -43,6 +43,11 @@ name: dsu-kit
 
 on:
   workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/dsu-kit.yml']
+    # dispatch API 404/403 (workflow nie na default branch) - trigger przez
+    # push tej sciezki; komentarz-version wystarczy do re-run.
 
 concurrency:
   group: dsu-kit

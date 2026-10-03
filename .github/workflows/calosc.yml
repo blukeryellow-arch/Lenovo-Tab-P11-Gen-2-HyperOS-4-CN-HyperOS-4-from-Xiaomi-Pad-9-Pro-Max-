@@ -1,4 +1,5 @@
 name: calosc
+# v2.1 (3 X 19:00): refresh trigger - rebuild CALOSC z iteracji 2 (miui-framework w super)
 # JEDEN ZIP ZE WSZYSTKIM: MysticalOS3-CALOSC.zip = super_mystical3.img
 # (sklejony i zweryfikowany) + 3x vbmeta_disable + boot_TB350FU + FLASH-M3.md
 # + SHA256SUMS + sprawdz.sh + simg2img.py + FLASH-ALL.bat/.sh (dwuklik = flash).
