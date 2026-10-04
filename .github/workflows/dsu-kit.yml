@@ -55,6 +55,25 @@ name: dsu-kit
 #     persist.sys.mystic.suspend_block=1. Nazwa:
 #     MysticalOS_0.6_DSU_SmartSuspend.zip. Build 0.5 (v1.3, run
 #     37202081348) zostaje zywy jako Faza 1 do porownania A/B.
+# v1.5 (0.7 TREBLE COMPAT, spec usera 4 X wieczor): (1) ro.vndk.version=34
+#     + identyfikacja SoC (ro.soc.model=MT6789, ro.soc.manufacturer=MediaTek,
+#     ro.mediatek.platform=MT6789); (2) grafika HIDL: ro.hardware.hwcomposer=
+#     mtkhwcomposer + ro.hardware.gralloc=mt6789 (nazwy modulow passthrough
+#     MTK, FALLBACK); (3) AUTONOMIA: pelny blok tozsamosci ro.product.* +
+#     ro.build.product (system zyje bez Lenovo product/system_ext) + twarde
+#     bramki na wlasne zasoby systemu (mystical-miui-libs.xml,
+#     privapp-permissions-mystical.xml z evidence m3). KLUCZOWA semantyka:
+#     ro.* = first-set-wins, /system/build.prop laduje sie PO vendor/product
+#     -> caly blok 0.7 to CZYSTY FALLBACK (w DSU nie zmienia zachowania
+#     hosta; ozywa gdy product/system_ext nie narzucaja wlasnych wartosci).
+#     CELOWO nie w /system/etc/prop.default (to by SILOWO nadpisalo vendor -
+#     ryzyko zepsucia nazw modulow MTK). UCZCIWIE: HIDL HALs (gralloc/
+#     hwcomposer 2.3, audio, power) maja WBUDOWANA degradacje AIDL->HIDL->
+#     brak w frameworku (PowerHalWrapper/SF/AudioFlinger) - nie wymuszamy
+#     AIDL, ktorych vendor A14 nie ma; audio routing = domena vendora
+#     (vendor/etc/audio_policy_configuration.xml) - system jej NIE nadpisuje;
+#     libshimy pomijamy (wymagaja kompilacji pod znane symbole, nie
+#     spekulujemy). Nazwa: MysticalOS_0.7_DSU_TrebleCompat.zip.
 #   Propsy SA TYLKO w podgladzie DSU - do obrazu docelowego (m3) NIE
 #   wchodza (persist.sys.composition.type=cpu to prop z epoki MTK; gdyby
 #   SF Lenova go czytal, zepsulby wydladnosci na PRAWDZIWYM flashu).
@@ -457,7 +476,30 @@ jobs:
             echo "ro.input.noresample=1"
             echo "# Z 0.5 (bez zmian):"
             echo "ro.surface_flinger.use_content_detection_for_refresh_rate=false"; } >> "$BP"
-          echo "smart-suspend: rc + 3 skrypty + build.prop OK"
+          # 6) TREBLE COMPAT 0.7 (vendor A14 / VNDK 34 / MT6789 / TB350FU).
+          #    Semantyka ro.*: first-set-wins + /system/build.prop laduje sie
+          #    PO vendor/product -> wszystko ponizej = CZYSTY FALLBACK
+          #    (w DSU nie nadpisuje hosta; ozywa bez product/system_ext).
+          #    CELOWO nie w prop.default (to by silowo nadpisalo vendor).
+          { echo ""
+            echo "# === MysticalOS 0.7: TREBLE COMPAT (TB350FU; vendor A14, VNDK 34, MT6789) ==="
+            echo "# VNDK: linkerconfig buduje przestrzen nazw vndk wg tej wartosci (wymog usera):"
+            echo "ro.vndk.version=34"
+            echo "# Identyfikacja SoC (fallback; ro.soc.* zwykle z device-tree, juz ustawione):"
+            echo "ro.soc.manufacturer=MediaTek"
+            echo "ro.soc.model=MT6789"
+            echo "ro.mediatek.platform=MT6789"
+            echo "# Grafika HIDL (gralloc/hwcomposer 2.3) - nazwy modulow passthrough MTK:"
+            echo "ro.hardware.hwcomposer=mtkhwcomposer"
+            echo "ro.hardware.gralloc=mt6789"
+            echo "# AUTONOMIA: tozsamosc bez Lenovo product/system_ext (w DSU product hosta nadpisuje):"
+            echo "ro.product.brand=Lenovo"
+            echo "ro.product.manufacturer=Lenovo"
+            echo "ro.product.name=TB350FU"
+            echo "ro.product.device=TB350FU"
+            echo "ro.product.model=Lenovo Tab P11 Gen 2"
+            echo "ro.build.product=TB350FU"; } >> "$BP"
+          echo "smart-suspend: rc + 3 skrypty + build.prop OK; treble-compat: propsy VNDK/SoC/HIDL/autonomia OK"
           echo "== mkfs system_dsu (EROFS + konteksty, tmpfs) =="
           TM_AV=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
           [ "$TM_AV" -ge 3500 ] || { echo "::error::tmpfs ${TM_AV}M < 3500M"; exit 1; }
@@ -515,6 +557,22 @@ jobs:
             echo "::error::suspend_block=1 w 0.6?! (to spec 0.5/Stability)"; exit 1
           fi
           echo "smart-suspend w obrazie: rc(wake_lock+guard+tune) + 3 skrypty (0755, sh -n OK) + propsy 9/9 + domyslne 0 OK"
+          # TREBLE COMPAT 0.7: VNDK + SoC + moduly HIDL + autonomia tozsamosci
+          for KV in "ro.vndk.version=34" "ro.soc.manufacturer=MediaTek" \
+                    "ro.soc.model=MT6789" "ro.mediatek.platform=MT6789" \
+                    "ro.hardware.hwcomposer=mtkhwcomposer" "ro.hardware.gralloc=mt6789" \
+                    "ro.product.brand=Lenovo" "ro.product.name=TB350FU" \
+                    "ro.product.device=TB350FU" "ro.product.model=Lenovo Tab P11 Gen 2" \
+                    "ro.build.product=TB350FU"; do
+            grep -q "^$KV$" "$P/build.prop" || { echo "::error::brak $KV w build.prop (treble compat)"; exit 1; }
+          done
+          # AUTONOMIA: system SAM niesie deklaracje bibliotek MIUI + permisje
+          # microG/FakeStore (nie liczy na product/system_ext hosta).
+          grep -rq '<library name="miui"' "$P/etc/permissions/" \
+            || { echo "::error::brak deklaracji <library name=miui> w /system/etc/permissions (autonomia)"; exit 1; }
+          grep -q 'package="com.google.android.gms"' "$P/etc/permissions/privapp-permissions-mystical.xml" \
+            || { echo "::error::brak privapp-permissions dla microG (autonomia)"; exit 1; }
+          echo "treble-compat w obrazie: propsy 11/11 (VNDK34+SoC+HIDL+tozsamosc) + miui-libs + microG perms OK"
           for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk"; do
             [ -f "$P/$CHK" ] || { echo "::error::brak $CHK"; exit 1; }
           done
@@ -536,7 +594,7 @@ jobs:
           cd "$WORK/out"
           cat > CZYTAJ-TO-DSU.txt <<'XEOF'
           ====================================================================
-          MysticalOS 0.6 - SMART SUSPEND (TB350FU DSU, A14 MTK vendor)
+          MysticalOS 0.7 - SMART SUSPEND + TREBLE COMPAT (TB350FU DSU, A14 MTK)
           ====================================================================
           Cel: ta sama panika (mtk_sdio_pm_suspend, Wi-Fi MT7902 SDIO, Oops
           96000145, DMA paging przy usypianiu), ale BEZ permanentnego
@@ -570,6 +628,41 @@ jobs:
              (albo setprop persist.sys.mystic.suspend_block 1, jesli build
              pozwala) -> permanentny wake_lock mystic_dsu_hold jak w 0.5.
 
+          TREBLE COMPAT (0.7 - warstwa pod vendor A14 / VNDK 34 / MT6789):
+          - ro.vndk.version=34 (linkerconfig buduje przestrzen vndk-34 wg
+            vendora; wpis zgodny z wymaganiem).
+          - Identyfikacja SoC: ro.soc.model=MT6789, ro.soc.manufacturer=
+            MediaTek, ro.mediatek.platform=MT6789.
+          - Grafika HIDL (gralloc/hwcomposer 2.3): ro.hardware.hwcomposer=
+            mtkhwcomposer, ro.hardware.gralloc=mt6789 (nazwy modulow
+            passthrough MTK; czysty FALLBACK - vendor ma swoje w
+            vendor/build.prop i jego wartosc wygrywa).
+          - AUTONOMIA: pelny blok tozsamosci ro.product.* + ro.build.product
+            (Lenovo TB350FU) - system zyje bez Lenovo product/system_ext;
+            biblioteki MIUI (miui-framework.jar + deklaracje w
+            /system/etc/permissions) i microG z permisjami niesie SYSTEM.
+          SEMANTYKA (wazne): ro.* = pierwszy ustawiony wygrywa, a
+          /system/build.prop laduje sie PO vendor/product -> caly blok 0.7
+          to fallback: w DSU nic nie zmienia u hosta, ozywa gdy brak
+          product/system_ext. Nie uzywamy prop.default (to by SILOWO
+          nadpisalo vendor - ryzyko zepsucia modulow MTK).
+          UCZCIWIE (czego NIE da sie zrobic propsami):
+          - HIDL HALs (gralloc/hwcomposer 2.3, audio, power): framework MA
+            wbudowana degradacje AIDL->HIDL->brak (PowerHalWrapper,
+            SF/HidlComposer, AudioFlinger). System NIE wymusza AIDL, ktorych
+            vendor A14 nie oferuje - wybiera to, co vendor ma.
+          - Audio routing MT6789: polityka audio zyje w VENDORZE
+            (/vendor/etc/audio_policy_configuration.xml) - system CELowo jej
+            nie nadpisuje (wladowanie wlasnej = zepsuty routing). Zero
+            spekulatywnych propsow audio.
+          - libshimy: wymagaja kompilacji pod znane brakujace symbole -
+            nie spekulujemy bez crash logow.
+          - W DSU product/system_ext hosta MONTUJA SIE zawsze (decyzja
+            gsid/first-stage init, nie do wylaczenia z systemu) - dlatego
+            autonomia = wlasna tozsamosc + wlasne zasoby w /system.
+            Pelny standalone = PACKAGE DSU (run 37158930327) albo flash
+            CALOSC.
+
           STEROWANIE (adb shell):
             sh /system/bin/mystic-ctl.sh status
             sh /system/bin/mystic-ctl.sh block on|off
@@ -582,10 +675,13 @@ jobs:
             cat /sys/power/wake_lock   -> pusto w smart; mystic_screensettle
                                           ~4 s po zgaszeniu ekranu; mystic_dsu_hold
                                           tylko po "block on"
-            dumpsys deviceidle | head -5 -> enabled=false (Doze OFF)
+            dumpsys deviceidle | head -5      -> enabled=false (Doze OFF)
             cat /data/local/tmp/mystic-power-tune.log
             cat /data/local/tmp/mystic-suspend-guard.log
             ps -A | grep mystic        -> demon guarda zywy
+            getprop ro.vndk.version    -> 34 (fallback, gdy vendor nie ustawil)
+            getprop ro.soc.model       -> MT6789 (fallback)
+            getprop ro.product.model   -> model z product hosta albo nasz fallback
 
           CO TO JEST:
           Prawdziwy system.img MysticalOS 3 (baza Lenovo + microG + Aurora +
@@ -635,7 +731,7 @@ jobs:
           XEOF
           python3 - <<'EOF'
           import os, zipfile
-          dst = "MysticalOS_0.6_DSU_SmartSuspend.zip"
+          dst = "MysticalOS_0.7_DSU_TrebleCompat.zip"
           with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
               z.write("system.img")
               z.write("CZYTAJ-TO-DSU.txt")
@@ -652,9 +748,9 @@ jobs:
       - name: "6. Artifact (zip + README do pobrania ze strony runu)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS_0.6_DSU_SmartSuspend
+          name: MysticalOS_0.7_DSU_TrebleCompat
           path: |
-            /tmp/dsu/out/MysticalOS_0.6_DSU_SmartSuspend.zip
+            /tmp/dsu/out/MysticalOS_0.7_DSU_TrebleCompat.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -663,7 +759,7 @@ jobs:
           set -uo pipefail
           HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
             bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
-            "$WORK/out/MysticalOS_0.6_DSU_SmartSuspend.zip" \
+            "$WORK/out/MysticalOS_0.7_DSU_TrebleCompat.zip" \
             "$WORK/out/dsu-links.md" || true
           cat "$WORK/out/dsu-links.md" || true
 
