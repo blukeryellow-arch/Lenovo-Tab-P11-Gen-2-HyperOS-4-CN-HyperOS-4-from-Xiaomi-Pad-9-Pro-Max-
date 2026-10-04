@@ -28,6 +28,33 @@ name: dsu-kit
 #     system.img bez zmian kontenerowych (layout DSU "1 of 2"), nazwa
 #     MysticalOS_V16_PureGSI_SoftRender.zip + jawny test NON-SPARSE
 #     (raw EROFS: offset 0 != 0xED26FF3A, offset 1024 = EROFS magic).
+# v1.3 (0.5 STABILITY): permanentny kernel wake_lock mystic_dsu_hold przy
+#     persist.sys.mystic.suspend_block=1 + Doze/AppStandby OFF (Faza 1).
+# v1.4 (FAZA 2 - SMART SUSPEND, spec usera 4 X wieczor): domyslnie BEZ
+#     permanentnego wake_locka (suspend_block=0 -> deep sleep DOZWOLONY).
+#     Nowy demon mystic-suspend-guard.sh (service bez seclabel = kontekst
+#     inita, wg init/README.md "defaults to the init context" -> umie
+#     pisac /sys/power/wake_lock): trzyma KROTKI wake_lock
+#     mystic_screensettle przy gasnacym ekranie (settle, domyslnie 4 s)
+#     i po kazdym wznowieniu przy OFF ekranie (faza zamrozenia procesu
+#     wykryta przez skok zegara = byl suspend) -> tlumi szybkie cykle
+#     suspend/resume; potem puscza -> deep sleep wraca. Propsy Wi-Fi safe
+#     (spec usera): persist.sys.wifi.supplicant_scan_interval=180,
+#     ro.wifi.suspend.enabled=0, vendor.wifi.suspend=0 (CELOWO nie
+#     persist.vendor.*: persist zapisuje sie we wspoldzielonym
+#     /data/property i wyciekalby do hosta Lenovo po wyjsciu z DSU -
+#     sprzeczne z "vendor bajt w bajt"); + settings
+#     wifi_supplicant_scan_interval=180000 (framework czyta ms z
+#     Settings.Global) + cmd wifi set-scan-always-available disabled
+#     (potwierdzone w AOSP WifiShellCommand). Touch (spekulacyjne,
+#     nieszkodliwe): ro.input.noresample=1. Narzedzie mystic-ctl.sh
+#     (status | block on|off | wifi-safe on|off | settle <ms>) TYLKO na
+#     settings/svc/cmd (shell ma WRITE_SECURE_SETTINGS i DEVICE_POWER -
+#     dziala na user build; setprop persist.* z adb bywa AVC-denied na
+#     user build). Twardy blok (Faza 1) nadal dostepny:
+#     persist.sys.mystic.suspend_block=1. Nazwa:
+#     MysticalOS_0.6_DSU_SmartSuspend.zip. Build 0.5 (v1.3, run
+#     37202081348) zostaje zywy jako Faza 1 do porownania A/B.
 #   Propsy SA TYLKO w podgladzie DSU - do obrazu docelowego (m3) NIE
 #   wchodza (persist.sys.composition.type=cpu to prop z epoki MTK; gdyby
 #   SF Lenova go czytal, zepsulby wydladnosci na PRAWDZIWYM flashu).
@@ -142,23 +169,40 @@ jobs:
           [ -f "$FC" ] || { echo "::error::brak plat_file_contexts w system.img"; exit 1; }
           BP="$T/build.prop"
           [ -f "$BP" ] || { echo "::error::brak build.prop"; exit 1; }
-          # === MysticalOS 0.5: SUSPEND HARDENING (receipt: kernel panic
-          # mtk_sdio_pm_suspend / wlan_mt7902_sdio_mt6789, Oops 96000145,
-          # DMA paging przy system suspend; A14 kernel+vendor nietkniety) ===
-          # 1) init.rc: kernel wake_lock -> suspend nigdy nie wchodzi ->
-          #    sciezka PM SDIO (mtk_sdio_pm_suspend) nie wykonuje sie.
+          # === MysticalOS 0.6: SMART SUSPEND (Faza 2, spec usera) ===
+          # Receipt: panik mtk_sdio_pm_suspend / wlan_mt7902_sdio_mt6789,
+          # Oops 96000145, DMA paging przy system suspend; A14 kernel+vendor
+          # nietkniety. Strategia: NIE zabijamy deep sleep, tylko wyciszamy
+          # Wejscia w sciezke PM SDIO: settle przy screen-off + po resume.
           mkdir -p "$T/etc/init" "$T/bin"
           cat > "$T/etc/init/mystic-power.rc" <<'RCEOF'
-          # MysticalOS 0.5 - suspend hardening (TB350FU DSU, panik mtk_sdio_pm_suspend)
-          # Kernel wake lock trzyma autosuspend z dala od /sys/power/state.
-          # Przelaczenie w locie: setprop persist.sys.mystic.suspend_block 0|1
+          # MysticalOS 0.6 - SMART SUSPEND (TB350FU DSU, panik mtk_sdio_pm_suspend)
+          # Domyslnie ZADEN permanentny wake lock - deep sleep dziala.
+          # Twardy blok (opcja, dla pewnosci): persist.sys.mystic.suspend_block=1
+          # (init przytrzyma mystic_dsu_hold -> suspend nie wejdzie w ogole).
           on property:sys.boot_completed=1 && property:persist.sys.mystic.suspend_block=1
               write /sys/power/wake_lock mystic_dsu_hold
           on property:persist.sys.mystic.suspend_block=0
               write /sys/power/wake_unlock mystic_dsu_hold
           on shutdown
               write /sys/power/wake_unlock mystic_dsu_hold
+              write /sys/power/wake_unlock mystic_screensettle
 
+          # Settle guard: krotki wake_lock przy gasnacym ekranie i po kazdym
+          # wznowieniu przy OFF ekranie -> system wchodzi w suspend (sciezka
+          # mtk_sdio_pm_suspend) dopiero gdy ruch SDIO/Wi-Fi ustaty; potem
+          # puscza -> deep sleep. Bez seclabel = kontekst inita (umie pisac
+          # /sys/power/wake_lock; init/README: "defaults to the init context").
+          service mystic_suspend_guard /system/bin/sh /system/bin/mystic-suspend-guard.sh
+              user root
+              group root
+              disabled
+              oneshot
+
+          on property:sys.boot_completed=1 && property:persist.sys.mystic.suspend_guard=1
+              start mystic_suspend_guard
+
+          # Boot-time tune: Doze/AppStandby OFF + Wi-Fi safe (raz po boocie).
           service mystic_power_tune /system/bin/sh /system/bin/mystic-power-tune.sh
               user root
               group root shell
@@ -169,37 +213,251 @@ jobs:
           on property:sys.boot_completed=1 && property:persist.sys.mystic.power_tune=1
               start mystic_power_tune
           RCEOF
-          # 2) boot-time tune: Doze/AppStandby OFF + rzadkie usypianie
+          # 2) boot-time tune: Doze/AppStandby OFF (stlumione, deep sleep wraca)
+          #    + Wi-Fi SAFE MODE (rzadkie skany, throttling, supplicant 180 s)
           cat > "$T/bin/mystic-power-tune.sh" <<'SHEOF'
           #!/system/bin/sh
-          # MysticalOS 0.5 - power/suspend hardening (TB350FU DSU, A14 MTK vendor)
-          # Cel: zero agresywnych cykli suspend/resume + minimum ruchu SDIO w idle.
+          # MysticalOS 0.6 - Smart Suspend boot tune (TB350FU DSU, A14 MTK vendor)
+          # Cel: stlumic Doze/AppStandby i tloc Wi-Fi w idle, ALE nie blokowac
+          # deep sleep (to robi tylko opcjonalny suspend_block/guard settle).
           LOG=/data/local/tmp/mystic-power-tune.log
           {
-            echo "== $(date) mystic-power-tune start =="
+            echo "== $(date) mystic-power-tune 0.6 (Smart Suspend) start =="
             # Doze OFF (likwiduje idle suspend bursts):
             cmd deviceidle disable all 2>&1
             settings put global app_standby_enabled 0
             settings put global adaptive_battery_management_enabled 0
             # Fallback: gdyby deviceidle ktos wrocil, fazy Doze = nieskonczonosc
             settings put global device_idle_constants "inactive_to=9223372036854775807,sensing_to=0,locating_to=0,motion_inactive_to=0,idle_after_inactive_to=9223372036854775807,idle_pending_to=0,max_idle_pending_to=0,idle_pending_factor=2.0,quick_doze_delay_to=9223372036854775807,max_idle_to=9223372036854775807,idle_to=43200000"
-            # Mniej wejsc w suspend podczas testow (ekran przy USB: nie gasnie):
+            # Testy przy USB bez usypiania; normalny timeout 10 min:
             settings put global stay_on_while_plugged_in 7
             settings put system screen_off_timeout 600000
-            # Wi-Fi: mniej skanow w idle = mniej ruchu po SDIO:
+            # Wi-Fi SAFE MODE: idle cicho = mniej przejsc SDIO przy suspend:
             settings put global wifi_scan_always_enabled 0
             settings put global wifi_scan_throttle_enabled 1
+            settings put global wifi_supplicant_scan_interval 180000
+            cmd wifi set-scan-always-available disabled 2>&1 || true
             echo "== done =="
           } > "$LOG" 2>&1
           SHEOF
           chmod 0755 "$T/bin/mystic-power-tune.sh"
-          # 3) propsy (bez render-propsow - diagnoza usera: unrelated)
+          # 3) SMART SUSPEND GUARD: demon settle (kontekst inita - patrz rc).
+          #    Krotki wake_lock przy gasnacym ekranie + po kazdym resume przy
+          #    OFF ekranie (skok zegara = proces byl zamrozony w suspend).
+          cat > "$T/bin/mystic-suspend-guard.sh" <<'GUARDEOF'
+          #!/system/bin/sh
+          # MysticalOS 0.6 - SMART SUSPEND GUARD (TB350FU, panik mtk_sdio_pm_suspend)
+          # Trzyma KROTKI wake_lock przy gasnacym ekranie (domyslnie 4 s), zeby
+          # system wszedl w suspend (sciezka mtk_sdio_pm_suspend) dopiero gdy
+          # ruch SDIO/Wi-Fi ustaty; potem puscza -> deep sleep wraca. Po kazdym
+          # wznowieniu przy OFF ekranie (proces byl zamrozony - widac skok
+          # zegara) doklada krotki settle - tlumi szybkie cykle suspend/resume.
+          # Kontekst: init (rc bez seclabel). Log: /data/local/tmp/mystic-suspend-guard.log
+          LOGF=/data/local/tmp/mystic-suspend-guard.log
+          log() {
+            echo "mystic-guard: $*" > /dev/kmsg 2>/dev/null
+            echo "$(date '+%m-%d %H:%M:%S') $*" >> "$LOGF" 2>/dev/null
+          }
+          # Czytnik stanu ekranu: backlight (0 = OFF); fb blank (0 = ON, 4 = OFF)
+          BL=
+          for p in /sys/class/leds/lcd-backlight/brightness /sys/class/backlight/panel-0/brightness /sys/class/backlight/pwm-backlight/brightness; do
+            if [ -r "$p" ]; then BL="$p"; break; fi
+          done
+          if [ -z "$BL" ]; then
+            for p in /sys/class/backlight/*/brightness; do
+              if [ -r "$p" ]; then BL="$p"; break; fi
+            done
+          fi
+          if [ -z "$BL" ]; then
+            for p in /sys/class/graphics/fb*/blank; do
+              if [ -r "$p" ]; then BL="$p"; break; fi
+            done
+          fi
+          if [ -z "$BL" ]; then
+            log "brak czytelnego wezla backlight/blank - guard bierny, koncze"
+            exit 0
+          fi
+          FBBLANK=0
+          case "$BL" in
+            */blank) FBBLANK=1 ;;
+          esac
+          screen_state() {
+            v=$(cat "$BL" 2>/dev/null)
+            if [ -z "$v" ]; then return 1; fi
+            if [ "$FBBLANK" = "1" ]; then
+              if [ "$v" = "0" ]; then echo on; else echo off; fi
+            else
+              if [ "$v" = "0" ]; then echo off; else echo on; fi
+            fi
+          }
+          settle_ms=$(getprop persist.sys.mystic.settle_ms)
+          case "$settle_ms" in
+            ''|*[!0-9]*) settle_ms=4000 ;;
+          esac
+          if [ "$settle_ms" -gt 30000 ]; then settle_ms=30000; fi
+          if [ "$settle_ms" -lt 1000 ]; then settle_ms=1000; fi
+          settle_s=$((settle_ms / 1000))
+          hold_settle() {
+            if echo mystic_screensettle > /sys/power/wake_lock 2>/dev/null; then
+              log "settle lock na ${settle_s}s (kalm wejscia w suspend)"
+              sleep "$settle_s"
+              echo mystic_screensettle > /sys/power/wake_unlock 2>/dev/null
+              log "settle lock puszczony - deep sleep dozwolony"
+              return 0
+            else
+              log "BLAD zapisu wake_lock - guard bierny, koncze"
+              exit 0
+            fi
+          }
+          log "start 0.6 Smart Suspend: node=$BL settle=${settle_s}s"
+          seen_on=0
+          zeros=0
+          resume_settles=0
+          last_t=$(date +%s)
+          while :; do
+            sleep 0.2
+            t=$(date +%s)
+            dt=$((t - last_t))
+            last_t=$t
+            s=$(screen_state)
+            if [ -z "$s" ]; then
+              continue
+            fi
+            if [ "$s" = "on" ]; then
+              zeros=0
+              seen_on=1
+              resume_settles=0
+              continue
+            fi
+            # ekran OFF:
+            if [ "$dt" -ge 3 ]; then
+              # skok czasu = proces byl zamrozony -> wlasnie RESUME z suspend
+              # przy OFF ekranie -> settle chroni przed natychmiastowym
+              # powrotem do suspend (szybkie cykle = okno paniki)
+              if [ "$resume_settles" -lt 3 ]; then
+                resume_settles=$((resume_settles + 1))
+                log "resume przy OFF ekranie (dt=${dt}s) - settle #$resume_settles"
+                hold_settle
+                last_t=$(date +%s)
+                continue
+              fi
+            elif [ "$seen_on" = "1" ] && [ "$zeros" -ge 1 ]; then
+              # klasyczne przejscie ON->OFF (2 prob = ~0.4 s) - settle teraz
+              zeros=0
+              seen_on=0
+              resume_settles=0
+              hold_settle
+              last_t=$(date +%s)
+              continue
+            fi
+            zeros=$((zeros + 1))
+          done
+          GUARDEOF
+          chmod 0755 "$T/bin/mystic-suspend-guard.sh"
+          # 4) narzedzie reczne (user-build safe: settings/svc/cmd; setprop
+          #    persist.* moze byc AVC-denied na user build - obsluzone)
+          cat > "$T/bin/mystic-ctl.sh" <<'CTLEOF'
+          #!/system/bin/sh
+          # MysticalOS 0.6 - mystic-ctl: reczne przelaczanie (adb shell):
+          #   sh /system/bin/mystic-ctl.sh status
+          #   sh /system/bin/mystic-ctl.sh block on|off     # twardy blok suspendu
+          #   sh /system/bin/mystic-ctl.sh wifi-safe on|off # ciche Wi-Fi w idle
+          #   sh /system/bin/mystic-ctl.sh settle 4000      # ms settle (screen-off)
+          cmd_status() {
+            echo "== MysticalOS 0.6 Smart Suspend - status =="
+            echo "suspend_block (prop; domyslnie 0): $(getprop persist.sys.mystic.suspend_block)"
+            echo "suspend_guard (prop): $(getprop persist.sys.mystic.suspend_guard) / settle_ms: $(getprop persist.sys.mystic.settle_ms)"
+            echo "kernel wake locks: $(cat /sys/power/wake_lock 2>/dev/null)"
+            echo "screen_off_timeout: $(settings get system screen_off_timeout) ms / stay_on_plugged: $(settings get global stay_on_while_plugged_in)"
+            echo "wifi scan_always: $(settings get global wifi_scan_always_enabled) / throttle: $(settings get global wifi_scan_throttle_enabled) / supplicant_ms: $(settings get global wifi_supplicant_scan_interval)"
+            dumpsys deviceidle 2>/dev/null | grep -m1 -i "enabled" || echo "doze: ?"
+            echo "-- guard log (ostatnie 6):"
+            tail -n 6 /data/local/tmp/mystic-suspend-guard.log 2>/dev/null
+            echo "-- tune log (ostatnie 3):"
+            tail -n 3 /data/local/tmp/mystic-power-tune.log 2>/dev/null
+          }
+          cmd_block() {
+            case "$1" in
+              on)
+                # Warstwa 1 (zawsze dziala): ekran sam nie zgasnie + stay-on przy USB
+                settings put global stay_on_while_plugged_in 7
+                settings put system screen_off_timeout 7200000
+                # Warstwa 2 (gdy build pozwala setprop): kernel wake lock
+                if setprop persist.sys.mystic.suspend_block 1 2>/dev/null; then
+                  echo "block ON: wake_lock mystic_dsu_hold + stay-on + timeout 2h"
+                else
+                  echo "block ON: stay-on + timeout 2h (setprop zabroniony na user"
+                  echo "build - kernel wake_lock aktywuje sie tylko z build.prop)"
+                fi
+                ;;
+              off)
+                settings put global stay_on_while_plugged_in 0
+                settings put system screen_off_timeout 600000
+                setprop persist.sys.mystic.suspend_block 0 2>/dev/null
+                echo "block OFF (smart suspend + guard dalej pracuja)"
+                ;;
+              *) echo "uzycie: mystic-ctl block on|off" ;;
+            esac
+          }
+          cmd_wifi() {
+            case "$1" in
+              on)
+                settings put global wifi_scan_always_enabled 0
+                settings put global wifi_scan_throttle_enabled 1
+                settings put global wifi_supplicant_scan_interval 180000
+                cmd wifi set-scan-always-available disabled 2>/dev/null || true
+                echo "Wi-Fi Safe Mode ON: skany w tle OFF, interwal 180 s, throttle ON"
+                ;;
+              off)
+                settings put global wifi_scan_always_enabled 1
+                settings put global wifi_scan_throttle_enabled 1
+                settings delete global wifi_supplicant_scan_interval 2>/dev/null
+                cmd wifi set-scan-always-available enabled 2>/dev/null || true
+                echo "Wi-Fi Safe Mode OFF (skany wracaja)"
+                ;;
+              *) echo "uzycie: mystic-ctl wifi-safe on|off" ;;
+            esac
+          }
+          case "$1" in
+            status) cmd_status ;;
+            block) cmd_block "$2" ;;
+            wifi-safe) cmd_wifi "$2" ;;
+            settle)
+              case "$2" in
+                ''|*[!0-9]*) echo "uzycie: mystic-ctl settle <ms 1000-30000>" ;;
+                *)
+                  if setprop persist.sys.mystic.settle_ms "$2" 2>/dev/null; then
+                    echo "settle=$2 ms (guard podniesie w kolejnym obrocie petli)"
+                  else
+                    echo "setprop zabroniony na user build - settle zmienisz przez"
+                    echo "rebuild (persist.sys.mystic.settle_ms w build.prop)"
+                  fi
+                  ;;
+              esac ;;
+            *) echo "MysticalOS 0.6 mystic-ctl"
+               echo "uzycie: mystic-ctl status | block on|off | wifi-safe on|off | settle <ms>" ;;
+          esac
+          CTLEOF
+          chmod 0755 "$T/bin/mystic-ctl.sh"
+          # 5) propsy (bez render-propsow - diagnoza usera: unrelated).
+          #    CELOWO vendor.wifi.suspend (NIE persist.vendor.*): persist zapisuje
+          #    sie we wspoldzielonym /data/property i wyciekalby do hosta Lenovo.
           { echo ""
-            echo "# === MysticalOS 0.5: hardening suspend (DSU na A14 MTK vendor) ==="
-            echo "persist.sys.mystic.suspend_block=1"
+            echo "# === MysticalOS 0.6: SMART SUSPEND (deep sleep DOZWOLONY) ==="
+            echo "persist.sys.mystic.suspend_block=0"
             echo "persist.sys.mystic.power_tune=1"
+            echo "persist.sys.mystic.suspend_guard=1"
+            echo "persist.sys.mystic.settle_ms=4000"
+            echo "persist.sys.mystic.wifi_safe=1"
+            echo "# Wi-Fi safe (spec usera; ro/vendor = per-boot, bez wycieku do hosta):"
+            echo "persist.sys.wifi.supplicant_scan_interval=180"
+            echo "ro.wifi.suspend.enabled=0"
+            echo "vendor.wifi.suspend=0"
+            echo "# Touch (spekulacyjne, nieszkodliwe gdy nieczytane):"
+            echo "ro.input.noresample=1"
+            echo "# Z 0.5 (bez zmian):"
             echo "ro.surface_flinger.use_content_detection_for_refresh_rate=false"; } >> "$BP"
-          echo "hardening: mystic-power.rc + mystic-power-tune.sh + build.prop OK"
+          echo "smart-suspend: rc + 3 skrypty + build.prop OK"
           echo "== mkfs system_dsu (EROFS + konteksty, tmpfs) =="
           TM_AV=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
           [ "$TM_AV" -ge 3500 ] || { echo "::error::tmpfs ${TM_AV}M < 3500M"; exit 1; }
@@ -211,7 +469,7 @@ jobs:
           df -h /
           echo "system_dsu.img: $(stat -c%s "$WORK/out/system.img") B"
 
-      - name: "4. Weryfikacja obrazu (mount + hardening + kluczowe pliki)"
+      - name: "4. Weryfikacja obrazu (mount + smart-suspend + kluczowe pliki)"
         run: |
           set -euo pipefail
           MNT="$WORK/mnt"; mkdir -p "$MNT"
@@ -219,21 +477,44 @@ jobs:
             || { echo "::error::montaz weryfikacyjny padl"; exit 1; }
           P="$MNT"; [ -d "$MNT/system" ] && P="$MNT/system"
           grep -q "ro.mysticalos.version=3" "$P/build.prop" || { echo "::error::brak mysticalos.version=3"; exit 1; }
-          # HARDENING: rc + skrypt + propsy
+          # SMART SUSPEND: rc (wake_lock opcjonalny + guard) + 3 skrypty + propsy
           grep -q "wake_lock mystic_dsu_hold" "$P/etc/init/mystic-power.rc" \
             || { echo "::error::rc: brak wake_lock mystic_dsu_hold"; exit 1; }
+          grep -q "service mystic_suspend_guard" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak service mystic_suspend_guard"; exit 1; }
+          grep -q "start mystic_suspend_guard" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak start mystic_suspend_guard"; exit 1; }
           grep -q "seclabel u:r:shell:s0" "$P/etc/init/mystic-power.rc" \
             || { echo "::error::rc: brak seclabel uslugi tune"; exit 1; }
           grep -q "cmd deviceidle disable all" "$P/bin/mystic-power-tune.sh" \
             || { echo "::error::skrypt: brak deviceidle disable"; exit 1; }
           grep -q "device_idle_constants" "$P/bin/mystic-power-tune.sh" \
             || { echo "::error::skrypt: brak device_idle_constants"; exit 1; }
-          [ -x "$P/bin/mystic-power-tune.sh" ] || { echo "::error::skrypt nie jest wykonywalny"; exit 1; }
-          for KV in "persist.sys.mystic.suspend_block=1" "persist.sys.mystic.power_tune=1" \
+          grep -q "wifi_supplicant_scan_interval" "$P/bin/mystic-power-tune.sh" \
+            || { echo "::error::skrypt: brak wifi_supplicant_scan_interval"; exit 1; }
+          grep -q "mystic_screensettle" "$P/bin/mystic-suspend-guard.sh" \
+            || { echo "::error::guard: brak mystic_screensettle"; exit 1; }
+          grep -q "wake_unlock" "$P/bin/mystic-suspend-guard.sh" \
+            || { echo "::error::guard: brak wake_unlock (deep sleep!)"; exit 1; }
+          grep -q "cmd wifi set-scan-always-available disabled" "$P/bin/mystic-ctl.sh" \
+            || { echo "::error::ctl: brak wifi set-scan-always-available"; exit 1; }
+          for S in mystic-power-tune.sh mystic-suspend-guard.sh mystic-ctl.sh; do
+            [ -x "$P/bin/$S" ] || { echo "::error::$S nie jest wykonywalny"; exit 1; }
+            sh -n "$P/bin/$S" || { echo "::error::$S: blad skladni sh"; exit 1; }
+          done
+          for KV in "persist.sys.mystic.suspend_block=0" "persist.sys.mystic.power_tune=1" \
+                    "persist.sys.mystic.suspend_guard=1" "persist.sys.mystic.settle_ms=4000" \
+                    "persist.sys.wifi.supplicant_scan_interval=180" \
+                    "ro.wifi.suspend.enabled=0" "vendor.wifi.suspend=0" \
+                    "ro.input.noresample=1" \
                     "ro.surface_flinger.use_content_detection_for_refresh_rate=false"; do
             grep -q "$KV" "$P/build.prop" || { echo "::error::brak $KV w build.prop"; exit 1; }
           done
-          echo "hardening w obrazie: rc(wake_lock+usluga) + skrypt(0755) + propsy 3/3 OK"
+          # KRYTYCZNE: build MUSI byc smart (0.5 z =1 to osobny build Fazy 1)
+          if grep -q "persist.sys.mystic.suspend_block=1" "$P/build.prop"; then
+            echo "::error::suspend_block=1 w 0.6?! (to spec 0.5/Stability)"; exit 1
+          fi
+          echo "smart-suspend w obrazie: rc(wake_lock+guard+tune) + 3 skrypty (0755, sh -n OK) + propsy 9/9 + domyslne 0 OK"
           for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk"; do
             [ -f "$P/$CHK" ] || { echo "::error::brak $CHK"; exit 1; }
           done
@@ -255,32 +536,56 @@ jobs:
           cd "$WORK/out"
           cat > CZYTAJ-TO-DSU.txt <<'XEOF'
           ====================================================================
-          MysticalOS 0.5 - STABILITY BUILD (TB350FU DSU, A14 MTK vendor)
+          MysticalOS 0.6 - SMART SUSPEND (TB350FU DSU, A14 MTK vendor)
           ====================================================================
-          Cel: eliminacja paniki jadra mtk_sdio_pm_suspend (Wi-Fi MT7902
-          SDIO, Oops 96000145, DMA paging przy usypianiu systemu).
-          Kernel+vendor = stock Android 14 (DSU nie rusza) - zatem sterownika
-          nie latamy, tylko BLOKUJEMY sciezke paniki i agresywne usypianie:
+          Cel: ta sama panika (mtk_sdio_pm_suspend, Wi-Fi MT7902 SDIO, Oops
+          96000145, DMA paging przy usypianiu), ale BEZ permanentnego
+          wake_locka - deep sleep DOZWOLONY, bo zycie na baterii ma sens.
+          Kernel+vendor = stock Android 14 (DSU nie rusza) - sterownika nie
+          latamy; wyciszamy WEJSCIA w sciezke PM SDIO:
 
-          1. KERNEL WAKE LOCK (init mystic-power.rc): przy
-             persist.sys.mystic.suspend_block=1 system NIGDY nie wchodzi w
-             suspend -> mtk_sdio_pm_suspend sie nie wykonuje -> panik
-             niemozliwy. Wylaczenie: setprop persist.sys.mystic.suspend_block 0
-             (bateria w trybie 1 przy gaszacym ekranie pada szybciej -
-             koszt stabilnosci).
+          1. SETTLE GUARD (nowosc; mystic-suspend-guard.sh, demon w kontekscie
+             inita): przy GASnacym ekranie trzyma krotki wake_lock
+             mystic_screensettle (domyslnie 4 s) -> suspend wchodzi dopiero
+             gdy ruch SDIO/Wi-Fi ustaty; potem puscza -> deep sleep wraca.
+             Dodatkowo po kazdym WZNOWIENIU przy OFF ekranie (proces byl
+             zamrozony - wykryte skokiem zegara) doklada krotki settle ->
+             tlumi szybkie cykle suspend/resume. Max 3 resettle pod rzad
+             (ochrona baterii), reset przy wlaczeniu ekranu.
           2. DOZE/APP STANDBY OFF + device_idle_constants=Long.MAX
-             (mystic-power-tune.sh, raz po boocie) - zero idle suspend bursts.
-          3. stay_on_while_plugged_in=7 (ekran ON przy USB - testy bez
+             (mystic-power-tune.sh, raz po boocie) - zero idle suspend bursts
+             (jak w 0.5).
+          3. Wi-Fi SAFE MODE: scan_always 0, scan_throttle 1,
+             wifi_supplicant_scan_interval 180000 ms + cmd wifi
+             set-scan-always-available disabled + propsy
+             persist.sys.wifi.supplicant_scan_interval=180,
+             ro.wifi.suspend.enabled=0, vendor.wifi.suspend=0 (NIE
+             persist.vendor.* - celowo: nie wyciekaja do hosta Lenovo przez
+             wspoldzielone /data/property po wyjsciu z DSU).
+          4. stay_on_while_plugged_in=7 (ekran ON przy USB - testy bez
              usypiania) + screen_off_timeout 10 min.
-          4. Wi-Fi idle cicho: scan_always 0, scan_throttle 1 (mniej
-             ruchu SDIO, gdy ekran zgasnie przy suspend_block=0).
-          Render: NORMALNY (GPU) - wczesniejsze propsy soft-render usuniete
-          (diagnoza: unrelated).
+          5. Touch: ro.input.noresample=1 (spekulacyjne, nieszkodliwe).
+          6. TWARDY BLOK (Faza 1, opcja "dla pewnosci"): wlacz przez
+             sh /system/bin/mystic-ctl.sh block on
+             (albo setprop persist.sys.mystic.suspend_block 1, jesli build
+             pozwala) -> permanentny wake_lock mystic_dsu_hold jak w 0.5.
+
+          STEROWANIE (adb shell):
+            sh /system/bin/mystic-ctl.sh status
+            sh /system/bin/mystic-ctl.sh block on|off
+            sh /system/bin/mystic-ctl.sh wifi-safe on|off
+            sh /system/bin/mystic-ctl.sh settle 4000    # ms, 1000-30000
+          (setprop persist.* bywa AVC-denied na user build - ctl uzywa
+          settings/svc/cmd, ktore dzialaja zawsze)
 
           Weryfikacja po boocie (adb):
-            cat /sys/power/wake_lock          -> mystic_dsu_hold
-            dumpsys deviceidle | head -5      -> enabled=false
+            cat /sys/power/wake_lock   -> pusto w smart; mystic_screensettle
+                                          ~4 s po zgaszeniu ekranu; mystic_dsu_hold
+                                          tylko po "block on"
+            dumpsys deviceidle | head -5 -> enabled=false (Doze OFF)
             cat /data/local/tmp/mystic-power-tune.log
+            cat /data/local/tmp/mystic-suspend-guard.log
+            ps -A | grep mystic        -> demon guarda zywy
 
           CO TO JEST:
           Prawdziwy system.img MysticalOS 3 (baza Lenovo + microG + Aurora +
@@ -330,7 +635,7 @@ jobs:
           XEOF
           python3 - <<'EOF'
           import os, zipfile
-          dst = "MysticalOS_0.5_DSU_Stability.zip"
+          dst = "MysticalOS_0.6_DSU_SmartSuspend.zip"
           with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
               z.write("system.img")
               z.write("CZYTAJ-TO-DSU.txt")
@@ -347,9 +652,9 @@ jobs:
       - name: "6. Artifact (zip + README do pobrania ze strony runu)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS_0.5_DSU_Stability
+          name: MysticalOS_0.6_DSU_SmartSuspend
           path: |
-            /tmp/dsu/out/MysticalOS_0.5_DSU_Stability.zip
+            /tmp/dsu/out/MysticalOS_0.6_DSU_SmartSuspend.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -358,7 +663,7 @@ jobs:
           set -uo pipefail
           HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
             bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
-            "$WORK/out/MysticalOS_0.5_DSU_Stability.zip" \
+            "$WORK/out/MysticalOS_0.6_DSU_SmartSuspend.zip" \
             "$WORK/out/dsu-links.md" || true
           cat "$WORK/out/dsu-links.md" || true
 
