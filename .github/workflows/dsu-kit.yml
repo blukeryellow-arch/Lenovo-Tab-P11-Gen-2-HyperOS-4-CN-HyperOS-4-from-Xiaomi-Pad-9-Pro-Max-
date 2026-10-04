@@ -74,6 +74,28 @@ name: dsu-kit
 #     (vendor/etc/audio_policy_configuration.xml) - system jej NIE nadpisuje;
 #     libshimy pomijamy (wymagaja kompilacji pod znane symbole, nie
 #     spekulujemy). Nazwa: MysticalOS_0.7_DSU_TrebleCompat.zip.
+# v1.6 (0.8 TAB A7 LITE EDITION, spec usera 4 X wieczor - Samsung SM-T220):
+#     CROSS-DEVICE (baza obrazu nadal MysticalOS 3; tozsamosc/tuning pod
+#     Samsung Galaxy Tab A7 Lite: MT6765/MT8768T, PowerVR GE8320, 32 GB/3 GB).
+#     (a) build.prop: BLOK SAMSUNG wg spec usera (ro.product.* = samsung/
+#     gta7litewifi/SM-T220/gta7litewifixx, ro.soc.model=MT8768T, ro.mediatek.
+#     platform=MT6765, SF wide_color/HDR=false) + ro.build.ab_update=true
+#     (A/B) + ro.build.product=gta7litewifi; (b) 3 GB RAM: LMK oficjalne
+#     propsy (ro.lmk.medium=850 - conservative, ro.lmk.critical=0 bezczn.,
+#     ro.lmk.kill_heaviest_task=true, ro.lmk.downgrade_pressure=60; nazwy
+#     zweryfikowane w AOSP lmkd docs) + settings cached_apps_freezer=enabled
+#     + max_cached_processes=24 + nowy service mystic-zram-setup.sh (init
+#     ctx): jesli zram0 nieaktywny -> lz4 + 1536M (50% RAM) + swapon; jesli
+#     vendor mial wlasny zram (Samsung ma) -> NIC, tylko log; (c) Samsung
+#     backlight fix: persist.sys.phh.samsung_backlight=1 (phhusson #1007,
+#     fix potwierdzony przez phhussona; no-op gdy framework nie czyta) +
+#     guard czyta dodatkowo /sys/class/backlight/panel/brightness;
+#     (d) KNOX/SEC overlay: cmd overlay disable dla overlayow samsung/knox/
+#     sec z product hosta (best-effort, stan w /data goscia - bez wycieku);
+#     (e) DIET 32 GB: usuniete motywy miui-themes (~-200 MB) + log top-15
+#     najwiekszych katalogow app/ (evidence na przyszlosc); audio policy
+#     NADAL domena vendora (nie nadpisujemy - jak 0.7). Nazwa:
+#     MysticalOS_0.8_DSU_TabA7Lite.zip. 0.7 (Lenovo) zyje na run 37218138076.
 #   Propsy SA TYLKO w podgladzie DSU - do obrazu docelowego (m3) NIE
 #   wchodza (persist.sys.composition.type=cpu to prop z epoki MTK; gdyby
 #   SF Lenova go czytal, zepsulby wydladnosci na PRAWDZIWYM flashu).
@@ -231,6 +253,17 @@ jobs:
 
           on property:sys.boot_completed=1 && property:persist.sys.mystic.power_tune=1
               start mystic_power_tune
+
+          # zRAM dla 3 GB RAM (init ctx: sysfs write + swapon; gdy vendor mial
+          # wlasny zram - skrypt nic nie rusza, tylko loguje)
+          service mystic_zram_setup /system/bin/sh /system/bin/mystic-zram-setup.sh
+              user root
+              group root
+              disabled
+              oneshot
+
+          on property:sys.boot_completed=1 && property:persist.sys.mystic.zram_setup=1
+              start mystic_zram_setup
           RCEOF
           # 2) boot-time tune: Doze/AppStandby OFF (stlumione, deep sleep wraca)
           #    + Wi-Fi SAFE MODE (rzadkie skany, throttling, supplicant 180 s)
@@ -256,6 +289,24 @@ jobs:
             settings put global wifi_scan_throttle_enabled 1
             settings put global wifi_supplicant_scan_interval 180000
             cmd wifi set-scan-always-available disabled 2>&1 || true
+            # === 0.8 Tab A7 Lite: 3 GB RAM - lekki footprint ===
+            # Freezer cached apek (A11+; odciąża RAM bez ubijania):
+            settings put global cached_apps_freezer enabled
+            # Mniejszy cache procesow (default ~32; 24 = balanced dla 3 GB):
+            settings put global activity_manager_constants max_cached_processes=24
+            # === 0.8: SAMSUNG KNOX/SEC overlaye (z product hosta) OFF ===
+            # Stan overlayy zyje w /data goscia DSU - nie wycieka do hosta.
+            cmd overlay list 2>/dev/null | while IFS= read -r OLINE; do
+              OVR=$(echo "$OLINE" | awk '{print $NF}')
+              case "$OVR" in
+                *samsung*|*knox*|*.sec.*)
+                  cmd overlay disable "$OVR" 2>/dev/null \
+                    && echo "knox/sec overlay disabled: $OVR" \
+                    || echo "overlay disable FAIL: $OVR"
+                  ;;
+              esac
+            done
+            echo "-- zram stan: $(cat /sys/block/zram0/disksize 2>/dev/null || echo 'brak zram0')"
             echo "== done =="
           } > "$LOG" 2>&1
           SHEOF
@@ -279,7 +330,7 @@ jobs:
           }
           # Czytnik stanu ekranu: backlight (0 = OFF); fb blank (0 = ON, 4 = OFF)
           BL=
-          for p in /sys/class/leds/lcd-backlight/brightness /sys/class/backlight/panel-0/brightness /sys/class/backlight/pwm-backlight/brightness; do
+          for p in /sys/class/leds/lcd-backlight/brightness /sys/class/backlight/panel/brightness /sys/class/backlight/panel-0/brightness /sys/class/backlight/pwm-backlight/brightness; do
             if [ -r "$p" ]; then BL="$p"; break; fi
           done
           if [ -z "$BL" ]; then
@@ -373,6 +424,42 @@ jobs:
           done
           GUARDEOF
           chmod 0755 "$T/bin/mystic-suspend-guard.sh"
+          # 3b) zRAM dla 3 GB RAM (init ctx = sysfs write + swapon mozliwe):
+          #     NIE rusza zram skonfigurowanego przez vendora (Samsung ma wlasny)
+          cat > "$T/bin/mystic-zram-setup.sh" <<'ZRAMEOF'
+          #!/system/bin/sh
+          # MysticalOS 0.8 - zRAM setup (Tab A7 Lite, 3 GB RAM)
+          # Cel: zram 1536 MB (50% RAM) lz4, TYLKO gdy vendor nie skonfigurowal
+          # wlasnego (Samsung stock zwykle MA zram0 aktywny - wtedy log only).
+          LOGF=/data/local/tmp/mystic-zram-setup.log
+          {
+            echo "== $(date) mystic-zram-setup start =="
+            if [ ! -e /sys/block/zram0 ]; then
+              echo "brak /sys/block/zram0 - kernel bez zram; nic nie robie"
+              exit 0
+            fi
+            ZD=$(cat /sys/block/zram0/disksize 2>/dev/null)
+            echo "zram0 disksize: ${ZD:-?}"
+            if [ -n "$ZD" ] && [ "$ZD" != "0" ]; then
+              echo "vendor zram JEST aktywny - nie ruszam (log only)"
+              echo "algorithm: $(cat /sys/block/zram0/comp_algorithm 2>/dev/null)"
+              cat /proc/swaps 2>/dev/null
+              exit 0
+            fi
+            # zram nieaktywny -> skonfiguruj (lz4 jesli dostepne, 1536 MB)
+            if grep -qw lz4 /sys/block/zram0/comp_algorithm 2>/dev/null; then
+              echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null \
+                && echo "algorithm: lz4 OK" || echo "algorithm: set lz4 FAIL (zostaje domyslny)"
+            fi
+            echo 1610612736 > /sys/block/zram0/disksize 2>/dev/null \
+              && echo "disksize: 1536M OK" || { echo "disksize: FAIL - zram niedostepny, koncze"; exit 0; }
+            swapon /dev/block/zram0 2>/dev/null \
+              && echo "swapon zram0 OK" || echo "swapon FAIL (moze wymagac init ctx)"
+            cat /proc/swaps 2>/dev/null
+            echo "== done =="
+          } > "$LOGF" 2>&1
+          ZRAMEOF
+          chmod 0755 "$T/bin/mystic-zram-setup.sh"
           # 4) narzedzie reczne (user-build safe: settings/svc/cmd; setprop
           #    persist.* moze byc AVC-denied na user build - obsluzone)
           cat > "$T/bin/mystic-ctl.sh" <<'CTLEOF'
@@ -476,30 +563,47 @@ jobs:
             echo "ro.input.noresample=1"
             echo "# Z 0.5 (bez zmian):"
             echo "ro.surface_flinger.use_content_detection_for_refresh_rate=false"; } >> "$BP"
-          # 6) TREBLE COMPAT 0.7 (vendor A14 / VNDK 34 / MT6789 / TB350FU).
-          #    Semantyka ro.*: first-set-wins + /system/build.prop laduje sie
-          #    PO vendor/product -> wszystko ponizej = CZYSTY FALLBACK
+          # DIET pod 32 GB ROM: motywy MIUI out (~-200 MB; apki/fonty zostaja)
+          find "$T" -maxdepth 3 -type d -iname "*miui-theme*" 2>/dev/null | while read -r D; do
+            echo "DIET: usuwam $D ($(du -sm "$D" 2>/dev/null | cut -f1) MB)"
+            rm -rf "$D"
+          done
+          echo "-- top-15 najwiekszych katalogow app/priv-app (evidence diety):"
+          du -sm "$T/app"/* "$T/priv-app"/* 2>/dev/null | sort -rn | head -15 || true
+          # 6) TREBLE COMPAT 0.8: SAMSUNG TAB A7 LITE (SM-T220; MT6765/MT8768T,
+          #    32 GB / 3 GB RAM). Semantyka ro.*: first-set-wins + /system/
+          #    build.prop laduje sie PO vendor/product -> CZYSTY FALLBACK
           #    (w DSU nie nadpisuje hosta; ozywa bez product/system_ext).
-          #    CELOWO nie w prop.default (to by silowo nadpisalo vendor).
+          #    CELOWO nie w prop.default. BEZ ro.vndk.version (spec usera dla
+          #    Samsunga go nie zawiera; linkerconfig rozwiąże po stronie vendora).
           { echo ""
-            echo "# === MysticalOS 0.7: TREBLE COMPAT (TB350FU; vendor A14, VNDK 34, MT6789) ==="
-            echo "# VNDK: linkerconfig buduje przestrzen nazw vndk wg tej wartosci (wymog usera):"
-            echo "ro.vndk.version=34"
-            echo "# Identyfikacja SoC (fallback; ro.soc.* zwykle z device-tree, juz ustawione):"
+            echo "# === MysticalOS 0.8: SAMSUNG TAB A7 LITE (SM-T220, MT6765/MT8768T, 3 GB) ==="
+            echo "# Tozsamosc (autonomia; w DSU product hosta i tak nadpisuje):"
+            echo "ro.product.brand=samsung"
+            echo "ro.product.manufacturer=samsung"
+            echo "ro.product.device=gta7litewifi"
+            echo "ro.product.model=SM-T220"
+            echo "ro.product.name=gta7litewifixx"
+            echo "ro.build.product=gta7litewifi"
+            echo "ro.build.ab_update=true"
+            echo "# SoC (Helio P22T; MT8768T = rebrand Samsung; wg spec usera):"
             echo "ro.soc.manufacturer=MediaTek"
-            echo "ro.soc.model=MT6789"
-            echo "ro.mediatek.platform=MT6789"
-            echo "# Grafika HIDL (gralloc/hwcomposer 2.3) - nazwy modulow passthrough MTK:"
+            echo "ro.soc.model=MT8768T"
+            echo "ro.mediatek.platform=MT6765"
+            echo "# SF: bez wide color/HDR (PowerVR GE8320; lzejsze bufory):"
+            echo "ro.surface_flinger.has_wide_color_display=false"
+            echo "ro.surface_flinger.has_HDR_display=false"
+            echo "# LMK 3 GB - zrownowazony (nazwy propsow wg AOSP lmkd docs):"
+            echo "ro.lmk.medium=850"
+            echo "ro.lmk.critical=0"
+            echo "ro.lmk.kill_heaviest_task=true"
+            echo "ro.lmk.downgrade_pressure=60"
+            echo "# Samsung backlight fix (phhusson treble #1007; no-op gdy nieczytany):"
+            echo "persist.sys.phh.samsung_backlight=1"
+            echo "# Grafika HIDL fallback (Samsung MTK passthrough; vendor wygrywa):"
             echo "ro.hardware.hwcomposer=mtkhwcomposer"
-            echo "ro.hardware.gralloc=mt6789"
-            echo "# AUTONOMIA: tozsamosc bez Lenovo product/system_ext (w DSU product hosta nadpisuje):"
-            echo "ro.product.brand=Lenovo"
-            echo "ro.product.manufacturer=Lenovo"
-            echo "ro.product.name=TB350FU"
-            echo "ro.product.device=TB350FU"
-            echo "ro.product.model=Lenovo Tab P11 Gen 2"
-            echo "ro.build.product=TB350FU"; } >> "$BP"
-          echo "smart-suspend: rc + 3 skrypty + build.prop OK; treble-compat: propsy VNDK/SoC/HIDL/autonomia OK"
+            echo "ro.hardware.gralloc=mt6765"; } >> "$BP"
+          echo "0.8: rc + 4 skrypty + build.prop OK; treble-compat Samsung (propsy SoC/HIDL/LMK/autonomia) OK"
           echo "== mkfs system_dsu (EROFS + konteksty, tmpfs) =="
           TM_AV=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
           [ "$TM_AV" -ge 3500 ] || { echo "::error::tmpfs ${TM_AV}M < 3500M"; exit 1; }
@@ -557,22 +661,52 @@ jobs:
             echo "::error::suspend_block=1 w 0.6?! (to spec 0.5/Stability)"; exit 1
           fi
           echo "smart-suspend w obrazie: rc(wake_lock+guard+tune) + 3 skrypty (0755, sh -n OK) + propsy 9/9 + domyslne 0 OK"
-          # TREBLE COMPAT 0.7: VNDK + SoC + moduly HIDL + autonomia tozsamosci
-          for KV in "ro.vndk.version=34" "ro.soc.manufacturer=MediaTek" \
-                    "ro.soc.model=MT6789" "ro.mediatek.platform=MT6789" \
-                    "ro.hardware.hwcomposer=mtkhwcomposer" "ro.hardware.gralloc=mt6789" \
-                    "ro.product.brand=Lenovo" "ro.product.name=TB350FU" \
-                    "ro.product.device=TB350FU" "ro.product.model=Lenovo Tab P11 Gen 2" \
-                    "ro.build.product=TB350FU"; do
-            grep -q "^$KV$" "$P/build.prop" || { echo "::error::brak $KV w build.prop (treble compat)"; exit 1; }
+          # TREBLE COMPAT 0.8: SAMSUNG TAB A7 LITE (propsy usera 9/9 + extras)
+          for KV in "ro.product.brand=samsung" "ro.product.manufacturer=samsung" \
+                    "ro.product.device=gta7litewifi" "ro.product.model=SM-T220" \
+                    "ro.product.name=gta7litewifixx" "ro.soc.manufacturer=MediaTek" \
+                    "ro.soc.model=MT8768T" "ro.mediatek.platform=MT6765" \
+                    "ro.surface_flinger.has_wide_color_display=false" \
+                    "ro.surface_flinger.has_HDR_display=false" \
+                    "ro.build.product=gta7litewifi" "ro.build.ab_update=true" \
+                    "ro.lmk.medium=850" "ro.lmk.critical=0" \
+                    "ro.lmk.kill_heaviest_task=true" "ro.lmk.downgrade_pressure=60" \
+                    "persist.sys.phh.samsung_backlight=1" \
+                    "ro.hardware.hwcomposer=mtkhwcomposer" "ro.hardware.gralloc=mt6765"; do
+            grep -q "^$KV$" "$P/build.prop" || { echo "::error::brak $KV w build.prop (treble compat 0.8)"; exit 1; }
           done
+          # 0.8 NIE moze miec tozsamosci Lenovo (to build Samsung; 0.7 zyje na starym runie)
+          if grep -q "^ro.product.brand=Lenovo$" "$P/build.prop"; then
+            echo "::error::tozsamosc Lenovo w buildzie Samsung?!"; exit 1
+          fi
+          if grep -q "^ro.vndk.version=" "$P/build.prop"; then
+            echo "::error::ro.vndk.version w 0.8 (celowo usuniety dla Samsunga)"; exit 1
+          fi
+          # zRAM service (3 GB RAM): rc + skrypt wykonywalny + poprawny sh
+          grep -q "service mystic_zram_setup" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak service mystic_zram_setup"; exit 1; }
+          [ -x "$P/bin/mystic-zram-setup.sh" ] || { echo "::error::mystic-zram-setup.sh nie jest wykonywalny"; exit 1; }
+          sh -n "$P/bin/mystic-zram-setup.sh" || { echo "::error::mystic-zram-setup.sh: blad skladni sh"; exit 1; }
+          grep -q "swapon" "$P/bin/mystic-zram-setup.sh" \
+            || { echo "::error::zram-setup: brak swapon"; exit 1; }
+          # Knox/SEC overlay disable w tune + freezer dla 3 GB RAM:
+          grep -q "cmd overlay disable" "$P/bin/mystic-power-tune.sh" \
+            || { echo "::error::tune: brak cmd overlay disable (knox/sec)"; exit 1; }
+          grep -q "cached_apps_freezer enabled" "$P/bin/mystic-power-tune.sh" \
+            || { echo "::error::tune: brak cached_apps_freezer (3 GB RAM)"; exit 1; }
+          grep -q "max_cached_processes=24" "$P/bin/mystic-power-tune.sh" \
+            || { echo "::error::tune: brak max_cached_processes (3 GB RAM)"; exit 1; }
+          # DIET: motywy miui-themes musza byc usuniete (32 GB ROM)
+          if find "$P" -maxdepth 3 -type d -iname "*miui-theme*" | grep -q .; then
+            echo "::error::miui-themes nadal w obrazie (DIET 32 GB)"; exit 1
+          fi
           # AUTONOMIA: system SAM niesie deklaracje bibliotek MIUI + permisje
           # microG/FakeStore (nie liczy na product/system_ext hosta).
           grep -rq '<library name="miui"' "$P/etc/permissions/" \
             || { echo "::error::brak deklaracji <library name=miui> w /system/etc/permissions (autonomia)"; exit 1; }
           grep -q 'package="com.google.android.gms"' "$P/etc/permissions/privapp-permissions-mystical.xml" \
             || { echo "::error::brak privapp-permissions dla microG (autonomia)"; exit 1; }
-          echo "treble-compat w obrazie: propsy 11/11 (VNDK34+SoC+HIDL+tozsamosc) + miui-libs + microG perms OK"
+          echo "treble-compat 0.8 w obrazie: propsy 19/19 (Samsung+SoC+LMK+backlight+HIDL) + zram svc + knox overlay-off + diet OK"
           for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk"; do
             [ -f "$P/$CHK" ] || { echo "::error::brak $CHK"; exit 1; }
           done
@@ -594,13 +728,12 @@ jobs:
           cd "$WORK/out"
           cat > CZYTAJ-TO-DSU.txt <<'XEOF'
           ====================================================================
-          MysticalOS 0.7 - SMART SUSPEND + TREBLE COMPAT (TB350FU DSU, A14 MTK)
+          MysticalOS 0.8 - TAB A7 LITE EDITION (SM-T220 DSU; Smart Suspend onboard)
           ====================================================================
-          Cel: ta sama panika (mtk_sdio_pm_suspend, Wi-Fi MT7902 SDIO, Oops
-          96000145, DMA paging przy usypianiu), ale BEZ permanentnego
-          wake_locka - deep sleep DOZWOLONY, bo zycie na baterii ma sens.
-          Kernel+vendor = stock Android 14 (DSU nie rusza) - sterownika nie
-          latamy; wyciszamy WEJSCIA w sciezke PM SDIO:
+          Cel: MysticalOS na Samsung Galaxy Tab A7 Lite (SM-T220, MT6765/
+          MT8768T Helio P22T, PowerVR GE8320, 32 GB ROM / 3 GB RAM) przez
+          DSU. Pelny stack Smart Suspend (z 0.6) zostaje: settle guard, Doze
+          OFF, Wi-Fi safe, mystic-ctl, twardy blok zapasowo.
 
           1. SETTLE GUARD (nowosc; mystic-suspend-guard.sh, demon w kontekscie
              inita): przy GASnacym ekranie trzyma krotki wake_lock
@@ -628,40 +761,46 @@ jobs:
              (albo setprop persist.sys.mystic.suspend_block 1, jesli build
              pozwala) -> permanentny wake_lock mystic_dsu_hold jak w 0.5.
 
-          TREBLE COMPAT (0.7 - warstwa pod vendor A14 / VNDK 34 / MT6789):
-          - ro.vndk.version=34 (linkerconfig buduje przestrzen vndk-34 wg
-            vendora; wpis zgodny z wymaganiem).
-          - Identyfikacja SoC: ro.soc.model=MT6789, ro.soc.manufacturer=
-            MediaTek, ro.mediatek.platform=MT6789.
-          - Grafika HIDL (gralloc/hwcomposer 2.3): ro.hardware.hwcomposer=
-            mtkhwcomposer, ro.hardware.gralloc=mt6789 (nazwy modulow
-            passthrough MTK; czysty FALLBACK - vendor ma swoje w
-            vendor/build.prop i jego wartosc wygrywa).
-          - AUTONOMIA: pelny blok tozsamosci ro.product.* + ro.build.product
-            (Lenovo TB350FU) - system zyje bez Lenovo product/system_ext;
-            biblioteki MIUI (miui-framework.jar + deklaracje w
-            /system/etc/permissions) i microG z permisjami niesie SYSTEM.
-          SEMANTYKA (wazne): ro.* = pierwszy ustawiony wygrywa, a
-          /system/build.prop laduje sie PO vendor/product -> caly blok 0.7
-          to fallback: w DSU nic nie zmienia u hosta, ozywa gdy brak
-          product/system_ext. Nie uzywamy prop.default (to by SILOWO
-          nadpisalo vendor - ryzyko zepsucia modulow MTK).
-          UCZCIWIE (czego NIE da sie zrobic propsami):
-          - HIDL HALs (gralloc/hwcomposer 2.3, audio, power): framework MA
-            wbudowana degradacje AIDL->HIDL->brak (PowerHalWrapper,
-            SF/HidlComposer, AudioFlinger). System NIE wymusza AIDL, ktorych
-            vendor A14 nie oferuje - wybiera to, co vendor ma.
-          - Audio routing MT6789: polityka audio zyje w VENDORZE
-            (/vendor/etc/audio_policy_configuration.xml) - system CELowo jej
-            nie nadpisuje (wladowanie wlasnej = zepsuty routing). Zero
-            spekulatywnych propsow audio.
-          - libshimy: wymagaja kompilacji pod znane brakujace symbole -
-            nie spekulujemy bez crash logow.
-          - W DSU product/system_ext hosta MONTUJA SIE zawsze (decyzja
-            gsid/first-stage init, nie do wylaczenia z systemu) - dlatego
-            autonomia = wlasna tozsamosc + wlasne zasoby w /system.
-            Pelny standalone = PACKAGE DSU (run 37158930327) albo flash
-            CALOSC.
+          TAB A7 LITE 0.8 (SM-T220; 32 GB ROM / 3 GB RAM; MT6765):
+          - TOZSAMOSC (build.prop, fallback wg spec usera): ro.product.* =
+            samsung / gta7litewifi / SM-T220 / gta7litewifixx; ro.soc.model=
+            MT8768T (rebrand Samsung Helio P22T), ro.mediatek.platform=
+            MT6765; ro.build.ab_update=true (A/B); SF: wide_color=false,
+            HDR=false (GE8320 - lzejsze bufory).
+          - 3 GB RAM: zrownowazony LMK (ro.lmk.medium=850, critical=0,
+            kill_heaviest_task=true, downgrade_pressure=60 - nazwy wg
+            oficjalnych propsow AOSP lmkd), cached_apps_freezer=enabled,
+            max_cached_processes=24, zRAM: service mystic-zram-setup (init
+            ctx) konfiguruje zram0 1536 MB lz4 + swapon TYLKO gdy vendor
+            nie mial wlasnego (Samsung stock zwykle MA - wtedy log only).
+          - SAMSUNG BACKLIGHT FIX: persist.sys.phh.samsung_backlight=1
+            (fix phhusson treble #1007, potwierdzony przez phhussona; na
+            naszym frameworku no-op - ustawiony na przyszlosc) + guard
+            czyta /sys/class/backlight/panel/brightness (Samsung MTK).
+          - KNOX/SEC: overlaye samsung/knox/sec z product hosta wylaczane
+            po boocie (cmd overlay disable; stan w /data goscia - nie
+            wycieka do hosta). UCZCIWIE: Knox warranty bit (ro.boot.*)
+            ustawia bootloader - z systemu nie do ruszenia.
+          - AUDIO POLICY MT6765: polityka audio zyje w VENDORZE
+            (/vendor/etc/audio_policy_configuration.xml) - system CELowo
+            jej nie nadpisuje (wlasna = zepsuty routing). Vendor Samsunga
+            ma wlasciwa dla MT6765.
+          - DIET 32 GB: usuniete motywy miui-themes (~-200 MB); apki MIUI,
+            fonty, microG, Aurora zostaja.
+          - DSU NA 32 GB: system.img ~3,2 GB + userdata - w DSU Sideloader
+            ustaw rozmiar userdata 2-3 GB (nie wiecej; 32 GB dysk ma ~20 GB
+            wolnych). Nie zapisuj nic do /sdcard goscia przy malym miejscu.
+
+          UCZCIWIE - CROSS-DEVICE (wazne!): baza tego obrazu to MysticalOS 3
+          (system Lenovo A14 + microG + apki MIUI). To EKSPERYMENT Treble:
+          system z jednego urzadzenia na vendorze innego (Samsung A11-A13).
+          Ryzyka: (a) vendor Samsunga moze wymagac bibliotek vndk-XX,
+            ktorych system A14 nie zawiera (VNDK usuniety w A14) - wtedy
+            gosc nie wstanie albo pojedyncze HALy nie wstana (aparat/
+            audio/czujniki); (b) sepolicy plat (system) vs vendor Samsung
+            moze byc niedopasowana; (c) jelly/efekty SF bez tuningu Samsunga.
+          Jesli nie wstanie: restart = Power 30 s, DSU Discard, wracasz do
+          One UI bez szkod. To normalna droga testow GSI.
 
           STEROWANIE (adb shell):
             sh /system/bin/mystic-ctl.sh status
@@ -679,9 +818,12 @@ jobs:
             cat /data/local/tmp/mystic-power-tune.log
             cat /data/local/tmp/mystic-suspend-guard.log
             ps -A | grep mystic        -> demon guarda zywy
-            getprop ro.vndk.version    -> 34 (fallback, gdy vendor nie ustawil)
-            getprop ro.soc.model       -> MT6789 (fallback)
-            getprop ro.product.model   -> model z product hosta albo nasz fallback
+            getprop ro.soc.model         -> MT8768T (fallback wg spec)
+            getprop ro.mediatek.platform -> MT6765 (fallback wg spec)
+            getprop ro.product.model     -> SM-T220 (albo z product hosta)
+            cat /proc/swaps              -> zram0 (vendor lub nasz 1536M)
+            cat /data/local/tmp/mystic-zram-setup.log
+            grep -i knox /data/local/tmp/mystic-power-tune.log (overlaye off)
 
           CO TO JEST:
           Prawdziwy system.img MysticalOS 3 (baza Lenovo + microG + Aurora +
@@ -731,7 +873,7 @@ jobs:
           XEOF
           python3 - <<'EOF'
           import os, zipfile
-          dst = "MysticalOS_0.7_DSU_TrebleCompat.zip"
+          dst = "MysticalOS_0.8_DSU_TabA7Lite.zip"
           with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
               z.write("system.img")
               z.write("CZYTAJ-TO-DSU.txt")
@@ -748,9 +890,9 @@ jobs:
       - name: "6. Artifact (zip + README do pobrania ze strony runu)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS_0.7_DSU_TrebleCompat
+          name: MysticalOS_0.8_DSU_TabA7Lite
           path: |
-            /tmp/dsu/out/MysticalOS_0.7_DSU_TrebleCompat.zip
+            /tmp/dsu/out/MysticalOS_0.8_DSU_TabA7Lite.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -759,7 +901,7 @@ jobs:
           set -uo pipefail
           HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
             bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
-            "$WORK/out/MysticalOS_0.7_DSU_TrebleCompat.zip" \
+            "$WORK/out/MysticalOS_0.8_DSU_TabA7Lite.zip" \
             "$WORK/out/dsu-links.md" || true
           cat "$WORK/out/dsu-links.md" || true
 
