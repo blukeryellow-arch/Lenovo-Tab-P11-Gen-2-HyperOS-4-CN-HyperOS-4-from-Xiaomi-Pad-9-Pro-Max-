@@ -142,23 +142,64 @@ jobs:
           [ -f "$FC" ] || { echo "::error::brak plat_file_contexts w system.img"; exit 1; }
           BP="$T/build.prop"
           [ -f "$BP" ] || { echo "::error::brak build.prop"; exit 1; }
-          # v1.1 (zadanie usera, re-send 3 X 19:30 - FULL SPEC): wszystkie 5/5
-          # propsow (wlacznie z ro.hardware.egl=android = SwiftShader, wg
-          # zyczenia usera) w OBU plikach: build.prop + etc/prop.default
-          # (tworzony, jesli go nie ma). prop.default czyta init ZANIM
-          # build.prop - wazne dla ro.* (read-only, ustawiane raz).
-          for TARGET in "$T/build.prop" "$T/etc/prop.default"; do
-            mkdir -p "$(dirname "$TARGET")"
-            [ -f "$TARGET" ] || : > "$TARGET"
-            { echo ""
-              echo "# === DSU FORCED-CPU (user spec 5/5): CPU composition, HWC off, SwiftShader EGL ==="
-              echo "debug.sf.hw=0"
-              echo "debug.egl.hw=0"
-              echo "persist.sys.composition.type=cpu"
-              echo "ro.hardware.egl=android"
-              echo "debug.sf.disable_hwc=1"; } >> "$TARGET"
-            echo "propsy forced-CPU 5/5 -> $TARGET"
-          done
+          # === MysticalOS 0.5: SUSPEND HARDENING (receipt: kernel panic
+          # mtk_sdio_pm_suspend / wlan_mt7902_sdio_mt6789, Oops 96000145,
+          # DMA paging przy system suspend; A14 kernel+vendor nietkniety) ===
+          # 1) init.rc: kernel wake_lock -> suspend nigdy nie wchodzi ->
+          #    sciezka PM SDIO (mtk_sdio_pm_suspend) nie wykonuje sie.
+          mkdir -p "$T/etc/init" "$T/bin"
+          cat > "$T/etc/init/mystic-power.rc" <<'RCEOF'
+          # MysticalOS 0.5 - suspend hardening (TB350FU DSU, panik mtk_sdio_pm_suspend)
+          # Kernel wake lock trzyma autosuspend z dala od /sys/power/state.
+          # Przelaczenie w locie: setprop persist.sys.mystic.suspend_block 0|1
+          on property:sys.boot_completed=1 && property:persist.sys.mystic.suspend_block=1
+              write /sys/power/wake_lock mystic_dsu_hold
+          on property:persist.sys.mystic.suspend_block=0
+              write /sys/power/wake_unlock mystic_dsu_hold
+          on shutdown
+              write /sys/power/wake_unlock mystic_dsu_hold
+
+          service mystic_power_tune /system/bin/sh /system/bin/mystic-power-tune.sh
+              user root
+              group root shell
+              disabled
+              oneshot
+              seclabel u:r:shell:s0
+
+          on property:sys.boot_completed=1 && property:persist.sys.mystic.power_tune=1
+              start mystic_power_tune
+          RCEOF
+          # 2) boot-time tune: Doze/AppStandby OFF + rzadkie usypianie
+          cat > "$T/bin/mystic-power-tune.sh" <<'SHEOF'
+          #!/system/bin/sh
+          # MysticalOS 0.5 - power/suspend hardening (TB350FU DSU, A14 MTK vendor)
+          # Cel: zero agresywnych cykli suspend/resume + minimum ruchu SDIO w idle.
+          LOG=/data/local/tmp/mystic-power-tune.log
+          {
+            echo "== $(date) mystic-power-tune start =="
+            # Doze OFF (likwiduje idle suspend bursts):
+            cmd deviceidle disable all 2>&1
+            settings put global app_standby_enabled 0
+            settings put global adaptive_battery_management_enabled 0
+            # Fallback: gdyby deviceidle ktos wrocil, fazy Doze = nieskonczonosc
+            settings put global device_idle_constants "inactive_to=9223372036854775807,sensing_to=0,locating_to=0,motion_inactive_to=0,idle_after_inactive_to=9223372036854775807,idle_pending_to=0,max_idle_pending_to=0,idle_pending_factor=2.0,quick_doze_delay_to=9223372036854775807,max_idle_to=9223372036854775807,idle_to=43200000"
+            # Mniej wejsc w suspend podczas testow (ekran przy USB: nie gasnie):
+            settings put global stay_on_while_plugged_in 7
+            settings put system screen_off_timeout 600000
+            # Wi-Fi: mniej skanow w idle = mniej ruchu po SDIO:
+            settings put global wifi_scan_always_enabled 0
+            settings put global wifi_scan_throttle_enabled 1
+            echo "== done =="
+          } > "$LOG" 2>&1
+          SHEOF
+          chmod 0755 "$T/bin/mystic-power-tune.sh"
+          # 3) propsy (bez render-propsow - diagnoza usera: unrelated)
+          { echo ""
+            echo "# === MysticalOS 0.5: hardening suspend (DSU na A14 MTK vendor) ==="
+            echo "persist.sys.mystic.suspend_block=1"
+            echo "persist.sys.mystic.power_tune=1"
+            echo "ro.surface_flinger.use_content_detection_for_refresh_rate=false"; } >> "$BP"
+          echo "hardening: mystic-power.rc + mystic-power-tune.sh + build.prop OK"
           echo "== mkfs system_dsu (EROFS + konteksty, tmpfs) =="
           TM_AV=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
           [ "$TM_AV" -ge 3500 ] || { echo "::error::tmpfs ${TM_AV}M < 3500M"; exit 1; }
@@ -170,7 +211,7 @@ jobs:
           df -h /
           echo "system_dsu.img: $(stat -c%s "$WORK/out/system.img") B"
 
-      - name: "4. Weryfikacja obrazu (mount + propsy + kluczowe pliki)"
+      - name: "4. Weryfikacja obrazu (mount + hardening + kluczowe pliki)"
         run: |
           set -euo pipefail
           MNT="$WORK/mnt"; mkdir -p "$MNT"
@@ -178,13 +219,21 @@ jobs:
             || { echo "::error::montaz weryfikacyjny padl"; exit 1; }
           P="$MNT"; [ -d "$MNT/system" ] && P="$MNT/system"
           grep -q "ro.mysticalos.version=3" "$P/build.prop" || { echo "::error::brak mysticalos.version=3"; exit 1; }
-          for KV in "debug.sf.hw=0" "debug.egl.hw=0" "persist.sys.composition.type=cpu" \
-                    "ro.hardware.egl=android" "debug.sf.disable_hwc=1"; do
-            for F in build.prop etc/prop.default; do
-              grep -q "$KV" "$P/$F" || { echo "::error::brak $KV w $F"; exit 1; }
-            done
+          # HARDENING: rc + skrypt + propsy
+          grep -q "wake_lock mystic_dsu_hold" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak wake_lock mystic_dsu_hold"; exit 1; }
+          grep -q "seclabel u:r:shell:s0" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak seclabel uslugi tune"; exit 1; }
+          grep -q "cmd deviceidle disable all" "$P/bin/mystic-power-tune.sh" \
+            || { echo "::error::skrypt: brak deviceidle disable"; exit 1; }
+          grep -q "device_idle_constants" "$P/bin/mystic-power-tune.sh" \
+            || { echo "::error::skrypt: brak device_idle_constants"; exit 1; }
+          [ -x "$P/bin/mystic-power-tune.sh" ] || { echo "::error::skrypt nie jest wykonywalny"; exit 1; }
+          for KV in "persist.sys.mystic.suspend_block=1" "persist.sys.mystic.power_tune=1" \
+                    "ro.surface_flinger.use_content_detection_for_refresh_rate=false"; do
+            grep -q "$KV" "$P/build.prop" || { echo "::error::brak $KV w build.prop"; exit 1; }
           done
-          echo "propsy forced-CPU: 5/5 w build.prop I etc/prop.default (pelna spec usera)"
+          echo "hardening w obrazie: rc(wake_lock+usluga) + skrypt(0755) + propsy 3/3 OK"
           for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk"; do
             [ -f "$P/$CHK" ] || { echo "::error::brak $CHK"; exit 1; }
           done
@@ -206,14 +255,32 @@ jobs:
           cd "$WORK/out"
           cat > CZYTAJ-TO-DSU.txt <<'XEOF'
           ====================================================================
-          MysticalOS V16 PureGSI SoftRender - standalone system.img (DSU)
+          MysticalOS 0.5 - STABILITY BUILD (TB350FU DSU, A14 MTK vendor)
           ====================================================================
-          CZYSTY STANDALONE system.img (layout DSU "1 of 2"; ZERO kontenerow).
-          Niesparse (raw EROFS). Propsy 5/5 (build.prop + etc/prop.default):
-            debug.sf.hw=0 | debug.egl.hw=0 | persist.sys.composition.type=cpu
-            ro.hardware.egl=android (SwiftShader, CPU GL) | debug.sf.disable_hwc=1
-          CZEKAJ: UI dziala WOLNIEJ niz zwykle - to cel tego testu
-          (pelna kompozycja CPU, zero HWC). Wyjscie: Discard = wszystko znika.
+          Cel: eliminacja paniki jadra mtk_sdio_pm_suspend (Wi-Fi MT7902
+          SDIO, Oops 96000145, DMA paging przy usypianiu systemu).
+          Kernel+vendor = stock Android 14 (DSU nie rusza) - zatem sterownika
+          nie latamy, tylko BLOKUJEMY sciezke paniki i agresywne usypianie:
+
+          1. KERNEL WAKE LOCK (init mystic-power.rc): przy
+             persist.sys.mystic.suspend_block=1 system NIGDY nie wchodzi w
+             suspend -> mtk_sdio_pm_suspend sie nie wykonuje -> panik
+             niemozliwy. Wylaczenie: setprop persist.sys.mystic.suspend_block 0
+             (bateria w trybie 1 przy gaszacym ekranie pada szybciej -
+             koszt stabilnosci).
+          2. DOZE/APP STANDBY OFF + device_idle_constants=Long.MAX
+             (mystic-power-tune.sh, raz po boocie) - zero idle suspend bursts.
+          3. stay_on_while_plugged_in=7 (ekran ON przy USB - testy bez
+             usypiania) + screen_off_timeout 10 min.
+          4. Wi-Fi idle cicho: scan_always 0, scan_throttle 1 (mniej
+             ruchu SDIO, gdy ekran zgasnie przy suspend_block=0).
+          Render: NORMALNY (GPU) - wczesniejsze propsy soft-render usuniete
+          (diagnoza: unrelated).
+
+          Weryfikacja po boocie (adb):
+            cat /sys/power/wake_lock          -> mystic_dsu_hold
+            dumpsys deviceidle | head -5      -> enabled=false
+            cat /data/local/tmp/mystic-power-tune.log
 
           CO TO JEST:
           Prawdziwy system.img MysticalOS 3 (baza Lenovo + microG + Aurora +
@@ -263,7 +330,7 @@ jobs:
           XEOF
           python3 - <<'EOF'
           import os, zipfile
-          dst = "MysticalOS_V16_PureGSI_SoftRender.zip"
+          dst = "MysticalOS_0.5_DSU_Stability.zip"
           with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
               z.write("system.img")
               z.write("CZYTAJ-TO-DSU.txt")
@@ -280,9 +347,9 @@ jobs:
       - name: "6. Artifact (zip + README do pobrania ze strony runu)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS_V16_PureGSI_SoftRender
+          name: MysticalOS_0.5_DSU_Stability
           path: |
-            /tmp/dsu/out/MysticalOS_V16_PureGSI_SoftRender.zip
+            /tmp/dsu/out/MysticalOS_0.5_DSU_Stability.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -291,7 +358,7 @@ jobs:
           set -uo pipefail
           HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
             bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
-            "$WORK/out/MysticalOS_V16_PureGSI_SoftRender.zip" \
+            "$WORK/out/MysticalOS_0.5_DSU_Stability.zip" \
             "$WORK/out/dsu-links.md" || true
           cat "$WORK/out/dsu-links.md" || true
 
