@@ -96,6 +96,16 @@ name: dsu-kit
 #     najwiekszych katalogow app/ (evidence na przyszlosc); audio policy
 #     NADAL domena vendora (nie nadpisujemy - jak 0.7). Nazwa:
 #     MysticalOS_0.8_DSU_TabA7Lite.zip. 0.7 (Lenovo) zyje na run 37218138076.
+# v1.7 (0.9 TAB A7 LITE / ANDROID 13, spec usera "podpasuj pod Androida 13"):
+#     target vendor = A13 (SM-T220 na One UI 5; VNDK 33). Zmiany vs 0.8:
+#     ro.vndk.version=33 (wzorzec: A14->34, A13->33; fallback semantyka jak
+#     zawsze) + ro.mysticalos.vendor_target=a13 (marker wlasny). UCZCIWIE:
+#     A13 to dla systemu A14 NAJBEZPIECZNIEJSZY target cross-version - Treble
+#     gwarantuje system N + vendor N-1 (system nowszy niz vendor = kierunek
+#     WSPARTY). Bazy obrazu (A14, z Lenova) nie da sie "przedzialowac" na A13
+#     - nie ma zrodla A13 w projekcie i nie falszujemy SDK. Reszta 0.8
+#     bez zmian (tozsamosc Samsung, LMK 3 GB, zram, backlight fix, knox
+#     overlay-off, diet). Nazwa: MysticalOS_0.9_DSU_TabA7Lite_A13.zip.
 #   Propsy SA TYLKO w podgladzie DSU - do obrazu docelowego (m3) NIE
 #   wchodza (persist.sys.composition.type=cpu to prop z epoki MTK; gdyby
 #   SF Lenova go czytal, zepsulby wydladnosci na PRAWDZIWYM flashu).
@@ -570,14 +580,13 @@ jobs:
           done
           echo "-- top-15 najwiekszych katalogow app/priv-app (evidence diety):"
           du -sm "$T/app"/* "$T/priv-app"/* 2>/dev/null | sort -rn | head -15 || true
-          # 6) TREBLE COMPAT 0.8: SAMSUNG TAB A7 LITE (SM-T220; MT6765/MT8768T,
-          #    32 GB / 3 GB RAM). Semantyka ro.*: first-set-wins + /system/
-          #    build.prop laduje sie PO vendor/product -> CZYSTY FALLBACK
-          #    (w DSU nie nadpisuje hosta; ozywa bez product/system_ext).
-          #    CELOWO nie w prop.default. BEZ ro.vndk.version (spec usera dla
-          #    Samsunga go nie zawiera; linkerconfig rozwiąże po stronie vendora).
+          # 6) TREBLE COMPAT 0.9: SAMSUNG TAB A7 LITE (SM-T220; MT6765/MT8768T,
+          #    32 GB / 3 GB RAM) pod VENDOR ANDROID 13 (One UI 5; VNDK 33).
+          #    Semantyka ro.*: first-set-wins + /system/build.prop laduje sie
+          #    PO vendor/product -> CZYSTY FALLBACK (w DSU nie nadpisuje
+          #    hosta; ozywa bez product/system_ext). CELOWO nie w prop.default.
           { echo ""
-            echo "# === MysticalOS 0.8: SAMSUNG TAB A7 LITE (SM-T220, MT6765/MT8768T, 3 GB) ==="
+            echo "# === MysticalOS 0.9: SAMSUNG TAB A7 LITE / ANDROID 13 (SM-T220, MT6765, 3 GB) ==="
             echo "# Tozsamosc (autonomia; w DSU product hosta i tak nadpisuje):"
             echo "ro.product.brand=samsung"
             echo "ro.product.manufacturer=samsung"
@@ -602,8 +611,11 @@ jobs:
             echo "persist.sys.phh.samsung_backlight=1"
             echo "# Grafika HIDL fallback (Samsung MTK passthrough; vendor wygrywa):"
             echo "ro.hardware.hwcomposer=mtkhwcomposer"
-            echo "ro.hardware.gralloc=mt6765"; } >> "$BP"
-          echo "0.8: rc + 4 skrypty + build.prop OK; treble-compat Samsung (propsy SoC/HIDL/LMK/autonomia) OK"
+            echo "ro.hardware.gralloc=mt6765"
+            echo "# 0.9: TARGET VENDOR ANDROID 13 (One UI 5) -> VNDK 33:"
+            echo "ro.vndk.version=33"
+            echo "ro.mysticalos.vendor_target=a13"; } >> "$BP"
+          echo "0.9: rc + 4 skrypty + build.prop OK; treble-compat Samsung A13 (propsy SoC/HIDL/LMK/autonomia/VNDK33) OK"
           echo "== mkfs system_dsu (EROFS + konteksty, tmpfs) =="
           TM_AV=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
           [ "$TM_AV" -ge 3500 ] || { echo "::error::tmpfs ${TM_AV}M < 3500M"; exit 1; }
@@ -661,7 +673,7 @@ jobs:
             echo "::error::suspend_block=1 w 0.6?! (to spec 0.5/Stability)"; exit 1
           fi
           echo "smart-suspend w obrazie: rc(wake_lock+guard+tune) + 3 skrypty (0755, sh -n OK) + propsy 9/9 + domyslne 0 OK"
-          # TREBLE COMPAT 0.8: SAMSUNG TAB A7 LITE (propsy usera 9/9 + extras)
+          # TREBLE COMPAT 0.9: SAMSUNG TAB A7 LITE / ANDROID 13 (propsy 21)
           for KV in "ro.product.brand=samsung" "ro.product.manufacturer=samsung" \
                     "ro.product.device=gta7litewifi" "ro.product.model=SM-T220" \
                     "ro.product.name=gta7litewifixx" "ro.soc.manufacturer=MediaTek" \
@@ -672,15 +684,17 @@ jobs:
                     "ro.lmk.medium=850" "ro.lmk.critical=0" \
                     "ro.lmk.kill_heaviest_task=true" "ro.lmk.downgrade_pressure=60" \
                     "persist.sys.phh.samsung_backlight=1" \
-                    "ro.hardware.hwcomposer=mtkhwcomposer" "ro.hardware.gralloc=mt6765"; do
-            grep -q "^$KV$" "$P/build.prop" || { echo "::error::brak $KV w build.prop (treble compat 0.8)"; exit 1; }
+                    "ro.hardware.hwcomposer=mtkhwcomposer" "ro.hardware.gralloc=mt6765" \
+                    "ro.vndk.version=33" "ro.mysticalos.vendor_target=a13"; do
+            grep -q "^$KV$" "$P/build.prop" || { echo "::error::brak $KV w build.prop (treble compat 0.9)"; exit 1; }
           done
           # 0.8 NIE moze miec tozsamosci Lenovo (to build Samsung; 0.7 zyje na starym runie)
           if grep -q "^ro.product.brand=Lenovo$" "$P/build.prop"; then
             echo "::error::tozsamosc Lenovo w buildzie Samsung?!"; exit 1
           fi
-          if grep -q "^ro.vndk.version=" "$P/build.prop"; then
-            echo "::error::ro.vndk.version w 0.8 (celowo usuniety dla Samsunga)"; exit 1
+          # 0.9 = target A13: VNDK 34 (A14/Lenovo) zakazany
+          if grep -q "^ro.vndk.version=34$" "$P/build.prop"; then
+            echo "::error::ro.vndk.version=34 w 0.9?! (target A13 -> 33)"; exit 1
           fi
           # zRAM service (3 GB RAM): rc + skrypt wykonywalny + poprawny sh
           grep -q "service mystic_zram_setup" "$P/etc/init/mystic-power.rc" \
@@ -706,7 +720,7 @@ jobs:
             || { echo "::error::brak deklaracji <library name=miui> w /system/etc/permissions (autonomia)"; exit 1; }
           grep -q 'package="com.google.android.gms"' "$P/etc/permissions/privapp-permissions-mystical.xml" \
             || { echo "::error::brak privapp-permissions dla microG (autonomia)"; exit 1; }
-          echo "treble-compat 0.8 w obrazie: propsy 19/19 (Samsung+SoC+LMK+backlight+HIDL) + zram svc + knox overlay-off + diet OK"
+          echo "treble-compat 0.9 w obrazie: propsy 21/21 (Samsung+SoC+LMK+backlight+HIDL+VNDK33/A13) + zram svc + knox overlay-off + diet OK"
           for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk"; do
             [ -f "$P/$CHK" ] || { echo "::error::brak $CHK"; exit 1; }
           done
@@ -728,12 +742,13 @@ jobs:
           cd "$WORK/out"
           cat > CZYTAJ-TO-DSU.txt <<'XEOF'
           ====================================================================
-          MysticalOS 0.8 - TAB A7 LITE EDITION (SM-T220 DSU; Smart Suspend onboard)
+          MysticalOS 0.9 - TAB A7 LITE / ANDROID 13 (SM-T220; Smart Suspend onboard)
           ====================================================================
           Cel: MysticalOS na Samsung Galaxy Tab A7 Lite (SM-T220, MT6765/
           MT8768T Helio P22T, PowerVR GE8320, 32 GB ROM / 3 GB RAM) przez
-          DSU. Pelny stack Smart Suspend (z 0.6) zostaje: settle guard, Doze
-          OFF, Wi-Fi safe, mystic-ctl, twardy blok zapasowo.
+          DSU, DOPASOWANY DO VENDORA ANDROID 13 (One UI 5). Pelny stack
+          Smart Suspend (z 0.6) zostaje: settle guard, Doze OFF, Wi-Fi safe,
+          mystic-ctl, twardy blok zapasowo.
 
           1. SETTLE GUARD (nowosc; mystic-suspend-guard.sh, demon w kontekscie
              inita): przy GASnacym ekranie trzyma krotki wake_lock
@@ -761,7 +776,14 @@ jobs:
              (albo setprop persist.sys.mystic.suspend_block 1, jesli build
              pozwala) -> permanentny wake_lock mystic_dsu_hold jak w 0.5.
 
-          TAB A7 LITE 0.8 (SM-T220; 32 GB ROM / 3 GB RAM; MT6765):
+          TAB A7 LITE 0.9 (SM-T220; 32 GB / 3 GB; MT6765; VENDOR ANDROID 13):
+          - TARGET A13 (0.9, "podpasuj pod Androida 13"): SM-T220 na One UI 5
+            = vendor A13 -> ro.vndk.version=33 (wzorzec: A14->34, A13->33)
+            + ro.mysticalos.vendor_target=a13. A13 to dla tego systemu
+            NAJBEZPIECZNIEJSZY target cross-version: Treble gwarantuje
+            wspolprace system N + vendor N-1 (system nowszy niz vendor =
+            kierunek WSPARTY). Bazy A14 nie da sie przedzialowac na A13
+            (brak zrodla A13 w projekcie; SDK nie falszujemy).
           - TOZSAMOSC (build.prop, fallback wg spec usera): ro.product.* =
             samsung / gta7litewifi / SM-T220 / gta7litewifixx; ro.soc.model=
             MT8768T (rebrand Samsung Helio P22T), ro.mediatek.platform=
@@ -792,8 +814,10 @@ jobs:
             wolnych). Nie zapisuj nic do /sdcard goscia przy malym miejscu.
 
           UCZCIWIE - CROSS-DEVICE (wazne!): baza tego obrazu to MysticalOS 3
-          (system Lenovo A14 + microG + apki MIUI). To EKSPERYMENT Treble:
-          system z jednego urzadzenia na vendorze innego (Samsung A11-A13).
+          (system Lenovo A14 + microG + apki MIUI). To eksperyment Treble:
+          system z jednego urzadzenia na vendorze innego (Samsung; target
+          A13/One UI 5 = kierunek WSPERANY przez Treble: system N + vendor
+          N-1; starsze One UI = rosnace ryzyko).
           Ryzyka: (a) vendor Samsunga moze wymagac bibliotek vndk-XX,
             ktorych system A14 nie zawiera (VNDK usuniety w A14) - wtedy
             gosc nie wstanie albo pojedyncze HALy nie wstana (aparat/
@@ -820,6 +844,7 @@ jobs:
             ps -A | grep mystic        -> demon guarda zywy
             getprop ro.soc.model         -> MT8768T (fallback wg spec)
             getprop ro.mediatek.platform -> MT6765 (fallback wg spec)
+            getprop ro.vndk.version      -> 33 (target A13; 34 = build Lenovo)
             getprop ro.product.model     -> SM-T220 (albo z product hosta)
             cat /proc/swaps              -> zram0 (vendor lub nasz 1536M)
             cat /data/local/tmp/mystic-zram-setup.log
@@ -873,7 +898,7 @@ jobs:
           XEOF
           python3 - <<'EOF'
           import os, zipfile
-          dst = "MysticalOS_0.8_DSU_TabA7Lite.zip"
+          dst = "MysticalOS_0.9_DSU_TabA7Lite_A13.zip"
           with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
               z.write("system.img")
               z.write("CZYTAJ-TO-DSU.txt")
@@ -890,9 +915,9 @@ jobs:
       - name: "6. Artifact (zip + README do pobrania ze strony runu)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS_0.8_DSU_TabA7Lite
+          name: MysticalOS_0.9_DSU_TabA7Lite_A13
           path: |
-            /tmp/dsu/out/MysticalOS_0.8_DSU_TabA7Lite.zip
+            /tmp/dsu/out/MysticalOS_0.9_DSU_TabA7Lite_A13.zip
           if-no-files-found: error
           retention-days: 90
 
@@ -901,7 +926,7 @@ jobs:
           set -uo pipefail
           HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
             bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
-            "$WORK/out/MysticalOS_0.8_DSU_TabA7Lite.zip" \
+            "$WORK/out/MysticalOS_0.9_DSU_TabA7Lite_A13.zip" \
             "$WORK/out/dsu-links.md" || true
           cat "$WORK/out/dsu-links.md" || true
 
