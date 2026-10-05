@@ -681,7 +681,7 @@ jobs:
           head -2 "$WORK/qemu-coreutils.txt"
           grep -qi "coreutils" "$WORK/qemu-coreutils.txt" \
             || { echo "::error::qemu: coreutils --version bez potwierdzenia"; exit 1; }
-          qemu-aarch64-static "$MSYS/bin/coreutils" ls "$MSYS/bin" >/dev/null \
+          sudo qemu-aarch64-static "$MSYS/bin/coreutils" ls "$MSYS/bin" >/dev/null \
             || { echo "::error::qemu: coreutils ls padl"; exit 1; }
           echo "qemu-aarch64: coreutils --version + ls OK (multicall dziala)"
           USE=$(df --output=pcent "$M" | tail -1 | tr -dc '0-9')
