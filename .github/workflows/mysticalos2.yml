@@ -141,13 +141,29 @@ jobs:
           SZ=$(stat -c%s "$WORK/stock.zip")
           [ "$SZ" -gt 7000000000 ] || { echo "::error::stock.zip ${SZ} B < 7 GB?!"; exit 1; }
           echo "stock.zip: ${SZ} B OK"
-          unzip -l "$WORK/stock.zip" | head -40
+          unzip -l "$WORK/stock.zip" > "$WORK/ziplist.txt" || true
+          head -40 "$WORK/ziplist.txt"
+          grep -E "system|super|payload|vbmeta" "$WORK/ziplist.txt" || true
           df -h /
 
       - name: "3. Wyluskaj system + system_ext (payload.bin ALBO super.img)"
         run: |
           set -euo pipefail
-          LIST=$(unzip -l "$WORK/stock.zip")
+          # sparse (0x3AFF26ED) -> raw; flashtool images bywaja sparse (product.img
+          # 2474779240 B nie jest 4096-aligned = prawie na pewno sparse)
+          desparse() {
+            local M
+            M=$(python3 -c "import struct,sys; print('1' if struct.unpack('<I', open(sys.argv[1],'rb').read(4))[0]==0xED26FF3A else '0')" "$1")
+            if [ "$M" = "1" ]; then
+              python3 "$KDIR/tools/simg2img.py" "$1" "$1.raw" \
+                || { echo "::error::simg2img $1 padl"; return 1; }
+              mv "$1.raw" "$1"
+              echo "$1: SPARSE -> raw ($(stat -c%s "$1") B)"
+            else
+              echo "$1: raw ($(stat -c%s "$1") B)"
+            fi
+          }
+          LIST=$(unzip -l "$WORK/stock.zip" > "$WORK/ziplist.txt" && cat "$WORK/ziplist.txt")
           if echo "$LIST" | grep -q "payload\.bin$"; then
             echo "== paczka OTA: payload.bin =="
             unzip -o -q "$WORK/stock.zip" "*payload.bin" -d "$WORK"
@@ -164,6 +180,22 @@ jobs:
                      || { echo "::error::payload-dumper-go padl"; exit 1; } }
             rm -f "$PB"
             rm -f "$WORK/payload-dumper-go"
+          elif echo "$LIST" | grep -q "system\.img$"; then
+            echo "== paczka flashtool: luzne obrazy partycji (image/*.img) =="
+            unzip -o -q "$WORK/stock.zip" "*system.img" "*system_ext*.img" -d "$WORK/fl" 2>/dev/null || true
+            rm -f "$WORK/stock.zip"
+            SYS=$(find "$WORK/fl" -type f -name "system.img" | head -1)
+            SEXT=$(find "$WORK/fl" -type f -name "system_ext.img" | head -1)
+            [ -n "$SYS" ] || { echo "::error::brak system.img w paczce flashtool"; exit 1; }
+            desparse "$SYS"
+            mv "$SYS" "$WORK/out/system.img"
+            echo "system.img: $(stat -c%s "$WORK/out/system.img") B"
+            if [ -n "$SEXT" ]; then
+              desparse "$SEXT"
+              mv "$SEXT" "$WORK/out/system_ext.img"
+              echo "system_ext.img: $(stat -c%s "$WORK/out/system_ext.img") B"
+            fi
+            rm -rf "$WORK/fl"
           elif echo "$LIST" | grep -q "super\.img$"; then
             echo "== paczka flashtool: super.img =="
             unzip -o -q "$WORK/stock.zip" "*super.img" -d "$WORK"
@@ -191,8 +223,8 @@ jobs:
             done
             rm -f "$SU" "$SU.sparse"
           else
-            echo "$LIST" | head -60
-            echo "::error::nieznana struktura paczki (brak payload.bin i super.img)"
+            head -80 "$WORK/ziplist.txt"
+            echo "::error::nieznana struktura paczki (brak payload.bin, super.img i system.img)"
             exit 1
           fi
           # PS = rozmiar oryginalnego obrazu (fs+hashtree+footer = partycja);
@@ -208,10 +240,21 @@ jobs:
                   || { echo "::error::erase_footer $P"; exit 1; }
                 echo "$P: stopka stock zrzucona (PS=$PS B z oryginalu)"
               else
+                # brak stopki: fs = Image Size z deskryptora hashtree dla tej
+                # partycji (stock vbmeta_system z kitu), plik moze zawierac
+                # hashtree/FEC bez footera -> trim; PS = max(plik, wzorzec)
                 FSZ=$(stat -c%s "$S")
-                PS=$(( (FSZ + FSZ/100 + 16777216 + 4194303) / 4194304 * 4194304 ))
+                TRIM=$(awk -v tgt="$P" '/Hashtree descriptor:/{h=1;next} h&&/Image Size:/{v=$3} h&&/Partition Name:/{if($NF==tgt){print v; exit}}' "$WORK/vbmeta-stock-info.txt")
+                if [ -n "$TRIM" ] && [ "$TRIM" -gt 100000000 ] && [ "$TRIM" -lt "$FSZ" ] && [ $((TRIM % 4096)) -eq 0 ]; then
+                  truncate -s "$TRIM" "$S"
+                  echo "$P: brak stopki -> fs TRIM do deskryptora vbmeta ($TRIM B z $FSZ B)"
+                else
+                  echo "$P: brak stopki i deskryptora -> fs = caly plik ($FSZ B)"
+                fi
+                FORM=$(( (FSZ + FSZ/100 + 16777216 + 4194303) / 4194304 * 4194304 ))
+                [ "$PS" -ge "$FORM" ] || PS="$FORM"
                 echo "$PS" > "$WORK/ps-$P"
-                echo "$P: UWAGA brak stopki w paczce -> PS wg wzorca ($PS B)"
+                echo "$P: PS wg pliku/wzorca = $PS B"
               fi
               FSZ=$(stat -c%s "$S")
               echo "$FSZ" > "$WORK/fsz-$P"
