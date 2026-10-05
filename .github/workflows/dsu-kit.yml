@@ -152,6 +152,21 @@ name: dsu-kit
 #     Hashtree descriptor + SHA256_RSA2048 + Flags: 2 + sha256 + system.
 #     Artifact niesie tez avb-info.txt (dowod stopki). Nazwa:
 #     MysticalOS_1.1_DSU_TB350FU_A13_AVB. Format surowy zostaje.
+# v1.10 (1.2 PRAWdziwa STOPKA AVB, receipt usera 5 X: "po 1.1 dalej ten sam
+#     blad"). Analiza zrodel (fs_mgr/libfs_avb/fs_avb.cpp + docs DSU):
+#     (a) fs_mgr przy statusie kHashtreeDisabled lub kVerificationDisabled
+#     zwraca kDisabled i NIE tworzy urzadzenia verity - flags 3 ustawia OBA
+#     (HASHTREE_DISABLED|VERIFICATION_DISABLED) = najmocniejszy sygnal;
+#     (b) docs DSU "Rollback protection": porownanie security_patch z AVB
+#     PROPERTY DESCRIPTOROW obu obrazow - prawdziwe GSI/AOSP je maja, nasz
+#     1.1 NIE mial (sama stopka bez propsow!). 1.2 = stopka jak w prawdziwych
+#     GSI: --flags 3, --prop com.android.build.system.os_version:14,
+#     --prop com.android.build.system.security_patch:2026-09-05 (nowszy niz
+#     host A13), --block_size 4096 jawny, PS wyrownany do 4 MiB, asercja
+#     fs%4096==0. Dowod w bramce: avbtool verify_image (pelny lancuch:
+#     podpis SHA256_RSA2048 + hashtree sha256; smoke test lokalny OK) +
+#     surowa magic AVBf w ostatnich 64 B pliku + avb-verify.txt w artifactcie.
+#     Nazwa: MysticalOS_1.2_DSU_TB350FU_A13_AVB.
 #   Propsy SA TYLKO w podgladzie DSU - do obrazu docelowego (m3) NIE
 #   wchodza (persist.sys.composition.type=cpu to prop z epoki MTK; gdyby
 #   SF Lenova go czytal, zepsulby wydladnosci na PRAWDZIWYM flashu).
@@ -711,29 +726,49 @@ jobs:
           mv /dev/shm/system_dsu.img "$WORK/out/system.img"
           df -h /
           echo "system_dsu.img: $(stat -c%s "$WORK/out/system.img") B"
-          # === 1.1: STOPKA AVB (wymog usera; receipt DSU A13: "AVB footer
-          # verification failed / Hash device is too small / Couldn't create
-          # verity device" - host A13 wymaga stopki; mkfs.erofs jej nie robi) ===
-          # Flagi DOKLADNIE wg spec: --flags 2 (HASHTREE_ERROR_MODE_LOGGING -
-          # dm-verity loguje, nie blokuje), SHA256_RSA2048, klucz testowy.
-          openssl genrsa -out /tmp/avb_key.pem 2048 2>/dev/null
+          # === 1.2: STOPKA AVB jak w PRAWDZIWYCH GSI (receipt usera: po 1.1
+          # dalej "AVB footer verification failed / Hash device is too small /
+          # Couldn't create verity device"). fs_avb.cpp: kHashtreeDisabled/
+          # kVerificationDisabled -> fs_mgr NIE tworzy urzadzenia verity;
+          # docs DSU: rollback porownuje security_patch z AVB property
+          # descriptorow (prawdziwe GSI je maja). Zmiany vs 1.1: flags 3,
+          # property descriptors, block_size 4096 jawny, PS do 4 MiB, dowod. ===
           IMG=$(stat -c%s "$WORK/out/system.img")
-          # hashtree sha256 (bloki 4K) ~= IMG/128 + ~1% + vbmeta/footer + wyrownanie:
-          PS=$(( (IMG + IMG/100 + 16777216 + 4095) / 4096 * 4096 ))
+          [ $((IMG % 4096)) -eq 0 ] \
+            || { echo "::error::fs $IMG B nie jest 4096-aligned (wymaga hashtree)"; exit 1; }
+          openssl genrsa -out /tmp/avb_key.pem 2048 2>/dev/null
+          PS=$(( (IMG + IMG/100 + 16777216 + 4194303) / 4194304 * 4194304 ))
           python3 "$KDIR/tools/avbtool.py" add_hashtree_footer \
             --image "$WORK/out/system.img" \
             --partition_name system \
             --partition_size "$PS" \
-            --flags 2 \
+            --flags 3 \
             --algorithm SHA256_RSA2048 \
             --key /tmp/avb_key.pem \
             --hash_algorithm sha256 \
+            --block_size 4096 \
             --do_not_generate_fec \
+            --prop com.android.build.system.os_version:14 \
+            --prop com.android.build.system.security_patch:2026-09-05 \
             || { echo "::error::avbtool add_hashtree_footer padl"; exit 1; }
           rm -f /tmp/avb_key.pem
           python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/system.img" \
             | tee "$WORK/out/avb-info.txt"
-          echo "system.img ze stopka AVB: $(stat -c%s "$WORK/out/system.img") B (fs: $IMG B + hashtree/vbmeta/footer)"
+          # KRYPTOGRAFICZNY DOWOD (avbtool szuka partycji w katalogu obrazu
+          # - dlatego cwd=$WORK/out i plik nazywa sie system.img):
+          ( cd "$WORK/out" && python3 "$KDIR/tools/avbtool.py" verify_image \
+              --image system.img | tee avb-verify.txt ) \
+            || { echo "::error::verify_image: stopka NIE przechodzi weryfikacji"; exit 1; }
+          grep -q "Successfully verified footer" "$WORK/out/avb-verify.txt" \
+            || { echo "::error::brak potwierdzenia podpisu vbmeta"; exit 1; }
+          grep -q "Successfully verified sha256 hashtree" "$WORK/out/avb-verify.txt" \
+            || { echo "::error::brak potwierdzenia hashtree"; exit 1; }
+          # Surowe bajty: magic stopki AVBf w ostatnich 64 B pliku:
+          SZ=$(stat -c%s "$WORK/out/system.img")
+          dd if="$WORK/out/system.img" bs=1 skip=$((SZ-64)) count=64 2>/dev/null \
+            | grep -aq "AVBf" \
+            || { echo "::error::brak magic AVBf w ostatnich 64 bajtach!"; exit 1; }
+          echo "system.img ze stopka AVB (PELNA): $(stat -c%s "$WORK/out/system.img") B (fs: $IMG B + hashtree/vbmeta/footer); podpis + hashtree zweryfikowane kryptograficznie"
 
       - name: "4. Weryfikacja obrazu (mount + smart-suspend + kluczowe pliki)"
         run: |
@@ -833,19 +868,27 @@ jobs:
           [ "$NA" -ge 1 ] || { echo "::error::0 apek MIUI w system.img"; exit 1; }
           echo "miui-framework: OBECNY (hard gate autonomii 1.0 - sprawdzono wyzej)"
           sudo umount "$MNT"
-          # 1.1: STOPKA AVB obowiazkowa (receipt DSU A13 - patrz naglowek)
+          # 1.2: STOPKA AVB PELNA (flags 3 + propsy + dowod kryptograficzny)
           AVBI=$(python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/system.img")
           echo "$AVBI" | grep -q "Hashtree descriptor:" \
             || { echo "::error::brak Hashtree descriptor (stopka AVB!)"; exit 1; }
           echo "$AVBI" | grep -qE "^Algorithm: *SHA256_RSA2048" \
             || { echo "::error::AVB algorytm != SHA256_RSA2048"; exit 1; }
-          echo "$AVBI" | grep -qE "^Flags: *2$" \
-            || { echo "::error::AVB Flags != 2 (LOGGING)"; exit 1; }
+          echo "$AVBI" | grep -qE "^Flags: *3$" \
+            || { echo "::error::AVB Flags != 3 (HASHTREE+VERIFICATION DISABLED)"; exit 1; }
           echo "$AVBI" | grep -qE "Hash Algorithm: *sha256" \
             || { echo "::error::hashtree != sha256 (avbtool 1.3 default sha1!)"; exit 1; }
           echo "$AVBI" | grep -qE "Partition Name: *system$" \
             || { echo "::error::AVB partition_name != system"; exit 1; }
-          echo "AVB footer: Hashtree + SHA256_RSA2048 + Flags:2 (LOGGING) + sha256 + system OK"
+          echo "$AVBI" | grep -q "Prop: com.android.build.system.security_patch" \
+            || { echo "::error::brak property descriptor security_patch (rollback DSU!)"; exit 1; }
+          echo "$AVBI" | grep -q "Prop: com.android.build.system.os_version" \
+            || { echo "::error::brak property descriptor os_version"; exit 1; }
+          grep -q "Successfully verified footer" "$WORK/out/avb-verify.txt" \
+            || { echo "::error::avb-verify.txt: podpis niezweryfikowany"; exit 1; }
+          grep -q "Successfully verified sha256 hashtree" "$WORK/out/avb-verify.txt" \
+            || { echo "::error::avb-verify.txt: hashtree niezweryfikowany"; exit 1; }
+          echo "AVB footer 1.2: Hashtree + SHA256_RSA2048 + Flags:3 (PELNE wylaczenie verity) + sha256 + system + propsy (rollback) + podpis zweryfikowany OK"
 
       - name: "5. README + SUROWY system.img (bez naszego zipa - wymog usera 1.0)"
         # zip CLI nie ma na runnerze (receipt 37071968684) - python zipfile.
@@ -855,7 +898,7 @@ jobs:
           cd "$WORK/out"
           cat > CZYTAJ-TO-DSU.txt <<'XEOF'
           ====================================================================
-          MysticalOS 1.1 - TB350FU / ANDROID 13 + STOPKA AVB (interfejs/funkcje A17)
+          MysticalOS 1.2 - TB350FU / ANDROID 13 + PRAWdziwa STOPKA AVB (A17-look)
           ====================================================================
           Cel: MysticalOS na Lenovo Tab P11 Gen 2 (TB350FU, MT6789/MT8781,
           Helio G99) po rollbacku do oficjalnego stabilnego ANDROIDA 13
@@ -905,7 +948,8 @@ jobs:
 
           FORMAT WYJSCIOWY (spec usera): SUROWY system.img (EROFS,
           non-sparse, Z WBUDOWANA STOPKA AVB) + SHA256SUMS.txt +
-          avb-info.txt (dowod stopki) - bez naszego zipa. Uwaga: GitHub
+          avb-info.txt + avb-verify.txt (kryptograficzny dowod: podpis
+          SHA256_RSA2048 + hashtree sha256 zweryfikowane) - bez naszego zipa. Uwaga: GitHub
           opakowuje artifact w zip przy pobraniu - rozpakuj RAZ i masz
           czysty, surowy system.img.
 
@@ -914,16 +958,28 @@ jobs:
           Couldn't create verity device"). Hosc A13 (po rollbacku do
           oficjalnego S13) WYMAGA stopki AVB na system.img; nasze wczesniejsze
           obrazy z mkfs.erofs jej nie mialy (na hoscie A14 przechodzilo).
-          Od teraz: avbtool add_hashtree_footer, --flags 2
-          (AVB_VBMETA_IMAGE_FLAGS_HASHTREE_ERROR_MODE_LOGGING - dm-verity
-          w trybie LOGOWANIA: bledy zapisywane, montowanie NIE blokowane),
-          --algorithm SHA256_RSA2048, klucz testowy RSA2048 (bootloader
-          odblokowany + flags 2 -> lancuch podpisu nie egzekwowany; tak
-          samo dzialaja GSI phh z testkey AOSP). Dodatki techniczne:
-          --partition_size (stopka na koncu partycji; gsid tworzy partycje
-          o rozmiarze obrazu), --hash_algorithm sha256 (avbtool 1.3
-          defaultuje sha1), --do_not_generate_fec (FEC zbedne do verity).
-          Obraz urusal o ~30 MB (hashtree + vbmeta + footer).
+          1.2 (po receiptu "dalej ten sam blad"): stopka jak w PRAWDZIWYCH
+          GSI. Zrodla: (a) fs_mgr/libfs_avb - gdy vbmeta ma status
+          kHashtreeDisabled lub kVerificationDisabled, fs_mgr zwraca
+          kDisabled i W OGOLE NIE TWORZY urzadzenia verity -> ustawiamy
+          --flags 3 = HASHTREE_DISABLED | VERIFICATION_DISABLED (pelne
+          wylaczenie; flags 2 z 1.1 teoretycznie tez pomijalo weryfikacje,
+          ale hashtree setup pozostawalo aktywne); (b) oficjalne docs DSU
+          "Rollback protection": DSU porownuje security_patch z AVB PROPERTY
+          DESCRIPTOROW obrazow - prawdziwe GSI/AOSP je maja, nasz 1.1 NIE
+          mial! Teraz: --prop com.android.build.system.security_patch=
+          2026-09-05 (nowszy niz host A13) + --prop ...os_version=14.
+          Dowod (w bramce builda + plik avb-verify.txt): avbtool
+          verify_image przechodzi PELNY lancuch - podpis SHA256_RSA2048
+          + hashtree sha256; do tego surowa magic AVBf w ostatnich 64
+          bajtach pliku. Dodatki techniczne: --partition_size (stopka na
+          koncu), --hash_algorithm sha256 + --block_size 4096 jawne,
+          --do_not_generate_fec, PS wyrownany do 4 MiB, fs%4096==0.
+          Klucz testowy RSA2048 (bootloader odblokowany + flags 3 -> lancuch
+          podpisu nie egzekwowany; jak GSI phh z testkey AOSP).
+          JESLI NADAL TEN SAM BLAD: znaczy, ze host S13 czyta WLASNY vbmeta
+          (fstab Lenovo) zamiast stopki obrazu - wtedy zaden GSI nie wstanie
+          przez DSU na S13; prosba o log, a droga docelowa = fastboot flash.
 
           STEROWANIE (adb shell):
             sh /system/bin/mystic-ctl.sh status
@@ -939,7 +995,7 @@ jobs:
             getprop ro.soc.model         -> MT6789
             getprop ro.product.model     -> Lenovo Tab P11 Gen 2
             (stopke AVB mozesz podejrzec: avbtool info_image
-             system.img -> Flags: 2, Hashtree descriptor)
+             system.img -> Flags: 3, Hashtree descriptor + Prop descriptors)
             cat /data/local/tmp/mystic-audio-fix.log  (restart audioservera)
             cat /sys/power/wake_lock     -> pusto w smart; mystic_screensettle
                                           ~4 s po zgaszeniu ekranu
@@ -964,7 +1020,7 @@ jobs:
           KROKI:
           1. Pobierz artifact -> rozpakuj (raz) -> bedzie plik system.img
              (~3,0 GB, ze stopka AVB) + SHA256SUMS.txt (sprawdz:
-             sha256sum -c SHA256SUMS.txt) + avb-info.txt.
+             sha256sum -c SHA256SUMS.txt) + avb-info.txt + avb-verify.txt.
           2. Zainstaluj i otworz DSU Sideloader; daj mu dostep do folderu
              (stworzy folder tymczasowy - wybezsieczenie).
           3. Wybierz plik system.img. Rozmiar userdata zostaw domyslny.
@@ -1012,15 +1068,16 @@ jobs:
           stat -c '%n %s B' system.img CZYTAJ-TO-DSU.txt
           df -h /
 
-      - name: "6. Artifact (SUROWY system.img + README + SHA256SUMS + avb-info)"
+      - name: "6. Artifact (SUROWY system.img + README + SHA256SUMS + avb-info + avb-verify)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS_1.1_DSU_TB350FU_A13_AVB
+          name: MysticalOS_1.2_DSU_TB350FU_A13_AVB
           path: |
             /tmp/dsu/out/system.img
             /tmp/dsu/out/CZYTAJ-TO-DSU.txt
             /tmp/dsu/out/SHA256SUMS.txt
             /tmp/dsu/out/avb-info.txt
+            /tmp/dsu/out/avb-verify.txt
           if-no-files-found: error
           retention-days: 90
 
