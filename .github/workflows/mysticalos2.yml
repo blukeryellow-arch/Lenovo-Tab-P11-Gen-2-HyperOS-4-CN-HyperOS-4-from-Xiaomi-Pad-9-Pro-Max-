@@ -114,7 +114,7 @@ jobs:
               dst = f'{W}/vbmeta/FLAGS3/{n}.img'
               data = bytearray(open(src, 'rb').read())
               assert data[:4] == b'AVB0', n + ': zla magic'
-              assert data[128:134] == b'avbtool', n + ': release string nie na 128'
+              assert bytes(data[128:135]) == b'avbtool', n + ': release string nie na 128'
               old = struct.unpack('>I', data[120:124])[0]
               assert old == 0, n + ': flags != 0'
               data[120:124] = struct.pack('>I', 3)
