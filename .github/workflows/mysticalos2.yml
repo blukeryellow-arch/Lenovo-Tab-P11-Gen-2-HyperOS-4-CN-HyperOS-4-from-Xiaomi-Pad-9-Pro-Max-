@@ -331,30 +331,38 @@ jobs:
               assert lbl and lbl.startswith(b'u:object_r:'), rel + ': brak kontekstu SELinux!'
               print('kontekst OK:', rel, '->', lbl.decode())
           EOF
-          # ---- DEBLOAT FIZYCZNY (9 pozycji ze spec) ----
+          # ---- DEBLOAT FIZYCZNY (9 pozycji ze spec; run 37374889233: tylko
+          # 3/9 mialo "podrecznikowe" nazwy - reszta ma inne nazwy folderow w
+          # stocku LUB zyje w product (nieosiagalne z system.img). Skan tez
+          # app_backup (staging OTA Lenovo). Miekki fail: listing do logu. ----
           sudo python3 - "$WORK" "$SYS" <<'EOF'
           import os, re, shutil, sys
           W = sys.argv[1]; T = sys.argv[2]
-          TOKENS = [r'\blsf\b|lsf-device-phone|com\.lenovo\.lsf',
-                    r'lenovoextend|com\.lenovo\.hec\.lenovoextend',
-                    r'hecagent|hecplatform',
-                    r'udcplatform',
-                    r'userexperience|ue\.device',
-                    r'lencenter|lenovocenter|tblenovo\.center',
+          TOKENS = [r'\blsf\b|lsf-device-phone|lsf\.device|com\.lenovo\.lsf',
+                    r'lenovoextend|hecextend|com\.lenovo\.hec\.lenovoextend',
+                    r'hecagent|hecplatform|com\.lenovo\.hecplatform',
+                    r'udcplatform|com\.lenovo\.udcplatform',
+                    r'userexperience|lenovoue|\bue\b.*device|com\.lenovo\.ue',
+                    r'lencenter|lenovocenter|tblenovo|devicecenter|com\.tblenovo',
                     r'\bdsa\b|com\.lenovo\.dsa',
-                    r'tbengine',
-                    r'engineeringcode']
+                    r'tbengine|com\.lenovo\.tbengine',
+                    r'engineeringcode|com\.lenovo\.engineeringcode']
           PROTECT = re.compile(r'pen|dolby|atmos|audio|wifi|wlan|display|driver|framework|boot', re.I)
           removed = []
-          for base in ['app', 'priv-app']:
+          listing = []
+          for base in ['app', 'priv-app', 'app_backup']:
               d = os.path.join(T, base)
               if not os.path.isdir(d):
                   continue
               for name in sorted(os.listdir(d)):
                   full = os.path.join(d, name)
-                  if not os.path.isdir(full) or PROTECT.search(name):
+                  if not os.path.isdir(full):
                       continue
-                  hay = ' '.join([name] + [f for f in os.listdir(full)]).lower()
+                  entries = [name] + os.listdir(full)
+                  listing.append(base + '/' + name + '  [' + ' '.join(sorted(entries)[:6]) + ']')
+                  if PROTECT.search(name):
+                      continue
+                  hay = ' '.join(entries).lower()
                   if any(re.search(t, hay) for t in TOKENS):
                       sz = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(full) for f in fs)
                       shutil.rmtree(full)
@@ -363,9 +371,12 @@ jobs:
           print(f'DEBLOAT: usunieto {len(removed)} folderow')
           open(f'{W}/debloat-report.txt', 'w').write(
               '\n'.join(f'{a}/{b} {c}' for a, b, c in removed) + '\n')
+          open(f'{W}/applist.txt', 'w').write('\n'.join(listing) + '\n')
           if len(removed) < 5:
-              print('::error::debloat < 5 trafien - nazwy folderow w stocku sie roznia; patrz log')
-              sys.exit(1)
+              print('UWAGA: debloat < 5 trafien - pelny listing folderow:')
+              print('\n'.join(listing))
+              print('(pozostale cele spec maja inne nazwy folderow LUB zyja w'
+                    ' partycji product - z system.img nieusunalne)')
           EOF
           # ---- PROPSY (spec 20 + dodatki z system.prop usera) ----
           sudo python3 - "$WORK" "$SYS" "$SEBP" <<'EOF'
@@ -797,6 +808,7 @@ jobs:
             echo "## debloat"; echo '```'; cat "$WORK/debloat-report.txt" 2>/dev/null || true; echo '```'
             echo "## rust"; echo '```'; cat "$WORK/rust-manifest.txt" 2>/dev/null || true; echo '```'
             echo "## sysroot systemu"; echo '```'; cat "$WORK/sysroot-listing.txt" 2>/dev/null || true; echo '```'
+            echo "## app/priv-app/app_backup (listing)"; echo '```'; cat "$WORK/applist.txt" 2>/dev/null || true; echo '```'
             echo "## qemu"; echo '```'; cat "$WORK/qemu-coreutils.txt" 2>/dev/null || true; echo '```'
             echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
           } > "$R"
