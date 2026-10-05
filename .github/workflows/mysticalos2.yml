@@ -39,7 +39,7 @@
 # ============================================================================
 
 name: mysticalos2
-# bump2: dwa runy (37366020796, 37369503697) uciete DOKLADNIE na ~902 s zaraz po
+# bump3: retry - run 7 (8e93eb2) cancelled w kolejce (zewn. canceler); fix SIGPIPE nie wykonal sie
 
 on:
   workflow_dispatch:
