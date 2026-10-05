@@ -290,27 +290,48 @@ jobs:
               || { echo "::error::$P: tar roundtrip padl"; exit 1; }
             sudo umount "$M"; sudo rmdir "$M"
             rm -f "$S"
-            if [ ! -d "$T/app" ] && [ ! -d "$T/priv-app" ]; then
-              INNER=$(find "$T" -maxdepth 2 -type d -name app | head -1)
-              [ -n "$INNER" ] || { echo "::error::$P: drzewo bez /app"; exit 1; }
-              INNER=$(dirname "$INNER"); mv "$INNER" "$WORK/tree_i"; rm -rf "$T"; mv "$WORK/tree_i" "$T"
-            fi
-            echo "$P: drzewo OK ($(find "$T" | wc -l) wpisow)"; df -h /
+            echo "$P: drzewo OK ($(sudo find "$T" 2>/dev/null | wc -l) wpisow)"; df -h /
           done
-          # ---- konteksty zachowane? (probka) ----
-          python3 - "$WORK" <<'EOF'
+          # SYSROOT: PERMANENT = struktura stocka 1:1 (BEZ shiftu!). Flashtool
+          # images mialy wrapper (krok 4 runa 37368017357: brak app/ w korzeniu,
+          # root-owned storage/data/lost+found) - tylko wskazujemy sciezke.
+          T="$WORK/tree-system"
+          if sudo test -d "$T/app"; then SYS="$T"
+          elif sudo test -d "$T/system/app"; then SYS="$T/system"
+          else
+            A=$(sudo find "$T" -maxdepth 3 -type d -name app -print -quit 2>/dev/null || true)
+            [ -n "$A" ] || { echo "::error::brak app/ w drzewie systemu! Diagnostyka:"
+                             sudo ls -la "$T"; sudo ls -la "$T/system" 2>/dev/null || true
+                             exit 1; }
+            SYS=$(dirname "$A")
+          fi
+          echo "$SYS" > "$WORK/sysroot-system"
+          echo "sysroot systemu: ${SYS#"$T"/} -> $SYS"
+          sudo test -f "$SYS/build.prop" \
+            || { echo "::error::brak build.prop w sysroot"; sudo ls -la "$SYS"; exit 1; }
+          sudo ls -la "$SYS" > "$WORK/sysroot-listing.txt" || true
+          # system_ext FOLDED? (zip flashtool S130714 nie ma system_ext.img)
+          SEBP=""
+          if [ -e "$WORK/no-system_ext" ]; then
+            for CAND in "$SYS/system_ext/etc/build.prop" "$T/system_ext/etc/build.prop"; do
+              if sudo test -f "$CAND"; then SEBP="$CAND"; echo "system_ext FOLDED: $SEBP"; break; fi
+            done
+            [ -n "$SEBP" ] || echo "UWAGA: brak system_ext/etc/build.prop w drzewie - propsy tylko /system"
+          fi
+          if [ -n "$SEBP" ]; then echo "${SEBP#"$T"/}" > "$WORK/sebp-rel"; else : > "$WORK/sebp-rel"; fi
+          # ---- konteksty zachowane? (probka; sudo - drzewo root-owned) ----
+          sudo python3 - "$SYS" <<'EOF'
           import os, sys
-          W = sys.argv[1]
-          T = f'{W}/tree-system'
+          S = sys.argv[1]
           for rel in ['bin/sh', 'build.prop', 'etc/selinux']:
-              lbl = os.getxattr(os.path.join(T, rel), 'security.selinux')
+              lbl = os.getxattr(os.path.join(S, rel), 'security.selinux')
               assert lbl and lbl.startswith(b'u:object_r:'), rel + ': brak kontekstu SELinux!'
               print('kontekst OK:', rel, '->', lbl.decode())
           EOF
           # ---- DEBLOAT FIZYCZNY (9 pozycji ze spec) ----
-          python3 - "$WORK" <<'EOF'
+          sudo python3 - "$WORK" "$SYS" <<'EOF'
           import os, re, shutil, sys
-          W = sys.argv[1]; T = f'{W}/tree-system'
+          W = sys.argv[1]; T = sys.argv[2]
           TOKENS = [r'\blsf\b|lsf-device-phone|com\.lenovo\.lsf',
                     r'lenovoextend|com\.lenovo\.hec\.lenovoextend',
                     r'hecagent|hecplatform',
@@ -344,9 +365,9 @@ jobs:
               sys.exit(1)
           EOF
           # ---- PROPSY (spec 20 + dodatki z system.prop usera) ----
-          python3 - "$WORK" <<'EOF'
+          sudo python3 - "$WORK" "$SYS" "$SEBP" <<'EOF'
           import sys
-          W = sys.argv[1]
+          W, SYS, SEBP = sys.argv[1], sys.argv[2], sys.argv[3]
           PROPS = {
             # tozsamosc A17 / HyperOS 4 (spec usera)
             'ro.build.version.release': '17',
@@ -408,24 +429,21 @@ jobs:
                       out.append(k + '=' + PROPS[k])
               open(path, 'w', encoding='utf-8', errors='surrogateescape').write('\n'.join(out))
               return len(seen), len(missing)
-          import os
-          r1 = apply(f'{W}/tree-system/build.prop')
+          r1 = apply(f'{SYS}/build.prop')
           print('/system/build.prop:', r1[0], 'podmieniono,', r1[1], 'dodano')
-          if not os.path.exists(f'{W}/no-system_ext'):
-              r2 = apply(f'{W}/tree-system-ext/etc/build.prop')
-              print('system_ext/etc/build.prop:', r2[0], 'podmieniono,', r2[1], 'dodano')
+          if SEBP:
+              r2 = apply(SEBP)
+              print('system_ext/etc/build.prop (folded):', r2[0], 'podmieniono,', r2[1], 'dodano')
           # KRYTYCZNE: SDK 33 NIETYKANE (stabilnosc system_server + Mali-G57)
-          bp = open(f'{W}/tree-system/build.prop').read()
+          bp = open(f'{SYS}/build.prop').read()
           assert 'ro.build.version.sdk=33' in bp, 'sdk != 33?!'
           assert 'ro.build.version.sdk=34' not in bp and 'ro.build.version.sdk=36' not in bp
           print('ro.build.version.sdk=33 NIETYKANE OK')
           EOF
           # ---- RUST ENGINE (binarka usera + demon + rc DOKLADNIE ze spec) ----
-          T="$WORK/tree-system"
-          install -m 0755 "$WORK/rust/coreutils" "$T/bin/coreutils"
-          install -m 0755 "$WORK/rust/mystical-rust-daemon" "$T/bin/mystical-rust-daemon"
-          sudo chown 0:0 "$T/bin/coreutils" "$T/bin/mystical-rust-daemon"
-          cat > "$T/etc/init/mystical_rust.rc" <<'RCEOF'
+          sudo install -m 0755 "$WORK/rust/coreutils" "$SYS/bin/coreutils"
+          sudo install -m 0755 "$WORK/rust/mystical-rust-daemon" "$SYS/bin/mystical-rust-daemon"
+          cat > "$WORK/mystical_rust.rc" <<'RCEOF'
           # MysticalOS 2.0 - Rust Engine (Rozkaz 14, blok serwisu DOKLADNIE ze spec).
           # Bez seclabel = kontekst inita (umie sysfs/zram/proc; wzorzec mystic-* rc).
           service mystical_rust /system/bin/mystical-rust-daemon
@@ -434,14 +452,14 @@ jobs:
               group root
               oneshot
           RCEOF
-          sudo chown 0:0 "$T/etc/init/mystical_rust.rc"
+          sudo install -m 0644 "$WORK/mystical_rust.rc" "$SYS/etc/init/mystical_rust.rc"
           # konteksty SELinux nowych plikow = konteksty sasiadow z tego obrazu
-          python3 - "$WORK" <<'EOF'
+          sudo python3 - "$SYS" <<'EOF'
           import os, sys
-          W = sys.argv[1]; T = f'{W}/tree-system'
-          bin_ctx = os.getxattr(f'{T}/bin/sh', 'security.selinux')
+          S = sys.argv[1]
+          bin_ctx = os.getxattr(f'{S}/bin/sh', 'security.selinux')
           rc_ctx = None
-          idir = f'{T}/etc/init'
+          idir = f'{S}/etc/init'
           for f in sorted(os.listdir(idir)):
               if f.endswith('.rc'):
                   rc_ctx = os.getxattr(os.path.join(idir, f), 'security.selinux'); break
@@ -450,7 +468,7 @@ jobs:
           for rel, ctx in [('bin/coreutils', bin_ctx),
                            ('bin/mystical-rust-daemon', bin_ctx),
                            ('etc/init/mystical_rust.rc', rc_ctx)]:
-              os.setxattr(os.path.join(T, rel), 'security.selinux', ctx)
+              os.setxattr(os.path.join(S, rel), 'security.selinux', ctx)
               print('kontekst nadany:', rel, '->', ctx.decode())
           EOF
           echo "== mody drzewa OK =="; df -h /
@@ -573,7 +591,14 @@ jobs:
             sudo mount -t erofs -o ro,loop "$WORK/out/MysticalOS_2.0_TB350FU_System.img" "$M" \
               || { echo "::error::montaz weryfikacyjny system"; exit 1; }
           fi
-          BP="$M/build.prop"
+          # sysroot na finalnym obrazie (ta sama detekcja co w kroku 4)
+          if sudo test -d "$M/app"; then MSYS="$M"
+          elif sudo test -d "$M/system/app"; then MSYS="$M/system"
+          else MSYS=$(dirname "$(sudo find "$M" -maxdepth 3 -type d -name app -print -quit 2>/dev/null || true)")
+          fi
+          [ -n "$MSYS" ] || { echo "::error::finalny obraz bez app/!"; sudo ls -la "$M"; exit 1; }
+          echo "finalny sysroot: $MSYS"
+          BP="$MSYS/build.prop"
           # 20 kluczowych propsow ze spec (identity + grafika) + sdk
           for KV in \
             "ro.build.version.release=17" \
@@ -602,29 +627,29 @@ jobs:
           echo "propsy 21/21 OK (sdk=33 nietkane)"
           # debloat: zadnego z 9 usunietych nie moze byc
           for BAD in LSF LenovoExtend HecAgent UdcPlatform LenovoUserExperience LenovoCenter DSA TbEngine EngineeringCode; do
-            if find "$M/app" "$M/priv-app" -maxdepth 1 -iname "*${BAD}*" 2>/dev/null | grep -q .; then
+            if sudo find "$MSYS/app" "$MSYS/priv-app" -maxdepth 1 -iname "*${BAD}*" 2>/dev/null | grep -q .; then
               echo "::error::$BAD nadal w obrazie!"; exit 1
             fi
           done
           echo "debloat 9/9 OK (folderow nie ma)"
           # nietykalne (ostrzezenie jesli ich nie widac - moga byc w product):
           for KEEP in pen dolby audio; do
-            find "$M/app" "$M/priv-app" -maxdepth 1 -iname "*${KEEP}*" 2>/dev/null | grep -q . \
+            sudo find "$MSYS/app" "$MSYS/priv-app" -maxdepth 1 -iname "*${KEEP}*" 2>/dev/null | grep -q . \
               && echo "zachowano: *${KEEP}*" || echo "UWAGA: brak *${KEEP}* w /system (moze byc w product/vendor)"
           done
           # Rust engine
-          [ -x "$M/bin/coreutils" ] || { echo "::error::brak /system/bin/coreutils"; exit 1; }
-          [ -x "$M/bin/mystical-rust-daemon" ] || { echo "::error::brak demona"; exit 1; }
-          [ -f "$M/etc/init/mystical_rust.rc" ] || { echo "::error::brak mystical_rust.rc"; exit 1; }
-          sh -n "$M/bin/mystical-rust-daemon" || { echo "::error::demon: blad skladni sh"; exit 1; }
-          grep -q "service mystical_rust /system/bin/mystical-rust-daemon" "$M/etc/init/mystical_rust.rc" \
+          [ -x "$MSYS/bin/coreutils" ] || { echo "::error::brak /system/bin/coreutils"; exit 1; }
+          [ -x "$MSYS/bin/mystical-rust-daemon" ] || { echo "::error::brak demona"; exit 1; }
+          [ -f "$MSYS/etc/init/mystical_rust.rc" ] || { echo "::error::brak mystical_rust.rc"; exit 1; }
+          sh -n "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: blad skladni sh"; exit 1; }
+          grep -q "service mystical_rust /system/bin/mystical-rust-daemon" "$MSYS/etc/init/mystical_rust.rc" \
             || { echo "::error::rc: brak serwisu mystical_rust"; exit 1; }
-          grep -q "class main" "$M/etc/init/mystical_rust.rc" || { echo "::error::rc: brak class main"; exit 1; }
-          grep -q "oneshot" "$M/etc/init/mystical_rust.rc" || { echo "::error::rc: brak oneshot"; exit 1; }
-          grep -q "4294967296" "$M/bin/mystical-rust-daemon" || { echo "::error::demon: brak zram 4GB"; exit 1; }
-          grep -q "lz4" "$M/bin/mystical-rust-daemon" || { echo "::error::demon: brak lz4"; exit 1; }
+          grep -q "class main" "$MSYS/etc/init/mystical_rust.rc" || { echo "::error::rc: brak class main"; exit 1; }
+          grep -q "oneshot" "$MSYS/etc/init/mystical_rust.rc" || { echo "::error::rc: brak oneshot"; exit 1; }
+          grep -q "4294967296" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak zram 4GB"; exit 1; }
+          grep -q "lz4" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak lz4"; exit 1; }
           # konteksty SELinux nowych plikow = kontekst bin/sh
-          python3 - "$M" <<'EOF'
+          sudo python3 - "$MSYS" <<'EOF'
           import os, sys
           M = sys.argv[1]
           ref = os.getxattr(f'{M}/bin/sh', 'security.selinux')
@@ -635,29 +660,28 @@ jobs:
           print('konteksty SELinux w finalnym obrazie OK:', cu.decode(), '/', rc.decode())
           EOF
           # QEMU: binarka Rust DZIALA (hard evidence, prosto z obrazu)
-          qemu-aarch64-static "$M/bin/coreutils" --version > "$WORK/qemu-coreutils.txt" 2>&1 \
+          qemu-aarch64-static "$MSYS/bin/coreutils" --version > "$WORK/qemu-coreutils.txt" 2>&1 \
             || { echo "::error::qemu: coreutils --version padl"; cat "$WORK/qemu-coreutils.txt"; exit 1; }
           head -2 "$WORK/qemu-coreutils.txt"
           grep -qi "coreutils" "$WORK/qemu-coreutils.txt" \
             || { echo "::error::qemu: coreutils --version bez potwierdzenia"; exit 1; }
-          qemu-aarch64-static "$M/bin/coreutils" ls "$M/bin" >/dev/null \
+          qemu-aarch64-static "$MSYS/bin/coreutils" ls "$MSYS/bin" >/dev/null \
             || { echo "::error::qemu: coreutils ls padl"; exit 1; }
           echo "qemu-aarch64: coreutils --version + ls OK (multicall dziala)"
           USE=$(df --output=pcent "$M" | tail -1 | tr -dc '0-9')
           echo "system: uzycie ${USE}%"
           [ "$USE" -lt 99 ] || { echo "::error::system ext4 zapchany"; exit 1; }
-          sudo umount "$M"
-          if [ ! -e "$WORK/no-system_ext" ]; then
-            if ! sudo mount -o ro,loop "$WORK/out/MysticalOS_2.0_TB350FU_System_ext.img" "$M" 2>/dev/null; then
-              sudo mount -t erofs -o ro,loop "$WORK/out/MysticalOS_2.0_TB350FU_System_ext.img" "$M" \
-                || { echo "::error::montaz weryfikacyjny system_ext"; exit 1; }
-            fi
+          # system_ext FOLDED w obrazie systemu (zapisana sciezka z kroku 4)
+          SEBPREL=$(cat "$WORK/sebp-rel" 2>/dev/null || true)
+          if [ -n "$SEBPREL" ] && sudo test -f "$M/$SEBPREL"; then
             for KV in "ro.build.version.release=17" "ro.mysticalos.version=2.0" "ro.hyperos.version=4.0.0"; do
-              grep -q "^$KV$" "$M/etc/build.prop" || { echo "::error::system_ext: brak $KV"; exit 1; }
+              grep -q "^$KV$" "$M/$SEBPREL" || { echo "::error::system_ext(folded): brak $KV"; exit 1; }
             done
-            echo "system_ext: propsy OK"
-            sudo umount "$M"
+            echo "system_ext (folded, $SEBPREL): propsy OK"
+          else
+            echo "system_ext: brak w obrazie (propsy tylko /system/build.prop)"
           fi
+          sudo umount "$M"
           sudo rmdir "$M" 2>/dev/null || true
           df -h /
 
@@ -674,7 +698,11 @@ jobs:
 
           ZAWARTOSC PACZKI:
           - MysticalOS_2.0_TB350FU_System.img      (system; ext4; stopka AVB flags 2)
-          - MysticalOS_2.0_TB350FU_System_ext.img  (system_ext; stopka AVB flags 2)
+            UWAGA: zip flashtool S130714 nie ma osobnego system_ext.img -
+            system_ext siedzi WEWNETRZNYM system.img (folded), wiec to JEDEN
+            obraz do wgrania. (Gdyby kiedys w paczce pojawil sie plik
+            MysticalOS_2.0_TB350FU_System_ext.img - wgraj go dodatkowo:
+            fastboot flash system_ext MysticalOS_2.0_TB350FU_System_ext.img)
           - vbmeta-FLAGS3/    vbmeta + vbmeta_system + vbmeta_vendor ze stocka
                               S130714 z Flags:3 = wylaczona weryfikacja verity
                               (odpowiednik fastboot --disable-verity
@@ -691,9 +719,8 @@ jobs:
             fastboot flash vbmeta_vendor     vbmeta-FLAGS3/vbmeta_vendor.img
           KROK 1 (wejscie w FastbootD - userspace, dynamiczne partycje):
             adb reboot fastboot        (albo z bootloadera: fastboot reboot fastboot)
-          KROK 2 (wgrywanie obrazow):
+          KROK 2 (wgrywanie obrazu):
             fastboot flash system        MysticalOS_2.0_TB350FU_System.img
-            fastboot flash system_ext    MysticalOS_2.0_TB350FU_System_ext.img
           KROK 3:
             fastboot reboot
             (pierwszy boot moze troche potrwac - to normalne)
@@ -765,6 +792,7 @@ jobs:
             echo '```'
             echo "## debloat"; echo '```'; cat "$WORK/debloat-report.txt" 2>/dev/null || true; echo '```'
             echo "## rust"; echo '```'; cat "$WORK/rust-manifest.txt" 2>/dev/null || true; echo '```'
+            echo "## sysroot systemu"; echo '```'; cat "$WORK/sysroot-listing.txt" 2>/dev/null || true; echo '```'
             echo "## qemu"; echo '```'; cat "$WORK/qemu-coreutils.txt" 2>/dev/null || true; echo '```'
             echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
           } > "$R"
