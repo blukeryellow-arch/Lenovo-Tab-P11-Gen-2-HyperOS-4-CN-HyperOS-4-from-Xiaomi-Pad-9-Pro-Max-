@@ -164,8 +164,11 @@ jobs:
               echo "$1: raw ($(stat -c%s "$1") B)"
             fi
           }
-          LIST=$(unzip -l "$WORK/stock.zip" > "$WORK/ziplist.txt" && cat "$WORK/ziplist.txt")
-          if echo "$LIST" | grep -q "payload\.bin$"; then
+          # UWAGA: grep zawsze na PLIKU - "echo | grep -q" to wyścig SIGPIPE
+          # (grep -q zamyka rure po 1. trafieniu; listing >64 KB bufora rury ->
+          # 'echo: write error: Broken pipe' pod pipefail; run 37371231584)
+          unzip -l "$WORK/stock.zip" > "$WORK/ziplist.txt" || true
+          if grep -q "payload\.bin$" "$WORK/ziplist.txt"; then
             echo "== paczka OTA: payload.bin =="
             unzip -o -q "$WORK/stock.zip" "*payload.bin" -d "$WORK"
             PB=$(find "$WORK" -maxdepth 2 -name "payload.bin" | head -1)
@@ -181,7 +184,7 @@ jobs:
                      || { echo "::error::payload-dumper-go padl"; exit 1; } }
             rm -f "$PB"
             rm -f "$WORK/payload-dumper-go"
-          elif echo "$LIST" | grep -q "system\.img$"; then
+          elif grep -q "system\.img$" "$WORK/ziplist.txt"; then
             echo "== paczka flashtool: luzne obrazy partycji (image/*.img) =="
             unzip -o -q "$WORK/stock.zip" "*system.img" "*system_ext*.img" -d "$WORK/fl" 2>/dev/null || true
             rm -f "$WORK/stock.zip"
@@ -197,7 +200,7 @@ jobs:
               echo "system_ext.img: $(stat -c%s "$WORK/out/system_ext.img") B"
             fi
             rm -rf "$WORK/fl"
-          elif echo "$LIST" | grep -q "super\.img$"; then
+          elif grep -q "super\.img$" "$WORK/ziplist.txt"; then
             echo "== paczka flashtool: super.img =="
             unzip -o -q "$WORK/stock.zip" "*super.img" -d "$WORK"
             SU=$(find "$WORK" -maxdepth 2 -name "super.img" | head -1)
@@ -627,15 +630,16 @@ jobs:
           echo "propsy 21/21 OK (sdk=33 nietkane)"
           # debloat: zadnego z 9 usunietych nie moze byc
           for BAD in LSF LenovoExtend HecAgent UdcPlatform LenovoUserExperience LenovoCenter DSA TbEngine EngineeringCode; do
-            if sudo find "$MSYS/app" "$MSYS/priv-app" -maxdepth 1 -iname "*${BAD}*" 2>/dev/null | grep -q .; then
-              echo "::error::$BAD nadal w obrazie!"; exit 1
+            sudo find "$MSYS/app" "$MSYS/priv-app" -maxdepth 1 -iname "*${BAD}*" > "$WORK/bad-hit.txt" 2>/dev/null || true
+            if [ -s "$WORK/bad-hit.txt" ]; then
+              echo "::error::$BAD nadal w obrazie!"; cat "$WORK/bad-hit.txt"; exit 1
             fi
           done
           echo "debloat 9/9 OK (folderow nie ma)"
           # nietykalne (ostrzezenie jesli ich nie widac - moga byc w product):
           for KEEP in pen dolby audio; do
-            sudo find "$MSYS/app" "$MSYS/priv-app" -maxdepth 1 -iname "*${KEEP}*" 2>/dev/null | grep -q . \
-              && echo "zachowano: *${KEEP}*" || echo "UWAGA: brak *${KEEP}* w /system (moze byc w product/vendor)"
+            sudo find "$MSYS/app" "$MSYS/priv-app" -maxdepth 1 -iname "*${KEEP}*" > "$WORK/keep-hit.txt" 2>/dev/null || true
+            if [ -s "$WORK/keep-hit.txt" ]; then echo "zachowano: *${KEEP}*"; else echo "UWAGA: brak *${KEEP}* w /system (moze byc w product/vendor)"; fi
           done
           # Rust engine
           [ -x "$MSYS/bin/coreutils" ] || { echo "::error::brak /system/bin/coreutils"; exit 1; }
