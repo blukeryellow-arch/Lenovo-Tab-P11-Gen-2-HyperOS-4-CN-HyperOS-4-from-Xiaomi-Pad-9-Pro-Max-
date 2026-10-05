@@ -544,7 +544,7 @@ jobs:
               build_erofs "$WORK/tree-system-ext" "$WORK/out/MysticalOS_2.0_TB350FU_System_ext.img" system_ext
             fi
           fi
-          rm -rf "$WORK/tree-system" "$WORK/tree-system-ext"
+          sudo rm -rf "$WORK/tree-system" "$WORK/tree-system-ext"
           df -h /
           ls -la "$WORK/out/"
 
