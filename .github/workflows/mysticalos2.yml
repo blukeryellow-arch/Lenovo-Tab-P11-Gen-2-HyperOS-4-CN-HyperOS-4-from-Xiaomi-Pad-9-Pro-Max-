@@ -637,7 +637,7 @@ jobs:
             "debug.hwui.renderer=skiagl" \
             "debug.renderengine.backend=skiaglthreaded" \
             "ro.build.version.sdk=33"; do
-            grep -q "^$KV$" "$BP" || { echo "::error::build.prop: brak $KV"; exit 1; }
+            sudo grep -q "^$KV$" "$BP" || { echo "::error::build.prop: brak $KV"; exit 1; }
           done
           echo "propsy 21/21 OK (sdk=33 nietkane)"
           # debloat: zadnego z 9 usunietych nie moze byc
@@ -658,12 +658,12 @@ jobs:
           [ -x "$MSYS/bin/mystical-rust-daemon" ] || { echo "::error::brak demona"; exit 1; }
           [ -f "$MSYS/etc/init/mystical_rust.rc" ] || { echo "::error::brak mystical_rust.rc"; exit 1; }
           sh -n "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: blad skladni sh"; exit 1; }
-          grep -q "service mystical_rust /system/bin/mystical-rust-daemon" "$MSYS/etc/init/mystical_rust.rc" \
+          sudo grep -q "service mystical_rust /system/bin/mystical-rust-daemon" "$MSYS/etc/init/mystical_rust.rc" \
             || { echo "::error::rc: brak serwisu mystical_rust"; exit 1; }
-          grep -q "class main" "$MSYS/etc/init/mystical_rust.rc" || { echo "::error::rc: brak class main"; exit 1; }
-          grep -q "oneshot" "$MSYS/etc/init/mystical_rust.rc" || { echo "::error::rc: brak oneshot"; exit 1; }
-          grep -q "4294967296" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak zram 4GB"; exit 1; }
-          grep -q "lz4" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak lz4"; exit 1; }
+          sudo grep -q "class main" "$MSYS/etc/init/mystical_rust.rc" || { echo "::error::rc: brak class main"; exit 1; }
+          sudo grep -q "oneshot" "$MSYS/etc/init/mystical_rust.rc" || { echo "::error::rc: brak oneshot"; exit 1; }
+          sudo grep -q "4294967296" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak zram 4GB"; exit 1; }
+          sudo grep -q "lz4" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak lz4"; exit 1; }
           # konteksty SELinux nowych plikow = kontekst bin/sh
           sudo python3 - "$MSYS" <<'EOF'
           import os, sys
@@ -691,7 +691,7 @@ jobs:
           SEBPREL=$(cat "$WORK/sebp-rel" 2>/dev/null || true)
           if [ -n "$SEBPREL" ] && sudo test -f "$M/$SEBPREL"; then
             for KV in "ro.build.version.release=17" "ro.mysticalos.version=2.0" "ro.hyperos.version=4.0.0"; do
-              grep -q "^$KV$" "$M/$SEBPREL" || { echo "::error::system_ext(folded): brak $KV"; exit 1; }
+              sudo grep -q "^$KV$" "$M/$SEBPREL" || { echo "::error::system_ext(folded): brak $KV"; exit 1; }
             done
             echo "system_ext (folded, $SEBPREL): propsy OK"
           else
