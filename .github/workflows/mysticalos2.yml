@@ -39,7 +39,7 @@
 # ============================================================================
 
 name: mysticalos2
-# bump: rerun po infra-cancel (run 37366020796 cancelled bez loga, steps=0)
+# bump2: dwa runy (37366020796, 37369503697) uciete DOKLADNIE na ~902 s zaraz po
 
 on:
   workflow_dispatch:
