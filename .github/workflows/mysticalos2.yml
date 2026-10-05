@@ -764,10 +764,10 @@ jobs:
           - Daemon Rust (zram 4 GB LZ4 + schedutil) odpala sie z inita
             (serwis mystical_rust, oneshot); log: logcat -s MysticalOS-Rust.
           EOF
-          cd "$WORK/out"
-          sha256sum MysticalOS_2.0_TB350FU_*.img \
-                    vbmeta-FLAGS3/*.img STOCK-ORYGINAL/*.img \
-                    INSTRUKCJA-FASTBOOTD.txt > SHA256SUMS.txt
+          sha256sum "$WORK/out"/MysticalOS_2.0_TB350FU_*.img \
+                    "$WORK/vbmeta/FLAGS3"/*.img "$WORK/vbmeta/STOCK-ORYGINAL"/*.img \
+                    "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" > "$WORK/out/SHA256SUMS.txt"
+          cat "$WORK/out/SHA256SUMS.txt"
           ls -la "$WORK/out/"
 
       - name: "9. Artifact (PERMANENT)"
