@@ -340,10 +340,10 @@ jobs:
           W = sys.argv[1]; T = sys.argv[2]
           TOKENS = [r'\blsf\b|lsf-device-phone|lsf\.device|com\.lenovo\.lsf',
                     r'lenovoextend|hecextend|com\.lenovo\.hec\.lenovoextend',
-                    r'hecagent|hecplatform|com\.lenovo\.hecplatform',
+                    r'hec[._-]?agent|hecplatform|com[.]lenovo[.]hecplatform',
                     r'udcplatform|com\.lenovo\.udcplatform',
-                    r'userexperience|lenovoue|\bue\b.*device|com\.lenovo\.ue',
-                    r'lencenter|lenovocenter|tblenovo|devicecenter|com\.tblenovo',
+                    r'userexperience|lenovoue|tabletue|com[.]lenovo[.]ue[.]device|com[.]lenovo[.]ue',
+                    r'lencenter|lenovocenter|tabletcenter|com[.]tblenovo[.]center',
                     r'\bdsa\b|com\.lenovo\.dsa',
                     r'tbengine|com\.lenovo\.tbengine',
                     r'engineeringcode|com\.lenovo\.engineeringcode']
@@ -380,7 +380,7 @@ jobs:
           EOF
           # ---- PROPSY (spec 20 + dodatki z system.prop usera) ----
           sudo python3 - "$WORK" "$SYS" "$SEBP" <<'EOF'
-          import sys
+          import os, sys
           W, SYS, SEBP = sys.argv[1], sys.argv[2], sys.argv[3]
           PROPS = {
             # tozsamosc A17 / HyperOS 4 (spec usera)
