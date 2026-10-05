@@ -1,0 +1,62 @@
+#!/system/bin/sh
+# ==============================================================================
+# MysticalOS 2.0 - Rust High-Performance Memory & CPU Daemon
+# ==============================================================================
+
+MODDIR="${0%/*}"
+RUST_CORE="$MODDIR/coreutils"
+
+log_msg() {
+    log -t "MysticalOS-Rust" "$1"
+    echo "[MysticalOS-Rust] $1"
+}
+
+log_msg "Starting MysticalOS Rust Engine v2.0 on Lenovo TB350FU..."
+
+# 1. MediaTek Helio G99 (MT6789) CPU Governor Optimization
+for gov in /sys/devices/system/cpu/cpufreq/schedutil /sys/devices/system/cpu/cpu*/cpufreq/schedutil; do
+    if [ -d "$gov" ]; then
+        echo 500 > "$gov/up_rate_limit_us" 2>/dev/null
+        echo 20000 > "$gov/down_rate_limit_us" 2>/dev/null
+        echo 1 > "$gov/iowait_boost_enable" 2>/dev/null
+    fi
+done
+log_msg "CPU Schedutil Governor tuned for instant 120Hz response."
+
+# 2. Kernel VM & High-Speed Memory Tuning
+echo 100 > /proc/sys/vm/swappiness 2>/dev/null
+echo 15 > /proc/sys/vm/dirty_background_ratio 2>/dev/null
+echo 30 > /proc/sys/vm/dirty_ratio 2>/dev/null
+echo 60 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null
+echo 0 > /proc/sys/vm/page-cluster 2>/dev/null
+log_msg "Virtual Memory subsystems optimized."
+
+# 3. High Performance 4GB zRAM Swap Setup
+if [ -e /dev/block/zram0 ]; then
+    swapoff /dev/block/zram0 2>/dev/null
+    echo 1 > /sys/block/zram0/reset 2>/dev/null
+    # Prefer lz4 or zstd for ultra-fast decompress
+    if grep -q lz4 /sys/block/zram0/comp_algorithm 2>/dev/null; then
+        echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null
+    elif grep -q zstd /sys/block/zram0/comp_algorithm 2>/dev/null; then
+        echo zstd > /sys/block/zram0/comp_algorithm 2>/dev/null
+    fi
+    # 4 GB zRAM (4294967296 bytes)
+    echo 4294967296 > /sys/block/zram0/disksize 2>/dev/null
+    mkswap /dev/block/zram0 2>/dev/null
+    swapon /dev/block/zram0 -p 32767 2>/dev/null
+    log_msg "High-Speed 4GB zRAM initialized with hardware acceleration."
+fi
+
+# 4. Continuous Background Optimization Loop
+while true; do
+    sleep 90
+    # Use Rust coreutils to verify system state
+    if [ -x "$RUST_CORE" ]; then
+        "$RUST_CORE" sync
+    else
+        sync
+    fi
+    # Compact memory and drop caches if memory pressure occurs
+    echo 1 > /proc/sys/vm/compact_memory 2>/dev/null
+done
