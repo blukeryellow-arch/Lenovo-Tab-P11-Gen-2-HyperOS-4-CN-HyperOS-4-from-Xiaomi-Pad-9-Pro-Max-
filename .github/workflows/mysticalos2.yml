@@ -506,8 +506,8 @@ jobs:
               if sudo tar -C "$T" --acls --xattrs --selinux -cf - . \
                  | sudo tar -C "$WORK/mntbuild" --acls --xattrs --selinux -xf -; then
                 USE=$(df --output=pcent "$WORK/mntbuild" | tail -1 | tr -dc '0-9')
-                echo "$N: ext4 cap $CAP B, uzycie ${USE}%"
-                if [ "$USE" -lt 97 ]; then
+                echo "$N: ext4 cap $CAP B, uzycie ${USE}%; $(df -h "$WORK/mntbuild" | tail -1); inody: $(df -i "$WORK/mntbuild" | tail -1)"
+                if [ "$USE" -lt 99 ]; then
                   sudo umount "$WORK/mntbuild"
                   e2fsck -f -y -D "$OUT" > "$WORK/fsck-$N.log" 2>&1 || true
                   tail -3 "$WORK/fsck-$N.log"
@@ -517,7 +517,7 @@ jobs:
               else
                 sudo umount "$WORK/mntbuild" 2>/dev/null || true
               fi
-              CAP=$((CAP + 268435456))
+              CAP=$((CAP + 67108864))
               [ "$CAP" -le "$MAX" ] || { echo "::error::$N: nie miesci sie w partycji (max $MAX)"; return 1; }
               echo "$N: retry z cap $CAP B"
             done
@@ -525,12 +525,13 @@ jobs:
           }
           build_erofs() {
             local T="$1" OUT="$2" N="$3" FC
-            FC=$(find "$T" -name plat_file_contexts -type f | head -1)
+            FC=$(sudo find "$T" -name plat_file_contexts -type f -print -quit 2>/dev/null || true)
             [ -n "$FC" ] || { echo "::error::$N: brak plat_file_contexts (fallback EROFS)"; return 1; }
             "$KDIR/bin/mkfs.erofs" -zlz4 -T 0 --file-contexts="$FC" "$OUT" "$T" \
               || { echo "::error::$N: mkfs.erofs padl"; return 1; }
             echo "$N: EROFS fallback OK"
           }
+          echo "drzewo systemu: $(sudo du -sh "$WORK/tree-system" 2>/dev/null | cut -f1) (dedup e2fsdroid: tree > stock fs)"
           if ! build_ext4 "$WORK/tree-system" "$WORK/out/MysticalOS_2.0_TB350FU_System.img" \
                           "$(cat "$WORK/fsz-system")" "$(cat "$WORK/ps-system")" system; then
             echo "== system: fallback EROFS (ext4 nie zmiescil sie w partycji) =="
