@@ -1200,7 +1200,7 @@ jobs:
           - Pierwszy boot po wganiu moze trwac dluzej (idmap2 buduje mapy RRO).
           - Jesli pulpit zapyta sie o wybor HOME: wybierz Lawnchair -> zawsze.
           EOF
-          sha256sum "$WORK/out"/MysticalOS_2.1_TB350FU_*.img \
+          sha256sum "$WORK/out"/MysticalOS_0.5_TB350FU_*.img \
                     "$WORK/vbmeta/FLAGS3"/*.img "$WORK/vbmeta/STOCK-ORYGINAL"/*.img \
                     "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" > "$WORK/out/SHA256SUMS.txt"
           cat "$WORK/out/SHA256SUMS.txt"
