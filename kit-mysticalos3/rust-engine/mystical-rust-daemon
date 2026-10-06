@@ -1,6 +1,8 @@
 #!/system/bin/sh
 # ==============================================================================
-# MysticalOS 2.1 - Rust High-Performance Memory & CPU Daemon (TB350FU)
+# MysticalOS 0.5 Full UI - Rust High-Performance Memory & CPU Daemon (TB350FU)
+# v0.5 (Full UI Edition): wlaczanie nakladek RRO + domyslny launcher (Lawnchair)
+#    PO starcie frameworka (cmd overlay enable / cmd package set-home-activity).
 # v2.1 (anti-soft-bootloop):
 #  - start dopiero PO boot_completed (exec_background u:r:init:s0 z rc;
 #    w v2.0 serwis class main startowal we wczesnym inita i mogl blokowac
@@ -17,7 +19,7 @@ log_msg() {
     echo "[MysticalOS-Rust] $1"
 }
 
-log_msg "Starting MysticalOS Rust Engine v2.1 on Lenovo TB350FU..."
+log_msg "Starting MysticalOS Rust Engine v0.5 Full UI on Lenovo TB350FU..."
 
 # 0. SAFE DEBLOAT v2.1 (PackageManager disable-user; identycznie jak modul
 #    Magisk usera). pm bywa gotowy dopiero po pelnym boocie - retry x 8 / 15 s.
@@ -51,6 +53,33 @@ until disable_lenovo_telemetry || [ "$TRY" -ge 8 ]; do
     TRY=$((TRY + 1))
     sleep 15
 done
+
+# 0b. UI v0.5: nakladki RRO (HyperOS theme) + domyslny launcher.
+#     OverlayManager bywa gotowy pozniej niz pm - retry x 8 / 15 s.
+#     Stan nakladek jest trwaly (persist w /data) - po pierwszym boocie zostaje.
+for OVR_PKG in com.mystical.theme.framework com.mystical.theme.systemui; do
+    OVR_TRY=0
+    until cmd overlay enable --user 0 "$OVR_PKG" >/dev/null 2>&1 || [ "$OVR_TRY" -ge 8 ]; do
+        OVR_TRY=$((OVR_TRY + 1))
+        sleep 15
+    done
+    if cmd overlay list 2>/dev/null | grep -q "\[x\] $OVR_PKG"; then
+        log_msg "RRO overlay wlaczony: $OVR_PKG"
+    fi
+done
+
+# Domyslny launcher (Lawnchair 14): komponent zapisany w obrazie przez CI.
+HOME_CFG="/system/etc/mystical/home_activity.txt"
+if [ -s "$HOME_CFG" ]; then
+    HOME_ACT=$(tr -d '[:space:]' < "$HOME_CFG" 2>/dev/null)
+    if [ -n "$HOME_ACT" ]; then
+        if cmd package set-home-activity "$HOME_ACT" >/dev/null 2>&1; then
+            log_msg "Domyslny launcher (home): $HOME_ACT"
+        else
+            log_msg "UWAGA: set-home-activity nie udal sie ($HOME_ACT) - jedyny HOME i tak zostanie wybrany"
+        fi
+    fi
+fi
 
 # 1. MediaTek Helio G99 (MT6789) CPU Governor Optimization
 for gov in /sys/devices/system/cpu/cpufreq/schedutil /sys/devices/system/cpu/cpu*/cpufreq/schedutil; do

@@ -1,5 +1,20 @@
 # ============================================================================
-# mysticalos2 v1.1 - MYSTICALOS 2.1 PERMANENT (Rozkaz 15 - anti-bootloop)
+# mysticalos2 v1.2 - MYSTICALOS 0.5 FULL UI (Rozkaz 16 - pelna iniekcja UI)
+# ============================================================================
+# V0.5 (Rozkaz 16; wersjonowanie od zera - fundament v2.1 startuje, UI dopracowane):
+#  1. LAUNCHER: Lawnchair 14 (pinned v14.0.0-beta3, minSdk<=26) jako
+#     /system/priv-app/MysticalLauncher; DesktopLauncher + LenovoLauncher -> atrapy;
+#     domyslny HOME: cmd package set-home-activity z demona (komponent z CI).
+#  2. CZCIONKI: MiSans Light/Regular/Medium/Bold (HyperOS Typography) jako
+#     sans-serif (fonts.xml; kit ui/fonts_swap.py); condensed/serif nietkniete.
+#  3. NAKLADKI RRO (aapt2, podpisane; wlacza demon po boocie):
+#     Theme_Android17_Framework (dialogCornerRadius 28dp + default_wallpaper)
+#     + Theme_HyperOS4_SystemUI (dimeny 'corner' stockowego SystemUI -> 24dp,
+#     introspekcja sui_pick.py; pomin jesli brak).
+#  4. BOOTANIMATION + WALLPAPER + DZWIEKI UI (generator kit ui/gen_ui_assets.py,
+#     czcionka MiSans w wordmarku; dzwieki synteza ffmpeg).
+#  5. Zachowane z v2.1: sdk=33, Rust coreutils/daemon (zRAM 4GB lz4, 120Hz),
+#     safe debloat (8 atrap), ADB od logo, AVB flags 2/sha256/no-FEC, PS=3489660928.
 # ============================================================================
 # V2.1 (Rozkaz 15 - eliminacja soft-bootloopa v2.0, wislo na logo Lenovo):
 # 1. SAFE DEBLOAT: NIE usuwamy folderow z /system/priv-app - struktura zostaje,
@@ -13,7 +28,7 @@
 # 3. Rust: coreutils + daemon jako u:object_r:system_file:s0 (0755); rc startuje
 #    dopiero on property:sys.boot_completed=1 przez exec_background u:r:init:s0
 #    (v2.0: serwis class main we wczesnym inita - ryzyko blokady boota).
-# 4. Tozsamosc: display.id=MysticalOS 2.1 (HyperOS 4 x A17), sdk=33 NIETYKANE,
+# 4. Tozsamosc: display.id=MysticalOS 0.5 (HyperOS 4 x A17 Full UI), sdk=33 NIETYKANE,
 #    120Hz/blur/dalvik/zRAM bez zmian.
 # 5. AVB: jak w v2.0 - flags 2, sha256, no FEC, PS 3489660928 B.
 # ============================================================================
@@ -26,7 +41,7 @@
 # 1. Baza: oficjalny system.img z paczki ROW S130714 (lolinet 7,3 GB);
 #    surowy ext4 z kontekstami SELinux; ro.build.version.sdk=33 NIETYKANE.
 # 2. /system/build.prop (+ system_ext/etc/build.prop): maska A17/HyperOS 4
-#    (release=17, display.id=MysticalOS 2.1, hyperos=4.0.0, miui.ui=V16,
+#    (release=17, display.id=MysticalOS 0.5, hyperos=4.0.0, miui.ui=V16,
 #    security_patch=2026-10-05) + flagi graficzne 120Hz/blur/skiagl
 #    + dodatki z wlasnego system.prop usera (heap/dalvik/MT6789).
 # 3. DEBLOAT fizyczny: LSF/LSF-Device-Phone, LenovoExtend, HecAgent,
@@ -50,7 +65,7 @@
 # Drzewo: mount ro -> tar --selinux --acls --xattrs -> mody -> mke2fs ext4
 # -> tar-in (konteksty wlascicieli zachowane 1:1). Konteksty nowych plikow
 # kopiowane z sasiadow (bin/sh, istniejacy .rc) przez getxattr/setxattr.
-# WYJSCIE: MysticalOS_2.1_TB350FU_System.img + _System_ext.img + vbmetty
+# WYJSCIE: MysticalOS_0.5_TB350FU_Full_UI.img + _System_ext.img + vbmetty
 # FLAGS3 (do wgrania PRZED system - stopka flags 2 nie obejmie wlasnego
 # rozmiaru stockowej vbmetty) + instrukcja FastbootD.
 # ============================================================================
@@ -79,6 +94,9 @@ jobs:
       WORK: /tmp/m2
       KDIR: ${{ github.workspace }}/kit-mysticalos3
       STOCK_URL: https://mirrors.lolinet.com/firmware/lenowow/2022/Tab_P11_2nd_Gen/TB350FU/TB350FU_S130714_250118_ROW.zip
+      LAWNCHAIR_URL: https://github.com/LawnchairLauncher/lawnchair/releases/download/v14.0.0-beta3/Lawnchair.14.0.0.Beta.3.apk
+      LAWNCHAIR_SIZE: "16574139"
+      MISANS_BASE: https://raw.githubusercontent.com/Explore0416/MiSans-ttf/main
     steps:
       - uses: actions/checkout@v4
 
@@ -363,6 +381,8 @@ jobs:
                     r'lencenter|lenovocenter|tabletcenter|com[.]tblenovo[.]center',
                     r'\bdsa\b|com\.lenovo\.dsa',
                     r'tbengine|com\.lenovo\.tbengine',
+                    r'desktoplauncher|com[.]tblenovo[.]desktop',
+                    r'lenovolauncher|com[.]lenovo[.]launcher',
                     r'engineeringcode|com\.lenovo\.engineeringcode']
           PROTECT = re.compile(r'pen|dolby|atmos|audio|wifi|wlan|display|driver|framework|boot', re.I)
           stubbed = []
@@ -419,11 +439,11 @@ jobs:
             # tozsamosc A17 / HyperOS 4 (spec usera)
             'ro.build.version.release': '17',
             'ro.build.version.release_or_codename': '17',
-            'ro.build.display.id': 'MysticalOS 2.1 (HyperOS 4 x A17)',
-            'ro.build.version.incremental': 'MysticalOS-2.1-Rust',
+            'ro.build.display.id': 'MysticalOS 0.5 (HyperOS 4 x A17 Full UI)',
+            'ro.build.version.incremental': 'MysticalOS-0.5-FullUI',
             'ro.build.version.security_patch': '2026-10-05',
-            'ro.mysticalos.version': '2.1',
-            'ro.mysticalos.edition': 'Rust-Powered Edition',
+            'ro.mysticalos.version': '0.5',
+            'ro.mysticalos.edition': 'Full UI Edition',
             'ro.hyperos.version': '4.0.0',
             'ro.miui.ui.version.name': 'V16',
             'ro.miui.ui.version.code': '16',
@@ -465,7 +485,7 @@ jobs:
           def apply(path):
               if not os.path.isfile(path):
                   os.makedirs(os.path.dirname(path), exist_ok=True)
-                  open(path, 'w').write('# MysticalOS 2.1\n')
+                  open(path, 'w').write('# MysticalOS 0.5 Full UI\n')
               raw = open(path, encoding='utf-8', errors='surrogateescape').read()
               lines = raw.split('\n')
               out, seen = [], set()
@@ -477,7 +497,7 @@ jobs:
                   out.append(l)
               missing = [k for k in PROPS if k not in seen]
               if missing:
-                  out.append('# ==== MysticalOS 2.1 (HyperOS 4 x A17 / Rust) ====')
+                  out.append('# ==== MysticalOS 0.5 (HyperOS 4 x A17 / Full UI / Rust) ====')
                   for k in missing:
                       out.append(k + '=' + PROPS[k])
               open(path, 'w', encoding='utf-8', errors='surrogateescape').write('\n'.join(out))
@@ -497,7 +517,7 @@ jobs:
           sudo install -m 0755 "$WORK/rust/coreutils" "$SYS/bin/coreutils"
           sudo install -m 0755 "$WORK/rust/mystical-rust-daemon" "$SYS/bin/mystical-rust-daemon"
           cat > "$WORK/mystical_rust.rc" <<'RCEOF'
-          # MysticalOS 2.1 - Rust Engine (start PO pelnym boocie; nie blokuje inita)
+          # MysticalOS 0.5 Full UI - Rust Engine (start PO pelnym boocie; nie blokuje inita)
           # v2.0: serwis w klasie main startowal WE WCZESNYM inita (przed frameworkiem)
           # -> wczesny reset zRAM/swapon mogl zawieszac boot na logo. v2.1: wyzwalacz
           # boot_completed + exec_background w kontekscie inita (blok ze spec usera).
@@ -526,6 +546,259 @@ jobs:
               print('kontekst+tryb nadany:', rel, '->', ctx.decode(), oct(mod))
           EOF
           echo "== mody drzewa OK =="; df -h /
+
+      - name: "4b. UI Injection v0.5 (Lawnchair 14 + MiSans + RRO + bootanim + wallpaper + dzwieki)"
+        run: |
+          set -euo pipefail
+          SYS=$(cat "$WORK/sysroot-system")
+          UIDIR="$WORK/ui"; mkdir -p "$UIDIR"
+          # ---------- 0) narzedzia: build-tools (aapt2/zipalign/apksigner) + android.jar ----------
+          if ! command -v java >/dev/null 2>&1; then
+            sudo apt-get update -qq >/dev/null 2>&1 || true
+            sudo apt-get install -y -qq openjdk-17-jre-headless >/dev/null 2>&1 || true
+          fi
+          java -version 2>&1 | head -1
+          BT_OK=""
+          for BTU in "https://dl.google.com/android/repository/build-tools_r34-linux.zip" \
+                     "https://dl.google.com/android/repository/build-tools_r33.0.2-linux.zip"; do
+            if curl -fsSL --retry 3 -o "$UIDIR/bt.zip" "$BTU"; then BT_OK=1; break; fi
+          done
+          [ -n "$BT_OK" ] || { echo "::error::build-tools: pobranie padlo"; exit 1; }
+          unzip -q "$UIDIR/bt.zip" -d "$UIDIR/bt"
+          BT=$(find "$UIDIR/bt" -maxdepth 1 -mindepth 1 -type d | head -1)
+          AAPT2="$BT/aapt2"; APKSIGNER="$BT/apksigner"; ZIPALIGN="$BT/zipalign"
+          chmod +x "$AAPT2" "$APKSIGNER" "$ZIPALIGN" 2>/dev/null || true
+          echo "$AAPT2" > "$WORK/aapt2-path"; echo "$APKSIGNER" > "$WORK/apksigner-path"
+          "$AAPT2" version 2>&1 | head -1
+          # android.jar (stabilne publiczne ID atrybutow; przetestowane z aapt2 2.19 lokalnie)
+          git clone --filter=blob:none --no-checkout --depth 1 \
+            https://github.com/Sable/android-platforms.git "$UIDIR/ap" >/dev/null 2>&1
+          ( cd "$UIDIR/ap" && git sparse-checkout set android-30 >/dev/null 2>&1 \
+            && git checkout >/dev/null 2>&1 )
+          AJAR="$UIDIR/ap/android-30/android.jar"
+          test -s "$AJAR" || { echo "::error::android.jar (Sable android-30) pusty"; exit 1; }
+          keytool -genkeypair -keystore "$UIDIR/ks.jks" -alias mystical -keyalg RSA -keysize 2048 \
+            -validity 10000 -storepass mysticalos -keypass mysticalos \
+            -dname "CN=MysticalOS" >/dev/null 2>&1
+          echo "== narzedzia UI OK =="
+
+          # ---------- 1) LAWNCHAIR 14 (launcher HyperOS-look; pinned, minSdk<=33 wymagane) ----------
+          curl -fsSL --retry 3 -o "$UIDIR/lawnchair.apk" "$LAWNCHAIR_URL" \
+            || { echo "::error::Lawnchair: pobranie padlo"; exit 1; }
+          SZ=$(stat -c%s "$UIDIR/lawnchair.apk")
+          [ "$SZ" -eq "$LAWNCHAIR_SIZE" ] \
+            || { echo "::error::Lawnchair: $SZ B != pinned $LAWNCHAIR_SIZE B"; exit 1; }
+          "$AAPT2" dump badging "$UIDIR/lawnchair.apk" > "$UIDIR/lawnchair.badging" 2>/dev/null || true
+          LC_PKG=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$UIDIR/lawnchair.badging" | head -1)
+          LC_ACT=$(sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" "$UIDIR/lawnchair.badging" | head -1)
+          LC_SDK=$(sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p" "$UIDIR/lawnchair.badging" | head -1)
+          echo "Lawnchair: pkg=$LC_PKG act=$LC_ACT minSdk=$LC_SDK ($SZ B)"
+          { [ -n "$LC_PKG" ] && [ -n "$LC_ACT" ] && [ -n "$LC_SDK" ]; } \
+            || { echo "::error::Lawnchair badging niekompletny"; cat "$UIDIR/lawnchair.badging"; exit 1; }
+          [ "$LC_SDK" -le 33 ] || { echo "::error::Lawnchair minSdk=$LC_SDK > 33 (sdk=33!)"; exit 1; }
+
+          # ---------- 2) MISANS x4 (HyperOS Typography) ----------
+          for WGT in Light Regular Medium Bold; do
+            curl -fsSL --retry 3 -o "$UIDIR/MiSans-$WGT.ttf" "$MISANS_BASE/MiSans-$WGT.ttf" \
+              || { echo "::error::MiSans-$WGT: pobranie padlo"; exit 1; }
+          done
+          python3 - "$UIDIR" <<'EOF'
+          import os, sys
+          from PIL import ImageFont
+          d = sys.argv[1]
+          for w in ('Light', 'Regular', 'Medium', 'Bold'):
+              p = f'{d}/MiSans-{w}.ttf'
+              sz = os.path.getsize(p)
+              assert sz > 1_000_000, f'{p}: {sz} B - podejrzanie maly!'
+          ImageFont.truetype(f'{d}/MiSans-Regular.ttf', 40)  # twardy dowod: TTF parsuje sie
+          print('MiSans: 4 wagi OK (Light/Regular/Medium/Bold) + TTF parse OK')
+          EOF
+
+          # ---------- 3) WALLPAPER + BOOTANIMATION (generator z kitu, czcionka MiSans) ----------
+          python3 "$KDIR/ui/gen_ui_assets.py" "$UIDIR" "$UIDIR/MiSans-Regular.ttf"
+          test -s "$UIDIR/wallpaper.png" || { echo "::error::wallpaper.png pusty"; exit 1; }
+          test -s "$UIDIR/bootanimation.zip" || { echo "::error::bootanimation.zip pusty"; exit 1; }
+
+          # ---------- 4) DZWIEKI UI (synteza ffmpeg, HyperOS-style) ----------
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq >/dev/null 2>&1 || true
+            sudo apt-get install -y -qq ffmpeg >/dev/null 2>&1 || true
+          fi
+          command -v ffmpeg >/dev/null 2>&1 || { echo "::error::ffmpeg niedostepny"; exit 1; }
+          SND="$UIDIR/snd"; mkdir -p "$SND"
+          ffmpeg -y -hide_banner -loglevel error \
+            -f lavfi -i "sine=frequency=659.25:duration=0.16:sample_rate=44100" \
+            -f lavfi -i "sine=frequency=880:duration=0.24:sample_rate=44100" \
+            -filter_complex "[0]volume=0.4,afade=t=in:d=0.012[a];[1]volume=0.4,afade=t=in:d=0.012,afade=t=out:st=0.10:d=0.13,adelay=110[b];[a][b]amix=inputs=2:normalize=0" \
+            -c:a libvorbis -q:a 4 "$SND/Unlock.ogg"
+          ffmpeg -y -hide_banner -loglevel error \
+            -f lavfi -i "sine=frequency=523.25:duration=0.20:sample_rate=44100" \
+            -af "volume=0.35,afade=t=in:d=0.015,afade=t=out:st=0.06:d=0.14" \
+            -c:a libvorbis -q:a 4 "$SND/Lock.ogg"
+          for N in effect_tick AudioEffect_Click AudioEffect_Tap effect_tick_mono; do
+            ffmpeg -y -hide_banner -loglevel error \
+              -f lavfi -i "anoisesrc=d=0.030:c=pink:a=0.5:sample_rate=44100" \
+              -af "highpass=f=900,lowpass=f=7000,volume=0.5,afade=t=out:st=0.006:d=0.024" \
+              -c:a libvorbis -q:a 4 "$SND/$N.ogg"
+          done
+          ffmpeg -y -hide_banner -loglevel error \
+            -f lavfi -i "sine=frequency=523.25:duration=0.14:sample_rate=44100" \
+            -f lavfi -i "sine=frequency=659.25:duration=0.14:sample_rate=44100" \
+            -f lavfi -i "sine=frequency=783.99:duration=0.28:sample_rate=44100" \
+            -filter_complex "[0]volume=0.35[a];[1]volume=0.35,adelay=120[b];[2]volume=0.35,afade=t=out:st=0.12:d=0.16,adelay=240[c];[a][b][c]amix=inputs=3:normalize=0" \
+            -c:a libvorbis -q:a 4 "$SND/ChargingStarted.ogg"
+          cp "$SND/ChargingStarted.ogg" "$SND/WirelessChargingStarted.ogg"
+          ls -la "$SND"
+
+          # ---------- 5) OVERLAY RRO #1: framework (corner 28dp + default_wallpaper) ----------
+          OV="$UIDIR/ov-framework"; rm -rf "$OV"; mkdir -p "$OV/res/values" "$OV/res/drawable-nodpi"
+          cat > "$OV/res/values/dimens.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <!-- HyperOS 4 / Material You A17: mocno zaokraglone okna 28dp -->
+              <dimen name="dialogCornerRadius">28.0dp</dimen>
+              <dimen name="config_dialogCornerRadius">28.0dp</dimen>
+          </resources>
+          EOF
+          cp "$UIDIR/wallpaper.png" "$OV/res/drawable-nodpi/default_wallpaper.png"
+          cat > "$OV/AndroidManifest.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.mystical.theme.framework">
+              <overlay android:targetPackage="android" android:isStatic="false"
+                       android:priority="800" android:label="MysticalOS Framework Theme" />
+          </manifest>
+          EOF
+          build_overlay() {  # $1=srcdir  $2=wyjscie.apk
+            "$AAPT2" compile --dir "$1/res" -o "$1/compiled.zip"
+            "$AAPT2" link -o "$1/unsigned.apk" -I "$AJAR" --manifest "$1/AndroidManifest.xml" \
+              --min-sdk-version 26 --target-sdk-version 33 --version-code 1 --version-name 0.5 \
+              --auto-add-overlay "$1/compiled.zip"
+            "$ZIPALIGN" -f 4 "$1/unsigned.apk" "$1/aligned.apk"
+            "$APKSIGNER" sign --ks "$UIDIR/ks.jks" --ks-pass pass:mysticalos --out "$2" "$1/aligned.apk"
+            "$APKSIGNER" verify "$2" && echo "overlay podpisany+zweryfikowany: $2"
+          }
+          build_overlay "$OV" "$UIDIR/Theme_Android17_Framework.apk" \
+            || { echo "::error::overlay framework: build padl"; exit 1; }
+
+          # ---------- 6) OVERLAY RRO #2: SystemUI (introspekcja stockowego SystemUI) ----------
+          SUI_APK=$(sudo find "$SYS/priv-app" -maxdepth 2 -type f -iname "*systemui*.apk" | head -1)
+          SUI_OVERLAY=""
+          if [ -n "$SUI_APK" ]; then
+            echo "SystemUI stock: $SUI_APK"
+            sudo cp "$SUI_APK" "$UIDIR/systemui.apk"
+            sudo chown "$(id -u):$(id -g)" "$UIDIR/systemui.apk"
+            "$AAPT2" dump resources "$UIDIR/systemui.apk" > "$UIDIR/sui-res.txt" 2>/dev/null || true
+            python3 "$KDIR/ui/sui_pick.py" "$UIDIR"
+            if [ -s "$UIDIR/sui-found.txt" ]; then
+              OV2="$UIDIR/ov-systemui"; rm -rf "$OV2"; mkdir -p "$OV2/res/values"
+              cp "$UIDIR/sui-dimens.xml" "$OV2/res/values/dimens.xml"
+              cat > "$OV2/AndroidManifest.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.mystical.theme.systemui">
+              <overlay android:targetPackage="com.android.systemui" android:isStatic="false"
+                       android:priority="800" android:label="MysticalOS SystemUI Theme" />
+          </manifest>
+          EOF
+              if build_overlay "$OV2" "$UIDIR/Theme_HyperOS4_SystemUI.apk"; then
+                SUI_OVERLAY="$UIDIR/Theme_HyperOS4_SystemUI.apk"
+              else
+                echo "UWAGA: overlay SystemUI sie nie zbudowal - pomijam (bezpiecznie)"
+              fi
+            else
+              echo "UWAGA: brak nadpisywalnych dimen-ow corner w SystemUI - pomijam overlay #2"
+            fi
+          else
+            echo "UWAGA: nie znaleziono SystemUI.apk - pomijam overlay #2"
+          fi
+
+          # ---------- 7) INSTALACJA do sysroota ----------
+          sudo mkdir -p "$SYS/priv-app/MysticalLauncher" "$SYS/media/wallpapers" \
+                       "$SYS/media/audio/ui" "$SYS/overlay" "$SYS/etc/mystical"
+          sudo install -m 0644 "$UIDIR/lawnchair.apk" \
+            "$SYS/priv-app/MysticalLauncher/MysticalLauncher.apk"
+          for WGT in Light Regular Medium Bold; do
+            sudo install -m 0644 "$UIDIR/MiSans-$WGT.ttf" "$SYS/fonts/MiSans-$WGT.ttf"
+          done
+          sudo python3 "$KDIR/ui/fonts_swap.py" "$SYS" "$WORK"
+          sudo install -m 0644 "$UIDIR/bootanimation.zip" "$SYS/media/bootanimation.zip"
+          sudo install -m 0644 "$UIDIR/wallpaper.png" \
+            "$SYS/media/wallpapers/MysticalOS_Default.png"
+          # dzwieki: nadpisujemy nazwy istniejace w stocku + Unlock/Lock zawsze
+          SND_N=0
+          for F in "$SND"/*.ogg; do
+            B=$(basename "$F")
+            if sudo test -f "$SYS/media/audio/ui/$B" \
+               || [ "$B" = "Unlock.ogg" ] || [ "$B" = "Lock.ogg" ]; then
+              sudo install -m 0644 "$F" "$SYS/media/audio/ui/$B" && SND_N=$((SND_N + 1))
+            fi
+          done
+          sudo install -m 0644 "$UIDIR/Theme_Android17_Framework.apk" \
+            "$SYS/overlay/Theme_Android17_Framework.apk"
+          if [ -n "$SUI_OVERLAY" ]; then
+            sudo install -m 0644 "$SUI_OVERLAY" "$SYS/overlay/Theme_HyperOS4_SystemUI.apk"
+          fi
+          echo "$LC_PKG/$LC_ACT" | sudo tee "$SYS/etc/mystical/home_activity.txt" >/dev/null
+          # konteksty SELinux: kopie od istniejacych sasiadow (tar je zachowal)
+          sudo python3 - "$SYS" <<'EOF'
+          import os, sys
+          S = sys.argv[1]
+          def ctx(p):
+              return os.getxattr(p, 'security.selinux')
+          ref_apk = None
+          for root, _, files in os.walk(os.path.join(S, 'priv-app')):
+              for f in files:
+                  if f.endswith('.apk') and 'MysticalLauncher' not in root:
+                      ref_apk = os.path.join(root, f); break
+              if ref_apk:
+                  break
+          assert ref_apk, 'brak referencyjnego apk w priv-app?!'
+          fonts = sorted(f for f in os.listdir(os.path.join(S, 'fonts'))
+                         if f.endswith('.ttf') and not f.startswith('MiSans'))
+          ref_font = os.path.join(S, 'fonts', fonts[0])
+          ref_media = None
+          for root, _, files in os.walk(os.path.join(S, 'media')):
+              if files:
+                  ref_media = os.path.join(root, sorted(files)[0]); break
+          if ref_media is None:
+              ref_media = ref_font
+          def setctx(rel, ref):
+              p = os.path.join(S, rel)
+              os.setxattr(p, 'security.selinux', ctx(ref))
+              os.chmod(p, 0o644)
+              print('kontekst:', rel, '->', ctx(ref).decode().rstrip('\x00'))
+          setctx('priv-app/MysticalLauncher/MysticalLauncher.apk', ref_apk)
+          for w in ('Light', 'Regular', 'Medium', 'Bold'):
+              setctx(f'fonts/MiSans-{w}.ttf', ref_font)
+          setctx('media/bootanimation.zip', ref_media)
+          setctx('media/wallpapers/MysticalOS_Default.png', ref_media)
+          setctx('etc/mystical/home_activity.txt', ref_media)
+          import glob
+          for ogg in glob.glob(os.path.join(S, 'media/audio/ui/*.ogg')):
+              os.setxattr(ogg, 'security.selinux', ctx(ref_media))
+          for ovr in ('overlay/Theme_Android17_Framework.apk',
+                      'overlay/Theme_HyperOS4_SystemUI.apk'):
+              if os.path.exists(os.path.join(S, ovr)):
+                  setctx(ovr, ref_apk)
+          print('konteksty SELinux assetow UI OK (kopie od sasiadow)')
+          EOF
+          {
+            echo "== UI v0.5 =="
+            echo "launcher: $LC_PKG/$LC_ACT (minSdk=$LC_SDK, $SZ B)"
+            echo "fonts: MiSans Light/Regular/Medium/Bold"
+            echo "bootanimation: $(stat -c%s "$UIDIR/bootanimation.zip") B"
+            echo "wallpaper: $(stat -c%s "$UIDIR/wallpaper.png") B"
+            echo "dzwieki UI nadpisane: $SND_N"
+            echo "overlay framework: $(stat -c%s "$UIDIR/Theme_Android17_Framework.apk") B"
+            if [ -n "$SUI_OVERLAY" ]; then
+              echo "overlay systemui: $(stat -c%s "$SUI_OVERLAY") B ($(grep -c . "$UIDIR/sui-found.txt") zasobow)"
+            else
+              echo "overlay systemui: POMINIETY (brak pasujacych zasobow)"
+            fi
+          } > "$WORK/ui-report.txt"
+          cat "$WORK/ui-report.txt"
+          echo "== UI injection OK =="; df -h /
 
       - name: "5. Zbuduj ext4 (system + system_ext; fallback EROFS)"
         run: |
@@ -572,16 +845,16 @@ jobs:
             echo "$N: EROFS fallback OK"
           }
           echo "drzewo systemu: $(sudo du -sh "$WORK/tree-system" 2>/dev/null | cut -f1) (dedup e2fsdroid: tree > stock fs)"
-          if ! build_ext4 "$WORK/tree-system" "$WORK/out/MysticalOS_2.1_TB350FU_System.img" \
+          if ! build_ext4 "$WORK/tree-system" "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI.img" \
                           "$(cat "$WORK/fsz-system")" "$(cat "$WORK/ps-system")" system; then
             echo "== system: fallback EROFS (ext4 nie zmiescil sie w partycji) =="
-            build_erofs "$WORK/tree-system" "$WORK/out/MysticalOS_2.1_TB350FU_System.img" system
+            build_erofs "$WORK/tree-system" "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI.img" system
           fi
           if [ ! -e "$WORK/no-system_ext" ]; then
-            if ! build_ext4 "$WORK/tree-system-ext" "$WORK/out/MysticalOS_2.1_TB350FU_System_ext.img" \
+            if ! build_ext4 "$WORK/tree-system-ext" "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI_ext.img" \
                             "$(cat "$WORK/fsz-system_ext")" "$(cat "$WORK/ps-system_ext")" system_ext; then
               echo "== system_ext: fallback EROFS =="
-              build_erofs "$WORK/tree-system-ext" "$WORK/out/MysticalOS_2.1_TB350FU_System_ext.img" system_ext
+              build_erofs "$WORK/tree-system-ext" "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI_ext.img" system_ext
             fi
           fi
           sudo rm -rf "$WORK/tree-system" "$WORK/tree-system-ext"
@@ -607,32 +880,32 @@ jobs:
           }
           # spec: avbtool add_hashtree_footer --image system.img --partition_name
           # system --hash_algorithm sha256 --do_not_generate_fec --flags 2
-          add_footer "$WORK/out/MysticalOS_2.1_TB350FU_System.img" system "$(cat "$WORK/ps-system")"
+          add_footer "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI.img" system "$(cat "$WORK/ps-system")"
           if [ ! -e "$WORK/no-system_ext" ]; then
-            add_footer "$WORK/out/MysticalOS_2.1_TB350FU_System_ext.img" system_ext "$(cat "$WORK/ps-system_ext")"
+            add_footer "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI_ext.img" system_ext "$(cat "$WORK/ps-system_ext")"
           fi
           rm -f /tmp/avb_key2.pem
           # info + kryptograficzny dowod (verify_image potrzebuje nazwy pliku
           # = partition_name w katalogu obrazu):
           mkdir -p "$WORK/vfy"
-          cp "$WORK/out/MysticalOS_2.1_TB350FU_System.img" "$WORK/vfy/system.img"
+          cp "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI.img" "$WORK/vfy/system.img"
           ( cd "$WORK/vfy" && python3 "$KDIR/tools/avbtool.py" verify_image --image system.img ) \
             | tee "$WORK/out/avb-verify-system.txt" \
             || { echo "::error::verify_image system NIE przechodzi"; exit 1; }
           grep -q "Successfully verified" "$WORK/out/avb-verify-system.txt" \
             || { echo "::error::system: brak potwierdzenia weryfikacji"; exit 1; }
           if [ ! -e "$WORK/no-system_ext" ]; then
-            cp "$WORK/out/MysticalOS_2.1_TB350FU_System_ext.img" "$WORK/vfy/system_ext.img"
+            cp "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI_ext.img" "$WORK/vfy/system_ext.img"
             ( cd "$WORK/vfy" && python3 "$KDIR/tools/avbtool.py" verify_image --image system_ext.img ) \
               | tee "$WORK/out/avb-verify-system-ext.txt" \
               || { echo "::error::verify_image system_ext NIE przechodzi"; exit 1; }
           fi
-          python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_2.1_TB350FU_System.img" \
+          python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI.img" \
             | tee "$WORK/out/avb-info-system.txt"
           grep -q "Flags: *2$" "$WORK/out/avb-info-system.txt" || { echo "::error::Flags != 2 (system)"; exit 1; }
           grep -q "Hashtree descriptor" "$WORK/out/avb-info-system.txt" || { echo "::error::brak hashtree (system)"; exit 1; }
           if [ ! -e "$WORK/no-system_ext" ]; then
-            python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_2.1_TB350FU_System_ext.img" \
+            python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI_ext.img" \
               | tee "$WORK/out/avb-info-system-ext.txt"
             grep -q "Flags: *2$" "$WORK/out/avb-info-system-ext.txt" || { echo "::error::Flags != 2 (system_ext)"; exit 1; }
           fi
@@ -642,8 +915,8 @@ jobs:
         run: |
           set -euo pipefail
           M="$WORK/mntv"; sudo mkdir -p "$M"
-          if ! sudo mount -o ro,loop "$WORK/out/MysticalOS_2.1_TB350FU_System.img" "$M" 2>/dev/null; then
-            sudo mount -t erofs -o ro,loop "$WORK/out/MysticalOS_2.1_TB350FU_System.img" "$M" \
+          if ! sudo mount -o ro,loop "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI.img" "$M" 2>/dev/null; then
+            sudo mount -t erofs -o ro,loop "$WORK/out/MysticalOS_0.5_TB350FU_Full_UI.img" "$M" \
               || { echo "::error::montaz weryfikacyjny system"; exit 1; }
           fi
           # sysroot na finalnym obrazie (ta sama detekcja co w kroku 4)
@@ -658,11 +931,11 @@ jobs:
           for KV in \
             "ro.build.version.release=17" \
             "ro.build.version.release_or_codename=17" \
-            "ro.build.display.id=MysticalOS 2.1 (HyperOS 4 x A17)" \
-            "ro.build.version.incremental=MysticalOS-2.1-Rust" \
+            "ro.build.display.id=MysticalOS 0.5 (HyperOS 4 x A17 Full UI)" \
+            "ro.build.version.incremental=MysticalOS-0.5-FullUI" \
             "ro.build.version.security_patch=2026-10-05" \
-            "ro.mysticalos.version=2.1" \
-            "ro.mysticalos.edition=Rust-Powered Edition" \
+            "ro.mysticalos.version=0.5" \
+            "ro.mysticalos.edition=Full UI Edition" \
             "ro.hyperos.version=4.0.0" \
             "ro.miui.ui.version.name=V16" \
             "ro.miui.ui.version.code=16" \
@@ -690,7 +963,8 @@ jobs:
           import os, sys
           M = sys.argv[1]
           targets = ['app/EngineeringCode', 'app/HEC_agent', 'priv-app/LSF-Device-Phone',
-                     'priv-app/TabletCenter', 'priv-app/TabletUE', 'priv-app/UDCplatform']
+                     'priv-app/TabletCenter', 'priv-app/TabletUE', 'priv-app/UDCplatform',
+                     'priv-app/DesktopLauncher', 'priv-app/LenovoLauncher']
           for rel in targets:
               d = os.path.join(M, rel)
               assert os.path.isdir(d), rel + ': folderu brak (struktura musi zostac!)'
@@ -699,7 +973,7 @@ jobs:
               for a in apks:
                   assert os.path.getsize(a) <= 4096, a + ': APK nie jest atrapa?!'
               print('ATRAPA OK:', rel, '(%d stub APK)' % len(apks))
-          print('debloat-safe 6/6 OK (struktura zachowana, APK = puste atrapy)')
+          print('debloat-safe 8/8 OK (struktura zachowana, APK = puste atrapy; + launchery Lenovo podmienione na Lawnchair)')
           EOF
           # nietykalne (ostrzezenie jesli ich nie widac - moga byc w product):
           for KEEP in pen dolby audio; do
@@ -722,6 +996,81 @@ jobs:
           sudo grep -q "lz4" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak lz4"; exit 1; }
           sudo grep -q "pm disable-user" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak pm disable-user (safe debloat v2.1)"; exit 1; }
           sudo grep -q "com.tblenovo.center" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak listy telemetrii Lenovo"; exit 1; }
+          sudo grep -q "cmd overlay enable" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak wlaczania RRO (UI v0.5)"; exit 1; }
+          sudo grep -q "set-home-activity" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak set-home-activity (UI v0.5)"; exit 1; }
+          # ==== UI v0.5: launcher + czcionki + bootanim + wallpaper + nakladki + dzwieki ====
+          sudo test -s "$MSYS/priv-app/MysticalLauncher/MysticalLauncher.apk" \
+            || { echo "::error::brak MysticalLauncher.apk w priv-app"; exit 1; }
+          for F in Light Regular Medium Bold; do
+            sudo test -s "$MSYS/fonts/MiSans-$F.ttf" || { echo "::error::brak MiSans-$F.ttf"; exit 1; }
+          done
+          sudo python3 - "$MSYS" <<'EOF'
+          import os, sys, zipfile
+          import xml.etree.ElementTree as ET
+          M = sys.argv[1]
+          # fonts.xml: MiSans w sans-serif* + wszystkie wskazane pliki istnieja
+          root = ET.parse(f'{M}/etc/fonts.xml').getroot()
+          fams = {f.get('name') for f in root.findall('family')}
+          assert 'sans-serif' in fams, 'fonts.xml bez sans-serif?!'
+          misans = 0
+          for f in root.findall('family'):
+              nm = f.get('name') or ''
+              if nm.startswith('sans-serif') and 'condensed' not in nm:
+                  for font in f.findall('font'):
+                      if 'MiSans' in (font.text or ''):
+                          misans += 1
+          assert misans >= 6, f'MiSans w sans-serif*: tylko {misans} wpisow'
+          for f in root.findall('family'):
+              for font in f.findall('font'):
+                  fn = (font.text or '').strip()
+                  if fn and not fn.startswith('/') and not os.path.exists(f'{M}/fonts/{fn}'):
+                      raise AssertionError(f'fonts.xml -> brak pliku {fn}')
+          print(f'fonts.xml: MiSans domyslna rodzina sans-serif ({misans} wpisow), pliki OK')
+          # bootanimation: desc.txt pierwszy + STORED + 2000x1200 + >= 60 klatek
+          z = zipfile.ZipFile(f'{M}/media/bootanimation.zip')
+          names = z.namelist()
+          assert names[0] == 'desc.txt', f'desc.txt nie jest pierwszy: {names[0]}'
+          first = z.read('desc.txt').decode().splitlines()[0].split()
+          assert first[:2] == ['2000', '1200'], f'desc.txt wymiary: {first}'
+          frames = [n for n in names if n.endswith('.png')]
+          assert len(frames) >= 60, f'klatek {len(frames)} < 60'
+          for ni in z.infolist():
+              assert ni.compress_type == zipfile.ZIP_STORED, f'{ni.filename} SKOMPRESOWANY!'
+          print(f'bootanimation: 2000x1200, {len(frames)} klatek, ZIP STORED, desc.txt pierwszy')
+          EOF
+          sudo test -s "$MSYS/media/wallpapers/MysticalOS_Default.png" \
+            || { echo "::error::brak wallpapera MysticalOS_Default.png"; exit 1; }
+          sudo test -s "$MSYS/etc/mystical/home_activity.txt" \
+            || { echo "::error::brak konfiguracji home_activity.txt"; exit 1; }
+          # nakladki RRO: podpis + zasoby + targetPackage
+          AAPT2=$(cat "$WORK/aapt2-path"); APKSIGNER=$(cat "$WORK/apksigner-path")
+          sudo cp "$MSYS/overlay/Theme_Android17_Framework.apk" "$WORK/chk-framework.apk"
+          sudo chown "$(id -u):$(id -g)" "$WORK/chk-framework.apk"
+          "$APKSIGNER" verify "$WORK/chk-framework.apk" \
+            || { echo "::error::overlay framework: podpis nie przechodzi"; exit 1; }
+          "$AAPT2" dump resources "$WORK/chk-framework.apk" > "$WORK/chk-fw-res.txt" 2>/dev/null
+          grep -q "dimen/dialogCornerRadius" "$WORK/chk-fw-res.txt" \
+            || { echo "::error::overlay framework: brak dialogCornerRadius"; exit 1; }
+          grep -q "drawable/default_wallpaper" "$WORK/chk-fw-res.txt" \
+            || { echo "::error::overlay framework: brak default_wallpaper"; exit 1; }
+          "$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-framework.apk" > "$WORK/chk-fw-man.txt" 2>/dev/null
+          grep -q 'targetPackage.*"android"' "$WORK/chk-fw-man.txt" \
+            || { echo "::error::overlay framework: targetPackage != android"; exit 1; }
+          if sudo test -s "$MSYS/overlay/Theme_HyperOS4_SystemUI.apk"; then
+            sudo cp "$MSYS/overlay/Theme_HyperOS4_SystemUI.apk" "$WORK/chk-sui.apk"
+            sudo chown "$(id -u):$(id -g)" "$WORK/chk-sui.apk"
+            "$APKSIGNER" verify "$WORK/chk-sui.apk" \
+              || { echo "::error::overlay SystemUI: podpis"; exit 1; }
+            "$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-sui.apk" > "$WORK/chk-sui-man.txt" 2>/dev/null
+            grep -q 'targetPackage.*"com.android.systemui"' "$WORK/chk-sui-man.txt" \
+              || { echo "::error::overlay SystemUI: zly targetPackage"; exit 1; }
+            echo "overlay SystemUI: OK (podpis + target)"
+          else
+            echo "overlay SystemUI: pominieto juz w 4b (wiadomosc wyzej)"
+          fi
+          SND_C=$(sudo find "$MSYS/media/audio/ui" -name "*.ogg" 2>/dev/null | wc -l)
+          [ "$SND_C" -ge 3 ] || { echo "::error::dzwieki UI: $SND_C < 3"; exit 1; }
+          echo "UI v0.5 OK: Lawnchair + MiSans + bootanim + wallpaper + RRO + $SND_C dzwiekow"
           # konteksty SELinux v2.1: binarki Rust = system_file (spec)
           sudo python3 - "$MSYS" <<'EOF'
           import os, sys
@@ -753,7 +1102,7 @@ jobs:
           # system_ext FOLDED w obrazie systemu (zapisana sciezka z kroku 4)
           SEBPREL=$(cat "$WORK/sebp-rel" 2>/dev/null || true)
           if [ -n "$SEBPREL" ] && sudo test -f "$M/$SEBPREL"; then
-            for KV in "ro.build.version.release=17" "ro.mysticalos.version=2.1" "ro.hyperos.version=4.0.0" "ro.debuggable=1" "ro.secure=0"; do
+            for KV in "ro.build.version.release=17" "ro.mysticalos.version=0.5" "ro.hyperos.version=4.0.0" "ro.debuggable=1" "ro.secure=0"; do
               sudo grep -q "^$KV$" "$M/$SEBPREL" || { echo "::error::system_ext(folded): brak $KV"; exit 1; }
             done
             echo "system_ext (folded, $SEBPREL): propsy OK"
@@ -771,65 +1120,74 @@ jobs:
             echo "fsck:"; tail -3 "$WORK/fsck-system.log" 2>/dev/null; } > "$WORK/out/mods-report.txt" 2>/dev/null || true
           cat > "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" <<'EOF'
           =====================================================================
-          MYSTICALOS 2.1 (HyperOS 4 x A17 / RUST) - TB350FU - PERMANENT
-          Baza: stock Lenovo S130714_250118_ROW (A13, VNDK 33)
-          v2.1 = ANTI-SOFT-BOOTLOOP (v2.0 wisilo na logo Lenovo)
+          MYSTICALOS 0.5 FULL UI (HyperOS 4 x A17 / RUST) - TB350FU - PERMANENT
+          Baza: stock Lenovo S130714_250118_ROW (A13, VNDK 33) + fundament v2.1
+          Wersjonowanie od zera: 0.5 (fundament startuje, UI dopracowane)
           =====================================================================
 
-          CO ZMIENIONO VS 2.0 (przyczyny bootloopa):
-          1. SAFE DEBLOAT: foldery Lenovo w /system/priv-app ZOSTAJA - APK
-             zastapione pustymi atrapami (ta sama nazwa/kontekst). Telemetria
-             wylaczana na zywo: pm disable-user (mystical-rust-daemon, po
-             starcie frameworka; log: logcat -s MysticalOS-Rust).
-             [v2.0: fizyczne usuwanie -> DeadObjectException w system_server]
-          2. Demon Rust startuje dopiero PO boot_completed
-             (exec_background u:r:init:s0) - nie blokuje wczesnego inita.
-             [v2.0: serwis class main = reset zRAM PRZED frameworkiem]
-          3. Binarki Rust: u:object_r:system_file:s0 0755 (bylo shell_exec).
-          4. ADB OD PIERWSZEJ SEKUNDY: ro.debuggable=1, ro.secure=0,
-             ro.adb.secure=0, persist.sys.usb.config=mtp,adb,
-             persist.service.adb.enable=1 -> adb devices dziala NA LOGO.
+          CO NOWEGO W 0.5 (vs 2.1 - pelna iniekcja interfejsu):
+          1. LAUNCHER: Lawnchair 14 (HyperOS-look, minSdk 26) jako
+             /system/priv-app/MysticalLauncher - fabryczne launchery Lenovo
+             (DesktopLauncher, LenovoLauncher) zastapione atrapami; domyslny
+             HOME ustawia mystical-rust-daemon po boocie (set-home-activity).
+             Dock tabletowy + gesty + ikony: Lawnchair -> Ustawienia
+             (wszystkie opcje konfigurowalne na zywo).
+          2. CZCIONKI: MiSans (HyperOS Typography) - Light/Regular/Medium/Bold
+             jako domyslna rodzina sans-serif (fonts.xml). Roboto zostaje
+             jako zapasowe dla odmian nietknietych (thin/black/condensed).
+          3. NAKLADKI RRO (wlacza demon po boocie; cmd overlay list):
+             - Theme_Android17_Framework: okna/dialogi 28dp (dialogCornerRadius)
+               + domyslna tapeta systemowa (default_wallpaper = MysticalOS),
+             - Theme_HyperOS4_SystemUI: zaokraglenia paneli QS/glosnosci
+               (dimeny 'corner' stockowego SystemUI -> 24dp; jesli byly).
+             Material You: kolory dynamiczne generuja sie automatycznie
+             z nowej tapety.
+          4. BOOTANIMATION: MysticalOS 0.5 (2000x1200, 24 fps, logo + ring).
+          5. DZWIEKI UI: HyperOS-style (odblokowanie/blokada/klik/adowanie).
+          6. IKONY: Xiaomi Super Icons nie sa open-source - Lawnchair obsluguje
+             dowolny pakiet ikon (doinstaluj styl HyperOS z Aurora Store).
+          Wszystko z v2.1 zachowane: sdk=33, Rust coreutils, demon
+          (zRAM 4GB lz4 + 120Hz + safe debloat), ADB od pierwszej sekundy.
 
           ZAWARTOSC PACZKI:
-          - MysticalOS_2.1_TB350FU_System.img (ext4 RAW; stopka AVB flags 2,
+          - MysticalOS_0.5_TB350FU_Full_UI.img (ext4 RAW; stopka AVB flags 2,
             sha256, bez FEC; obraz = dokladnie 3489660928 B = PS partycji)
           - vbmeta-FLAGS3/ (vbmeta x3 ze stocka S130714, Flags:3)
           - STOCK-ORYGINAL/ (rollback)
           - INSTRUKCJA + SHA256SUMS + avb-info/avb-verify + mods-report
 
           WGRANIE (fastboot; bootloader odblokowany):
-          KROK 0 (raz; bez tego stara vbmeta_system zaąda stockowego hashtree):
+          KROK 0 (raz; bez tego stara vbmeta_system zaada stockowy hashtree):
             fastboot flash vbmeta        vbmeta-FLAGS3/vbmeta.img
             fastboot flash vbmeta_system vbmeta-FLAGS3/vbmeta_system.img
             fastboot flash vbmeta_vendor vbmeta-FLAGS3/vbmeta_vendor.img
           KROK 1: adb reboot fastboot   (FastbootD)
-          KROK 2: fastboot flash system MysticalOS_2.1_TB350FU_System.img
+          KROK 2: fastboot flash system MysticalOS_0.5_TB350FU_Full_UI.img
           KROK 3: fastboot reboot
 
-          GDYBY NASIL WISIEĆ NA LOGO (v2.1 ma ADB live!):
-            adb devices                 <- powinno widziec urzadzenie NA LOGO
+          GDYBY NASIL WISIEC NA LOGO (ADB live od pierwszej sekundy):
+            adb devices
             adb root && adb logcat -d > boot.log
             adb logcat -b all -d | grep -iE "fatal|crash|DeadObject|boot"
-            (odeslij log -> v2.2)
+            (odeslij log -> kolejna iteracja)
 
           PO BOOCIE (sprawdzenie):
-            getprop ro.build.version.release   -> 17
-            getprop ro.mysticalos.version      -> 2.1
+            getprop ro.mysticalos.version      -> 0.5
+            getprop ro.build.display.id        -> MysticalOS 0.5 (Full UI)
             getprop ro.build.version.sdk       -> 33
-            getprop ro.debuggable              -> 1
-            /system/bin/coreutils --version    -> uutils coreutils (Rust)
+            cmd overlay list | grep mystical   -> [x] com.mystical.theme.*
+            ls /system/fonts/MiSans-*          -> 4 wagi
             cat /sys/block/zram0/disksize      -> 4294967296 (4 GB)
-            cat /proc/swaps                    -> zram0 aktywny
             pm list packages -d                -> wylaczona telemetria Lenovo
-            logcat -s MysticalOS-Rust          -> logi demona (safe debloat)
+            logcat -s MysticalOS-Rust          -> logi demona (RRO, home, zRAM)
 
           ROLLBACK: vbmetty STOCK-ORYGINAL + stock S130714 przez flashtool.
 
           UWAGI:
           - PERMANENTNY flash (nadpisujesz system).
-          - ro.secure=0/ro.debuggable=1 = ADB root - wygodne do debugu,
-            mniejsze bezpieczenstwo (urządzenie prywatne, GMS i tak OUT).
-          - sdk=33 nietkane (stabilnosc system_server + Mali-G57).
+          - ro.secure=0/ro.debuggable=1 = ADB root (debug, prywatne urzadzenie).
+          - Pierwszy boot po wganiu moze trwac dluzej (idmap2 buduje mapy RRO).
+          - Jesli pulpit zapyta sie o wybor HOME: wybierz Lawnchair -> zawsze.
           EOF
           sha256sum "$WORK/out"/MysticalOS_2.1_TB350FU_*.img \
                     "$WORK/vbmeta/FLAGS3"/*.img "$WORK/vbmeta/STOCK-ORYGINAL"/*.img \
@@ -840,9 +1198,9 @@ jobs:
       - name: "9. Artifact (PERMANENT)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS_2.1_TB350FU_PERMANENT
+          name: MysticalOS_0.5_TB350FU_FULL_UI
           path: |
-            /tmp/m2/out/MysticalOS_2.1_TB350FU_System.img
+            /tmp/m2/out/MysticalOS_0.5_TB350FU_Full_UI.img
             /tmp/m2/vbmeta/FLAGS3/vbmeta.img
             /tmp/m2/vbmeta/FLAGS3/vbmeta_system.img
             /tmp/m2/vbmeta/FLAGS3/vbmeta_vendor.img
@@ -874,6 +1232,7 @@ jobs:
             echo '```'
             echo "## debloat"; echo '```'; cat "$WORK/debloat-report.txt" 2>/dev/null || true; echo '```'
             echo "## rust"; echo '```'; cat "$WORK/rust-manifest.txt" 2>/dev/null || true; echo '```'
+            echo "## ui-v0.5"; echo '```'; cat "$WORK/ui-report.txt" 2>/dev/null || true; echo '```'
             echo "## sysroot systemu"; echo '```'; cat "$WORK/sysroot-listing.txt" 2>/dev/null || true; echo '```'
             echo "## app/priv-app/app_backup (listing)"; echo '```'; cat "$WORK/applist.txt" 2>/dev/null || true; echo '```'
             echo "## qemu"; echo '```'; cat "$WORK/qemu-coreutils.txt" 2>/dev/null || true; echo '```'
