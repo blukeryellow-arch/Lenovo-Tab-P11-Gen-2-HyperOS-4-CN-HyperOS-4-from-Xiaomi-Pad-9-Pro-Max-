@@ -8,10 +8,13 @@
 #      przełącznikow, Gaussian Blur) ZASTAPUJE Lenovo SystemUI (-> atrapa).
 #   2. MiuiHome (natywny launcher tabletowy HyperOS: dock, gesty, Super-Ikony).
 #   3. framework/miui*.jar (miui-framework, miui-services, miuisdk...) na
-#      BOOTCLASSPATH - wymaga spatchowanego boot.img (init.rc w ramdisku);
-#      kernel zostaje stock Lenovo (1:1, tylko linia export BOOTCLASSPATH).
+#      BOOTCLASSPATH - PRZEZ /system/etc/classpaths/bootclasspath.pb (mechanizm
+#      derive_classpath, Android 12+: fragment /system sklejany po ART apex;
+#      zweryfikowane w zrodlach AOSP SdkExtensions + proto classpaths.proto).
+#      ZERO dotykania boot.img - wgrywamy TYLKO partycje system!
 #   4. app/miui + etc/device_features + privapp-permissions (systemui/miui).
-#   5. BOOT: kit port/bootimg.py (parse/rebuild v3/v4, cpio newc, gzip/lzma).
+#   5. KIT port/mkclasspathpb.py (binarny proto ExportedClasspathsJars;
+#      cross-check z google.protobuf; bootimg.py zostaje w kitu jako backup).
 # Tozsamosc: display.id=MysticalOS 0.5 (HyperOS 4 x A17 Experience),
 #   hyperos=4.0.0, miui.ui=V16/16, release=17, sdk=33 NIETYKANE.
 # Debloat: agresywny (Lenovo OTA/LSF/UE/DSA/TbEngine/center + Xiaomi
@@ -20,7 +23,7 @@
 #   schedutil, debloat disable-user, RRO, home=MiuiHome). BOOTCLASSPATH
 #   nie rusza demona (start po boot_completed, exec_background init).
 # Wyjscie: MysticalOS_0.5_HyperOS_Port.img (RAW ext4, PS=3489660928,
-#   stopka AVB flags 2 sha256 no-FEC) + boot-mysticalos-0.5.img + STOCK-BOOT.
+#   stopka AVB flags 2 sha256 no-FEC). WGROWANIE: TYLKO system (jak 2.1/0.5).
 # ============================================================================
 # V2.1 (Rozkaz 15 - eliminacja soft-bootloopa v2.0, wislo na logo Lenovo):
 # 1. SAFE DEBLOAT: NIE usuwamy folderow z /system/priv-app - struktura zostaje,
@@ -221,28 +224,19 @@ jobs:
               https://github.com/ssut/payload-dumper-go/releases/download/v2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
             tar -xzf "$WORK/pdg.tgz" -C "$WORK"
             rm -f "$WORK/pdg.tgz"
-            "$WORK/payload-dumper-go" -p boot,system,system_ext -o "$WORK/out" "$PB" \
-              || { echo "payload: retry bez boot/system_ext"
+            "$WORK/payload-dumper-go" -p system,system_ext -o "$WORK/out" "$PB" \
+              || { echo "payload: system_ext moze nie istniec - retry tylko system"
                    "$WORK/payload-dumper-go" -p system -o "$WORK/out" "$PB" \
                      || { echo "::error::payload-dumper-go padl"; exit 1; } }
-            if [ -f "$WORK/out/boot.img" ]; then mv "$WORK/out/boot.img" "$WORK/boot-stock.img"; fi
             rm -f "$PB"
             rm -f "$WORK/payload-dumper-go"
           elif grep -q "system\.img$" "$WORK/ziplist.txt"; then
             echo "== paczka flashtool: luzne obrazy partycji (image/*.img) =="
-            unzip -o -q "$WORK/stock.zip" "*system.img" "*system_ext*.img" "*boot.img" -d "$WORK/fl" 2>/dev/null || true
+            unzip -o -q "$WORK/stock.zip" "*system.img" "*system_ext*.img" -d "$WORK/fl" 2>/dev/null || true
             rm -f "$WORK/stock.zip"
             SYS=$(find "$WORK/fl" -type f -name "system.img" | head -1)
             SEXT=$(find "$WORK/fl" -type f -name "system_ext.img" | head -1)
             [ -n "$SYS" ] || { echo "::error::brak system.img w paczce flashtool"; exit 1; }
-            BOOT=$(find "$WORK/fl" -type f -name "boot.img" | head -1)
-            if [ -n "$BOOT" ]; then
-              desparse "$BOOT"
-              mv "$BOOT" "$WORK/boot-stock.img"
-              echo "boot.img (Lenovo stock): $(stat -c%s "$WORK/boot-stock.img") B"
-            else
-              echo "::error::brak boot.img w paczce flashtool (potrzebny do portu!)"; exit 1
-            fi
             desparse "$SYS"
             mv "$SYS" "$WORK/out/system.img"
             echo "system.img: $(stat -c%s "$WORK/out/system.img") B"
@@ -760,7 +754,7 @@ jobs:
           cat "$WORK/ui-report.txt"
           echo "== UI v2 OK =="; df -h /
 
-      - name: "4c. PORT HyperOS z nabu (MiuiSystemUI + MiuiHome + framework + BOOTCLASSPATH + boot patch)"
+      - name: "4c. PORT HyperOS z nabu (MiuiSystemUI + MiuiHome + framework + classpaths.pb)"
         run: |
           set -euo pipefail
           SYS=$(cat "$WORK/sysroot-system")
@@ -817,18 +811,56 @@ jobs:
           done
           if sudo test -d "$M/app/miui"; then sudo cp -a "$M/app/miui" "$SYS/app/"; fi
           sudo cp -a "$M/etc/device_features" "$SYS/etc/"
-          # privapp-permissions / sysconfig zwiazane z systemui/miui (bez kolizji)
-          PERM_N=0
-          for F in $(sudo find "$M/etc/permissions" "$M/etc/sysconfig" -type f \( -iname "*systemui*" -o -iname "*miui*" \) 2>/dev/null); do
-            B=$(basename "$F")
-            if sudo test -f "$SYS/etc/permissions/$B" || sudo test -f "$SYS/etc/sysconfig/$B"; then
-              echo "pomijam (kolizja nazwy): $B"
-            else
-              if echo "$F" | grep -q sysconfig; then D="$SYS/etc/sysconfig"; else D="$SYS/etc/permissions"; fi
-              sudo install -m 0644 "$F" "$D/$B" && PERM_N=$((PERM_N + 1))
-            fi
-          done
-          echo "privapp-permissions/sysconfig z nabu: $PERM_N"
+          # privapp-permissions / sysconfig / <library> z nabu (bez kolizji nazw)
+          sudo python3 - "$M" "$SYS" "$WORK" <<'EOF'
+          import os
+          import re
+          import shutil
+          import sys
+          M, S, W = sys.argv[1], sys.argv[2], sys.argv[3]
+          ref_ctx = None
+          for cand in (os.path.join(S, 'etc/permissions'), os.path.join(S, 'etc/sysconfig')):
+              if os.path.isdir(cand):
+                  for f in sorted(os.listdir(cand)):
+                      try:
+                          ref_ctx = os.getxattr(os.path.join(cand, f), 'security.selinux')
+                          break
+                      except OSError:
+                          continue
+              if ref_ctx:
+                  break
+          if ref_ctx is None:
+              ref_ctx = os.getxattr(os.path.join(S, 'etc/fonts.xml'), 'security.selinux')
+          perm_n = lib_n = 0
+          for d in ('etc/permissions', 'etc/sysconfig'):
+              src = os.path.join(M, d)
+              if not os.path.isdir(src):
+                  continue
+              for f in sorted(os.listdir(src)):
+                  if not f.endswith('.xml'):
+                      continue
+                  p = os.path.join(src, f)
+                  txt = open(p, encoding='utf-8', errors='ignore').read()
+                  if not ('<library' in txt or re.search(r'systemui|miui', f, re.I)):
+                      continue
+                  dst_dir = os.path.join(S, d)
+                  os.makedirs(dst_dir, exist_ok=True)
+                  dst = os.path.join(dst_dir, f)
+                  if os.path.exists(dst):
+                      print('pomijam (kolizja):', d + '/' + f)
+                      continue
+                  shutil.copy2(p, dst)
+                  os.chmod(dst, 0o644)
+                  os.setxattr(dst, 'security.selinux', ref_ctx)
+                  if '<library' in txt:
+                      lib_n += 1
+                  else:
+                      perm_n += 1
+                  print('kopiuje:', d + '/' + f)
+          open(os.path.join(W, 'port-perms.txt'), 'w').write(
+              'privapp-permissions: %d\nlibrary-xml: %d\n' % (perm_n, lib_n))
+          print('permissions z nabu:', perm_n, '| library-xml:', lib_n)
+          EOF
           # ---------- 6) WIRTUALNY BENCH: badging aapt2 (minSdk! tozsamosc pakietow) ----------
           AAPT2=$(cat "$WORK/aapt2-path")
           for DIRNAME in MiuiSystemUI MiuiHome; do
@@ -892,33 +924,64 @@ jobs:
                   os.chmod(os.path.join(root, f), 0o644)
           print('konteksty SELinux portu OK (apk/jar/device_features)')
           EOF
-          # ---------- 8) BOOT PATCH (BOOTCLASSPATH += miui jary) ----------
-          test -s "$WORK/boot-stock.img" \
-            || { echo "::error::brak $WORK/boot-stock.img (krok 3 nie wyluskal boot.img)"; exit 1; }
+          # ---------- 8) BOOTCLASSPATH bez boot.img: /system/etc/classpaths/bootclasspath.pb ----------
+          # derive_classpath (Android 12+, modul SdkExtensions) globuje w kolejnosci:
+          #   1. /apex/com.android.art/etc/classpaths/bootclasspath.pb
+          #   2. /system/etc/classpaths/bootclasspath.pb   <-- TEN PLIK (miui jary)
+          #   3. /apex/*/etc/classpaths/bootclasspath.pb
+          # i scala wszystko do export BOOTCLASSPATH (init: load_exports).
+          # Kernel/boot.img zostaja STOCK - wgrywamy TYLKO system!
           MIUI_JARS=""
           for J in $JAR_LIST; do MIUI_JARS="$MIUI_JARS /system/framework/$J"; done
-          python3 "$KDIR/port/bootimg.py" info "$WORK/boot-stock.img" || true
-          python3 "$KDIR/port/bootimg.py" patch "$WORK/boot-stock.img" \
-            "$WORK/out/boot-mysticalos-0.5.img" $MIUI_JARS \
-            || { echo "::error::bootimg patch padl"; exit 1; }
-          mkdir -p "$WORK/out/STOCK-BOOT"
-          cp "$WORK/boot-stock.img" "$WORK/out/STOCK-BOOT/boot-stock.img"
-          # twarda weryfikacja odtworzonego boot.img
-          python3 - "$WORK/out/boot-mysticalos-0.5.img" "$KDIR/port" <<'EOF'
+          pip3 install --quiet protobuf >/dev/null 2>&1 || true
+          python3 "$KDIR/port/mkclasspathpb.py" build "$WORK/bootclasspath.pb" $MIUI_JARS \
+            || { echo "::error::mkclasspathpb build padl"; exit 1; }
+          sudo mkdir -p "$SYS/etc/classpaths"
+          sudo install -m 0644 "$WORK/bootclasspath.pb" "$SYS/etc/classpaths/bootclasspath.pb"
+          sudo python3 - "$SYS" <<'EOF'
+          import os
           import sys
-          sys.path.insert(0, sys.argv[2])
-          import bootimg as BI
-          b = BI.parse_boot(sys.argv[1])
-          comp = BI.detect_comp(b['ramdisk'])
-          files = BI.cpio_parse(BI.decompress(b['ramdisk'], comp))
-          rcs = [n for n in files if n == 'init.rc' or n.endswith('/init.rc')]
-          assert rcs, 'init.rc znikl z ramdisku?!'
-          text = files[rcs[0]][3].decode()
-          line = [l for l in text.split('\n') if 'export BOOTCLASSPATH' in l]
-          assert line, 'brak export BOOTCLASSPATH'
-          assert 'miui' in line[0], 'BOOTCLASSPATH bez jarow miui!'
-          print('BOOTCLASSPATH OK:', line[0].strip()[:160] + '...')
-          print(f'boot patched: v{b["ver"]}, kernel {len(b["kernel"])} B, ramdisk {len(b["ramdisk"])} B ({comp}), plikow: {len(files)}')
+          S = sys.argv[1]
+          p = os.path.join(S, 'etc/classpaths/bootclasspath.pb')
+          ref = os.getxattr(os.path.join(S, 'etc/fonts.xml'), 'security.selinux')
+          os.setxattr(p, 'security.selinux', ref)
+          print('kontekst: etc/classpaths/bootclasspath.pb ->',
+                ref.decode().rstrip('\x00'))
+          EOF
+          # twarda weryfikacja binarnego proto prosto z drzewa sysroota
+          sudo python3 "$KDIR/port/mkclasspathpb.py" verify \
+            "$SYS/etc/classpaths/bootclasspath.pb" $MIUI_JARS \
+            || { echo "::error::verify classpaths.pb padl"; exit 1; }
+          # uses-library (belt & suspenders): wszystko co deklaruja MiuiSystemUI/MiuiHome
+          # musi byc zarejestrowane w etc/permissions|sysconfig (stock + kopie z nabu)
+          sudo python3 - "$SYS" "$WORK" <<'EOF'
+          import glob
+          import os
+          import re
+          import sys
+          S, W = sys.argv[1], sys.argv[2]
+          registered = set()
+          for d in ('etc/permissions', 'etc/sysconfig'):
+              for f in glob.glob(os.path.join(S, d, '*.xml')):
+                  try:
+                      txt = open(f, encoding='utf-8', errors='ignore').read()
+                  except OSError:
+                      continue
+                  registered.update(re.findall(r'<library[^>]*name="([^"]+)"', txt))
+          needed = set()
+          for bf in ('badging-MiuiSystemUI.txt', 'badging-MiuiHome.txt'):
+              p = os.path.join(W, bf)
+              if not os.path.exists(p):
+                  continue
+              for ln in open(p, encoding='utf-8', errors='ignore'):
+                  m = re.match(r"uses-library[^:]*:'([^']+)'", ln.strip())
+                  if m:
+                      needed.add(m.group(1))
+          missing = sorted(n for n in needed if n not in registered)
+          print('uses-library deklarowane przez apki miui:', sorted(needed))
+          print('biblioteki zarejestrowane w obrazie:', len(registered))
+          assert not missing, 'BRAKUJACE biblioteki: %r (cos nie skopiowalo sie z nabu!)' % missing
+          print('uses-library: komplet OK')
           EOF
           # ---------- 9) raport portu ----------
           {
@@ -926,10 +989,10 @@ jobs:
             echo "MiuiSystemUI: $(stat -c%s "$WORK/chk-MiuiSystemUI.apk") B ($(grep -m1 "^package:" "$WORK/badging-MiuiSystemUI.txt"))"
             echo "MiuiHome: $(stat -c%s "$WORK/chk-MiuiHome.apk") B ($(grep -m1 "^package:" "$WORK/badging-MiuiHome.txt"))"
             echo "domyslny HOME: $(sudo cat "$SYS/etc/mystical/home_activity.txt")"
-            echo "jary na BOOTCLASSPATH:$JAR_LIST"
+            echo "jary na BOOTCLASSPATH (etc/classpaths/bootclasspath.pb):$JAR_LIST"
             echo "device_features: OK; app/miui: $(sudo test -d "$SYS/app/miui" && echo OK || echo brak)"
-            echo "privapp-permissions z nabu: $PERM_N"
-            echo "boot.img: $(stat -c%s "$WORK/boot-stock.img") -> $(stat -c%s "$WORK/out/boot-mysticalos-0.5.img") B (init.rc +BOOTCLASSPATH)"
+            echo "perms z nabu: $(tr '\n' ' ' < "$WORK/port-perms.txt" 2>/dev/null)"
+            echo "boot.img: NIETYKANY (kernel/init stock; classpath przez /system/etc/classpaths)"
           } > "$WORK/port-report.txt"
           cat "$WORK/port-report.txt"
           echo "== PORT HyperOS OK =="; df -h /
@@ -1281,9 +1344,9 @@ jobs:
           - MiuiHome z nabu = natywny tabletowy launcher HyperOS (dock,
             gesty, Super-Ikony). Ustawiany jako domyslny HOME po boocie.
           - framework/miui*.jar (miui-framework, miui-services, miuisdk...)
-            wstrzykniete na BOOTCLASSPATH - dlatego WYMAGANY jest rowniez
-            spatchowany boot.img (kernel stock Lenovo 1:1; w ramdisku
-            dopisana tylko linia export BOOTCLASSPATH).
+            wstrzykniete na BOOTCLASSPATH przez /system/etc/classpaths/
+            bootclasspath.pb (mechanizm derive_classpath Androida 12+;
+            ZERO zmian w boot.img - kernel i init zostaja stock).
           - app/miui + etc/device_features + privapp-permissions (z nabu).
           - MiSans (HyperOS Typography) jako domyslna czcionka systemu.
           - Debloat agresywny: Lenovo OTA/LSF/UE/DSA/TbEngine/center/... +
@@ -1301,23 +1364,21 @@ jobs:
           ZAWARTOSC PACZKI:
           - MysticalOS_0.5_HyperOS_Port.img (system; RAW ext4, stopka AVB
             flags 2 sha256 no-FEC; dokladnie 3489660928 B = PS partycji)
-          - boot-mysticalos-0.5.img (WYMAGANY - BOOTCLASSPATH dla miui!)
-          - STOCK-BOOT/boot-stock.img (rollback)
           - vbmeta-FLAGS3/ + STOCK-ORYGINAL/ + INSTRUKCJA + SHA256SUMS
           - preview/ (podglad bootanim/tapety - zobacz zanim wgrasz)
           - avb-info/avb-verify + mods-report + port-report + ui-report
 
-          WGRANIE (fastboot; bootloader odblokowany) - KOLEJNOSC WAZNA:
-          KROK 0 (raz):
+          WGRANIE (fastboot; bootloader odblokowany) - TYLKO SYSTEM:
+          KROK 0 (raz; jesli jeszcze nie wgrywano v2.1/0.5 z FLAGS3):
             fastboot flash vbmeta        vbmeta-FLAGS3/vbmeta.img
             fastboot flash vbmeta_system vbmeta-FLAGS3/vbmeta_system.img
             fastboot flash vbmeta_vendor vbmeta-FLAGS3/vbmeta_vendor.img
-          KROK 1: fastboot flash boot boot-mysticalos-0.5.img   <-- NAJPIERW!
-          KROK 2: adb reboot fastboot   (FastbootD)
-          KROK 3: fastboot flash system MysticalOS_0.5_HyperOS_Port.img
-          KROK 4: fastboot reboot
-          (BEZ kroku 1 MiuiSystemUI nie wystartuje - brak miui-framework
-           na classpath. Boot i system pochodza z tej samej paczki.)
+          KROK 1: adb reboot fastboot   (FastbootD)
+          KROK 2: fastboot flash system MysticalOS_0.5_HyperOS_Port.img
+          KROK 3: fastboot reboot
+          (boot.img/kernel NIETYKANE - jary miui laduja sie przez
+           /system/etc/classpaths/bootclasspath.pb; wgranie identycznie
+           proste jak v2.1/0.5)
 
           PIERWSZY BOOT: dluzej niz zwykle (idmap2 + optymalizacja dex).
           Jezeli pulpit zapyta o wybor HOME: MiuiHome -> zawsze.
@@ -1330,9 +1391,9 @@ jobs:
             (odeslij log -> iteracja)
 
           ROLLBACK (do stock Lenovo):
-            fastboot flash boot STOCK-BOOT/boot-stock.img
             fastboot flash vbmeta* STOCK-ORYGINAL/vbmeta*.img (x3)
             + stock S130714 przez flashtool (lub nasz v2.1/v0.5).
+            (boot.img nigdy nie byl wgrywany - nie trzeba go przywracac)
 
           PO BOOCIE (kontrola):
             getprop ro.mysticalos.version   -> 0.5
@@ -1343,8 +1404,6 @@ jobs:
             logcat -s MysticalOS-Rust       -> home/debloat/RRO/zRAM
           EOF
           sha256sum "$WORK/out"/MysticalOS_0.5_HyperOS_Port*.img \
-                    "$WORK/out/boot-mysticalos-0.5.img" \
-                    "$WORK/out/STOCK-BOOT"/boot-stock.img \
                     "$WORK/vbmeta/FLAGS3"/*.img "$WORK/vbmeta/STOCK-ORYGINAL"/*.img \
                     "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" > "$WORK/out/SHA256SUMS.txt"
           cat "$WORK/out/SHA256SUMS.txt"
@@ -1356,8 +1415,6 @@ jobs:
           name: MysticalOS_0.5_HyperOS_Port
           path: |
             /tmp/m2/out/MysticalOS_0.5_HyperOS_Port.img
-            /tmp/m2/out/boot-mysticalos-0.5.img
-            /tmp/m2/out/STOCK-BOOT/boot-stock.img
             /tmp/m2/out/preview/preview-boot.jpg
             /tmp/m2/out/preview/preview-wallpaper.jpg
             /tmp/m2/out/port-report.txt
