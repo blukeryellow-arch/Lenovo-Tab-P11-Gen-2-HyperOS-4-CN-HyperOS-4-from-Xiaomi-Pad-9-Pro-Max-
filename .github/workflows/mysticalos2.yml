@@ -498,7 +498,7 @@ jobs:
           sudo install -m 0755 "$WORK/rust/mystical-rust-daemon" "$SYS/bin/mystical-rust-daemon"
           cat > "$WORK/mystical_rust.rc" <<'RCEOF'
           # MysticalOS 2.1 - Rust Engine (start PO pelnym boocie; nie blokuje inita)
-          # v2.0: serwis class main startowal WE WCZESNYM inita (przed frameworkiem)
+          # v2.0: serwis w klasie main startowal WE WCZESNYM inita (przed frameworkiem)
           # -> wczesny reset zRAM/swapon mogl zawieszac boot na logo. v2.1: wyzwalacz
           # boot_completed + exec_background w kontekscie inita (blok ze spec usera).
           on property:sys.boot_completed=1
@@ -715,7 +715,7 @@ jobs:
             || { echo "::error::rc: brak wyzwalacza boot_completed"; exit 1; }
           sudo grep -q "exec_background u:r:init:s0 -- /system/bin/mystical-rust-daemon" "$MSYS/etc/init/mystical_rust.rc" \
             || { echo "::error::rc: brak exec_background demona (v2.1)"; exit 1; }
-          if sudo grep -q "class main" "$MSYS/etc/init/mystical_rust.rc"; then
+          if sudo grep -Eq '^[[:space:]]*class[[:space:]]+main' "$MSYS/etc/init/mystical_rust.rc"; then
             echo "::error::rc: serwis class main (v2.0, wczesny init!) nadal w rc"; exit 1
           fi
           sudo grep -q "4294967296" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak zram 4GB"; exit 1; }
