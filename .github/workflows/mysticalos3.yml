@@ -759,17 +759,43 @@ jobs:
           set -euo pipefail
           SYS=$(cat "$WORK/sysroot-system")
           # ---------- 1) nabu HyperOS 1.0.6.0 Global (A13 = sdk 33) ----------
+          # CDN Xiaomi dlawi pojedyncze polaczenia (run 37516155801: curl x9
+          # prob = 90 min i FAIL) -> aria2c: 16 polaczen + 3 mirrory rownolegle.
           NABU_OK=""
-          for NU in "$NABU_URL" "$NABU_URL2" "$NABU_URL3"; do
-            for A in 1 2 3; do
-              if curl -fL --retry 3 --retry-delay 5 -C - --connect-timeout 30 -o "$WORK/nabu.zip" "$NU"; then
+          if ! command -v aria2c >/dev/null 2>&1; then
+            sudo apt-get update -q >/dev/null 2>&1 || true
+            sudo apt-get install -y -q aria2 >/dev/null 2>&1 || true
+          fi
+          if command -v aria2c >/dev/null 2>&1; then
+            for A in 1 2 3 4 5 6 7 8; do
+              if aria2c --continue=true --file-allocation=none \
+                   --max-connection-per-server=16 --split=16 --min-split-size=8M \
+                   --max-tries=5 --retry-wait=10 --timeout=60 --connect-timeout=30 \
+                   --lowest-speed-limit=20K --summary-interval=60 \
+                   --auto-file-renaming=false --allow-overwrite=true \
+                   --directory-prefix="$WORK" --out=nabu.zip \
+                   "$NABU_URL" "$NABU_URL2" "$NABU_URL3"; then
                 NABU_OK=1; break
               fi
-              echo "proba $A nieudana ($NU) - czekam 15 s"; sleep 15
+              echo "aria2c proba $A nieudana - resume za 10 s"; sleep 10
             done
-            [ -z "$NABU_OK" ] || break
-          done
-          [ -n "$NABU_OK" ] || { echo "::error::nabu.zip nie pobrany (wszystkie miratory)"; exit 1; }
+          else
+            echo "aria2c niedostepny (apt padl?) - od razu fallback curl"
+          fi
+          # fallback curl (czyscimy czesciowy plik aria2 - sparse dziury!)
+          if [ -z "$NABU_OK" ]; then
+            rm -f "$WORK/nabu.zip" "$WORK/nabu.zip.aria2"
+            for NU in "$NABU_URL" "$NABU_URL2" "$NABU_URL3"; do
+              for A in 1 2 3; do
+                if curl -fL --retry 3 --retry-delay 5 -C - --connect-timeout 30 -o "$WORK/nabu.zip" "$NU"; then
+                  NABU_OK=1; break
+                fi
+                echo "proba $A nieudana ($NU) - czekam 15 s"; sleep 15
+              done
+              [ -z "$NABU_OK" ] || break
+            done
+          fi
+          [ -n "$NABU_OK" ] || { echo "::error::nabu.zip nie pobrany (aria2c 8x + curl 9x, wszystkie mirrory)"; exit 1; }
           SZ=$(stat -c%s "$WORK/nabu.zip")
           [ "$SZ" -gt 3000000000 ] || { echo "::error::nabu.zip ${SZ} B < 3 GB?!"; exit 1; }
           echo "nabu.zip: ${SZ} B OK"; df -h /
@@ -882,6 +908,9 @@ jobs:
             fi
           done
           sudo umount "$M"
+          # sprzatanie: surowy system.img nabu (~4.3 GB) juz niepotrzebny
+          # (krok 5 buduje finalny ext4 - miejsca nie moze zabraknac)
+          sudo rm -rf "$WORK/nabu-out"
           # ---------- 7) konteksty SELinux (kopie od sasiadow) ----------
           sudo python3 - "$SYS" <<'EOF'
           import os
@@ -1437,9 +1466,9 @@ jobs:
         if: always()
         run: |
           set -uo pipefail
-          R="reports/mysticalos2-${GITHUB_RUN_ID}.md"
+          R="reports/mysticalos3-${GITHUB_RUN_ID}.md"
           {
-            echo "# mysticalos2 run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo "# mysticalos3 (PORT HyperOS) run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
             echo
             echo "## struktura paczki / partycje"; echo '```'
             cat "$WORK/stream-manifest.txt" 2>/dev/null || true
@@ -1460,7 +1489,7 @@ jobs:
           git config user.name "arena-agent"
           git config user.email "arena-agent@users.noreply.github.com"
           git add "$R" || true
-          git commit -m "mysticalos2: evidence run ${GITHUB_RUN_ID}" \
+          git commit -m "mysticalos3: evidence run ${GITHUB_RUN_ID}" \
             || echo "nic do commitu"
           for A in 1 2 3; do
             if git push; then echo "evidence: push OK"; break; fi
