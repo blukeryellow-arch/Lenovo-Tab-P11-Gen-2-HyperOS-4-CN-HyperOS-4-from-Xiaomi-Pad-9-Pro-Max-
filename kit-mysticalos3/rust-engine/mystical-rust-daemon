@@ -1,8 +1,8 @@
 #!/system/bin/sh
 # ==============================================================================
-# MysticalOS 0.5 Full UI - Rust High-Performance Memory & CPU Daemon (TB350FU)
-# v0.5 (Full UI Edition): wlaczanie nakladek RRO + domyslny launcher (Lawnchair)
-#    PO starcie frameworka (cmd overlay enable / cmd package set-home-activity).
+# MysticalOS 0.5 HyperOS Port - Rust High-Performance Memory & CPU Daemon (TB350FU)
+# v0.6 (HyperOS Port Edition): domyslny launcher = MiuiHome (port z nabu),
+#    agresywny debloat Lenovo+Xiaomi (telemetria/reklamy/OTA), RRO po boocie.
 # v2.1 (anti-soft-bootloop):
 #  - start dopiero PO boot_completed (exec_background u:r:init:s0 z rc;
 #    w v2.0 serwis class main startowal we wczesnym inita i mogl blokowac
@@ -19,7 +19,7 @@ log_msg() {
     echo "[MysticalOS-Rust] $1"
 }
 
-log_msg "Starting MysticalOS Rust Engine v0.5 Full UI on Lenovo TB350FU..."
+log_msg "Starting MysticalOS Rust Engine v0.6 HyperOS Port on Lenovo TB350FU..."
 
 # 0. SAFE DEBLOAT v2.1 (PackageManager disable-user; identycznie jak modul
 #    Magisk usera). pm bywa gotowy dopiero po pelnym boocie - retry x 8 / 15 s.
@@ -34,6 +34,13 @@ com.tblenovo.center
 com.lenovo.dsa
 com.lenovo.tbengine
 com.lenovo.EngineeringCode
+com.lenovo.ota
+com.miui.analytics
+com.miui.msa.global
+com.xiaomi.discover
+com.miui.cloudservice
+com.miui.yellowpage
+com.xiaomi.joyose
 "
 disable_lenovo_telemetry() {
     OFF=0; TOTAL=0
