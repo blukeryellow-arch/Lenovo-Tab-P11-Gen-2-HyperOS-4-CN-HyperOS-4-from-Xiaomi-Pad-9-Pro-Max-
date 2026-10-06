@@ -727,11 +727,14 @@ jobs:
           import os, sys
           M = sys.argv[1]
           sysf = b'u:object_r:system_file:s0'
-          cu = os.getxattr(f'{M}/bin/coreutils', 'security.selinux')
-          da = os.getxattr(f'{M}/bin/mystical-rust-daemon', 'security.selinux')
+          def ctx(rel):
+              # ext4 + libselinux zapisuja kontekst z koncowym NUL - normalizujemy
+              return os.getxattr(f'{M}/{rel}', 'security.selinux').rstrip(b'\x00')
+          cu = ctx('bin/coreutils')
+          da = ctx('bin/mystical-rust-daemon')
           assert cu == sysf, f'kontekst coreutils {cu} != system_file (spec v2.1)'
           assert da == sysf, f'kontekst demona {da} != system_file (spec v2.1)'
-          rc = os.getxattr(f'{M}/etc/init/mystical_rust.rc', 'security.selinux')
+          rc = ctx('etc/init/mystical_rust.rc')
           assert rc.startswith(b'u:object_r:'), 'kontekst rc?!'
           print('konteksty SELinux v2.1 OK:', cu.decode(), '/', da.decode(), '/', rc.decode())
           EOF
