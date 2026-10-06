@@ -1,5 +1,22 @@
 # ============================================================================
-# mysticalos2 v1.0 - MYSTICALOS 2.0 PERMANENT (Rozkaz 14, 5 X)
+# mysticalos2 v1.1 - MYSTICALOS 2.1 PERMANENT (Rozkaz 15 - anti-bootloop)
+# ============================================================================
+# V2.1 (Rozkaz 15 - eliminacja soft-bootloopa v2.0, wislo na logo Lenovo):
+# 1. SAFE DEBLOAT: NIE usuwamy folderow z /system/priv-app - struktura zostaje,
+#    APK zastapione pustymi atrapami (poprawny pusty ZIP; te same nazwy, tryby
+#    i konteksty SELinux); telemetria Lenovo wylaczana WARSTWA USLUG
+#    (pm disable-user) przez mystical-rust-daemon PO zaladowaniu frameworka.
+#    (v2.0: fizyczne usuwanie -> DeadObjectException w system_server przez
+#     powiazania IPC z /product i /system_ext).
+# 2. ADB OD PIERWSZEJ SEKUNDY: ro.debuggable=1, ro.secure=0, ro.adb.secure=0,
+#    persist.sys.usb.config=mtp,adb, persist.service.adb.enable=1 (oba build.prop).
+# 3. Rust: coreutils + daemon jako u:object_r:system_file:s0 (0755); rc startuje
+#    dopiero on property:sys.boot_completed=1 przez exec_background u:r:init:s0
+#    (v2.0: serwis class main we wczesnym inita - ryzyko blokady boota).
+# 4. Tozsamosc: display.id=MysticalOS 2.1 (HyperOS 4 x A17), sdk=33 NIETYKANE,
+#    120Hz/blur/dalvik/zRAM bez zmian.
+# 5. AVB: jak w v2.0 - flags 2, sha256, no FEC, PS 3489660928 B.
+# ============================================================================
 # ============================================================================
 # CEL: pelny, samodzielny obraz system.img (+ system_ext.img) ze STOCKA
 # Lenovo TB350FU_S130714_250118_ROW (A13/VNDK33) do wgrania FastbootD.
@@ -33,7 +50,7 @@
 # Drzewo: mount ro -> tar --selinux --acls --xattrs -> mody -> mke2fs ext4
 # -> tar-in (konteksty wlascicieli zachowane 1:1). Konteksty nowych plikow
 # kopiowane z sasiadow (bin/sh, istniejacy .rc) przez getxattr/setxattr.
-# WYJSCIE: MysticalOS_2.0_TB350FU_System.img + _System_ext.img + vbmetty
+# WYJSCIE: MysticalOS_2.1_TB350FU_System.img + _System_ext.img + vbmetty
 # FLAGS3 (do wgrania PRZED system - stopka flags 2 nie obejmie wlasnego
 # rozmiaru stockowej vbmetty) + instrukcja FastbootD.
 # ============================================================================
@@ -348,8 +365,9 @@ jobs:
                     r'tbengine|com\.lenovo\.tbengine',
                     r'engineeringcode|com\.lenovo\.engineeringcode']
           PROTECT = re.compile(r'pen|dolby|atmos|audio|wifi|wlan|display|driver|framework|boot', re.I)
-          removed = []
+          stubbed = []
           listing = []
+          STUB = b'PK\x05\x06' + b'\x00' * 18   # poprawny pusty ZIP = atrapa APK
           for base in ['app', 'priv-app', 'app_backup']:
               d = os.path.join(T, base)
               if not os.path.isdir(d):
@@ -364,19 +382,34 @@ jobs:
                       continue
                   hay = ' '.join(entries).lower()
                   if any(re.search(t, hay) for t in TOKENS):
-                      sz = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(full) for f in fs)
-                      shutil.rmtree(full)
-                      removed.append((base, name, sz))
-                      print(f'USUNIETO: {base}/{name} ({sz/1e6:.1f} MB)')
-          print(f'DEBLOAT: usunieto {len(removed)} folderow')
+                      saved = 0; napks = 0
+                      for root, dirs, files in os.walk(full):
+                          for f in files:
+                              if not f.endswith('.apk'):
+                                  continue
+                              px = os.path.join(root, f)
+                              try:
+                                  xctx = os.getxattr(px, 'security.selinux')
+                              except OSError:
+                                  xctx = None
+                              saved += os.path.getsize(px)
+                              with open(px, 'wb') as fh:
+                                  fh.write(STUB)
+                              os.chmod(px, 0o644)
+                              if xctx:
+                                  os.setxattr(px, 'security.selinux', xctx)
+                              saved -= len(STUB)
+                              napks += 1
+                      stubbed.append((base, name, saved, napks))
+                      print(f'ATRAPA: {base}/{name}: {napks} APK -> stuby (odchudzone {saved/1e6:.1f} MB)')
+          print(f'DEBLOAT-SAFE v2.1: {len(stubbed)} folderow jako atrapy (struktura zachowana)')
           open(f'{W}/debloat-report.txt', 'w').write(
-              '\n'.join(f'{a}/{b} {c}' for a, b, c in removed) + '\n')
+              '\n'.join(f'{a}/{b} apks={d_} saved={c}' for a, b, c, d_ in stubbed) + '\n')
           open(f'{W}/applist.txt', 'w').write('\n'.join(listing) + '\n')
-          if len(removed) < 5:
-              print('UWAGA: debloat < 5 trafien - pelny listing folderow:')
+          if len(stubbed) < 5:
+              print('UWAGA: stub < 5 trafien - pelny listing folderow:')
               print('\n'.join(listing))
-              print('(pozostale cele spec maja inne nazwy folderow LUB zyja w'
-                    ' partycji product - z system.img nieusunalne)')
+              print('(pozostale cele zyja w product - wylaczy je pm disable-user w demonie)')
           EOF
           # ---- PROPSY (spec 20 + dodatki z system.prop usera) ----
           sudo python3 - "$WORK" "$SYS" "$SEBP" <<'EOF'
@@ -386,14 +419,20 @@ jobs:
             # tozsamosc A17 / HyperOS 4 (spec usera)
             'ro.build.version.release': '17',
             'ro.build.version.release_or_codename': '17',
-            'ro.build.display.id': 'MysticalOS 2.0 (HyperOS 4 x A17 Concept)',
-            'ro.build.version.incremental': 'MysticalOS-2.0-Rust',
+            'ro.build.display.id': 'MysticalOS 2.1 (HyperOS 4 x A17)',
+            'ro.build.version.incremental': 'MysticalOS-2.1-Rust',
             'ro.build.version.security_patch': '2026-10-05',
-            'ro.mysticalos.version': '2.0',
+            'ro.mysticalos.version': '2.1',
             'ro.mysticalos.edition': 'Rust-Powered Edition',
             'ro.hyperos.version': '4.0.0',
             'ro.miui.ui.version.name': 'V16',
             'ro.miui.ui.version.code': '16',
+            # ADB OD PIERWSZEJ SEKUNDY (spec v2.1 - live debugging na logo)
+            'ro.debuggable': '1',
+            'ro.secure': '0',
+            'ro.adb.secure': '0',
+            'persist.sys.usb.config': 'mtp,adb',
+            'persist.service.adb.enable': '1',
             # grafika / 120Hz (spec usera)
             'ro.surface_flinger.supports_background_blur': '1',
             'persist.sys.sf.blur': '1',
@@ -458,32 +497,33 @@ jobs:
           sudo install -m 0755 "$WORK/rust/coreutils" "$SYS/bin/coreutils"
           sudo install -m 0755 "$WORK/rust/mystical-rust-daemon" "$SYS/bin/mystical-rust-daemon"
           cat > "$WORK/mystical_rust.rc" <<'RCEOF'
-          # MysticalOS 2.0 - Rust Engine (Rozkaz 14, blok serwisu DOKLADNIE ze spec).
-          # Bez seclabel = kontekst inita (umie sysfs/zram/proc; wzorzec mystic-* rc).
-          service mystical_rust /system/bin/mystical-rust-daemon
-              class main
-              user root
-              group root
-              oneshot
+          # MysticalOS 2.1 - Rust Engine (start PO pelnym boocie; nie blokuje inita)
+          # v2.0: serwis class main startowal WE WCZESNYM inita (przed frameworkiem)
+          # -> wczesny reset zRAM/swapon mogl zawieszac boot na logo. v2.1: wyzwalacz
+          # boot_completed + exec_background w kontekscie inita (blok ze spec usera).
+          on property:sys.boot_completed=1
+              exec_background u:r:init:s0 -- /system/bin/mystical-rust-daemon
           RCEOF
           sudo install -m 0644 "$WORK/mystical_rust.rc" "$SYS/etc/init/mystical_rust.rc"
           # konteksty SELinux nowych plikow = konteksty sasiadow z tego obrazu
           sudo python3 - "$SYS" <<'EOF'
           import os, sys
           S = sys.argv[1]
-          bin_ctx = os.getxattr(f'{S}/bin/sh', 'security.selinux')
+          # v2.1 spec: binarki Rust jako u:object_r:system_file:s0 (0755)
+          sysf = b'u:object_r:system_file:s0'
           rc_ctx = None
           idir = f'{S}/etc/init'
           for f in sorted(os.listdir(idir)):
               if f.endswith('.rc'):
                   rc_ctx = os.getxattr(os.path.join(idir, f), 'security.selinux'); break
           if rc_ctx is None:
-              rc_ctx = bin_ctx
-          for rel, ctx in [('bin/coreutils', bin_ctx),
-                           ('bin/mystical-rust-daemon', bin_ctx),
-                           ('etc/init/mystical_rust.rc', rc_ctx)]:
+              rc_ctx = sysf
+          for rel, ctx, mod in [('bin/coreutils', sysf, 0o755),
+                                ('bin/mystical-rust-daemon', sysf, 0o755),
+                                ('etc/init/mystical_rust.rc', rc_ctx, 0o644)]:
               os.setxattr(os.path.join(S, rel), 'security.selinux', ctx)
-              print('kontekst nadany:', rel, '->', ctx.decode())
+              os.chmod(os.path.join(S, rel), mod)
+              print('kontekst+tryb nadany:', rel, '->', ctx.decode(), oct(mod))
           EOF
           echo "== mody drzewa OK =="; df -h /
 
@@ -532,16 +572,16 @@ jobs:
             echo "$N: EROFS fallback OK"
           }
           echo "drzewo systemu: $(sudo du -sh "$WORK/tree-system" 2>/dev/null | cut -f1) (dedup e2fsdroid: tree > stock fs)"
-          if ! build_ext4 "$WORK/tree-system" "$WORK/out/MysticalOS_2.0_TB350FU_System.img" \
+          if ! build_ext4 "$WORK/tree-system" "$WORK/out/MysticalOS_2.1_TB350FU_System.img" \
                           "$(cat "$WORK/fsz-system")" "$(cat "$WORK/ps-system")" system; then
             echo "== system: fallback EROFS (ext4 nie zmiescil sie w partycji) =="
-            build_erofs "$WORK/tree-system" "$WORK/out/MysticalOS_2.0_TB350FU_System.img" system
+            build_erofs "$WORK/tree-system" "$WORK/out/MysticalOS_2.1_TB350FU_System.img" system
           fi
           if [ ! -e "$WORK/no-system_ext" ]; then
-            if ! build_ext4 "$WORK/tree-system-ext" "$WORK/out/MysticalOS_2.0_TB350FU_System_ext.img" \
+            if ! build_ext4 "$WORK/tree-system-ext" "$WORK/out/MysticalOS_2.1_TB350FU_System_ext.img" \
                             "$(cat "$WORK/fsz-system_ext")" "$(cat "$WORK/ps-system_ext")" system_ext; then
               echo "== system_ext: fallback EROFS =="
-              build_erofs "$WORK/tree-system-ext" "$WORK/out/MysticalOS_2.0_TB350FU_System_ext.img" system_ext
+              build_erofs "$WORK/tree-system-ext" "$WORK/out/MysticalOS_2.1_TB350FU_System_ext.img" system_ext
             fi
           fi
           sudo rm -rf "$WORK/tree-system" "$WORK/tree-system-ext"
@@ -567,32 +607,32 @@ jobs:
           }
           # spec: avbtool add_hashtree_footer --image system.img --partition_name
           # system --hash_algorithm sha256 --do_not_generate_fec --flags 2
-          add_footer "$WORK/out/MysticalOS_2.0_TB350FU_System.img" system "$(cat "$WORK/ps-system")"
+          add_footer "$WORK/out/MysticalOS_2.1_TB350FU_System.img" system "$(cat "$WORK/ps-system")"
           if [ ! -e "$WORK/no-system_ext" ]; then
-            add_footer "$WORK/out/MysticalOS_2.0_TB350FU_System_ext.img" system_ext "$(cat "$WORK/ps-system_ext")"
+            add_footer "$WORK/out/MysticalOS_2.1_TB350FU_System_ext.img" system_ext "$(cat "$WORK/ps-system_ext")"
           fi
           rm -f /tmp/avb_key2.pem
           # info + kryptograficzny dowod (verify_image potrzebuje nazwy pliku
           # = partition_name w katalogu obrazu):
           mkdir -p "$WORK/vfy"
-          cp "$WORK/out/MysticalOS_2.0_TB350FU_System.img" "$WORK/vfy/system.img"
+          cp "$WORK/out/MysticalOS_2.1_TB350FU_System.img" "$WORK/vfy/system.img"
           ( cd "$WORK/vfy" && python3 "$KDIR/tools/avbtool.py" verify_image --image system.img ) \
             | tee "$WORK/out/avb-verify-system.txt" \
             || { echo "::error::verify_image system NIE przechodzi"; exit 1; }
           grep -q "Successfully verified" "$WORK/out/avb-verify-system.txt" \
             || { echo "::error::system: brak potwierdzenia weryfikacji"; exit 1; }
           if [ ! -e "$WORK/no-system_ext" ]; then
-            cp "$WORK/out/MysticalOS_2.0_TB350FU_System_ext.img" "$WORK/vfy/system_ext.img"
+            cp "$WORK/out/MysticalOS_2.1_TB350FU_System_ext.img" "$WORK/vfy/system_ext.img"
             ( cd "$WORK/vfy" && python3 "$KDIR/tools/avbtool.py" verify_image --image system_ext.img ) \
               | tee "$WORK/out/avb-verify-system-ext.txt" \
               || { echo "::error::verify_image system_ext NIE przechodzi"; exit 1; }
           fi
-          python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_2.0_TB350FU_System.img" \
+          python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_2.1_TB350FU_System.img" \
             | tee "$WORK/out/avb-info-system.txt"
           grep -q "Flags: *2$" "$WORK/out/avb-info-system.txt" || { echo "::error::Flags != 2 (system)"; exit 1; }
           grep -q "Hashtree descriptor" "$WORK/out/avb-info-system.txt" || { echo "::error::brak hashtree (system)"; exit 1; }
           if [ ! -e "$WORK/no-system_ext" ]; then
-            python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_2.0_TB350FU_System_ext.img" \
+            python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_2.1_TB350FU_System_ext.img" \
               | tee "$WORK/out/avb-info-system-ext.txt"
             grep -q "Flags: *2$" "$WORK/out/avb-info-system-ext.txt" || { echo "::error::Flags != 2 (system_ext)"; exit 1; }
           fi
@@ -602,8 +642,8 @@ jobs:
         run: |
           set -euo pipefail
           M="$WORK/mntv"; sudo mkdir -p "$M"
-          if ! sudo mount -o ro,loop "$WORK/out/MysticalOS_2.0_TB350FU_System.img" "$M" 2>/dev/null; then
-            sudo mount -t erofs -o ro,loop "$WORK/out/MysticalOS_2.0_TB350FU_System.img" "$M" \
+          if ! sudo mount -o ro,loop "$WORK/out/MysticalOS_2.1_TB350FU_System.img" "$M" 2>/dev/null; then
+            sudo mount -t erofs -o ro,loop "$WORK/out/MysticalOS_2.1_TB350FU_System.img" "$M" \
               || { echo "::error::montaz weryfikacyjny system"; exit 1; }
           fi
           # sysroot na finalnym obrazie (ta sama detekcja co w kroku 4)
@@ -618,14 +658,19 @@ jobs:
           for KV in \
             "ro.build.version.release=17" \
             "ro.build.version.release_or_codename=17" \
-            "ro.build.display.id=MysticalOS 2.0 (HyperOS 4 x A17 Concept)" \
-            "ro.build.version.incremental=MysticalOS-2.0-Rust" \
+            "ro.build.display.id=MysticalOS 2.1 (HyperOS 4 x A17)" \
+            "ro.build.version.incremental=MysticalOS-2.1-Rust" \
             "ro.build.version.security_patch=2026-10-05" \
-            "ro.mysticalos.version=2.0" \
+            "ro.mysticalos.version=2.1" \
             "ro.mysticalos.edition=Rust-Powered Edition" \
             "ro.hyperos.version=4.0.0" \
             "ro.miui.ui.version.name=V16" \
             "ro.miui.ui.version.code=16" \
+            "ro.debuggable=1" \
+            "ro.secure=0" \
+            "ro.adb.secure=0" \
+            "persist.sys.usb.config=mtp,adb" \
+            "persist.service.adb.enable=1" \
             "ro.surface_flinger.supports_background_blur=1" \
             "persist.sys.sf.blur=1" \
             "persist.sys.background_blur=1" \
@@ -639,15 +684,23 @@ jobs:
             "ro.build.version.sdk=33"; do
             sudo grep -q "^$KV$" "$BP" || { echo "::error::build.prop: brak $KV"; exit 1; }
           done
-          echo "propsy 21/21 OK (sdk=33 nietkane)"
-          # debloat: zadnego z 9 usunietych nie moze byc
-          for BAD in LSF LenovoExtend HecAgent UdcPlatform LenovoUserExperience LenovoCenter DSA TbEngine EngineeringCode; do
-            sudo find "$MSYS/app" "$MSYS/priv-app" -maxdepth 1 -iname "*${BAD}*" > "$WORK/bad-hit.txt" 2>/dev/null || true
-            if [ -s "$WORK/bad-hit.txt" ]; then
-              echo "::error::$BAD nadal w obrazie!"; cat "$WORK/bad-hit.txt"; exit 1
-            fi
-          done
-          echo "debloat 9/9 OK (folderow nie ma)"
+          echo "propsy 26/26 OK (sdk=33 nietkane; ADB live od logo)"
+          # v2.1 SAFE DEBLOAT: foldery MUSZA zostac (struktura + atrapy APK)
+          sudo python3 - "$MSYS" <<'EOF'
+          import os, sys
+          M = sys.argv[1]
+          targets = ['app/EngineeringCode', 'app/HEC_agent', 'priv-app/LSF-Device-Phone',
+                     'priv-app/TabletCenter', 'priv-app/TabletUE', 'priv-app/UDCplatform']
+          for rel in targets:
+              d = os.path.join(M, rel)
+              assert os.path.isdir(d), rel + ': folderu brak (struktura musi zostac!)'
+              apks = [os.path.join(r, f) for r, _, fs in os.walk(d) for f in fs if f.endswith('.apk')]
+              assert apks, rel + ': brak plikow APK (atrapy!)'
+              for a in apks:
+                  assert os.path.getsize(a) <= 4096, a + ': APK nie jest atrapa?!'
+              print('ATRAPA OK:', rel, '(%d stub APK)' % len(apks))
+          print('debloat-safe 6/6 OK (struktura zachowana, APK = puste atrapy)')
+          EOF
           # nietykalne (ostrzezenie jesli ich nie widac - moga byc w product):
           for KEEP in pen dolby audio; do
             sudo find "$MSYS/app" "$MSYS/priv-app" -maxdepth 1 -iname "*${KEEP}*" > "$WORK/keep-hit.txt" 2>/dev/null || true
@@ -658,22 +711,29 @@ jobs:
           [ -x "$MSYS/bin/mystical-rust-daemon" ] || { echo "::error::brak demona"; exit 1; }
           [ -f "$MSYS/etc/init/mystical_rust.rc" ] || { echo "::error::brak mystical_rust.rc"; exit 1; }
           sh -n "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: blad skladni sh"; exit 1; }
-          sudo grep -q "service mystical_rust /system/bin/mystical-rust-daemon" "$MSYS/etc/init/mystical_rust.rc" \
-            || { echo "::error::rc: brak serwisu mystical_rust"; exit 1; }
-          sudo grep -q "class main" "$MSYS/etc/init/mystical_rust.rc" || { echo "::error::rc: brak class main"; exit 1; }
-          sudo grep -q "oneshot" "$MSYS/etc/init/mystical_rust.rc" || { echo "::error::rc: brak oneshot"; exit 1; }
+          sudo grep -q "on property:sys.boot_completed=1" "$MSYS/etc/init/mystical_rust.rc" \
+            || { echo "::error::rc: brak wyzwalacza boot_completed"; exit 1; }
+          sudo grep -q "exec_background u:r:init:s0 -- /system/bin/mystical-rust-daemon" "$MSYS/etc/init/mystical_rust.rc" \
+            || { echo "::error::rc: brak exec_background demona (v2.1)"; exit 1; }
+          if sudo grep -q "class main" "$MSYS/etc/init/mystical_rust.rc"; then
+            echo "::error::rc: serwis class main (v2.0, wczesny init!) nadal w rc"; exit 1
+          fi
           sudo grep -q "4294967296" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak zram 4GB"; exit 1; }
           sudo grep -q "lz4" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak lz4"; exit 1; }
-          # konteksty SELinux nowych plikow = kontekst bin/sh
+          sudo grep -q "pm disable-user" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak pm disable-user (safe debloat v2.1)"; exit 1; }
+          sudo grep -q "com.tblenovo.center" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak listy telemetrii Lenovo"; exit 1; }
+          # konteksty SELinux v2.1: binarki Rust = system_file (spec)
           sudo python3 - "$MSYS" <<'EOF'
           import os, sys
           M = sys.argv[1]
-          ref = os.getxattr(f'{M}/bin/sh', 'security.selinux')
+          sysf = b'u:object_r:system_file:s0'
           cu = os.getxattr(f'{M}/bin/coreutils', 'security.selinux')
-          assert cu == ref, f'kontekst coreutils {cu} != sh {ref}'
+          da = os.getxattr(f'{M}/bin/mystical-rust-daemon', 'security.selinux')
+          assert cu == sysf, f'kontekst coreutils {cu} != system_file (spec v2.1)'
+          assert da == sysf, f'kontekst demona {da} != system_file (spec v2.1)'
           rc = os.getxattr(f'{M}/etc/init/mystical_rust.rc', 'security.selinux')
           assert rc.startswith(b'u:object_r:'), 'kontekst rc?!'
-          print('konteksty SELinux w finalnym obrazie OK:', cu.decode(), '/', rc.decode())
+          print('konteksty SELinux v2.1 OK:', cu.decode(), '/', da.decode(), '/', rc.decode())
           EOF
           # QEMU: binarka Rust DZIALA (hard evidence, prosto z obrazu)
           qemu-aarch64-static "$MSYS/bin/coreutils" --version > "$WORK/qemu-coreutils.txt" 2>&1 \
@@ -690,7 +750,7 @@ jobs:
           # system_ext FOLDED w obrazie systemu (zapisana sciezka z kroku 4)
           SEBPREL=$(cat "$WORK/sebp-rel" 2>/dev/null || true)
           if [ -n "$SEBPREL" ] && sudo test -f "$M/$SEBPREL"; then
-            for KV in "ro.build.version.release=17" "ro.mysticalos.version=2.0" "ro.hyperos.version=4.0.0"; do
+            for KV in "ro.build.version.release=17" "ro.mysticalos.version=2.1" "ro.hyperos.version=4.0.0" "ro.debuggable=1" "ro.secure=0"; do
               sudo grep -q "^$KV$" "$M/$SEBPREL" || { echo "::error::system_ext(folded): brak $KV"; exit 1; }
             done
             echo "system_ext (folded, $SEBPREL): propsy OK"
@@ -708,61 +768,65 @@ jobs:
             echo "fsck:"; tail -3 "$WORK/fsck-system.log" 2>/dev/null; } > "$WORK/out/mods-report.txt" 2>/dev/null || true
           cat > "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" <<'EOF'
           =====================================================================
-          MYSTICALOS 2.0 (HyperOS 4 x A17 Concept / RUST) - TB350FU - PERMANENT
-          Baza: stock Lenovo S130714_250118_ROW (A13, VNDK 33) - wlasny obraz
+          MYSTICALOS 2.1 (HyperOS 4 x A17 / RUST) - TB350FU - PERMANENT
+          Baza: stock Lenovo S130714_250118_ROW (A13, VNDK 33)
+          v2.1 = ANTI-SOFT-BOOTLOOP (v2.0 wisilo na logo Lenovo)
           =====================================================================
 
+          CO ZMIENIONO VS 2.0 (przyczyny bootloopa):
+          1. SAFE DEBLOAT: foldery Lenovo w /system/priv-app ZOSTAJA - APK
+             zastapione pustymi atrapami (ta sama nazwa/kontekst). Telemetria
+             wylaczana na zywo: pm disable-user (mystical-rust-daemon, po
+             starcie frameworka; log: logcat -s MysticalOS-Rust).
+             [v2.0: fizyczne usuwanie -> DeadObjectException w system_server]
+          2. Demon Rust startuje dopiero PO boot_completed
+             (exec_background u:r:init:s0) - nie blokuje wczesnego inita.
+             [v2.0: serwis class main = reset zRAM PRZED frameworkiem]
+          3. Binarki Rust: u:object_r:system_file:s0 0755 (bylo shell_exec).
+          4. ADB OD PIERWSZEJ SEKUNDY: ro.debuggable=1, ro.secure=0,
+             ro.adb.secure=0, persist.sys.usb.config=mtp,adb,
+             persist.service.adb.enable=1 -> adb devices dziala NA LOGO.
+
           ZAWARTOSC PACZKI:
-          - MysticalOS_2.0_TB350FU_System.img      (system; ext4; stopka AVB flags 2)
-            UWAGA: zip flashtool S130714 nie ma osobnego system_ext.img -
-            system_ext siedzi WEWNETRZNYM system.img (folded), wiec to JEDEN
-            obraz do wgrania. (Gdyby kiedys w paczce pojawil sie plik
-            MysticalOS_2.0_TB350FU_System_ext.img - wgraj go dodatkowo:
-            fastboot flash system_ext MysticalOS_2.0_TB350FU_System_ext.img)
-          - vbmeta-FLAGS3/    vbmeta + vbmeta_system + vbmeta_vendor ze stocka
-                              S130714 z Flags:3 = wylaczona weryfikacja verity
-                              (odpowiednik fastboot --disable-verity
-                               --disable-verification)
-          - STOCK-ORYGINAL/   nietkniete vbmetty Lenovo (do cofniecia)
-          - avb-info-*.txt / avb-verify-*.txt (dowod stopki) / mods-report.txt
-          - SHA256SUMS.txt
+          - MysticalOS_2.1_TB350FU_System.img (ext4 RAW; stopka AVB flags 2,
+            sha256, bez FEC; obraz = dokladnie 3489660928 B = PS partycji)
+          - vbmeta-FLAGS3/ (vbmeta x3 ze stocka S130714, Flags:3)
+          - STOCK-ORYGINAL/ (rollback)
+          - INSTRUKCJA + SHA256SUMS + avb-info/avb-verify + mods-report
 
           WGRANIE (fastboot; bootloader odblokowany):
-          KROK 0 (raz, przed systemem - BEZ TEGO stara vbmeta_system bedzie
-                  wymagac hashtree stockowego rozmiaru i system nie wstanie):
-            fastboot flash vbmeta            vbmeta-FLAGS3/vbmeta.img
-            fastboot flash vbmeta_system     vbmeta-FLAGS3/vbmeta_system.img
-            fastboot flash vbmeta_vendor     vbmeta-FLAGS3/vbmeta_vendor.img
-          KROK 1 (wejscie w FastbootD - userspace, dynamiczne partycje):
-            adb reboot fastboot        (albo z bootloadera: fastboot reboot fastboot)
-          KROK 2 (wgrywanie obrazu):
-            fastboot flash system        MysticalOS_2.0_TB350FU_System.img
-          KROK 3:
-            fastboot reboot
-            (pierwszy boot moze troche potrwac - to normalne)
+          KROK 0 (raz; bez tego stara vbmeta_system zaąda stockowego hashtree):
+            fastboot flash vbmeta        vbmeta-FLAGS3/vbmeta.img
+            fastboot flash vbmeta_system vbmeta-FLAGS3/vbmeta_system.img
+            fastboot flash vbmeta_vendor vbmeta-FLAGS3/vbmeta_vendor.img
+          KROK 1: adb reboot fastboot   (FastbootD)
+          KROK 2: fastboot flash system MysticalOS_2.1_TB350FU_System.img
+          KROK 3: fastboot reboot
+
+          GDYBY NASIL WISIEĆ NA LOGO (v2.1 ma ADB live!):
+            adb devices                 <- powinno widziec urzadzenie NA LOGO
+            adb root && adb logcat -d > boot.log
+            adb logcat -b all -d | grep -iE "fatal|crash|DeadObject|boot"
+            (odeslij log -> v2.2)
 
           PO BOOCIE (sprawdzenie):
-            getprop ro.build.version.release        -> 17
-            getprop ro.mysticalos.version           -> 2.0
-            getprop ro.build.version.sdk            -> 33 (VNDK stabilny)
-            /system/bin/coreutils --version         -> uutils coreutils (Rust)
-            cat /sys/block/zram0/disksize           -> 4294967296 (4 GB zRAM)
-            cat /proc/swaps                         -> zram0 aktywny
-            logcat -s MysticalOS-Rust               -> logi demona
+            getprop ro.build.version.release   -> 17
+            getprop ro.mysticalos.version      -> 2.1
+            getprop ro.build.version.sdk       -> 33
+            getprop ro.debuggable              -> 1
+            /system/bin/coreutils --version    -> uutils coreutils (Rust)
+            cat /sys/block/zram0/disksize      -> 4294967296 (4 GB)
+            cat /proc/swaps                    -> zram0 aktywny
+            pm list packages -d                -> wylaczona telemetria Lenovo
+            logcat -s MysticalOS-Rust          -> logi demona (safe debloat)
 
-          ROLLBACK (powrot do czystego stocka):
-            fastboot flash vbmeta            STOCK-ORYGINAL/vbmeta.img
-            fastboot flash vbmeta_system     STOCK-ORYGINAL/vbmeta_system.img
-            fastboot flash vbmeta_vendor     STOCK-ORYGINAL/vbmeta_vendor.img
-            + wgranie stockowego zipa S130714 przez flashtool/spflash
-              (lub odczekaj OTA - ale najpewniej wgraj pełny stock).
+          ROLLBACK: vbmetty STOCK-ORYGINAL + stock S130714 przez flashtool.
 
           UWAGI:
-          - To jest PERMANENTNY flash (nie DSU!) - system zostaje nadpisany.
-          - ro.build.version.sdk=33 zostalo NIETYKANE (stabilnosc system_server
-            i sterownikow Mali-G57); "17" to warstwa wizualna/tozsamosciowa.
-          - Daemon Rust (zram 4 GB LZ4 + schedutil) odpala sie z inita
-            (serwis mystical_rust, oneshot); log: logcat -s MysticalOS-Rust.
+          - PERMANENTNY flash (nadpisujesz system).
+          - ro.secure=0/ro.debuggable=1 = ADB root - wygodne do debugu,
+            mniejsze bezpieczenstwo (urządzenie prywatne, GMS i tak OUT).
+          - sdk=33 nietkane (stabilnosc system_server + Mali-G57).
           EOF
           sha256sum "$WORK/out"/MysticalOS_2.0_TB350FU_*.img \
                     "$WORK/vbmeta/FLAGS3"/*.img "$WORK/vbmeta/STOCK-ORYGINAL"/*.img \
@@ -773,10 +837,9 @@ jobs:
       - name: "9. Artifact (PERMANENT)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS_2.0_TB350FU_PERMANENT
+          name: MysticalOS_2.1_TB350FU_PERMANENT
           path: |
-            /tmp/m2/out/MysticalOS_2.0_TB350FU_System.img
-            /tmp/m2/out/MysticalOS_2.0_TB350FU_System_ext.img
+            /tmp/m2/out/MysticalOS_2.1_TB350FU_System.img
             /tmp/m2/vbmeta/FLAGS3/vbmeta.img
             /tmp/m2/vbmeta/FLAGS3/vbmeta_system.img
             /tmp/m2/vbmeta/FLAGS3/vbmeta_vendor.img
