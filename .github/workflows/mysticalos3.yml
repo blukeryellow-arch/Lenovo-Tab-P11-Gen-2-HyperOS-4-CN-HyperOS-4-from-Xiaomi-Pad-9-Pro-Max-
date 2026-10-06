@@ -86,7 +86,7 @@ on:
   workflow_dispatch:
   push:
     branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
-    paths: ['.github/workflows/mysticalos2.yml', 'kit-mysticalos3/rust-engine/**', 'kit-mysticalos3/stock-vbmeta-S130714/**']
+    paths: ['.github/workflows/mysticalos3.yml', 'kit-mysticalos3/**']
 
 concurrency:
   group: mysticalos2
