@@ -694,6 +694,7 @@ jobs:
             sudo cp "$SUI_APK" "$UIDIR/systemui.apk"
             sudo chown "$(id -u):$(id -g)" "$UIDIR/systemui.apk"
             "$AAPT2" dump resources "$UIDIR/systemui.apk" > "$UIDIR/sui-res.txt" 2>/dev/null || true
+            echo "sui-res.txt: $(wc -l < "$UIDIR/sui-res.txt") linii dumpu SystemUI"
             python3 "$KDIR/ui/sui_pick.py" "$UIDIR"
             if [ -s "$UIDIR/sui-found.txt" ]; then
               OV2="$UIDIR/ov-systemui"; rm -rf "$OV2"; mkdir -p "$OV2/res/values"
@@ -730,14 +731,12 @@ jobs:
           sudo install -m 0644 "$UIDIR/bootanimation.zip" "$SYS/media/bootanimation.zip"
           sudo install -m 0644 "$UIDIR/wallpaper.png" \
             "$SYS/media/wallpapers/MysticalOS_Default.png"
-          # dzwieki: nadpisujemy nazwy istniejace w stocku + Unlock/Lock zawsze
+          # dzwieki: instalujemy WSZYSTKIE (framework szuka po nazwie pliku;
+          # /system/media/audio/ui jest pierwszym katalogiem poszukiwan)
           SND_N=0
           for F in "$SND"/*.ogg; do
             B=$(basename "$F")
-            if sudo test -f "$SYS/media/audio/ui/$B" \
-               || [ "$B" = "Unlock.ogg" ] || [ "$B" = "Lock.ogg" ]; then
-              sudo install -m 0644 "$F" "$SYS/media/audio/ui/$B" && SND_N=$((SND_N + 1))
-            fi
+            sudo install -m 0644 "$F" "$SYS/media/audio/ui/$B" && SND_N=$((SND_N + 1))
           done
           sudo install -m 0644 "$UIDIR/Theme_Android17_Framework.apk" \
             "$SYS/overlay/Theme_Android17_Framework.apk"
