@@ -764,8 +764,15 @@ jobs:
           ref_font = os.path.join(S, 'fonts', fonts[0])
           ref_media = None
           for root, _, files in os.walk(os.path.join(S, 'media')):
-              if files:
-                  ref_media = os.path.join(root, sorted(files)[0]); break
+              for f in sorted(files):
+                  try:
+                      os.getxattr(os.path.join(root, f), 'security.selinux')
+                      ref_media = os.path.join(root, f)
+                      break
+                  except OSError:
+                      continue  # plik wlasnie zainstalowany (bez xattr na runnerze)
+              if ref_media:
+                  break
           if ref_media is None:
               ref_media = ref_font
           def setctx(rel, ref):
