@@ -558,6 +558,11 @@ jobs:
             sudo apt-get install -y -qq openjdk-17-jre-headless >/dev/null 2>&1 || true
           fi
           java -version 2>&1 | head -1
+          if ! python3 -c "import PIL" >/dev/null 2>&1; then
+            sudo apt-get update -qq >/dev/null 2>&1 || true
+            sudo apt-get install -y -qq python3-pil >/dev/null 2>&1 || true
+          fi
+          python3 -c "import PIL; print('PIL', PIL.__version__)"
           BT_OK=""
           for BTU in "https://dl.google.com/android/repository/build-tools_r34-linux.zip" \
                      "https://dl.google.com/android/repository/build-tools_r33.0.2-linux.zip"; do
