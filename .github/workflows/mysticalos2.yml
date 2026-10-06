@@ -26,7 +26,7 @@
 # 1. Baza: oficjalny system.img z paczki ROW S130714 (lolinet 7,3 GB);
 #    surowy ext4 z kontekstami SELinux; ro.build.version.sdk=33 NIETYKANE.
 # 2. /system/build.prop (+ system_ext/etc/build.prop): maska A17/HyperOS 4
-#    (release=17, display.id=MysticalOS 2.0, hyperos=4.0.0, miui.ui=V16,
+#    (release=17, display.id=MysticalOS 2.1, hyperos=4.0.0, miui.ui=V16,
 #    security_patch=2026-10-05) + flagi graficzne 120Hz/blur/skiagl
 #    + dodatki z wlasnego system.prop usera (heap/dalvik/MT6789).
 # 3. DEBLOAT fizyczny: LSF/LSF-Device-Phone, LenovoExtend, HecAgent,
@@ -465,7 +465,7 @@ jobs:
           def apply(path):
               if not os.path.isfile(path):
                   os.makedirs(os.path.dirname(path), exist_ok=True)
-                  open(path, 'w').write('# MysticalOS 2.0\n')
+                  open(path, 'w').write('# MysticalOS 2.1\n')
               raw = open(path, encoding='utf-8', errors='surrogateescape').read()
               lines = raw.split('\n')
               out, seen = [], set()
@@ -477,7 +477,7 @@ jobs:
                   out.append(l)
               missing = [k for k in PROPS if k not in seen]
               if missing:
-                  out.append('# ==== MysticalOS 2.0 (HyperOS 4 x A17 Concept / Rust) ====')
+                  out.append('# ==== MysticalOS 2.1 (HyperOS 4 x A17 / Rust) ====')
                   for k in missing:
                       out.append(k + '=' + PROPS[k])
               open(path, 'w', encoding='utf-8', errors='surrogateescape').write('\n'.join(out))
@@ -828,7 +828,7 @@ jobs:
             mniejsze bezpieczenstwo (urządzenie prywatne, GMS i tak OUT).
           - sdk=33 nietkane (stabilnosc system_server + Mali-G57).
           EOF
-          sha256sum "$WORK/out"/MysticalOS_2.0_TB350FU_*.img \
+          sha256sum "$WORK/out"/MysticalOS_2.1_TB350FU_*.img \
                     "$WORK/vbmeta/FLAGS3"/*.img "$WORK/vbmeta/STOCK-ORYGINAL"/*.img \
                     "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" > "$WORK/out/SHA256SUMS.txt"
           cat "$WORK/out/SHA256SUMS.txt"
