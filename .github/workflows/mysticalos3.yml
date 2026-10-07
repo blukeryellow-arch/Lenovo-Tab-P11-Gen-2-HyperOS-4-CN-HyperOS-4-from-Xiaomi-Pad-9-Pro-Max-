@@ -2266,6 +2266,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # --- DIAG: konsola -> plik; przy padnieciu tail w annotation ---
+          exec > >(tee "$WORK/11-console.log") 2>&1
+          set -E
+          trap 'RC=$?; echo "::error::krok 11 padl (exit $RC); ostatnie linie:"; tail -n 20 "$WORK/11-console.log" 2>/dev/null' ERR
           TAG="0.5-hyperos-port"
           # zip ma sciezki WZGLEDNE (out/..., vbmeta/...) -> cwd = $WORK!
           # a gh CLI traci wtedy kontekst repo (brak .git w /tmp/m2) -> GH_REPO
@@ -2324,15 +2328,20 @@ jobs:
             echo "auto-rescue po 90 s (mystical-home-guard.sh) wgrywa MiuiHome z nabu gdyby h4 nie wystartowal;"
             echo "Pelna instrukcja (rollback, diagnostyka ADB, kontrola po boocie): INSTRUKCJA-FASTBOOTD.txt."
           } > "$WORK/NOTES.md"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG istnieje -> clobber assetow"
-            gh release upload "$TAG" "$WORK/port-release.zip#MysticalOS_0.5_HyperOS_Port-full.zip" --clobber
-          else
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --title "MysticalOS 0.5 — PRAWDZIWY PORT HyperOS (Pad Edition)" \
               --notes-file "$WORK/NOTES.md" --target "$GITHUB_SHA"
-            gh release upload "$TAG" "$WORK/port-release.zip#MysticalOS_0.5_HyperOS_Port-full.zip"
           fi
+          echo "release $TAG: upload port-release.zip (clobber, retry x3)"
+          REL_ZIP_OK=0
+          for AT in 1 2 3; do
+            echo "== proba $AT =="
+            if gh release upload "$TAG" "$WORK/port-release.zip" --clobber; then REL_ZIP_OK=1; break; fi
+            echo "upload padl (proba $AT) - czekam 20 s"
+            sleep 20
+          done
+          [ "$REL_ZIP_OK" = "1" ] || { echo "::error::upload port-release.zip padl po 3 probach"; exit 1; }
           gh release upload "$TAG" \
             "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" "$WORK/out/SHA256SUMS.txt" \
             "$WORK/out/port-report.txt" "$WORK/out/mods-report.txt" \
