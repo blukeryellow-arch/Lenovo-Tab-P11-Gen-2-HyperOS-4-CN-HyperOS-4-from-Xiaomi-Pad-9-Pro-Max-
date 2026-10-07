@@ -180,13 +180,31 @@ jobs:
       - name: "2. Stock ROW S130714 z lolinet (7,3 GB, resume)"
         run: |
           set -euo pipefail
-          for A in 1 2 3; do
-            if curl -fL --retry 3 --retry-delay 5 -C - --connect-timeout 30 -o "$WORK/stock.zip" "$STOCK_URL"; then
-              break
+          # run 37550790970: lolinet z 44 MB/s (3,5 min); innym razem 1,6 MB/s
+          # (120 min!) - dlawienie per-polaczenie. aria2c x16 + fallback curl.
+          STOCK_OK=""
+          for A in 1 2 3 4 5 6 7 8; do
+            if aria2c --continue=true --file-allocation=none \
+                 --max-connection-per-server=16 --split=16 --min-split-size=8M \
+                 --max-tries=5 --retry-wait=10 --timeout=60 --connect-timeout=30 \
+                 --lowest-speed-limit=5K --summary-interval=60 \
+                 --auto-file-renaming=false --allow-overwrite=true \
+                 --dir="$WORK" --out=stock.zip "$STOCK_URL"; then
+              STOCK_OK=1; break
             fi
-            echo "proba $A nieudana - czekam 20 s"; sleep 20
+            echo "aria2c (lolinet) proba $A nieudana - resume za 10 s"; sleep 10
           done
-          [ -s "$WORK/stock.zip" ] || { echo "::error::lolinet nieosiagalny z runera (zip nie pobrany)"; exit 1; }
+          # fallback curl (czyscimy czesciowy plik aria2 - sparse dziury!)
+          if [ -z "$STOCK_OK" ]; then
+            rm -f "$WORK/stock.zip" "$WORK/stock.zip.aria2"
+            for A in 1 2 3; do
+              if curl -fL --retry 3 --retry-delay 5 -C - --connect-timeout 30 -o "$WORK/stock.zip" "$STOCK_URL"; then
+                STOCK_OK=1; break
+              fi
+              echo "proba $A nieudana - czekam 20 s"; sleep 20
+            done
+          fi
+          [ -n "$STOCK_OK" ] || { echo "::error::lolinet nieosiagalny z runera (zip nie pobrany)"; exit 1; }
           SZ=$(stat -c%s "$WORK/stock.zip")
           [ "$SZ" -gt 7000000000 ] || { echo "::error::stock.zip ${SZ} B < 7 GB?!"; exit 1; }
           echo "stock.zip: ${SZ} B OK"
@@ -770,14 +788,25 @@ jobs:
           set -euo pipefail
           # ---------- 1) nabu HyperOS 1.0.6.0 Global (A13 = sdk 33) ----------
           # CDN Xiaomi dlawi pojedyncze polaczenia (run 37516155801: curl x9
-          # prob = 90 min i FAIL; run 37531411028: aria2c wciaz trwal 180+ min)
-          # -> aria2c: 16 polaczen + 5 mirrorow rownolegle + ZAPIS DO CACHE
-          # (actions/cache/save) - raz pobrane = kolejne runy blyskawicznie.
-          echo "== diagnostra mirrorow (HEAD) =="
+          # prob = 90 min i FAIL; run 37531411028: aria2c zle opcje -> curl
+          # 20 KB/s przez 2:45 h; run 37550790970: DNS *.d.miui.com nierozwiazywany
+          # z runera -> exit 6). Fix: publiczne resolvery PRZED Azure DNS.
+          echo "== DNS: wstawiam publiczne resolvery (8.8.8.8, 1.1.1.1) =="
+          sudo cp /etc/resolv.conf "$WORK/resolv.conf.orig" 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\nnameserver 168.63.129.16\noptions timeout:2 attempts:3\n' \
+            | sudo tee /etc/resolv.conf >/dev/null
+          # przywroc oryginalny resolv.conf po zakonczeniu kroku (github/azure dalej
+          # przez DNS Azure); trap dziala tez na sciezkach exit 1
+          trap 'if [ -s "$WORK/resolv.conf.orig" ]; then sudo cp "$WORK/resolv.conf.orig" /etc/resolv.conf 2>/dev/null || true; fi' EXIT
+          for H in bigota.d.miui.com hugeparallel1.d.miui.com hugeparallel2.d.miui.com cdnorg.d.miui.com hugebackup.d.miui.com; do
+            echo "dns $H -> $(getent hosts "$H" | awk '{print $1}' | paste -sd, - || true)"
+          done
+          echo "== diagnostyka mirrorow (HEAD) =="
           for NU in "$NABU_URL" "$NABU_URL2" "$NABU_URL3" "$NABU_URL4" "$NABU_URL5"; do
             H=$(printf '%s' "$NU" | sed 's|https://||;s|/.*||')
             LC=$(curl -sI --connect-timeout 10 --max-time 20 "$NU" 2>/dev/null \
-                 | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}' | head -1)
+                 | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}' | head -1 || true)
             echo "mirror $H: content-length=${LC:-BRAK}"
           done
           NABU_OK=""
