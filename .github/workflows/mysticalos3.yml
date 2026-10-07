@@ -89,7 +89,7 @@ on:
     paths: ['.github/workflows/mysticalos3.yml', 'kit-mysticalos3/**']
 
 concurrency:
-  group: mysticalos2
+  group: mysticalos3
   cancel-in-progress: true
 
 permissions:
