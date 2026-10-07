@@ -1131,7 +1131,16 @@ jobs:
       - name: "4d2. PORT: LAUNCHER HYPEROS 4 z yingtian (minSdk 33 + rescue + guard + nakladki)"
         run: |
           # (odtworzenie zmiennych z 4d; split kroku - GH limit 21k znakow na run)
+          # --- DIAG: konsola -> plik; przy padnieciu tail w annotation ---
+          exec > >(tee "$WORK/4d2-console.log") 2>&1
+          set -E
+          trap 'RC=$?; echo "::error::4d2 padl (exit $RC); ostatnie linie:"; tail -n 18 "$WORK/4d2-console.log" 2>/dev/null' ERR
+          echo "== 4d2 diag: stan $WORK (poczatek) ==="
+          ls -la "$WORK" 2>/dev/null | head -30 || true
           SYS=$(cat "$WORK/sysroot-system"); MHOME=$(cat "$WORK/mhome-path")
+          [ -n "$SYS" ] && [ -n "$MHOME" ] \
+            || { echo "::error::4d2: SYS='$SYS' MHOME='$MHOME' (sysroot-system/mhome-path z 4d?)"; ls -la "$WORK"; exit 1; }
+          echo "4d2: SYS=$SYS MHOME=$MHOME"
           # ---------- 5b) LAUNCHER HYPEROS 4 (donor yingtian OS4.0.11.0) ----------
           # User (Rozkaz 17 it.2): "miało byc HyperOS 4 + launcher HyperOS".
           # MiuiSystemUI z A17 nie wystartuje na A13 (framework-locked) -> zostaje
@@ -1151,7 +1160,7 @@ jobs:
           "$ZIPALIGN" -f 4 "$WORK/miuihome-h4-minsdk.apk" "$WORK/miuihome-h4-signed.apk"
           "$APKSIGNER" sign --ks "$WORK/ui/ks.jks" --ks-key-alias mystical \
             --ks-pass pass:mysticalos --key-pass pass:mysticalos \
-            --min-sdk-version 26 "$WORK/miuihome-h4-signed.apk" >/dev/null 2>&1
+            --min-sdk-version 26 "$WORK/miuihome-h4-signed.apk"
           "$APKSIGNER" verify "$WORK/miuihome-h4-signed.apk" \
             || { echo "::error::5b: podpis h4 nie przechodzi"; exit 1; }
           cp "$WORK/miuihome-h4-signed.apk" "$WORK/chk-MiuiHomeH4.apk"
@@ -1410,7 +1419,12 @@ jobs:
       - name: "4d3. PORT: bench wirtualny (badging + HOME + BOOTCLASSPATH) + umounty"
         run: |
           # (odtworzenie zmiennych z 4d/4d2; split kroku - GH limit 21k znakow na run)
+          # --- DIAG: konsola -> plik; przy padnieciu tail w annotation ---
+          exec > >(tee "$WORK/4d3-console.log") 2>&1
+          set -E
+          trap 'RC=$?; echo "::error::4d3 padl (exit $RC); ostatnie linie:"; tail -n 18 "$WORK/4d3-console.log" 2>/dev/null' ERR
           SYS=$(cat "$WORK/sysroot-system"); MHOME=$(cat "$WORK/mhome-path")
+          JAR_LIST=$(cat "$WORK/jarlist.txt"); M2=$(cat "$WORK/m2-path"); M3=$(cat "$WORK/m3-path")
           JAR_LIST=$(cat "$WORK/jarlist.txt"); M2=$(cat "$WORK/m2-path"); M3=$(cat "$WORK/m3-path")
           H4VN=$(cat "$WORK/h4vn.txt"); H4ACT=$(cat "$WORK/h4act.txt"); OV_N=$(cat "$WORK/h4ovn.txt")
           MIUI_JARS=$(cat "$WORK/miuijars.txt")
