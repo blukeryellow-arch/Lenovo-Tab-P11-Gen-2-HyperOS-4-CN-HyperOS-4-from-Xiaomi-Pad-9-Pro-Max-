@@ -401,6 +401,10 @@ jobs:
           # 3/9 mialo "podrecznikowe" nazwy - reszta ma inne nazwy folderow w
           # stocku LUB zyje w product (nieosiagalne z system.img). Skan tez
           # app_backup (staging OTA Lenovo). Miekki fail: listing do logu. ----
+          # v2.2: skanujemy tez system_ext/ (FOLDED w drzewie systemu - stock
+          # S130714 nie ma osobnej partycji). WAZNE: tam zyje stock SystemUI
+          # Lenovo (com.android.systemui) - po porcie MiuiSystemUI (ten sam
+          # pakiet!) stock MUSI zostac atrapa, inaczej konflikt pakietow.
           sudo python3 - "$WORK" "$SYS" <<'EOF'
           import os, re, shutil, sys
           W = sys.argv[1]; T = sys.argv[2]
@@ -426,7 +430,9 @@ jobs:
           stubbed = []
           listing = []
           STUB = b'PK\x05\x06' + b'\x00' * 18   # poprawny pusty ZIP = atrapa APK
-          for base in ['app', 'priv-app', 'app_backup']:
+          BASES = ['app', 'priv-app', 'app_backup',
+                   'system_ext/app', 'system_ext/priv-app', 'system_ext/app_backup']
+          for base in BASES:
               d = os.path.join(T, base)
               if not os.path.isdir(d):
                   continue
@@ -1377,13 +1383,16 @@ jobs:
           done
           echo "propsy 26/26 OK (sdk=33 nietkane; ADB live od logo)"
           # v2.1 SAFE DEBLOAT: foldery MUSZA zostac (struktura + atrapy APK)
+          # v2.2: stock SystemUI zyje w system_ext/ (FOLDED) - wyjety z listy,
+          # obsluzony osobno nizej (po porcie MUSI byc atrapa: konflikt pakietow
+          # com.android.systemui z MiuiSystemUI z nabu)
           sudo python3 - "$MSYS" <<'EOF'
           import os, sys
           M = sys.argv[1]
           targets = ['app/EngineeringCode', 'app/HEC_agent', 'priv-app/LSF-Device-Phone',
                      'priv-app/TabletCenter', 'priv-app/TabletUE', 'priv-app/UDCplatform',
                      'priv-app/DesktopLauncher', 'priv-app/LenovoLauncher',
-                     'priv-app/SystemUI', 'app/WpsOffice_Row', 'priv-app/LenovoWhatsNew',
+                     'app/WpsOffice_Row', 'priv-app/LenovoWhatsNew',
                      'app/LenovoPAI', 'priv-app/LenovoLoggerPannel', 'app/HQ_Opera',
                      'app/HQ_PreinstallProvider']
           for rel in targets:
@@ -1394,7 +1403,23 @@ jobs:
               for a in apks:
                   assert os.path.getsize(a) <= 4096, a + ': APK nie jest atrapa?!'
               print('ATRAPA OK:', rel, '(%d stub APK)' % len(apks))
-          print('debloat-safe 15/15 OK (struktura zachowana, APK = atrapy; SystemUI Lenovo zastapione przez MiuiSystemUI)')
+          # stock SystemUI: szukamy w obu mozliwych lokalizacjach (flat/folded)
+          su = None
+          for rel in ('system_ext/priv-app/SystemUI', 'priv-app/SystemUI'):
+              if os.path.isdir(os.path.join(M, rel)):
+                  su = rel
+                  break
+          if su:
+              apks = [os.path.join(r, f) for r, _, fs in os.walk(os.path.join(M, su))
+                      for f in fs if f.endswith('.apk')]
+              assert apks, su + ': brak APK'
+              for a in apks:
+                  assert os.path.getsize(a) <= 4096, \
+                      a + ': stock SystemUI NIE jest atrapa -> konflikt pakietow com.android.systemui z MiuiSystemUI!'
+              print('SystemUI stock (%s): ATRAPA OK (UI = MiuiSystemUI z portu)' % su)
+          else:
+              print('SystemUI stock: brak w obrazie (UI wylacznie z portu MiuiSystemUI)')
+          print('debloat-safe 14/14 OK (struktura zachowana, APK = atrapy; SystemUI Lenovo zastapione przez MiuiSystemUI)')
           EOF
           # nietykalne (ostrzezenie jesli ich nie widac - moga byc w product):
           for KEEP in pen dolby audio; do
@@ -1424,10 +1449,15 @@ jobs:
           sudo grep -q "set-home-activity" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak set-home-activity (UI v0.5)"; exit 1; }
           # ==== UI v0.5: launcher + czcionki + bootanim + wallpaper + nakladki + dzwieki ====
           # ==== PORT HyperOS: MiuiSystemUI + MiuiHome + jary + device_features + boot ====
-          sudo test -n "$(sudo find "$MSYS/priv-app/MiuiSystemUI" -name "*.apk" 2>/dev/null)" \
-            || { echo "::error::PORT: brak MiuiSystemUI.apk"; exit 1; }
-          sudo test -n "$(sudo find "$MSYS/priv-app/MiuiHome" -name "*.apk" 2>/dev/null)" \
-            || { echo "::error::PORT: brak MiuiHome.apk"; exit 1; }
+          # twarde dowody: PRAWDZIWE APK z portu (MiuiSystemUI ~64 MB, MiuiHome ~25 MB),
+          # nie atrapy debloatu (stub = 22 B) - anty-konflikt z atrapą stock SystemUI
+          sudo test -n "$(sudo find "$MSYS/priv-app/MiuiSystemUI" -name "*.apk" -size +10M 2>/dev/null)" \
+            || { echo "::error::PORT: MiuiSystemUI.apk brak lub <10MB (prawdziwy port ma ~64 MB)"; exit 1; }
+          sudo test -n "$(sudo find "$MSYS/priv-app/MiuiHome" -name "*.apk" -size +5M 2>/dev/null)" \
+            || { echo "::error::PORT: MiuiHome.apk brak lub <5MB (prawdziwy port ma ~25 MB)"; exit 1; }
+          SIU_APKS=$(sudo find "$MSYS/priv-app/MiuiSystemUI" -name "*.apk" 2>/dev/null | wc -l)
+          MHOME_APKS=$(sudo find "$MSYS/priv-app/MiuiHome" -name "*.apk" 2>/dev/null | wc -l)
+          echo "PORT: MiuiSystemUI ($SIU_APKS APK, >10MB) + MiuiHome ($MHOME_APKS APK, >5MB) = prawdziwe apki nabu"
           MIUI_JAR_N=$(sudo find "$MSYS/framework" -maxdepth 1 -name "miui*.jar" 2>/dev/null | wc -l)
           [ "$MIUI_JAR_N" -ge 1 ] || { echo "::error::PORT: brak miui*.jar w framework"; exit 1; }
           sudo test -d "$MSYS/etc/device_features" || { echo "::error::PORT: brak device_features"; exit 1; }
