@@ -1123,6 +1123,15 @@ jobs:
               'privapp-permissions: %d\nlibrary-xml: %d\n' % (perm_n, lib_n))
           print('permissions z nabu:', perm_n, '| library-xml:', lib_n)
           EOF
+          # --- stan dla 4d2/4d3 (split kroku 4d: GH limit 21k znakow na run) ---
+          printf '%s\n' "$MHOME" > "$WORK/mhome-path"
+          printf '%s\n' "$JAR_LIST" > "$WORK/jarlist.txt"
+          printf '%s\n' "$M2" > "$WORK/m2-path"; printf '%s\n' "$M3" > "$WORK/m3-path"
+
+      - name: "4d2. PORT: LAUNCHER HYPEROS 4 z yingtian (minSdk 33 + rescue + guard + nakladki)"
+        run: |
+          # (odtworzenie zmiennych z 4d; split kroku - GH limit 21k znakow na run)
+          SYS=$(cat "$WORK/sysroot-system"); MHOME=$(cat "$WORK/mhome-path")
           # ---------- 5b) LAUNCHER HYPEROS 4 (donor yingtian OS4.0.11.0) ----------
           # User (Rozkaz 17 it.2): "miało byc HyperOS 4 + launcher HyperOS".
           # MiuiSystemUI z A17 nie wystartuje na A13 (framework-locked) -> zostaje
@@ -1253,8 +1262,38 @@ jobs:
           # home-guard: wlacza nakladki h4 + AUTO-RESCUE launchera po 90 s
           printf '%s\n' $OV_PKGS | sed '/^$/d' | sudo tee "$SYS/etc/mystical/h4-overlays.txt" >/dev/null
           echo "com.miui.home/com.miui.home.launcher.Launcher" | sudo tee "$SYS/etc/mystical/home_rescue.txt" >/dev/null
-          # TEST B: heredocy GUARD/HGR wyciete (bisekcja walidacji GH)
-          sudo touch "$SYS/bin/mystical-home-guard.sh" "$SYS/etc/init/mystical_home_guard.rc"
+          sudo tee "$SYS/bin/mystical-home-guard.sh" >/dev/null <<'GUARD'
+          #!/system/bin/sh
+          # MysticalOS HomeGuard v1 (port HyperOS 4):
+          # 1) wlacza nakladki RRO z donora (wyglad HyperOS 4)
+          # 2) po 90 s: jesli com.miui.home (launcher HyperOS 4) nie zyje ->
+          #    RESCUE: wgrywa MiuiHome z nabu (A13-native) i ustawia jako HOME.
+          LOG="log -t MysticalOS-HomeGuard"
+          if [ -f /system/etc/mystical/h4-overlays.txt ]; then
+            while read -r O; do
+              [ -n "$O" ] || continue
+              cmd overlay enable "$O" >/dev/null 2>&1 && $LOG "overlay ON: $O"
+            done < /system/etc/mystical/h4-overlays.txt
+          fi
+          sleep 90
+          if pidof com.miui.home >/dev/null 2>&1; then
+            $LOG "com.miui.home zyje - launcher HyperOS 4 OK"
+            exit 0
+          fi
+          CR=$(logcat -d -b crash 2>/dev/null | grep -c com.miui.home || true)
+          $LOG "com.miui.home NIE zyje po 90 s (crashy=${CR:-0}) -> rescue MiuiHome nabu"
+          pm install -r -d /system/app_backup/miuihome-rescue/MiuiHome.apk >/dev/null 2>&1
+          RA=$(cat /system/etc/mystical/home_rescue.txt 2>/dev/null)
+          [ -n "$RA" ] || RA="com.miui.home/com.miui.home.launcher.Launcher"
+          cmd package set-home-activity "$RA" >/dev/null 2>&1
+          $LOG "rescue wykonany: $RA"
+          GUARD
+          sudo chmod 0755 "$SYS/bin/mystical-home-guard.sh"
+          sudo tee "$SYS/etc/init/mystical_home_guard.rc" >/dev/null <<'HGR'
+          # MysticalOS HomeGuard: nakladki HyperOS 4 + auto-rescue launchera (port h4)
+          on property:sys.boot_completed=1
+              exec_background u:r:init:s0 -- /system/bin/sh /system/bin/mystical-home-guard.sh
+          HGR
           # konteksty SELinux dla nowych plikow portu h4
           sudo python3 - "$SYS" <<'EOF'
           import os, sys
@@ -1362,6 +1401,19 @@ jobs:
           EOF
           echo "5b: launcher HyperOS 4 zainstalowany (rescue + guard + nakladki + room-maker)"
 
+          # --- stan dla kroku 4d3 ---
+          printf '%s\n' "$H4VN" > "$WORK/h4vn.txt"
+          printf '%s\n' "$H4ACT" > "$WORK/h4act.txt"
+          printf '%s\n' "$OV_N" > "$WORK/h4ovn.txt"
+          printf '%s\n' "$MIUI_JARS" > "$WORK/miuijars.txt"
+
+      - name: "4d3. PORT: bench wirtualny (badging + HOME + BOOTCLASSPATH) + umounty"
+        run: |
+          # (odtworzenie zmiennych z 4d/4d2; split kroku - GH limit 21k znakow na run)
+          SYS=$(cat "$WORK/sysroot-system"); MHOME=$(cat "$WORK/mhome-path")
+          JAR_LIST=$(cat "$WORK/jarlist.txt"); M2=$(cat "$WORK/m2-path"); M3=$(cat "$WORK/m3-path")
+          H4VN=$(cat "$WORK/h4vn.txt"); H4ACT=$(cat "$WORK/h4act.txt"); OV_N=$(cat "$WORK/h4ovn.txt")
+          MIUI_JARS=$(cat "$WORK/miuijars.txt")
           # ---------- 6) WIRTUALNY BENCH: badging aapt2 (minSdk! tozsamosc pakietow) ----------
           # UWAGA: MiuiHome w priv-app to juz launcher HYPEROS 4 z donora (5b);
           # bench sprawdza minSdk<=33 PO patchu (axmlminsdk) + HOME-activity.
