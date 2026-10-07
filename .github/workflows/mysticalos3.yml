@@ -1156,7 +1156,7 @@ jobs:
           ZIPALIGN="$(dirname "$AAPT2")/zipalign"
           H4RAW="$DCH/MiuiHome-h4.apk"
           echo "== MiuiHome HyperOS 4 (donor yingtian): $(stat -c%s "$H4RAW") B =="
-          python3 "$KDIR/tools/axmlminsdk.py" "$H4RAW" 33 "$WORK/miuihome-h4-minsdk.apk"
+          python3 "$KDIR/tools/axmlminsdk.py" "$H4RAW" 33 "$WORK/miuihome-h4-minsdk.apk" --if-needed
           "$ZIPALIGN" -f 4 "$WORK/miuihome-h4-minsdk.apk" "$WORK/miuihome-h4-signed.apk"
           "$APKSIGNER" sign --ks "$WORK/ui/ks.jks" --ks-key-alias mystical \
             --ks-pass pass:mysticalos --key-pass pass:mysticalos \
@@ -1171,8 +1171,8 @@ jobs:
           echo "MiuiHome HyperOS 4: pkg=$H4P minSdk=$H4SDK versionName=$H4VN"
           [ "$H4P" = "com.miui.home" ] \
             || { echo "::error::5b: h4 pkg=$H4P != com.miui.home"; cat "$WORK/badging-MiuiHomeH4.txt"; exit 1; }
-          [ "${H4SDK:-99}" = "33" ] \
-            || { echo "::error::5b: minSdk=$H4SDK != 33 (patch nie zaszedl?)"; exit 1; }
+          [ "${H4SDK:-99}" -le 33 ] 2>/dev/null \
+            || { echo "::error::5b: minSdk=$H4SDK > 33 (patch nie zaszedl?)"; exit 1; }
           "$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-MiuiHomeH4.apk" \
             > "$WORK/xmltree-MiuiHomeH4.txt" 2>/dev/null || true
           H4ACT=$(python3 "$KDIR/tools/homeactivity.py" "$WORK/xmltree-MiuiHomeH4.txt" "$H4P" || true)
@@ -1875,8 +1875,9 @@ jobs:
           "$AAPT2" dump badging "$WORK/chk-mh-img.apk" > "$WORK/badging-mh-img.txt" 2>/dev/null || true
           grep -q "^package: name='com.miui.home'" "$WORK/badging-mh-img.txt" \
             || { echo "::error::PORT h4: MiuiHome w obrazie to nie com.miui.home"; cat "$WORK/badging-mh-img.txt"; exit 1; }
-          grep -q "^sdkVersion:'33'" "$WORK/badging-mh-img.txt" \
-            || { echo "::error::PORT h4: MiuiHome w obrazie bez minSdk=33 (patch?)"; cat "$WORK/badging-mh-img.txt"; exit 1; }
+          MHS=$(sed -n "s/^sdkVersion:'\([0-9]*\)'.*/\1/p" "$WORK/badging-mh-img.txt" | head -1)
+          [ "${MHS:-99}" -le 33 ] 2>/dev/null \
+            || { echo "::error::PORT h4: MiuiHome w obrazie minSdk=$MHS > 33 (patch?)"; cat "$WORK/badging-mh-img.txt"; exit 1; }
           MHVN=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" "$WORK/badging-mh-img.txt" | head -1)
           echo "MiuiHome w obrazie: versionName=$MHVN (HyperOS 4 donor, minSdk=33)"
           sudo test -s "$MSYS/app_backup/miuihome-rescue/MiuiHome.apk" \

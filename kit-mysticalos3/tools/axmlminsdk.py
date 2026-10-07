@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """axmlminsdk.py — patch minSdkVersion w SKOMPILOWANYM AndroidManifest.xml (binary AXML).
 
-Uzycie: axmlminsdk.py <AndroidManifest.xml | APK> <nowe_minSdk> [out]
+Uzycie: axmlminsdk.py <AndroidManifest.xml | APK> <nowe_minSdk> [out] [--if-needed]
 
-- Dla APK: przepisuje zip (AndroidManifest.xml spatchowany,/usuniete stare podpisy
+- Dla APK: przepisuje zip (AndroidManifest.xml spatchowany, usuniete stare podpisy
   META-INF/*.SF|*.RSA|*.EC|MANIFEST.MF) do pliku wyjsciowego (domyslnie <in>.patched).
   UWAGA: po patchu APK wymaga ponownego podpisu (zipalign + apksigner)!
 - Dla samego pliku AXML: patchuje w miejscu (albo do out, jesli podany).
+- --if-needed: gdy <uses-sdk> nie istnieje albo nie ma atrybutu minSdkVersion,
+  albo minSdk <= nowe — NIE rusza manifestu (no-op; minSdk nieobecny = 1 wg
+  platformy, czyli APK i tak zainstaluje sie na nizszym API). Wypisuje wtedy
+  skrot drzewa elementow (diagnoza).
 
 Dzialanie: szuka elementu <uses-sdk> i atrybutu android:minSdkVersion
 (resId 0x0101020c), przepisuje 4-bajtowa wartosc (dataType INT_DEC).
@@ -19,6 +23,7 @@ import zipfile
 
 RES_STRING_POOL = 0x0001
 RES_XML_START_ELEM = 0x0102
+RES_XML_END_ELEM = 0x0103
 RES_XML_RESMAP = 0x0180
 MINSDK_RESID = 0x0101020C
 TARGETSDK_RESID = 0x01010270
@@ -38,7 +43,9 @@ def read_string_pool(data, off):
         p = off + str_start + so
         if is_utf8:
             # u16 charCount (escape), u8 byteCount (escape), dane, 0x00
-            p += 2
+            (cn,) = struct.unpack_from('<H', data, p); p += 2
+            if cn & 0x8000:
+                (cn2,) = struct.unpack_from('<H', data, p); p += 2
             b = data[p]; p += 1
             if b & 0x80:
                 b = ((b & 0x7F) << 8) | data[p]; p += 1
@@ -52,8 +59,13 @@ def read_string_pool(data, off):
     return strings
 
 
-def patch_axml(buf, new_min):
-    """Patchuje binary AXML w buforze; zwraca (nowy_bufor, info)."""
+def patch_axml(buf, new_min, if_needed=False):
+    """Patchuje binary AXML w buforze; zwraca (nowy_bufor, info).
+
+    info = lista krotek akcji; przy if_needed moze byc pusta (no-op).
+    Rzuca AssertionError gdy wymaga patcha, a nie da sie go zrobic
+    (bez if_needed rowniez gdy uses-sdk/minSdk w ogole brak).
+    """
     data = bytearray(buf)
     # glowny naglowek pliku
     (ftype, _hs, fsize) = struct.unpack_from('<HHI', data, 0)
@@ -62,6 +74,10 @@ def patch_axml(buf, new_min):
     resmap = {}  # string index -> resId
     off = 8
     patched = []
+    elems = []          # (nazwa, [(attr, data)]) - diagnoza
+    found_uses_sdk = False
+    found_minsdk = False
+    cur = None
     while off < fsize:
         (ctype, chs, csize) = struct.unpack_from('<HHI', data, off)
         if csize <= 0:
@@ -76,35 +92,71 @@ def patch_axml(buf, new_min):
         elif ctype == RES_XML_START_ELEM:
             (_line, _com, _ns, name_idx, attr_start, attr_size, attr_count) = (
                 struct.unpack_from('<IIIIHHH', data, off + 8))
-            if strings and name_idx < len(strings) and strings[name_idx] == 'uses-sdk':
+            nm = strings[name_idx] if (strings and name_idx < len(strings)) else '?'
+            cur = [nm, []]
+            elems.append(cur)
+            if nm == 'uses-sdk':
+                found_uses_sdk = True
+                # atrybuty: attributeStart liczone od poczatku struktury attrExt
+                # (off+16), standardowo 0x14=20 -> atrybuty @ off+36; fallback:
+                # gdyby attributeStart byl juz absolutny wzgledem chunku.
+                base = off + 16 + attr_start
+                if base + attr_size * attr_count > off + csize:
+                    base = off + attr_start
                 for i in range(attr_count):
-                    a = off + attr_start + i * attr_size
+                    a = base + i * attr_size
                     (a_ns, a_name, a_raw, v_size, v_res0, v_type, v_data) = (
                         struct.unpack_from('<IIIHBBI', data, a))
                     rid = resmap.get(a_name)
-                    nm = strings[a_name] if a_name < len(strings) else '?'
-                    if rid == MINSDK_RESID or nm == 'minSdkVersion':
-                        assert v_type == 0x10, \
-                            'minSdkVersion nie jest INT_DEC (type=%02x) - reczna interwencja' % v_type
-                        struct.pack_into('<I', data, a + 16, new_min)
-                        patched.append(('minSdkVersion', v_data, new_min))
+                    an = strings[a_name] if a_name < len(strings) else '?'
+                    cur[1].append((an, v_type, v_data))
+                    if rid == MINSDK_RESID or an == 'minSdkVersion':
+                        found_minsdk = True
+                        if v_data > new_min:
+                            assert v_type == 0x10, \
+                                'minSdkVersion nie jest INT_DEC (type=%02x) - reczna interwencja' % v_type
+                            struct.pack_into('<I', data, a + 16, new_min)
+                            patched.append(('minSdkVersion', v_data, new_min))
+                        else:
+                            patched.append(('minSdkVersion', 'juz<=nowego (%d)' % v_data, 'no-op'))
                     # targetSdk zostawiamy
+        elif ctype == RES_XML_END_ELEM:
+            cur = None
         off += csize
-    assert patched, 'nie znaleziono atrybutu minSdkVersion w <uses-sdk>!'
+    if not patched:
+        if if_needed and not found_minsdk:
+            # uses-sdk nieobecny albo bez minSdkVersion -> wg platformy minSdk=1
+            why = ('uses-sdk NIEOBECNY' if not found_uses_sdk
+                   else 'uses-sdk bez atrybutu minSdkVersion')
+            sys.stderr.write('[axmlminsdk] no-op: %s -> minSdk platf. = 1 '
+                             '(APK ok na nizszym API)\n' % why)
+            sys.stderr.write('[axmlminsdk] elementy manifestu: %s\n'
+                             % ', '.join(e[0] for e in elems))
+            for e in elems:
+                if e[1]:
+                    sys.stderr.write('[axmlminsdk]   <%s> attr: %s\n'
+                                     % (e[0], '; '.join('%s(t%02x)=%s' % a for a in e[1])))
+            return bytes(buf), []
+        raise AssertionError(
+            'nie znaleziono atrybutu minSdkVersion w <uses-sdk>! '
+            '(uses-sdk=%s; elementy: %s)'
+            % (found_uses_sdk, ', '.join(e[0] for e in elems) or 'pusto'))
     return bytes(data), patched
 
 
 def main():
-    if len(sys.argv) < 3:
+    argv = [a for a in sys.argv[1:] if a != '--if-needed']
+    if_needed = '--if-needed' in sys.argv[1:]
+    if len(argv) < 2:
         print(__doc__)
         return 2
-    path, new_min = sys.argv[1], int(sys.argv[2])
-    out = sys.argv[3] if len(sys.argv) > 3 else None
+    path, new_min = argv[0], int(argv[1])
+    out = argv[2] if len(argv) > 2 else None
     raw = open(path, 'rb').read()
     if raw[:2] == b'PK':  # APK
         src = zipfile.ZipFile(io.BytesIO(raw))
         man = src.read('AndroidManifest.xml')
-        newman, info = patch_axml(man, new_min)
+        newman, info = patch_axml(man, new_min, if_needed)
         dst = out or (path[:-4] + '-minsdk' + str(new_min) + '.apk')
         with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as z:
             for it in src.infolist():
@@ -116,12 +168,12 @@ def main():
                     continue  # stare podpisy OUT
                 else:
                     z.writestr(it, src.read(it.filename))
-        print('OK: %s -> %s %s (wymaga zipalign+apksigner!)' % (path, dst, info))
+        print('OK: %s -> %s %s (wymaga zipalign+apksigner!)' % (path, dst, info or '(no-op)'))
         return 0
-    newdata, info = patch_axml(raw, new_min)
+    newdata, info = patch_axml(raw, new_min, if_needed)
     dst = out or path
     open(dst, 'wb').write(newdata)
-    print('OK: %s %s' % (dst, info))
+    print('OK: %s %s' % (dst, info or '(no-op)'))
     return 0
 
 
