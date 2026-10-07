@@ -876,7 +876,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /tmp/m2/donor-cache
-          key: yingtian-OS4.0.11.0-h4-port-v1
+          key: yingtian-OS4.0.11.0-h4-port-v2
 
       - name: "4c2. PORT: pobierz donor yingtian HyperOS 4 + wyluskaj launcher (10.3 GB)"
         if: steps.donorcache.outputs.cache-hit != 'true'
@@ -941,13 +941,42 @@ jobs:
           sudo cp -a "$DM/overlay/." "$DCH/overlay/" 2>/dev/null || echo "donor: brak product/overlay (ok)"
           sudo mkdir -p "$DCH/perms"
           sudo cp -a "$DM/etc/permissions/." "$DCH/perms/" 2>/dev/null || true
+          # ---- jary <library> z product/framework (nazwy plikow z XML-i perms) ----
+          sudo mkdir -p "$DCH/framework-h4"
+          LIBJAR=$(python3 - "$DCH" <<'PYEOF'
+          import glob, os, re, sys
+          DCH = sys.argv[1]
+          names = set()
+          for f in glob.glob(os.path.join(DCH, 'perms', '*.xml')):
+              txt = open(f, encoding='utf-8', errors='ignore').read()
+              for m in re.finditer(r'<library\s+name="([^"]+)"\s+file="([^"]+)"', txt):
+                  names.add(os.path.basename(m.group(2)))
+          print(' '.join(sorted(names)))
+          PYEOF
+          )
+          for LJ in $LIBJAR; do
+            sudo find "$DM/framework" -maxdepth 1 -name "$LJ" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
+          done
           sudo umount "$DM"
           # ---- system_ext: framework miui h4 + library XML ----
-          sudo mkdir -p "$DCH/framework-h4"
           DM2="$WORK/donor/mnt-e"; sudo mkdir -p "$DM2"
           if sudo mount -o ro,loop "$DE" "$DM2" 2>/dev/null; then
-            sudo find "$DM2/framework" -maxdepth 1 -name "miui*.jar" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
             sudo cp -a "$DM2/etc/permissions/." "$DCH/perms/" 2>/dev/null || true
+            LIBJAR2=$(python3 - "$DCH" <<'PYEOF'
+          import glob, os, re, sys
+          DCH = sys.argv[1]
+          names = set()
+          for f in glob.glob(os.path.join(DCH, 'perms', '*.xml')):
+              txt = open(f, encoding='utf-8', errors='ignore').read()
+              for m in re.finditer(r'<library\s+name="([^"]+)"\s+file="([^"]+)"', txt):
+                  names.add(os.path.basename(m.group(2)))
+          print(' '.join(sorted(names)))
+          PYEOF
+            )
+            for LJ in $LIBJAR2; do
+              sudo find "$DM2/framework" -maxdepth 1 -name "$LJ" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
+            done
+            sudo find "$DM2/framework" -maxdepth 1 -name "miui*.jar" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
             sudo umount "$DM2"
           else
             echo "UWAGA: montaz system_ext donora padl - vendoring h4 jarow pominietty"
@@ -964,7 +993,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /tmp/m2/donor-cache
-          key: yingtian-OS4.0.11.0-h4-port-v1
+          key: yingtian-OS4.0.11.0-h4-port-v2
 
       - name: "4d. PORT HyperOS z nabu (MiuiSystemUI + MiuiHome + framework + classpaths.pb)"
         run: |
@@ -1213,7 +1242,7 @@ jobs:
           EOF
           # jary miui h4 jako <library> (vendoring; tylko nazwy NIEREGESTROWANE przez nabu)
           sudo python3 - "$DCH" "$SYS" <<'EOF'
-          import glob, os, re, shutil, sys
+          import glob, os, re, shutil, sys, zipfile
           DCH, S = sys.argv[1], sys.argv[2]
           registered = set()
           for d in ('etc/permissions', 'etc/sysconfig'):
@@ -1232,21 +1261,30 @@ jobs:
               for m in re.finditer(r'<library\s+name="([^"]+)"\s+file="([^"]+)"', txt):
                   donor[m.group(1)] = os.path.basename(m.group(2))
           entries = []
+          stubbed = []
           for name, base in sorted(donor.items()):
               if name in registered:
                   continue
               src = os.path.join(DCH, 'framework-h4', base)
-              if not os.path.isfile(src):
-                  continue
-              shutil.copy2(src, os.path.join(S, 'framework', 'h4-' + base))
-              os.chmod(os.path.join(S, 'framework', 'h4-' + base), 0o644)
+              dst = os.path.join(S, 'framework', 'h4-' + base)
+              if os.path.isfile(src):
+                  shutil.copy2(src, dst)
+              else:
+                  # brak jara w donor bits -> STUB (pusty jar): uses-library
+                  # wymagane przez apki h4 nie zablokuje instalacji; jesli
+                  # klasy beda potrzebne w runtime, home-guard wstawi rescue
+                  with zipfile.ZipFile(dst, 'w') as z:
+                      z.writestr('META-INF/MANIFEST.MF',
+                                 'Manifest-Version: 1.0\nCreated-By: mysticalos\n')
+                  stubbed.append(name)
+              os.chmod(dst, 0o644)
               entries.append((name, '/system/framework/h4-' + base))
           if entries:
               xml = '<?xml version="1.0" encoding="utf-8"?>\n<permissions>\n' \
                     + '\n'.join('<library name="%s" file="%s"/>' % (n, p)
                                 for n, p in entries) + '\n</permissions>\n'
               open(os.path.join(S, 'etc/permissions/h4-libraries.xml'), 'w').write(xml)
-          print('vendored h4 libs: %d (nowe klasy HyperOS 4; uses-library check)' % len(entries))
+          print('vendored h4 libs: %d (stuby: %s)' % (len(entries), ', '.join(stubbed) or '-'))
           EOF
           # nakladki RRO donora -> tylko celujace w nasze pakiety (wyglad HyperOS 4)
           OV_N=0; OV_PKGS=""
