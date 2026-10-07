@@ -871,6 +871,101 @@ jobs:
           path: /tmp/m2/nabu.zip
           key: nabu-OS1.0.6.0.TKXMIXM-4af37553d5
 
+      - name: "4c2. PORT: donor yingtian HyperOS 4 - bits z cache (restore)"
+        id: donorcache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/m2/donor-cache
+          key: yingtian-OS4.0.11.0-h4-port-v1
+
+      - name: "4c2. PORT: pobierz donor yingtian HyperOS 4 + wyluskaj launcher (10.3 GB)"
+        if: steps.donorcache.outputs.cache-hit != 'true'
+        timeout-minutes: 290
+        run: |
+          set -euo pipefail
+          # ---------- DONOR = Xiaomi Pad 9 Pro Max "yingtian" HyperOS 4.0.11.0 ----------
+          # User (Rozkaz 17, iteracja 2): launcher i apki z PRAWDZIWEGO HyperOS 4.
+          # Recovery ROM 10 313 202 368 B (sha256 7b8c7f00..., md5 a12ac31de7 -
+          # xmfirmwareupdater, oficjalny CDN Xiaomi). Wyciagamy product (MiuiHome,
+          # overlay, permissions) i system_ext (framework miui h4 + library XML).
+          # Cache = SAME BITSY (apk + nakladki + permy + jary ~200 MB), nie obrazy
+          # 7 GB (limit cache repo to 10 GB, nabu juz zajmuje 3.7 GB).
+          DCH="$WORK/donor-cache"; mkdir -p "$DCH"
+          echo "== DNS: publiczne resolvery (jak krok 4c) =="
+          sudo cp /etc/resolv.conf "$WORK/resolv.conf.orig" 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\nnameserver 168.63.129.16\noptions timeout:2 attempts:3\n' \
+            | sudo tee /etc/resolv.conf >/dev/null
+          trap 'if [ -s "$WORK/resolv.conf.orig" ]; then sudo cp "$WORK/resolv.conf.orig" /etc/resolv.conf 2>/dev/null || true; fi' EXIT
+          YFILE="yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip"
+          YPATH="OS4.0.11.0.XBMCNXM/$YFILE"
+          YSHA="7b8c7f002abfeebae302961b73030984e5a065ec9f9e73976c0cc818349c8cce"
+          YURLS=""
+          for H in bn.d.miui.com cdnorg.d.miui.com hugeota.d.miui.com bigota.d.miui.com hugebackup.d.miui.com; do
+            YURLS="$YURLS https://$H/$YPATH"
+            LC=$(curl -sI --connect-timeout 10 --max-time 25 "https://$H/$YPATH" 2>/dev/null \
+                 | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}' | head -1 || true)
+            echo "mirror $H: content-length=${LC:-BRAK}"
+          done
+          if ! command -v aria2c >/dev/null 2>&1; then
+            sudo apt-get update -q >/dev/null 2>&1 || true
+            sudo apt-get install -y -q aria2 >/dev/null 2>&1 || true
+          fi
+          mkdir -p "$WORK/donor"; cd "$WORK/donor"
+          aria2c -x16 -s16 -k4M --lowest-speed-limit=5K --connect-timeout=15 \
+            --max-tries=8 --retry-wait=5 --summary-interval=60 \
+            -o "$YFILE" $YURLS || { echo "::error::donor: aria2c padl (mirrors wyzej)"; exit 1; }
+          SZ=$(stat -c%s "$YFILE"); echo "donor zip: $SZ B"
+          [ "$SZ" -eq 10313202368 ] || { echo "::error::donor: zly rozmiar ($SZ != 10313202368)"; exit 1; }
+          echo "$YSHA  $YFILE" | sha256sum -c - || { echo "::error::donor: sha256 NIE zgadza sie"; exit 1; }
+          # payload.bin + payload-dumper-go (pinned 2.1.0, jak 4d)
+          unzip -o -q "$YFILE" payload.bin -d "$WORK/donor"
+          curl -fsSL --retry 3 -o "$WORK/donor/pdg.tar.gz" \
+            "https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz"
+          tar -xzf "$WORK/donor/pdg.tar.gz" -C "$WORK/donor"
+          "$WORK/donor/payload-dumper-go" -p product,system_ext -o "$WORK/donor/out" "$WORK/donor/payload.bin" \
+            || { echo "::error::donor: pdg padl"; exit 1; }
+          DY=$(find "$WORK/donor/out" -name "product.img" | head -1)
+          DE=$(find "$WORK/donor/out" -name "system_ext.img" | head -1)
+          [ -n "$DY" ] || { echo "::error::donor: brak product.img"; exit 1; }
+          [ -n "$DE" ] || { echo "::error::donor: brak system_ext.img"; exit 1; }
+          sudo rm -f "$WORK/donor/payload.bin" "$WORK/donor/pdg.tar.gz"
+          # ---- product: MiuiHome + overlay + permissions ----
+          DM="$WORK/donor/mnt-p"; sudo mkdir -p "$DM"
+          sudo mount -o ro,loop "$DY" "$DM" || { echo "::error::donor: montaz product padl"; exit 1; }
+          MH=$(sudo find "$DM/priv-app" -maxdepth 1 -type d -iname "MiuiHome*" | head -1)
+          [ -n "$MH" ] || { echo "::error::donor: brak priv-app/MiuiHome w product"; sudo umount "$DM"; exit 1; }
+          sudo find "$MH" -name "*.apk" -exec cp {} "$DCH/MiuiHome-h4.apk" \;
+          test -s "$DCH/MiuiHome-h4.apk" || { echo "::error::donor: MiuiHome-h4.apk pusty"; sudo umount "$DM"; exit 1; }
+          sudo mkdir -p "$DCH/overlay"
+          sudo cp -a "$DM/overlay/." "$DCH/overlay/" 2>/dev/null || echo "donor: brak product/overlay (ok)"
+          sudo mkdir -p "$DCH/perms"
+          sudo cp -a "$DM/etc/permissions/." "$DCH/perms/" 2>/dev/null || true
+          sudo umount "$DM"
+          # ---- system_ext: framework miui h4 + library XML ----
+          sudo mkdir -p "$DCH/framework-h4"
+          DM2="$WORK/donor/mnt-e"; sudo mkdir -p "$DM2"
+          if sudo mount -o ro,loop "$DE" "$DM2" 2>/dev/null; then
+            sudo find "$DM2/framework" -maxdepth 1 -name "miui*.jar" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
+            sudo cp -a "$DM2/etc/permissions/." "$DCH/perms/" 2>/dev/null || true
+            sudo umount "$DM2"
+          else
+            echo "UWAGA: montaz system_ext donora padl - vendoring h4 jarow pominietty"
+          fi
+          sudo chown -R "$(id -u):$(id -g)" "$DCH" 2>/dev/null || true
+          sudo rm -rf "$WORK/donor"
+          echo "== donor bits =="; ls -la "$DCH" | head -12
+          echo "MiuiHome-h4.apk: $(stat -c%s "$DCH/MiuiHome-h4.apk") B"
+          echo "jary h4: $(ls "$DCH/framework-h4" 2>/dev/null | wc -l), nakladki: $(ls "$DCH/overlay" 2>/dev/null | wc -l)"
+          echo "DONOR BITS OK"
+
+      - name: "4c2. PORT: donor bits do cache (save)"
+        if: steps.donorcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/m2/donor-cache
+          key: yingtian-OS4.0.11.0-h4-port-v1
+
       - name: "4d. PORT HyperOS z nabu (MiuiSystemUI + MiuiHome + framework + classpaths.pb)"
         run: |
           set -euo pipefail
@@ -1028,7 +1123,278 @@ jobs:
               'privapp-permissions: %d\nlibrary-xml: %d\n' % (perm_n, lib_n))
           print('permissions z nabu:', perm_n, '| library-xml:', lib_n)
           EOF
+          # ---------- 5b) LAUNCHER HYPEROS 4 (donor yingtian OS4.0.11.0) ----------
+          # User (Rozkaz 17 it.2): "miało byc HyperOS 4 + launcher HyperOS".
+          # MiuiSystemUI z A17 nie wystartuje na A13 (framework-locked) -> zostaje
+          # z nabu; LAUNCHER = com.miui.home z HyperOS 4.0.11.0 (Pad 9 Pro Max):
+          # minSdk przepatchowane 37->33 (tools/axmlminsdk.py, binary AXML),
+          # podpisane kluczem MysticalOS. Jary miui h4 = vendorowane jako
+          # <library> (tylko NOWE nazwy - zero kolizji z nabu na BOOTCLASSPATH,
+          # SystemUI nietkany). Nabu MiuiHome = RESCUE w app_backup (katalog nie
+          # skanowany przez PackageManager) + auto-rescue w home-guardzie.
+          DCH="$WORK/donor-cache"
+          test -s "$DCH/MiuiHome-h4.apk" || { echo "::error::5b: brak donor-cache/MiuiHome-h4.apk (krok 4c2?)"; exit 1; }
+          AAPT2=$(cat "$WORK/aapt2-path"); APKSIGNER=$(cat "$WORK/apksigner-path")
+          ZIPALIGN="$(dirname "$AAPT2")/zipalign"
+          H4RAW="$DCH/MiuiHome-h4.apk"
+          echo "== MiuiHome HyperOS 4 (donor yingtian): $(stat -c%s "$H4RAW") B =="
+          python3 "$KDIR/tools/axmlminsdk.py" "$H4RAW" 33 "$WORK/miuihome-h4-minsdk.apk"
+          "$ZIPALIGN" -f 4 "$WORK/miuihome-h4-minsdk.apk" "$WORK/miuihome-h4-signed.apk"
+          "$APKSIGNER" sign --ks "$WORK/ui/ks.jks" --ks-key-alias mystical \
+            --ks-pass pass:mysticalos --key-pass pass:mysticalos \
+            --min-sdk-version 26 "$WORK/miuihome-h4-signed.apk" >/dev/null 2>&1
+          "$APKSIGNER" verify "$WORK/miuihome-h4-signed.apk" \
+            || { echo "::error::5b: podpis h4 nie przechodzi"; exit 1; }
+          cp "$WORK/miuihome-h4-signed.apk" "$WORK/chk-MiuiHomeH4.apk"
+          "$AAPT2" dump badging "$WORK/chk-MiuiHomeH4.apk" > "$WORK/badging-MiuiHomeH4.txt" 2>/dev/null || true
+          H4P=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$WORK/badging-MiuiHomeH4.txt" | head -1)
+          H4SDK=$(sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p" "$WORK/badging-MiuiHomeH4.txt" | head -1)
+          H4VN=$(sed -n "s/^package: name='[^']*' versionCode='[0-9]*' versionName='\([^']*\)'.*/\1/p" "$WORK/badging-MiuiHomeH4.txt" | head -1)
+          echo "MiuiHome HyperOS 4: pkg=$H4P minSdk=$H4SDK versionName=$H4VN"
+          [ "$H4P" = "com.miui.home" ] \
+            || { echo "::error::5b: h4 pkg=$H4P != com.miui.home"; cat "$WORK/badging-MiuiHomeH4.txt"; exit 1; }
+          [ "${H4SDK:-99}" = "33" ] \
+            || { echo "::error::5b: minSdk=$H4SDK != 33 (patch nie zaszedl?)"; exit 1; }
+          "$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-MiuiHomeH4.apk" \
+            > "$WORK/xmltree-MiuiHomeH4.txt" 2>/dev/null || true
+          H4ACT=$(python3 "$KDIR/tools/homeactivity.py" "$WORK/xmltree-MiuiHomeH4.txt" "$H4P" || true)
+          [ -n "$H4ACT" ] || H4ACT="com.miui.home.launcher.Launcher"
+          echo "HOME activity h4: $H4ACT"
+          # podmiana w sysrootu: h4 = JEDYNY com.miui.home w priv-app;
+          # nabu MiuiHome (dzialajacy native na A13) -> RESCUE w app_backup
+          sudo rm -rf "$SYS/priv-app/MiuiHome" "$SYS/app_backup/miuihome-rescue"
+          sudo mkdir -p "$SYS/priv-app/MiuiHome" "$SYS/app_backup/miuihome-rescue"
+          sudo install -m 0644 "$WORK/miuihome-h4-signed.apk" "$SYS/priv-app/MiuiHome/MiuiHome.apk"
+          NABU_MH_APK=$(sudo find "$MHOME" -name "*.apk" | head -1)
+          [ -n "$NABU_MH_APK" ] || { echo "::error::5b: nabu MiuiHome (rescue) znikl"; exit 1; }
+          sudo cp "$NABU_MH_APK" "$SYS/app_backup/miuihome-rescue/MiuiHome.apk"
+          sudo chmod 0644 "$SYS/app_backup/miuihome-rescue/MiuiHome.apk"
+          echo "rescue: nabu MiuiHome -> app_backup/miuihome-rescue ($(stat -c%s "$SYS/app_backup/miuihome-rescue/MiuiHome.apk" 2>/dev/null || sudo stat -c%s "$SYS/app_backup/miuihome-rescue/MiuiHome.apk") B)"
+          # privapp-permissions com.miui.home z donora (tylko bloki tego pakietu)
+          sudo python3 - "$DCH/perms" "$SYS" <<'EOF'
+          import glob, os, sys
+          import xml.etree.ElementTree as ET
+          src, S = sys.argv[1], sys.argv[2]
+          out = []
+          for f in sorted(glob.glob(os.path.join(src, '*.xml'))):
+              try:
+                  root = ET.parse(f).getroot()
+              except Exception:
+                  continue
+              for pem in root.findall('./privapp-permissions'):
+                  if pem.get('package') == 'com.miui.home':
+                      out.append(ET.tostring(pem, encoding='unicode').strip())
+          if out:
+              xml = '<?xml version="1.0" encoding="utf-8"?>\n<permissions>\n' \
+                    + '\n'.join(out) + '\n</permissions>\n'
+              open(os.path.join(S, 'etc/permissions/privapp-permissions-miuihome-h4.xml'),
+                   'w').write(xml)
+              print('privapp-permissions h4: %d blokow com.miui.home z donora' % len(out))
+          else:
+              print('UWAGA: donor bez privapp-permissions com.miui.home (zostaja pliki nabu)')
+          EOF
+          # jary miui h4 jako <library> (vendoring; tylko nazwy NIEREGESTROWANE przez nabu)
+          sudo python3 - "$DCH" "$SYS" <<'EOF'
+          import glob, os, re, shutil, sys
+          DCH, S = sys.argv[1], sys.argv[2]
+          registered = set()
+          for d in ('etc/permissions', 'etc/sysconfig'):
+              dd = os.path.join(S, d)
+              if not os.path.isdir(dd):
+                  continue
+              for f in os.listdir(dd):
+                  if not f.endswith('.xml'):
+                      continue
+                  txt = open(os.path.join(dd, f), encoding='utf-8', errors='ignore').read()
+                  registered.update(m.group(1) for m in
+                                    re.finditer(r'<library\s+name="([^"]+)"', txt))
+          donor = {}
+          for f in glob.glob(os.path.join(DCH, 'perms', '*.xml')):
+              txt = open(f, encoding='utf-8', errors='ignore').read()
+              for m in re.finditer(r'<library\s+name="([^"]+)"\s+file="([^"]+)"', txt):
+                  donor[m.group(1)] = os.path.basename(m.group(2))
+          entries = []
+          for name, base in sorted(donor.items()):
+              if name in registered:
+                  continue
+              src = os.path.join(DCH, 'framework-h4', base)
+              if not os.path.isfile(src):
+                  continue
+              shutil.copy2(src, os.path.join(S, 'framework', 'h4-' + base))
+              os.chmod(os.path.join(S, 'framework', 'h4-' + base), 0o644)
+              entries.append((name, '/system/framework/h4-' + base))
+          if entries:
+              xml = '<?xml version="1.0" encoding="utf-8"?>\n<permissions>\n' \
+                    + '\n'.join('<library name="%s" file="%s"/>' % (n, p)
+                                for n, p in entries) + '\n</permissions>\n'
+              open(os.path.join(S, 'etc/permissions/h4-libraries.xml'), 'w').write(xml)
+          print('vendored h4 libs: %d (nowe klasy HyperOS 4; uses-library check)' % len(entries))
+          EOF
+          # nakladki RRO donora -> tylko celujace w nasze pakiety (wyglad HyperOS 4)
+          OV_N=0; OV_PKGS=""
+          for OV in "$DCH"/overlay/*.apk; do
+            [ -e "$OV" ] || continue
+            OVN=$(basename "$OV")
+            sudo cp "$OV" "$WORK/chk-ov.apk"; sudo chown "$(id -u):$(id -g)" "$WORK/chk-ov.apk"
+            TP=$("$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-ov.apk" 2>/dev/null \
+                 | grep -o 'android:targetPackage[^=]*="[^"]*"' | head -1 | sed 's/.*="\([^"]*\)"$/\1/')
+            case "$TP" in
+              com.miui.home|com.android.systemui)
+                OV_N=$((OV_N+1))
+                OVP=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
+                      <("$AAPT2" dump badging "$WORK/chk-ov.apk" 2>/dev/null) | head -1)
+                sudo install -m 0644 "$OV" "$SYS/overlay/h4-$OVN"
+                OV_PKGS="$OV_PKGS $OVP"
+                echo "overlay h4: $OVN -> target=$TP (pkg=$OVP)" ;;
+              *) echo "overlay h4 pomijam (target=${TP:-?}): $OVN" ;;
+            esac
+          done
+          echo "nakladki HyperOS 4 z donora: $OV_N"
+          # home-guard: wlacza nakladki h4 + AUTO-RESCUE launchera po 90 s
+          printf '%s\n' $OV_PKGS | sed '/^$/d' | sudo tee "$SYS/etc/mystical/h4-overlays.txt" >/dev/null
+          echo "com.miui.home/com.miui.home.launcher.Launcher" | sudo tee "$SYS/etc/mystical/home_rescue.txt" >/dev/null
+          sudo tee "$SYS/bin/mystical-home-guard.sh" >/dev/null <<'GUARD'
+          #!/system/bin/sh
+          # MysticalOS HomeGuard v1 (port HyperOS 4):
+          # 1) wlacza nakladki RRO z donora (wyglad HyperOS 4)
+          # 2) po 90 s: jesli com.miui.home (launcher HyperOS 4) nie zyje ->
+          #    RESCUE: wgrywa MiuiHome z nabu (A13-native) i ustawia jako HOME.
+          LOG="log -t MysticalOS-HomeGuard"
+          if [ -f /system/etc/mystical/h4-overlays.txt ]; then
+            while read -r O; do
+              [ -n "$O" ] || continue
+              cmd overlay enable "$O" >/dev/null 2>&1 && $LOG "overlay ON: $O"
+            done < /system/etc/mystical/h4-overlays.txt
+          fi
+          sleep 90
+          if pidof com.miui.home >/dev/null 2>&1; then
+            $LOG "com.miui.home zyje - launcher HyperOS 4 OK"
+            exit 0
+          fi
+          CR=$(logcat -d -b crash 2>/dev/null | grep -c com.miui.home || true)
+          $LOG "com.miui.home NIE zyje po 90 s (crashy=${CR:-0}) -> rescue MiuiHome nabu"
+          pm install -r -d /system/app_backup/miuihome-rescue/MiuiHome.apk >/dev/null 2>&1
+          RA=$(cat /system/etc/mystical/home_rescue.txt 2>/dev/null)
+          [ -n "$RA" ] || RA="com.miui.home/com.miui.home.launcher.Launcher"
+          cmd package set-home-activity "$RA" >/dev/null 2>&1
+          $LOG "rescue wykonany: $RA"
+          GUARD
+          sudo chmod 0755 "$SYS/bin/mystical-home-guard.sh"
+          sudo tee "$SYS/etc/init/mystical_home_guard.rc" >/dev/null <<'HGR'
+          # MysticalOS HomeGuard: nakladki HyperOS 4 + auto-rescue launchera (port h4)
+          on property:sys.boot_completed=1
+              exec_background u:r:init:s0 -- /system/bin/sh /system/bin/mystical-home-guard.sh
+          HGR
+          # konteksty SELinux dla nowych plikow portu h4
+          sudo python3 - "$SYS" <<'EOF'
+          import os, sys
+          S = sys.argv[1]
+          def ctx(p):
+              return os.getxattr(p, 'security.selinux')
+          ref_apk = ctx(os.path.join(S, 'priv-app/MiuiSystemUI/MiuiSystemUI.apk')) \
+              if os.path.exists(os.path.join(S, 'priv-app/MiuiSystemUI/MiuiSystemUI.apk')) \
+              else None
+          ref_sys = ctx(os.path.join(S, 'bin/coreutils'))
+          ref_etc = ctx(os.path.join(S, 'etc/fonts.xml'))
+          ov_ref = None
+          ovdir = os.path.join(S, 'overlay')
+          if os.path.isdir(ovdir):
+              for f in sorted(os.listdir(ovdir)):
+                  if f.endswith('.apk') and not f.startswith('h4-'):
+                      ov_ref = ctx(os.path.join(ovdir, f))
+                      break
+          def setx(p, c, mode=None):
+              os.setxattr(p, 'security.selinux', c)
+              if mode is not None:
+                  os.chmod(p, mode)
+          if ref_apk:
+              setx(os.path.join(S, 'priv-app/MiuiHome/MiuiHome.apk'), ref_apk, 0o644)
+              setx(os.path.join(S, 'app_backup/miuihome-rescue/MiuiHome.apk'), ref_apk, 0o644)
+          setx(os.path.join(S, 'bin/mystical-home-guard.sh'), ref_sys, 0o755)
+          setx(os.path.join(S, 'etc/init/mystical_home_guard.rc'), ref_etc, 0o644)
+          for rel in ('etc/permissions/privapp-permissions-miuihome-h4.xml',
+                      'etc/permissions/h4-libraries.xml',
+                      'etc/mystical/h4-overlays.txt',
+                      'etc/mystical/home_rescue.txt'):
+              p = os.path.join(S, rel)
+              if os.path.exists(p):
+                  setx(p, ref_etc, 0o644)
+          if os.path.isdir(ovdir):
+              for f in os.listdir(ovdir):
+                  if f.startswith('h4-') and f.endswith('.apk'):
+                      setx(os.path.join(ovdir, f), ov_ref or ref_apk, 0o644)
+          print('konteksty SELinux portu h4 OK (launcher/rescue/guard/overlays/libs)')
+          EOF
+          # room-maker: obraz byl w 94% -> h4 dodaje ~150-200 MB. app_backup =
+          # staging OTA Lenovo (NIE skanowany przez PackageManager) -> stuby;
+          # potem ewentualnie oat/ MiuiSystemUI (dexopt zrobi sie z apk).
+          # UWAGA: liczymy CALE tree-system (rootfs; build_ext4 pakuje calosc),
+          # a app_backup szukamy w obu layoutach (flat / nested system/).
+          PSYS=$(cat "$WORK/ps-system")
+          sudo python3 - "$WORK/tree-system" "$PSYS" <<'EOF'
+          import os, shutil, sys
+          ROOT, PS = sys.argv[1], int(sys.argv[2])
+          STUB = b'PK\x05\x06' + b'\x00' * 18
+          def tree_size():
+              t = 0
+              for root, _, files in os.walk(ROOT):
+                  for f in files:
+                      try:
+                          t += os.lstat(os.path.join(root, f)).st_size
+                      except OSError:
+                          pass
+              return t
+          # app_backup: flat (ROOT/app_backup) albo nested (ROOT/system/app_backup)
+          ab = None
+          for cand in (os.path.join(ROOT, 'app_backup'),
+                       os.path.join(ROOT, 'system', 'app_backup')):
+              if os.path.isdir(cand):
+                  ab = cand
+                  break
+          oat = None
+          for cand in (os.path.join(ROOT, 'priv-app', 'MiuiSystemUI', 'oat'),
+                       os.path.join(ROOT, 'system', 'priv-app', 'MiuiSystemUI', 'oat')):
+              if os.path.isdir(cand):
+                  oat = cand
+                  break
+          budget = PS - 64 * 1024 * 1024
+          sz = tree_size()
+          print('room-maker: drzewo %.1f MB / budzet %.1f MB'
+                % (sz / 1e6, budget / 1e6))
+          if sz >= budget and ab:
+              saved = 0
+              for root, _, files in os.walk(ab):
+                  for f in files:
+                      p = os.path.join(root, f)
+                      if not f.endswith('.apk') or 'miuihome-rescue' in root:
+                          continue
+                      if os.path.getsize(p) > 4096:
+                          try:
+                              x = os.getxattr(p, 'security.selinux')
+                          except OSError:
+                              x = None
+                          saved += os.path.getsize(p) - len(STUB)
+                          with open(p, 'wb') as fh:
+                              fh.write(STUB)
+                          os.chmod(p, 0o644)
+                          if x:
+                              os.setxattr(p, 'security.selinux', x)
+              print('room-maker: stub app_backup (%s) -> odzyskano %.1f MB'
+                    % (ab, saved / 1e6))
+              sz = tree_size()
+          if sz >= budget and oat:
+              shutil.rmtree(oat)
+              print('room-maker: usunieto %s (dexopt z apk)' % oat)
+              sz = tree_size()
+          print('room-maker: FINALNE drzewo %.1f MB (budzet %.1f MB, %s)'
+                % (sz / 1e6, budget / 1e6,
+                   'OK' if sz < budget else 'UWAGA: nadal nad budzetem - patrz build_ext4'))
+          EOF
+          echo "5b: launcher HyperOS 4 zainstalowany (rescue + guard + nakladki + room-maker)"
+
           # ---------- 6) WIRTUALNY BENCH: badging aapt2 (minSdk! tozsamosc pakietow) ----------
+          # UWAGA: MiuiHome w priv-app to juz launcher HYPEROS 4 z donora (5b);
+          # bench sprawdza minSdk<=33 PO patchu (axmlminsdk) + HOME-activity.
           AAPT2=$(cat "$WORK/aapt2-path")
           for DIRNAME in MiuiSystemUI MiuiHome; do
             APK=$(sudo find "$SYS/priv-app/$DIRNAME" -type f -name "*.apk" | head -1)
@@ -1215,6 +1581,9 @@ jobs:
             echo "== PORT HyperOS (nabu OS1.0.6.0.TKXMIXM Global, A13/sdk33) =="
             echo "MiuiSystemUI: $(stat -c%s "$WORK/chk-MiuiSystemUI.apk") B ($(grep -m1 "^package:" "$WORK/badging-MiuiSystemUI.txt"))"
             echo "MiuiHome: $(stat -c%s "$WORK/chk-MiuiHome.apk") B ($(grep -m1 "^package:" "$WORK/badging-MiuiHome.txt"))"
+            echo "MiuiHome HyperOS 4 (donor yingtian OS4.0.11.0, Pad 9 Pro Max): versionName=$H4VN, minSdk 37->33 (axmlminsdk), HOME=$H4ACT"
+            echo "rescue: app_backup/miuihome-rescue/MiuiHome.apk (nabu, A13-native) + mystical-home-guard.sh (auto-rescue 90 s po boocie)"
+            echo "nakladki RRO h4: $OV_N (target com.miui.home / com.android.systemui)"
             echo "domyslny HOME: $(sudo cat "$SYS/etc/mystical/home_activity.txt")"
             echo "jary na BOOTCLASSPATH (etc/classpaths/bootclasspath.pb):$JAR_LIST"
             echo "device_features: OK; app/miui: $(sudo test -d "$SYS/app/miui" && echo OK || echo brak)"
@@ -1463,6 +1832,47 @@ jobs:
           sudo test -d "$MSYS/etc/device_features" || { echo "::error::PORT: brak device_features"; exit 1; }
           sudo grep -q "com.miui.home/" "$MSYS/etc/mystical/home_activity.txt" \
             || { echo "::error::PORT: home_activity.txt bez MiuiHome"; exit 1; }
+          # ==== PORT HyperOS 4: launcher z donora (yingtian) + rescue + guard ====
+          AAPT2=$(cat "$WORK/aapt2-path")
+          sudo cp "$MSYS/priv-app/MiuiHome/MiuiHome.apk" "$WORK/chk-mh-img.apk"
+          sudo chown "$(id -u):$(id -g)" "$WORK/chk-mh-img.apk"
+          "$AAPT2" dump badging "$WORK/chk-mh-img.apk" > "$WORK/badging-mh-img.txt" 2>/dev/null || true
+          grep -q "^package: name='com.miui.home'" "$WORK/badging-mh-img.txt" \
+            || { echo "::error::PORT h4: MiuiHome w obrazie to nie com.miui.home"; cat "$WORK/badging-mh-img.txt"; exit 1; }
+          grep -q "^sdkVersion:'33'" "$WORK/badging-mh-img.txt" \
+            || { echo "::error::PORT h4: MiuiHome w obrazie bez minSdk=33 (patch?)"; cat "$WORK/badging-mh-img.txt"; exit 1; }
+          MHVN=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" "$WORK/badging-mh-img.txt" | head -1)
+          echo "MiuiHome w obrazie: versionName=$MHVN (HyperOS 4 donor, minSdk=33)"
+          sudo test -s "$MSYS/app_backup/miuihome-rescue/MiuiHome.apk" \
+            || { echo "::error::PORT h4: brak rescue MiuiHome (nabu) w app_backup"; exit 1; }
+          sudo test -s "$MSYS/bin/mystical-home-guard.sh" \
+            || { echo "::error::PORT h4: brak mystical-home-guard.sh"; exit 1; }
+          sudo test -s "$MSYS/etc/init/mystical_home_guard.rc" \
+            || { echo "::error::PORT h4: brak mystical_home_guard.rc"; exit 1; }
+          sudo grep -q "pm install -r -d" "$MSYS/bin/mystical-home-guard.sh" \
+            || { echo "::error::PORT h4: guard bez pm install (rescue!)"; exit 1; }
+          sudo grep -q "cmd overlay enable" "$MSYS/bin/mystical-home-guard.sh" \
+            || { echo "::error::PORT h4: guard bez wlaczania nakladek h4"; exit 1; }
+          H4OV=$(sudo find "$MSYS/overlay" -name "h4-*.apk" 2>/dev/null | wc -l)
+          echo "nakladki h4 w obrazie: $H4OV"
+          sudo python3 - "$MSYS" <<'EOF'
+          import os, sys
+          M = sys.argv[1]
+          g = os.path.join(M, 'bin/mystical-home-guard.sh')
+          c = os.getxattr(g, 'security.selinux').rstrip(b'\x00')
+          assert c.startswith(b'u:object_r:'), 'guard: kontekst ' + str(c)
+          rc = os.path.join(M, 'etc/init/mystical_home_guard.rc')
+          c2 = os.getxattr(rc, 'security.selinux').rstrip(b'\x00')
+          assert c2.startswith(b'u:object_r:'), 'guard rc: kontekst ' + str(c2)
+          p = os.path.join(M, 'etc/permissions/privapp-permissions-miuihome-h4.xml')
+          if os.path.exists(p):
+              txt = open(p, encoding='utf-8', errors='ignore').read()
+              assert 'com.miui.home' in txt, 'perms h4 bez com.miui.home'
+              print('privapp-permissions h4: OK (com.miui.home)')
+          else:
+              print('privapp-permissions h4: pliku brak (donor ich nie mial - nabu wystarcza)')
+          print('guard: konteksty OK')
+          EOF
           for F in Light Regular Medium Bold; do
             sudo test -s "$MSYS/fonts/MiSans-$F.ttf" || { echo "::error::brak MiSans-$F.ttf"; exit 1; }
           done
@@ -1634,6 +2044,16 @@ jobs:
           PIERWSZY BOOT: dluzej niz zwykle (idmap2 + optymalizacja dex).
           Jezeli pulpit zapyta o wybor HOME: MiuiHome -> zawsze.
 
+          LAUNCHER = HYPEROS 4 (z Xiaomi Pad 9 Pro Max, donor yingtian
+          OS4.0.11.0): com.miui.home z minSdk przepatchowanym na 33. Jezeli
+          launcher HyperOS 4 nie wystartuje na A13 (wymaga nowszych klas),
+          mystical-home-guard.sh po 90 s SAM wgrywa MiuiHome z nabu (A13)
+          jako rescue i ustawia HOME. Recznie:
+            adb shell pm install -r -d /system/app_backup/miuihome-rescue/MiuiHome.apk
+            adb shell cmd package set-home-activity com.miui.home/com.miui.home.launcher.Launcher
+          Nakladki wygladu HyperOS 4 (z donora) wlacza guard po boocie
+          (cmd overlay enable; lista: /system/etc/mystical/h4-overlays.txt).
+
           GDYBY COS NIE TAK (ADB zyje od logo - ro.debuggable=1):
             adb devices
             adb root && adb logcat -d > boot.log
@@ -1779,6 +2199,8 @@ jobs:
             echo '```'
             echo
             echo "Pierwszy boot dluzszy (idmap2 + dexopt). Jezeli pulpit zapyta o HOME: MiuiHome → zawsze."
+            echo "LAUNCHER = HyperOS 4 z Xiaomi Pad 9 Pro Max (donor yingtian OS4.0.11.0, minSdk 37→33);"
+            echo "auto-rescue po 90 s (mystical-home-guard.sh) wgrywa MiuiHome z nabu gdyby h4 nie wystartowal;"
             echo "Pelna instrukcja (rollback, diagnostyka ADB, kontrola po boocie): INSTRUKCJA-FASTBOOTD.txt."
           } > "$WORK/NOTES.md"
           if gh release view "$TAG" >/dev/null 2>&1; then
