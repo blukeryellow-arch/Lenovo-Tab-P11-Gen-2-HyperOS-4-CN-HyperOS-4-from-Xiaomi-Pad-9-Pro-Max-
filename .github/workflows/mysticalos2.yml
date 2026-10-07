@@ -210,7 +210,7 @@ jobs:
             [ -n "$PB" ] || { echo "::error::payload.bin nie rozpakowany"; exit 1; }
             rm -f "$WORK/stock.zip"
             curl -fL --retry 3 -o "$WORK/pdg.tgz" \
-              https://github.com/ssut/payload-dumper-go/releases/download/v2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
+              https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
             tar -xzf "$WORK/pdg.tgz" -C "$WORK"
             rm -f "$WORK/pdg.tgz"
             "$WORK/payload-dumper-go" -p system,system_ext -o "$WORK/out" "$PB" \

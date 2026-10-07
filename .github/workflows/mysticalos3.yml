@@ -241,7 +241,7 @@ jobs:
             [ -n "$PB" ] || { echo "::error::payload.bin nie rozpakowany"; exit 1; }
             rm -f "$WORK/stock.zip"
             curl -fL --retry 3 -o "$WORK/pdg.tgz" \
-              https://github.com/ssut/payload-dumper-go/releases/download/v2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
+              https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
             tar -xzf "$WORK/pdg.tgz" -C "$WORK"
             rm -f "$WORK/pdg.tgz"
             "$WORK/payload-dumper-go" -p system,system_ext -o "$WORK/out" "$PB" \
@@ -879,51 +879,91 @@ jobs:
           [ "$MD5" = "4af37553d549a89706b562558da81874" ] \
             || { echo "::error::nabu.zip (cache) md5=$MD5 != oficjalny - cache uszkodzony"; exit 1; }
           echo "nabu.zip: ${SZ} B, md5 OK ($MD5) (cache-hit: ${{ steps.nabucache.outputs.cache-hit || 'false' }})"
-          # ---------- 2) payload.bin -> system.img (nabu) ----------
+          # ---------- 2) payload.bin -> system.img + system_ext.img (nabu) ----------
           unzip -o -q "$WORK/nabu.zip" "*payload.bin" -d "$WORK/nabu"
           PB=$(find "$WORK/nabu" -name payload.bin | head -1)
           [ -n "$PB" ] || { echo "::error::brak payload.bin w nabu.zip"; exit 1; }
           rm -f "$WORK/nabu.zip"
           curl -fL --retry 3 -o "$WORK/pdg.tgz" \
-            https://github.com/ssut/payload-dumper-go/releases/download/v2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
+            https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
           tar -xzf "$WORK/pdg.tgz" -C "$WORK"; rm -f "$WORK/pdg.tgz"
-          "$WORK/payload-dumper-go" -p system -o "$WORK/nabu-out" "$PB" \
+          # apki miui moga mieszkac w system ALBO system_ext (Xiaomi mieszka-
+          # lo priv-appi miedzy partycjami) -> wyluskujemy OBIE
+          "$WORK/payload-dumper-go" -p system,system_ext -o "$WORK/nabu-out" "$PB" \
             || { echo "::error::payload-dumper-go (nabu) padl"; exit 1; }
           rm -f "$PB" "$WORK/payload-dumper-go"
           NSYS=$(find "$WORK/nabu-out" -type f -name "system.img" | head -1)
           [ -n "$NSYS" ] || { echo "::error::nabu: brak system.img"; exit 1; }
+          NSEXT=$(find "$WORK/nabu-out" -type f -name "system_ext.img" | head -1)
           # sparse? (payload daje raw, ale sprawdzamy)
-          if python3 -c "import struct,sys; sys.exit(0 if struct.unpack('<I', open(sys.argv[1],'rb').read(4))[0]==0xED26FF3A else 1)" "$NSYS"; then
-            python3 "$KDIR/tools/simg2img.py" "$NSYS" "$NSYS.raw" && mv "$NSYS.raw" "$NSYS"
-          fi
-          echo "nabu system.img: $(stat -c%s "$NSYS") B"
-          # ---------- 3) drzewo nabu (ro) ----------
+          for NI in $NSYS $NSEXT; do
+            [ -n "$NI" ] || continue
+            if python3 -c "import struct,sys; sys.exit(0 if struct.unpack('<I', open(sys.argv[1],'rb').read(4))[0]==0xED26FF3A else 1)" "$NI"; then
+              python3 "$KDIR/tools/simg2img.py" "$NI" "$NI.raw" && mv "$NI.raw" "$NI"
+            fi
+          done
+          echo "nabu system.img: $(stat -c%s "$NSYS") B; system_ext.img: $(stat -c%s "$NSEXT" 2>/dev/null || echo brak)"
+          # ---------- 3) montaze nabu (ro) ----------
           M="$WORK/nabu-mnt"; sudo mkdir -p "$M"
           sudo mount -o ro,loop "$NSYS" "$M" \
             || { echo "::error::montaz nabu system.img padl"; exit 1; }
-          # ---------- 4) INVENTORY (twarde wymagania portu) ----------
-          sudo test -d "$M/priv-app/MiuiSystemUI" || { echo "::error::nabu: brak priv-app/MiuiSystemUI"; sudo umount "$M"; exit 1; }
-          sudo test -d "$M/priv-app/MiuiHome" || { echo "::error::nabu: brak priv-app/MiuiHome"; sudo umount "$M"; exit 1; }
-          sudo test -d "$M/etc/device_features" || { echo "::error::nabu: brak etc/device_features"; sudo umount "$M"; exit 1; }
-          JAR_LIST=$(sudo find "$M/framework" -maxdepth 1 -type f -name "miui*.jar" -printf "%f\n" | sort | tr "\n" " ")
-          echo "nabu miui jary: $JAR_LIST"
-          [ -n "$JAR_LIST" ] || { echo "::error::nabu: brak miui*.jar w framework/"; sudo umount "$M"; exit 1; }
-          sudo find "$M/priv-app/MiuiSystemUI" "$M/priv-app/MiuiHome" -type f > "$WORK/port-files.txt"
-          # ---------- 5) KOPIA do sysroota ----------
-          sudo cp -a "$M/priv-app/MiuiSystemUI" "$SYS/priv-app/"
-          sudo cp -a "$M/priv-app/MiuiHome" "$SYS/priv-app/"
-          for J in $JAR_LIST; do
-            sudo install -m 0644 "$M/framework/$J" "$SYS/framework/$J"
+          M2=""
+          if [ -n "$NSEXT" ]; then
+            M2="$WORK/nabu-mnt-ext"; sudo mkdir -p "$M2"
+            sudo mount -o ro,loop "$NSEXT" "$M2" 2>/dev/null || { echo "UWAGA: montaz system_ext padl"; M2=""; }
+          fi
+          # ---------- 4) INVENTORY multi-root (oba layouty: plaski i system/) ----------
+          ROOTS=""
+          for CAND in "$M" "$M/system" "$M2" "$M2/system"; do
+            [ -n "$CAND" ] || continue
+            if sudo test -d "$CAND"; then ROOTS="$ROOTS $CAND"; fi
           done
-          if sudo test -d "$M/app/miui"; then sudo cp -a "$M/app/miui" "$SYS/app/"; fi
-          sudo cp -a "$M/etc/device_features" "$SYS/etc/"
+          echo "korzenie drzew nabu (system[,system_ext], oba layouty):$ROOTS"
+          find_in_roots() {
+            for R in $ROOTS; do
+              if sudo test -e "$R/$1"; then echo "$R/$1"; return; fi
+            done
+          }
+          SIU=$(find_in_roots "priv-app/MiuiSystemUI")
+          MHOME=$(find_in_roots "priv-app/MiuiHome")
+          if [ -z "$SIU" ] || [ -z "$MHOME" ]; then
+            echo "::error::nabu: brak MiuiSystemUI ($SIU) lub MiuiHome ($MHOME)! Diagnostyka:"
+            for R in $ROOTS; do echo "== $R =="; sudo ls "$R" 2>/dev/null | head -30; sudo ls "$R/priv-app" 2>/dev/null | head -50; done
+            [ -n "$M2" ] && sudo umount "$M2"; sudo umount "$M"; exit 1
+          fi
+          echo "MiuiSystemUI: $SIU"
+          echo "MiuiHome: $MHOME"
+          DFEAT=$(find_in_roots "etc/device_features")
+          [ -n "$DFEAT" ] || { echo "::error::nabu: brak etc/device_features"; [ -n "$M2" ] && sudo umount "$M2"; sudo umount "$M"; exit 1; }
+          JAR_LIST=""
+          for R in $ROOTS; do
+            for J in $(sudo find "$R/framework" -maxdepth 1 -type f -name "miui*.jar" -printf "%f\n" 2>/dev/null | sort); do
+              case " $JAR_LIST " in *" $J "*) ;; *) JAR_LIST="$JAR_LIST $J" ;; esac
+            done
+          done
+          JAR_LIST=$(echo "$JAR_LIST" | xargs)
+          echo "nabu miui jary:$JAR_LIST"
+          [ -n "$JAR_LIST" ] || { echo "::error::nabu: brak miui*.jar w framework/ (szukalem w:$ROOTS)"; [ -n "$M2" ] && sudo umount "$M2"; sudo umount "$M"; exit 1; }
+          sudo find "$SIU" "$MHOME" -type f > "$WORK/port-files.txt"
+          # ---------- 5) KOPIA do sysroota ----------
+          sudo cp -a "$SIU" "$SYS/priv-app/"
+          sudo cp -a "$MHOME" "$SYS/priv-app/"
+          for J in $JAR_LIST; do
+            JR=$(find_in_roots "framework/$J")
+            sudo install -m 0644 "$JR" "$SYS/framework/$J"
+          done
+          MIUIAPP=$(find_in_roots "app/miui")
+          if [ -n "$MIUIAPP" ]; then sudo cp -a "$MIUIAPP" "$SYS/app/"; fi
+          sudo cp -a "$DFEAT" "$SYS/etc/"
           # privapp-permissions / sysconfig / <library> z nabu (bez kolizji nazw)
-          sudo python3 - "$M" "$SYS" "$WORK" <<'EOF'
+          # ROOTS = wszystkie korzenie drzew nabu (system + system_ext, 2 layouty)
+          sudo python3 - "$SYS" "$WORK" $ROOTS <<'EOF'
           import os
           import re
           import shutil
           import sys
-          M, S, W = sys.argv[1], sys.argv[2], sys.argv[3]
+          S, W = sys.argv[1], sys.argv[2]
+          ROOTS = sys.argv[3:]
           ref_ctx = None
           for cand in (os.path.join(S, 'etc/permissions'), os.path.join(S, 'etc/sysconfig')):
               if os.path.isdir(cand):
@@ -938,31 +978,35 @@ jobs:
           if ref_ctx is None:
               ref_ctx = os.getxattr(os.path.join(S, 'etc/fonts.xml'), 'security.selinux')
           perm_n = lib_n = 0
+          copied = set()
           for d in ('etc/permissions', 'etc/sysconfig'):
-              src = os.path.join(M, d)
-              if not os.path.isdir(src):
-                  continue
-              for f in sorted(os.listdir(src)):
-                  if not f.endswith('.xml'):
+              for R in ROOTS:
+                  src = os.path.join(R, d)
+                  if not os.path.isdir(src):
                       continue
-                  p = os.path.join(src, f)
-                  txt = open(p, encoding='utf-8', errors='ignore').read()
-                  if not ('<library' in txt or re.search(r'systemui|miui', f, re.I)):
-                      continue
-                  dst_dir = os.path.join(S, d)
-                  os.makedirs(dst_dir, exist_ok=True)
-                  dst = os.path.join(dst_dir, f)
-                  if os.path.exists(dst):
-                      print('pomijam (kolizja):', d + '/' + f)
-                      continue
-                  shutil.copy2(p, dst)
-                  os.chmod(dst, 0o644)
-                  os.setxattr(dst, 'security.selinux', ref_ctx)
-                  if '<library' in txt:
-                      lib_n += 1
-                  else:
-                      perm_n += 1
-                  print('kopiuje:', d + '/' + f)
+                  for f in sorted(os.listdir(src)):
+                      if not f.endswith('.xml') or f in copied:
+                          continue
+                      p = os.path.join(src, f)
+                      txt = open(p, encoding='utf-8', errors='ignore').read()
+                      if not ('<library' in txt or re.search(r'systemui|miui', f, re.I)):
+                          continue
+                      dst_dir = os.path.join(S, d)
+                      os.makedirs(dst_dir, exist_ok=True)
+                      dst = os.path.join(dst_dir, f)
+                      if os.path.exists(dst):
+                          print('pomijam (kolizja):', d + '/' + f)
+                          copied.add(f)
+                          continue
+                      shutil.copy2(p, dst)
+                      os.chmod(dst, 0o644)
+                      os.setxattr(dst, 'security.selinux', ref_ctx)
+                      copied.add(f)
+                      if '<library' in txt:
+                          lib_n += 1
+                      else:
+                          perm_n += 1
+                      print('kopiuje:', d + '/' + f, '(z', R + ')')
           open(os.path.join(W, 'port-perms.txt'), 'w').write(
               'privapp-permissions: %d\nlibrary-xml: %d\n' % (perm_n, lib_n))
           print('permissions z nabu:', perm_n, '| library-xml:', lib_n)
@@ -987,8 +1031,9 @@ jobs:
               echo "domyslny HOME: $P/$ACT"
             fi
           done
+          if [ -n "$M2" ]; then sudo umount "$M2"; fi
           sudo umount "$M"
-          # sprzatanie: surowy system.img nabu (~4.3 GB) juz niepotrzebny
+          # sprzatanie: surowe obrazy nabu (system ~3.9 GB + system_ext) zbedne
           # (krok 5 buduje finalny ext4 - miejsca nie moze zabraknac)
           sudo rm -rf "$WORK/nabu-out"
           # ---------- 7) konteksty SELinux (kopie od sasiadow) ----------
@@ -1078,18 +1123,29 @@ jobs:
                       continue
                   registered.update(re.findall(r'<library[^>]*name="([^"]+)"', txt))
           needed = set()
+          optional = set()
           for bf in ('badging-MiuiSystemUI.txt', 'badging-MiuiHome.txt'):
               p = os.path.join(W, bf)
               if not os.path.exists(p):
                   continue
               for ln in open(p, encoding='utf-8', errors='ignore'):
-                  m = re.match(r"uses-library[^:]*:'([^']+)'", ln.strip())
+                  t = ln.strip()
+                  # TYLKO wymagane (uses-library:'...') - opcjonalne
+                  # (uses-library-not-required:...) nie wywalaja buildu
+                  m = re.match(r"uses-library:'([^']+)'", t)
                   if m:
                       needed.add(m.group(1))
+                  m2 = re.match(r"uses-library-not-required:'([^']+)'", t)
+                  if m2:
+                      optional.add(m2.group(1))
           missing = sorted(n for n in needed if n not in registered)
-          print('uses-library deklarowane przez apki miui:', sorted(needed))
+          opt_missing = sorted(n for n in optional if n not in registered)
+          print('uses-library WYMAGANE przez apki miui:', sorted(needed))
+          print('uses-library opcjonalne:', sorted(optional))
           print('biblioteki zarejestrowane w obrazie:', len(registered))
-          assert not missing, 'BRAKUJACE biblioteki: %r (cos nie skopiowalo sie z nabu!)' % missing
+          if opt_missing:
+              print('UWAGA: brakujace OPCJONALNE (nie blokuje):', opt_missing)
+          assert not missing, 'BRAKUJACE WYMAGANE biblioteki: %r (cos nie skopiowalo sie z nabu!)' % missing
           print('uses-library: komplet OK')
           EOF
           # ---------- 9) raport portu ----------
