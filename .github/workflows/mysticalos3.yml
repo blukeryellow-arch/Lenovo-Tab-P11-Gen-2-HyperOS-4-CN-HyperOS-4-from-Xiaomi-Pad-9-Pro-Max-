@@ -2159,6 +2159,8 @@ jobs:
             echo "## rust"; echo '```'; cat "$WORK/rust-manifest.txt" 2>/dev/null || true; echo '```'
             echo "## ui-v2"; echo '```'; cat "$WORK/ui-report.txt" 2>/dev/null || true; echo '```'
             echo "## port-hyperos"; echo '```'; cat "$WORK/port-report.txt" 2>/dev/null || true; echo '```'
+            echo "## 4d2-console (diag)"; echo '```'; cat "$WORK/4d2-console.log" 2>/dev/null || true; echo '```'
+            echo "## 4d3-console (diag)"; echo '```'; cat "$WORK/4d3-console.log" 2>/dev/null || true; echo '```'
             echo "## sysroot systemu"; echo '```'; cat "$WORK/sysroot-listing.txt" 2>/dev/null || true; echo '```'
             echo "## app/priv-app/app_backup (listing)"; echo '```'; cat "$WORK/applist.txt" 2>/dev/null || true; echo '```'
             echo "## qemu"; echo '```'; cat "$WORK/qemu-coreutils.txt" 2>/dev/null || true; echo '```'
