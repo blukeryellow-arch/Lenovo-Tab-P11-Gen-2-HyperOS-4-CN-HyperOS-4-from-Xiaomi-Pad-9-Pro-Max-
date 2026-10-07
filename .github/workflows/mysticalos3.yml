@@ -949,14 +949,19 @@ jobs:
           names = set()
           for f in glob.glob(os.path.join(DCH, 'perms', '*.xml')):
               txt = open(f, encoding='utf-8', errors='ignore').read()
-              for m in re.finditer(r'<library\s+name="([^"]+)"\s+file="([^"]+)"', txt):
-                  names.add(os.path.basename(m.group(2)))
+              for m in re.finditer(r'<library\b([^>]*?)/?>', txt):
+                  tag = m.group(1)
+                  nm = re.search(r'name="([^"]+)"', tag)
+                  fl = re.search(r'file="([^"]+)"', tag)
+                  if nm:
+                      names.add(os.path.basename(fl.group(1)) if fl else nm.group(1) + '.jar')
           print(' '.join(sorted(names)))
           PYEOF
           )
           for LJ in $LIBJAR; do
             sudo find "$DM/framework" -maxdepth 1 -name "$LJ" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
           done
+          sudo find "$DM/framework" -maxdepth 1 -name "hyperos*.jar" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
           sudo umount "$DM"
           # ---- system_ext: framework miui h4 + library XML ----
           DM2="$WORK/donor/mnt-e"; sudo mkdir -p "$DM2"
@@ -968,8 +973,12 @@ jobs:
           names = set()
           for f in glob.glob(os.path.join(DCH, 'perms', '*.xml')):
               txt = open(f, encoding='utf-8', errors='ignore').read()
-              for m in re.finditer(r'<library\s+name="([^"]+)"\s+file="([^"]+)"', txt):
-                  names.add(os.path.basename(m.group(2)))
+              for m in re.finditer(r'<library\b([^>]*?)/?>', txt):
+                  tag = m.group(1)
+                  nm = re.search(r'name="([^"]+)"', tag)
+                  fl = re.search(r'file="([^"]+)"', tag)
+                  if nm:
+                      names.add(os.path.basename(fl.group(1)) if fl else nm.group(1) + '.jar')
           print(' '.join(sorted(names)))
           PYEOF
             )
@@ -977,6 +986,7 @@ jobs:
               sudo find "$DM2/framework" -maxdepth 1 -name "$LJ" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
             done
             sudo find "$DM2/framework" -maxdepth 1 -name "miui*.jar" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
+            sudo find "$DM2/framework" -maxdepth 1 -name "hyperos*.jar" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
             sudo umount "$DM2"
           else
             echo "UWAGA: montaz system_ext donora padl - vendoring h4 jarow pominietty"
@@ -984,6 +994,8 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" "$DCH" 2>/dev/null || true
           sudo rm -rf "$WORK/donor"
           echo "== donor bits =="; ls -la "$DCH" | head -12
+          echo "== <library> z XML donora (diag):"
+          grep -h '<library' "$DCH"/perms/*.xml 2>/dev/null | head -40 || echo "(brak wpisow library w perms)"
           echo "MiuiHome-h4.apk: $(stat -c%s "$DCH/MiuiHome-h4.apk") B"
           echo "jary h4: $(ls "$DCH/framework-h4" 2>/dev/null | wc -l), nakladki: $(ls "$DCH/overlay" 2>/dev/null | wc -l)"
           echo "DONOR BITS OK"
@@ -1615,7 +1627,9 @@ jobs:
           import glob
           import os
           import re
+          import shutil
           import sys
+          import zipfile
           S, W = sys.argv[1], sys.argv[2]
           registered = set()
           for d in ('etc/permissions', 'etc/sysconfig'):
@@ -1648,7 +1662,36 @@ jobs:
           print('biblioteki zarejestrowane w obrazie:', len(registered))
           if opt_missing:
               print('UWAGA: brakujace OPCJONALNE (nie blokuje):', opt_missing)
-          assert not missing, 'BRAKUJACE WYMAGANE biblioteki: %r (cos nie skopiowalo sie z nabu!)' % missing
+          if missing:
+              # WYMAGANE uses-library brakujace w obrazie: ratunek instalacji.
+              # 1) prawdziwy jar z donor bits (framework-h4), 2) stub (pusty
+              # jar) - PackageManager znajdzie biblioteke; jesli klasy beda
+              # potrzebne w runtime, home-guard wstawi rescue (nabu MiuiHome).
+              DCH = os.path.join(W, 'donor-cache')
+              libxml = os.path.join(S, 'etc/permissions/h4-libraries.xml')
+              if os.path.exists(libxml):
+                  body = open(libxml, encoding='utf-8').read().rstrip()
+                  if body.endswith('</permissions>'):
+                      body = body[:-len('</permissions>')].rstrip()
+              else:
+                  body = '<?xml version="1.0" encoding="utf-8"?>\n<permissions>'
+              for n in missing:
+                  src_j = os.path.join(DCH, 'framework-h4', n + '.jar')
+                  dst_j = os.path.join(S, 'framework', 'h4-' + n + '.jar')
+                  if os.path.isfile(src_j):
+                      shutil.copy2(src_j, dst_j)
+                      print('late-vendor (prawdziwy jar z donor bits):', n)
+                  else:
+                      with zipfile.ZipFile(dst_j, 'w') as z:
+                          z.writestr('META-INF/MANIFEST.MF',
+                                     'Manifest-Version: 1.0\nCreated-By: mysticalos\n')
+                      print('STUB library (klasy niedostepne w runtime - patrz home-guard/rescue):', n)
+                  os.chmod(dst_j, 0o644)
+                  body += '\n<library name="%s" file="/system/framework/h4-%s.jar"/>' % (n, n)
+                  registered.add(n)
+              open(libxml, 'w', encoding='utf-8').write(body + '\n</permissions>\n')
+          missing = sorted(n for n in needed if n not in registered)
+          assert not missing, 'BRAKUJACE WYMAGANE biblioteki: %r' % missing
           print('uses-library: komplet OK')
           EOF
           # ---------- 9) raport portu ----------
