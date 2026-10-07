@@ -887,22 +887,24 @@ jobs:
           curl -fL --retry 3 -o "$WORK/pdg.tgz" \
             https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
           tar -xzf "$WORK/pdg.tgz" -C "$WORK"; rm -f "$WORK/pdg.tgz"
-          # apki miui moga mieszkac w system ALBO system_ext (Xiaomi mieszka-
-          # lo priv-appi miedzy partycjami) -> wyluskujemy OBIE
-          "$WORK/payload-dumper-go" -p system,system_ext -o "$WORK/nabu-out" "$PB" \
+          # apki miui moga mieszkac w system ALBO system_ext ALBO product (Xiaomi
+          # mieszkal priv-appi miedzy partycjami; run 37561052713: MiuiSystemUI
+          # w system_ext, MiuiHome w product) -> wyluskujemy WSZYSTKIE TRZY
+          "$WORK/payload-dumper-go" -p system,system_ext,product -o "$WORK/nabu-out" "$PB" \
             || { echo "::error::payload-dumper-go (nabu) padl"; exit 1; }
           rm -f "$PB" "$WORK/payload-dumper-go"
           NSYS=$(find "$WORK/nabu-out" -type f -name "system.img" | head -1)
           [ -n "$NSYS" ] || { echo "::error::nabu: brak system.img"; exit 1; }
           NSEXT=$(find "$WORK/nabu-out" -type f -name "system_ext.img" | head -1)
+          NPROD=$(find "$WORK/nabu-out" -type f -name "product.img" | head -1)
           # sparse? (payload daje raw, ale sprawdzamy)
-          for NI in $NSYS $NSEXT; do
+          for NI in $NSYS $NSEXT $NPROD; do
             [ -n "$NI" ] || continue
             if python3 -c "import struct,sys; sys.exit(0 if struct.unpack('<I', open(sys.argv[1],'rb').read(4))[0]==0xED26FF3A else 1)" "$NI"; then
               python3 "$KDIR/tools/simg2img.py" "$NI" "$NI.raw" && mv "$NI.raw" "$NI"
             fi
           done
-          echo "nabu system.img: $(stat -c%s "$NSYS") B; system_ext.img: $(stat -c%s "$NSEXT" 2>/dev/null || echo brak)"
+          echo "nabu system.img: $(stat -c%s "$NSYS") B; system_ext.img: $(stat -c%s "$NSEXT" 2>/dev/null || echo brak); product.img: $(stat -c%s "$NPROD" 2>/dev/null || echo brak)"
           # ---------- 3) montaze nabu (ro) ----------
           M="$WORK/nabu-mnt"; sudo mkdir -p "$M"
           sudo mount -o ro,loop "$NSYS" "$M" \
@@ -912,13 +914,18 @@ jobs:
             M2="$WORK/nabu-mnt-ext"; sudo mkdir -p "$M2"
             sudo mount -o ro,loop "$NSEXT" "$M2" 2>/dev/null || { echo "UWAGA: montaz system_ext padl"; M2=""; }
           fi
+          M3=""
+          if [ -n "$NPROD" ]; then
+            M3="$WORK/nabu-mnt-prod"; sudo mkdir -p "$M3"
+            sudo mount -o ro,loop "$NPROD" "$M3" 2>/dev/null || { echo "UWAGA: montaz product padl"; M3=""; }
+          fi
           # ---------- 4) INVENTORY multi-root (oba layouty: plaski i system/) ----------
           ROOTS=""
-          for CAND in "$M" "$M/system" "$M2" "$M2/system"; do
+          for CAND in "$M" "$M/system" "$M2" "$M2/system" "$M3" "$M3/system"; do
             [ -n "$CAND" ] || continue
             if sudo test -d "$CAND"; then ROOTS="$ROOTS $CAND"; fi
           done
-          echo "korzenie drzew nabu (system[,system_ext], oba layouty):$ROOTS"
+          echo "korzenie drzew nabu (system[,system_ext,product], oba layouty):$ROOTS"
           find_in_roots() {
             for R in $ROOTS; do
               if sudo test -e "$R/$1"; then echo "$R/$1"; return; fi
@@ -927,14 +934,14 @@ jobs:
           SIU=$(find_in_roots "priv-app/MiuiSystemUI")
           MHOME=$(find_in_roots "priv-app/MiuiHome")
           if [ -z "$SIU" ] || [ -z "$MHOME" ]; then
-            echo "::error::nabu: brak MiuiSystemUI ($SIU) lub MiuiHome ($MHOME)! Diagnostyka:"
-            for R in $ROOTS; do echo "== $R =="; sudo ls "$R" 2>/dev/null | head -30; sudo ls "$R/priv-app" 2>/dev/null | head -50; done
-            [ -n "$M2" ] && sudo umount "$M2"; sudo umount "$M"; exit 1
+            echo "::error::nabu: MiuiSystemUI=${SIU:-BRAK} MiuiHome=${MHOME:-BRAK}! Diagnostyka:"
+            for R in $ROOTS; do echo "== $R =="; sudo ls "$R" 2>/dev/null | head -40; echo "-- priv-app:"; sudo ls "$R/priv-app" 2>/dev/null | head -60; done
+            for MU in "$M3" "$M2"; do [ -n "$MU" ] && sudo umount "$MU"; done; sudo umount "$M"; exit 1
           fi
           echo "MiuiSystemUI: $SIU"
           echo "MiuiHome: $MHOME"
           DFEAT=$(find_in_roots "etc/device_features")
-          [ -n "$DFEAT" ] || { echo "::error::nabu: brak etc/device_features"; [ -n "$M2" ] && sudo umount "$M2"; sudo umount "$M"; exit 1; }
+          [ -n "$DFEAT" ] || { echo "::error::nabu: brak etc/device_features (szukalem w:$ROOTS)"; for MU in "$M3" "$M2"; do [ -n "$MU" ] && sudo umount "$MU"; done; sudo umount "$M"; exit 1; }
           JAR_LIST=""
           for R in $ROOTS; do
             for J in $(sudo find "$R/framework" -maxdepth 1 -type f -name "miui*.jar" -printf "%f\n" 2>/dev/null | sort); do
@@ -943,7 +950,7 @@ jobs:
           done
           JAR_LIST=$(echo "$JAR_LIST" | xargs)
           echo "nabu miui jary:$JAR_LIST"
-          [ -n "$JAR_LIST" ] || { echo "::error::nabu: brak miui*.jar w framework/ (szukalem w:$ROOTS)"; [ -n "$M2" ] && sudo umount "$M2"; sudo umount "$M"; exit 1; }
+          [ -n "$JAR_LIST" ] || { echo "::error::nabu: brak miui*.jar w framework/ (szukalem w:$ROOTS)"; for MU in "$M3" "$M2"; do [ -n "$MU" ] && sudo umount "$MU"; done; sudo umount "$M"; exit 1; }
           sudo find "$SIU" "$MHOME" -type f > "$WORK/port-files.txt"
           # ---------- 5) KOPIA do sysroota ----------
           sudo cp -a "$SIU" "$SYS/priv-app/"
@@ -989,7 +996,11 @@ jobs:
                           continue
                       p = os.path.join(src, f)
                       txt = open(p, encoding='utf-8', errors='ignore').read()
-                      if not ('<library' in txt or re.search(r'systemui|miui', f, re.I)):
+                      # biblioteki <library> ORAZ pliki powiazane z miui/systemui
+                      # (nazwa LUB tresc - np. privapp-permissions dla com.miui.home
+                      # moze miec neutralna nazwe typu privapp-permissions-product.xml)
+                      if not ('<library' in txt or re.search(r'systemui|miui', f, re.I)
+                              or re.search(r'com\.miui\.|com\.android\.systemui|miui', txt, re.I)):
                           continue
                       dst_dir = os.path.join(S, d)
                       os.makedirs(dst_dir, exist_ok=True)
@@ -1031,9 +1042,10 @@ jobs:
               echo "domyslny HOME: $P/$ACT"
             fi
           done
+          if [ -n "$M3" ]; then sudo umount "$M3"; fi
           if [ -n "$M2" ]; then sudo umount "$M2"; fi
           sudo umount "$M"
-          # sprzatanie: surowe obrazy nabu (system ~3.9 GB + system_ext) zbedne
+          # sprzatanie: surowe obrazy nabu (system + system_ext + product ~6.7 GB) zbedne
           # (krok 5 buduje finalny ext4 - miejsca nie moze zabraknac)
           sudo rm -rf "$WORK/nabu-out"
           # ---------- 7) konteksty SELinux (kopie od sasiadow) ----------
