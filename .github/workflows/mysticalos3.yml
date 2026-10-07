@@ -1730,12 +1730,16 @@ jobs:
           # a gh CLI traci wtedy kontekst repo (brak .git w /tmp/m2) -> GH_REPO
           cd "$WORK"
           export GH_REPO="$GITHUB_REPOSITORY"
+          # raporty portu/UI powstaja w $WORK (nie w out/) - kopiujemy dla
+          # kompletnosci zipa (run 37572665433: 'no matches found out/port-report.txt')
+          cp -f "$WORK/port-report.txt" "$WORK/out/" 2>/dev/null || true
+          cp -f "$WORK/ui-report.txt" "$WORK/out/" 2>/dev/null || true
           # RAW img = 3 489 660 928 B (3.25 GiB) > limit 2 GiB na pojedynczy asset
           # release -> pakujemy w zip (jak artefakt Actions, ~1.8 GB po deflacie)
           zip -r -q "$WORK/port-release.zip" \
             out/MysticalOS_0.5_HyperOS_Port.img \
             out/INSTRUKCJA-FASTBOOTD.txt out/SHA256SUMS.txt \
-            out/port-report.txt out/mods-report.txt \
+            out/port-report.txt out/ui-report.txt out/mods-report.txt \
             out/avb-info-system.txt out/avb-verify-system.txt \
             out/preview \
             vbmeta/FLAGS3 vbmeta/STOCK-ORYGINAL
