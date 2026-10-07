@@ -1719,3 +1719,72 @@ jobs:
             sleep 10
           done
           echo "RAPORT: $R"
+
+      - name: "11. Release (PERMANENTNY download - bez UI Actions i bez TTL artefaktu)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="0.5-hyperos-port"
+          # RAW img = 3 489 660 928 B (3.25 GiB) > limit 2 GiB na pojedynczy asset
+          # release -> pakujemy w zip (jak artefakt Actions, ~1.8 GB po deflacie)
+          zip -r -q "$WORK/port-release.zip" \
+            out/MysticalOS_0.5_HyperOS_Port.img \
+            out/INSTRUKCJA-FASTBOOTD.txt out/SHA256SUMS.txt \
+            out/port-report.txt out/mods-report.txt \
+            out/avb-info-system.txt out/avb-verify-system.txt \
+            out/preview \
+            vbmeta/FLAGS3 vbmeta/STOCK-ORYGINAL
+          echo "zip release: $(stat -c%s "$WORK/port-release.zip") B"
+          SHA_IMG=$(awk '/MysticalOS_0\.5_HyperOS_Port\.img/{print $1}' "$WORK/out/SHA256SUMS.txt")
+          {
+            echo "# MysticalOS 0.5 — PRAWDZIWY PORT HyperOS (nabu OS1.0.6.0 → Lenovo TB350FU)"
+            echo
+            echo "Run mysticalos3: ${GITHUB_RUN_ID} (SUCCESS) · evidence: reports/mysticalos3-${GITHUB_RUN_ID}.md"
+            echo
+            echo "## Co to jest"
+            echo "Natywne apki Xiaomi z oficjalnego ROM-u HyperOS tabletu nabu (Pad 6 Pro, A13/sdk 33)"
+            echo "wgrane w system stock Lenovo TB350FU (A13): **MiuiSystemUI** (64 MB, Control Center"
+            echo "HyperOS, rozdzielone powiadomienia/przelaczniki), **MiuiHome** (25 MB, RELEASE-4.40.0.6206,"
+            echo "tabletowy launcher), 14 jarow miui na BOOTCLASSPATH (przez /system/etc/classpaths/"
+            echo "bootclasspath.pb — boot.img NIETYKANY), device_features, app/miui, privapp-permissions"
+            echo "+ library XML (57 plikow). Tozsamosc: MysticalOS 0.5 (HyperOS 4 x A17 Experience),"
+            echo "sdk=33 NIETYKANE. Debloat v2.2: stock LenovoSystemUI (61.7 MB, system_ext) + reszta"
+            echo "Lenovo/Xiaomi jako atrapy; Rust coreutils + mystical-rust-daemon (zRAM 4 GB lz4)."
+            echo
+            echo "## Zawartosc pelnego zipa (MysticalOS_0.5_HyperOS_Port-full.zip)"
+            echo "- out/MysticalOS_0.5_HyperOS_Port.img — RAW ext4, 3 489 660 928 B (= PS partycji), stopka AVB flags 2 sha256 no-FEC"
+            echo "- out/INSTRUKCJA-FASTBOOTD.txt + out/SHA256SUMS.txt"
+            echo "- vbmeta/FLAGS3/ + vbmeta/STOCK-ORYGINAL/ (po 3 pliki)"
+            echo "- out/preview/ (bootanim + tapeta) + raporty (port/mods/avb)"
+            echo
+            echo "SHA256 (img): \`${SHA_IMG}\`"
+            echo
+            echo "## Wgrywanie — TYLKO system (boot.img NIETYKANY)"
+            echo '```'
+            echo "fastboot flash vbmeta        vbmeta/FLAGS3/vbmeta.img        # raz, jesli nie wgrywano wczesniej"
+            echo "fastboot flash vbmeta_system vbmeta/FLAGS3/vbmeta_system.img"
+            echo "fastboot flash vbmeta_vendor vbmeta/FLAGS3/vbmeta_vendor.img"
+            echo "adb reboot fastboot                                               # FastbootD"
+            echo "fastboot flash system out/MysticalOS_0.5_HyperOS_Port.img"
+            echo "fastboot reboot"
+            echo '```'
+            echo
+            echo "Pierwszy boot dluzszy (idmap2 + dexopt). Jezeli pulpit zapyta o HOME: MiuiHome → zawsze."
+            echo "Pelna instrukcja (rollback, diagnostyka ADB, kontrola po boocie): INSTRUKCJA-FASTBOOTD.txt."
+          } > "$WORK/NOTES.md"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG istnieje -> clobber assetow"
+            gh release upload "$TAG" "$WORK/port-release.zip#MysticalOS_0.5_HyperOS_Port-full.zip" --clobber
+          else
+            gh release create "$TAG" \
+              --title "MysticalOS 0.5 — PRAWDZIWY PORT HyperOS (Pad Edition)" \
+              --notes-file "$WORK/NOTES.md" --target "$GITHUB_SHA"
+            gh release upload "$TAG" "$WORK/port-release.zip#MysticalOS_0.5_HyperOS_Port-full.zip"
+          fi
+          gh release upload "$TAG" \
+            "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" "$WORK/out/SHA256SUMS.txt" \
+            "$WORK/out/port-report.txt" "$WORK/out/mods-report.txt" \
+            "$WORK/out/preview/preview-boot.jpg" "$WORK/out/preview/preview-wallpaper.jpg" --clobber
+          echo "== RELEASE $TAG =="
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name) \(.size) B"'
