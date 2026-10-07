@@ -1496,7 +1496,8 @@ jobs:
           done
           if [ -n "$M3" ]; then sudo umount "$M3"; fi
           if [ -n "$M2" ]; then sudo umount "$M2"; fi
-          sudo umount "$M"
+          M="$WORK/nabu-mnt"
+          sudo umount "$M" 2>/dev/null || sudo umount -l "$M" 2>/dev/null || true
           # sprzatanie: surowe obrazy nabu (system + system_ext + product ~6.7 GB) zbedne
           # (krok 5 buduje finalny ext4 - miejsca nie moze zabraknac)
           sudo rm -rf "$WORK/nabu-out"
