@@ -1042,41 +1042,41 @@ jobs:
               "$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-MiuiHome.apk" \
                 > "$WORK/xmltree-MiuiHome.txt" 2>/dev/null || true
               ACT=$(python3 - "$WORK/xmltree-MiuiHome.txt" "$P" <<'PYEOF'
-import re
-import sys
-txt = open(sys.argv[1], encoding='utf-8', errors='ignore').read()
-pkg = sys.argv[2]
-act_re = re.compile(r'E:\s*activity(-alias)?\b')
-name_re = re.compile(r'android:name[^=]*="([^"]+)"')
-cat_re = re.compile(r'android\.intent\.category\.HOME\b')
-cur, in_act, found = None, False, []
-for ln in txt.splitlines():
-    if act_re.search(ln) and 'intent-filter' not in ln:
-        in_act = True
-        m = name_re.search(ln)
-        cur = m.group(1) if m else None
-        continue
-    if not in_act:
-        continue
-    if 'intent-filter' in ln:
-        continue
-    if cat_re.search(ln) and cur:
-        found.append(cur)
-        in_act, cur = False, None
-        continue
-    m = name_re.search(ln)
-    if m and cur is None:
-        cur = m.group(1)
-def expand(a):
-    if a.startswith('.'):
-        return pkg + a
-    if '.' not in a:
-        return pkg + '.' + a
-    return a
-if found:
-    print(expand(found[0]))
-PYEOF
-)
+          import re
+          import sys
+          txt = open(sys.argv[1], encoding='utf-8', errors='ignore').read()
+          pkg = sys.argv[2]
+          act_re = re.compile(r'E:\s*activity(-alias)?\b')
+          name_re = re.compile(r'android:name[^=]*="([^"]+)"')
+          cat_re = re.compile(r'android\.intent\.category\.HOME\b')
+          cur, in_act, found = None, False, []
+          for ln in txt.splitlines():
+              if act_re.search(ln) and 'intent-filter' not in ln:
+                  in_act = True
+                  m = name_re.search(ln)
+                  cur = m.group(1) if m else None
+                  continue
+              if not in_act:
+                  continue
+              if 'intent-filter' in ln:
+                  continue
+              if cat_re.search(ln) and cur:
+                  found.append(cur)
+                  in_act, cur = False, None
+                  continue
+              m = name_re.search(ln)
+              if m and cur is None:
+                  cur = m.group(1)
+          def expand(a):
+              if a.startswith('.'):
+                  return pkg + a
+              if '.' not in a:
+                  return pkg + '.' + a
+              return a
+          if found:
+              print(expand(found[0]))
+          PYEOF
+              )
               if [ -z "$ACT" ]; then
                 ACT=$(sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" "$WORK/badging-MiuiHome.txt" | head -1)
                 [ -n "$ACT" ] || ACT="com.miui.home.launcher.Launcher"
