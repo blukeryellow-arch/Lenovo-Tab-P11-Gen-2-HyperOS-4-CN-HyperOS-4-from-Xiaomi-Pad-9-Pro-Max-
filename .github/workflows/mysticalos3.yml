@@ -98,7 +98,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 355
     env:
       WORK: /tmp/m2
       KDIR: ${{ github.workspace }}/kit-mysticalos3
@@ -107,6 +107,8 @@ jobs:
       NABU_URL: https://bigota.d.miui.com/OS1.0.6.0.TKXMIXM/miui_NABUGlobal_OS1.0.6.0.TKXMIXM_4af37553d5_13.0.zip
       NABU_URL2: https://hugeparallel1.d.miui.com/OS1.0.6.0.TKXMIXM/miui_NABUGlobal_OS1.0.6.0.TKXMIXM_4af37553d5_13.0.zip
       NABU_URL3: https://hugeparallel2.d.miui.com/OS1.0.6.0.TKXMIXM/miui_NABUGlobal_OS1.0.6.0.TKXMIXM_4af37553d5_13.0.zip
+      NABU_URL4: https://cdnorg.d.miui.com/OS1.0.6.0.TKXMIXM/miui_NABUGlobal_OS1.0.6.0.TKXMIXM_4af37553d5_13.0.zip
+      NABU_URL5: https://hugebackup.d.miui.com/OS1.0.6.0.TKXMIXM/miui_NABUGlobal_OS1.0.6.0.TKXMIXM_4af37553d5_13.0.zip
       MISANS_BASE: https://raw.githubusercontent.com/Explore0416/MiSans-ttf/main
     steps:
       - uses: actions/checkout@v4
@@ -754,27 +756,44 @@ jobs:
           cat "$WORK/ui-report.txt"
           echo "== UI v2 OK =="; df -h /
 
-      - name: "4c. PORT HyperOS z nabu (MiuiSystemUI + MiuiHome + framework + classpaths.pb)"
+      - name: "4c. PORT: nabu.zip z cache (restore)"
+        id: nabucache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/m2/nabu.zip
+          key: nabu-OS1.0.6.0.TKXMIXM-4af37553d5
+
+      - name: "4c. PORT: pobierz nabu HyperOS 1.0.6.0 (aria2c 16x + 3 mirrory)"
+        if: steps.nabucache.outputs.cache-hit != 'true'
+        timeout-minutes: 290
         run: |
           set -euo pipefail
-          SYS=$(cat "$WORK/sysroot-system")
           # ---------- 1) nabu HyperOS 1.0.6.0 Global (A13 = sdk 33) ----------
           # CDN Xiaomi dlawi pojedyncze polaczenia (run 37516155801: curl x9
-          # prob = 90 min i FAIL) -> aria2c: 16 polaczen + 3 mirrory rownolegle.
+          # prob = 90 min i FAIL; run 37531411028: aria2c wciaz trwal 180+ min)
+          # -> aria2c: 16 polaczen + 5 mirrorow rownolegle + ZAPIS DO CACHE
+          # (actions/cache/save) - raz pobrane = kolejne runy blyskawicznie.
+          echo "== diagnostra mirrorow (HEAD) =="
+          for NU in "$NABU_URL" "$NABU_URL2" "$NABU_URL3" "$NABU_URL4" "$NABU_URL5"; do
+            H=$(printf '%s' "$NU" | sed 's|https://||;s|/.*||')
+            LC=$(curl -sI --connect-timeout 10 --max-time 20 "$NU" 2>/dev/null \
+                 | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}' | head -1)
+            echo "mirror $H: content-length=${LC:-BRAK}"
+          done
           NABU_OK=""
           if ! command -v aria2c >/dev/null 2>&1; then
             sudo apt-get update -q >/dev/null 2>&1 || true
             sudo apt-get install -y -q aria2 >/dev/null 2>&1 || true
           fi
           if command -v aria2c >/dev/null 2>&1; then
-            for A in 1 2 3 4 5 6 7 8; do
+            for A in 1 2 3 4 5 6 7 8 9 10 11 12; do
               if aria2c --continue=true --file-allocation=none \
                    --max-connection-per-server=16 --split=16 --min-split-size=8M \
                    --max-tries=5 --retry-wait=10 --timeout=60 --connect-timeout=30 \
                    --lowest-speed-limit=20K --summary-interval=60 \
                    --auto-file-renaming=false --allow-overwrite=true \
                    --directory-prefix="$WORK" --out=nabu.zip \
-                   "$NABU_URL" "$NABU_URL2" "$NABU_URL3"; then
+                   "$NABU_URL" "$NABU_URL2" "$NABU_URL3" "$NABU_URL4" "$NABU_URL5"; then
                 NABU_OK=1; break
               fi
               echo "aria2c proba $A nieudana - resume za 10 s"; sleep 10
@@ -795,10 +814,29 @@ jobs:
               [ -z "$NABU_OK" ] || break
             done
           fi
-          [ -n "$NABU_OK" ] || { echo "::error::nabu.zip nie pobrany (aria2c 8x + curl 9x, wszystkie mirrory)"; exit 1; }
+          [ -n "$NABU_OK" ] || { echo "::error::nabu.zip nie pobrany (aria2c 12x + curl 9x, wszystkie mirrory)"; exit 1; }
           SZ=$(stat -c%s "$WORK/nabu.zip")
           [ "$SZ" -gt 3000000000 ] || { echo "::error::nabu.zip ${SZ} B < 3 GB?!"; exit 1; }
-          echo "nabu.zip: ${SZ} B OK"; df -h /
+          echo "nabu.zip: ${SZ} B OK (swieze pobranie)"; df -h /
+
+      - name: "4c. PORT: nabu.zip do cache (save)"
+        if: steps.nabucache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/m2/nabu.zip
+          key: nabu-OS1.0.6.0.TKXMIXM-4af37553d5
+
+      - name: "4d. PORT HyperOS z nabu (MiuiSystemUI + MiuiHome + framework + classpaths.pb)"
+        run: |
+          set -euo pipefail
+          SYS=$(cat "$WORK/sysroot-system")
+          # nabu.zip: cache-hit albo swieze pobranie (krok 4c); twardy check
+          if [ ! -s "$WORK/nabu.zip" ]; then
+            echo "::error::nabu.zip nie istnieje (ani cache, ani pobranie?)"; exit 1
+          fi
+          SZ=$(stat -c%s "$WORK/nabu.zip")
+          [ "$SZ" -gt 3000000000 ] || { echo "::error::nabu.zip ${SZ} B < 3 GB?!"; exit 1; }
+          echo "nabu.zip: ${SZ} B (cache-hit: ${{ steps.nabucache.outputs.cache-hit || 'false' }})"
           # ---------- 2) payload.bin -> system.img (nabu) ----------
           unzip -o -q "$WORK/nabu.zip" "*payload.bin" -d "$WORK/nabu"
           PB=$(find "$WORK/nabu" -name payload.bin | head -1)
