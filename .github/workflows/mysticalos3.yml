@@ -1727,7 +1727,9 @@ jobs:
           set -euo pipefail
           TAG="0.5-hyperos-port"
           # zip ma sciezki WZGLEDNE (out/..., vbmeta/...) -> cwd = $WORK!
+          # a gh CLI traci wtedy kontekst repo (brak .git w /tmp/m2) -> GH_REPO
           cd "$WORK"
+          export GH_REPO="$GITHUB_REPOSITORY"
           # RAW img = 3 489 660 928 B (3.25 GiB) > limit 2 GiB na pojedynczy asset
           # release -> pakujemy w zip (jak artefakt Actions, ~1.8 GB po deflacie)
           zip -r -q "$WORK/port-release.zip" \
