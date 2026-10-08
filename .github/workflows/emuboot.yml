@@ -176,11 +176,8 @@ jobs:
 
               # ---- dysk GPT z partycjami metadata + super (init ich szuka) ----
               truncate -s 600M "$WORK/ms.img"
-              sfdisk "$WORK/ms.img" >/dev/null 2>&1 <<'SFEOF'
-label: gpt
-name=metadata, size=256M
-name=super, size=256M
-SFEOF
+              printf 'label: gpt\nname=metadata, size=256M\nname=super, size=256M\n' \
+                | sfdisk "$WORK/ms.img" >/dev/null 2>&1
               sudo losetup -fP "$WORK/ms.img" >/dev/null 2>&1
               LUP=$(sudo losetup -j "$WORK/ms.img" 2>/dev/null | cut -d: -f1)
               if [ -n "$LUP" ]; then
