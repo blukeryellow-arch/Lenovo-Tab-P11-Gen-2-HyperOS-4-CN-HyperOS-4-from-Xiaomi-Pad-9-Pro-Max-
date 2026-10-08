@@ -158,7 +158,39 @@ jobs:
             if [ -f "$KERNEL" ] && [ -f "$RAMDISK" ]; then
               truncate -s 2G "$WORK/userdata.img"
               mkfs.ext4 -q -F "$WORK/userdata.img" >/dev/null 2>&1
-              echo "[B] surowy qemu: kernel=$(basename $KERNEL) + nasz system + vendor sysimg" \
+
+              # ---- forensyka: fstab z ramdisku (JAK init adresuje partycje) ----
+              sudo apt-get install -qq -y cpio lz4 >/dev/null 2>&1 || true
+              mkdir -p "$WORK/rd"; cd "$WORK/rd"
+              (gzip -dc "$RAMDISK" 2>/dev/null || lz4 -dc "$RAMDISK" 2>/dev/null) \
+                | cpio -idm --quiet 2>/dev/null
+              : > "$WORK/fstab-ranchu.txt"
+              for f in $(find . -name 'fstab*' 2>/dev/null); do
+                echo "===== $f" >> "$WORK/fstab-ranchu.txt"
+                cat "$f" >> "$WORK/fstab-ranchu.txt"
+              done
+              echo "===== (ls ramdisku top):" >> "$WORK/fstab-ranchu.txt"
+              ls -la "$WORK/rd" | head -30 >> "$WORK/fstab-ranchu.txt" 2>&1
+              sfdisk --dump "$IMG" > "$WORK/gpt-sys.txt" 2>&1
+              sfdisk --dump "$SYSIMG/vendor.img" > "$WORK/gpt-vendor.txt" 2>&1
+
+              # ---- dysk GPT z partycjami metadata + super (init ich szuka) ----
+              truncate -s 600M "$WORK/ms.img"
+              sfdisk "$WORK/ms.img" >/dev/null 2>&1 <<'SFEOF'
+label: gpt
+name=metadata, size=256M
+name=super, size=256M
+SFEOF
+              sudo losetup -fP "$WORK/ms.img" >/dev/null 2>&1
+              LUP=$(sudo losetup -j "$WORK/ms.img" 2>/dev/null | cut -d: -f1)
+              if [ -n "$LUP" ]; then
+                sudo mkfs.ext4 -q -F "${LUP}p1" 2>/dev/null
+                sudo losetup -d "$LUP" 2>/dev/null
+              fi
+              sfdisk --dump "$WORK/ms.img" > "$WORK/gpt-ms.txt" 2>&1
+              cd "$WORK"
+
+              echo "[B] surowy qemu: kernel=$(basename $KERNEL) + nasz system + vendor sysimg + ms(metadata+super)" \
                 | tee -a "$WORK/emu-progress.log"
               # permissive: qcow... w VM nie chcemy falszywych FAILow z rozjazdu
               # polityki lenovo-system vs ranchu-vendor; crashe frameworku
@@ -172,6 +204,8 @@ jobs:
                 -device virtio-blk-device,drive=vendor \
                 -drive if=none,file="$WORK/userdata.img",format=raw,id=userdata \
                 -device virtio-blk-device,drive=userdata \
+                -drive if=none,file="$WORK/ms.img",format=raw,id=ms \
+                -device virtio-blk-device,drive=ms \
                 -netdev user,id=n0,hostfwd=tcp::5555-:5555 \
                 -device virtio-net-device,netdev=n0 \
                 -display none -monitor none -serial file:"$WORK/qemu-console.log" \
@@ -267,11 +301,17 @@ jobs:
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
-            echo "## qemu/konsola szeregowa (kernel+init; tail 120)"; echo '```'
-            tail -120 "$WORK/qemu-console.log" 2>/dev/null || echo "(brak)"
+            echo "## qemu/konsola szeregowa (kernel+init; tail 200)"; echo '```'
+            tail -200 "$WORK/qemu-console.log" 2>/dev/null || echo "(brak)"
             echo '```'
             echo "## qemu stderr"; echo '```'
             tail -30 "$WORK/qemu.log" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## fstab.ranchu (z ramdisku sysimg) - jak init adresuje partycje"; echo '```'
+            cat "$WORK/fstab-ranchu.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## GPT: ms.img(metadata+super) / nasz system / vendor"; echo '```'
+            cat "$WORK/gpt-ms.txt" "$WORK/gpt-sys.txt" "$WORK/gpt-vendor.txt" 2>/dev/null || echo "(brak)"
             echo '```'
             echo "## avdmanager (tworzenie AVD)"; echo '```'
             cat "$WORK/avd-create.log" 2>/dev/null || echo "(brak)"
@@ -325,6 +365,10 @@ jobs:
             /tmp/emu/emu-progress.log
             /tmp/emu/emu.log
             /tmp/emu/avd-create.log
+            /tmp/emu/fstab-ranchu.txt
+            /tmp/emu/gpt-ms.txt
+            /tmp/emu/gpt-sys.txt
+            /tmp/emu/gpt-vendor.txt
             /tmp/emu/qemu.log
             /tmp/emu/qemu-console.log
             /tmp/emu/emu-logcat-full.txt
