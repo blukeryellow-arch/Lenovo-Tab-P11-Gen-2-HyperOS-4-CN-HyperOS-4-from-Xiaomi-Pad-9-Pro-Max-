@@ -187,7 +187,7 @@ jobs:
               # qemu emulatora SDK (bundled): czy ma maszyny ranchu?
               BQ="$ANDROID_SDK_ROOT/emulator/qemu/linux-x86_64/qemu-system-aarch64-headless"
               { echo "BQ=$BQ"
-                [ -x "$BQ" ] && export LD_LIBRARY_PATH="$ANDROID_SDK_ROOT/emulator/lib64:$ANDROID_SDK_ROOT/emulator/lib:$LD_LIBRARY_PATH"
+                [ -x "$BQ" ] && export LD_LIBRARY_PATH="$ANDROID_SDK_ROOT/emulator/lib64:$ANDROID_SDK_ROOT/emulator/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
                 [ -x "$BQ" ] && "$BQ" -version | head -1
                 [ -x "$BQ" ] && "$BQ" -M help | grep -iE 'ranchu|virt'
               } > "$WORK/bundled-qemu.txt" 2>&1
