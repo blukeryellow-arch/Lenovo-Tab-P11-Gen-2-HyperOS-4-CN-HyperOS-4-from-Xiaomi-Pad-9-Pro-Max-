@@ -38,6 +38,8 @@ jobs:
     timeout-minutes: 350
     env:
       ANDROID_SDK_ROOT: /home/runner/asdk
+      ANDROID_AVD_HOME: /home/runner/.android/avd
+      ANDROID_USER_HOME: /home/runner/.android
       WORK: /tmp/emu
       GH_REPO: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
@@ -106,15 +108,23 @@ jobs:
           : > "$WORK/emu-progress.log"
 
           # ---------- S C I E Z K A   A: emulator SDK ----------
-          echo "no" | avdmanager create avd -n mystical \
-            -k "system-images;android-33;$TAG;arm64-v8a" >/dev/null 2>&1
+          export ANDROID_AVD_HOME=/home/runner/.android/avd
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "=== avdmanager create (glosno):"
+          echo "no" | avdmanager create avd -n mystical --force \
+            -k "system-images;android-33;$TAG;arm64-v8a" 2>&1 | tee "$WORK/avd-create.log"
+          if [ ! -f "$ANDROID_AVD_HOME/mystical.ini" ]; then
+            echo "=== avd.ini NIE powstal; avdmanager list avd:"
+            avdmanager list avd 2>&1 | head -20 | tee -a "$WORK/avd-create.log"
+          fi
+          ls -la "$ANDROID_AVD_HOME" 2>&1 | tee -a "$WORK/avd-create.log"
           nohup emulator @mystical -no-window -no-audio -no-boot-anim \
             -no-snapshot -wipe-data -accel off -gpu swiftshader_indirect \
             -memory 4096 -cores 4 -system "$IMG" > "$WORK/emu.log" 2>&1 &
           EMUPID=$!
           echo "[A] emulator PID $EMUPID" | tee -a "$WORK/emu-progress.log"
           ok_dev=0
-          for i in $(seq 1 90); do
+          for i in $(seq 1 240); do
             sleep 10
             if adb devices 2>/dev/null | grep -q "emulator.*device$"; then ok_dev=1; break; fi
             if ! kill -0 $EMUPID 2>/dev/null; then
@@ -254,6 +264,9 @@ jobs:
             echo "## qemu stderr"; echo '```'
             tail -30 "$WORK/qemu.log" 2>/dev/null || echo "(brak)"
             echo '```'
+            echo "## avdmanager (tworzenie AVD)"; echo '```'
+            cat "$WORK/avd-create.log" 2>/dev/null || echo "(brak)"
+            echo '```'
             echo "## emulator SDK log (tail 40)"; echo '```'
             tail -40 "$WORK/emu.log" 2>/dev/null || echo "(brak)"
             echo '```'
@@ -302,6 +315,7 @@ jobs:
           path: |
             /tmp/emu/emu-progress.log
             /tmp/emu/emu.log
+            /tmp/emu/avd-create.log
             /tmp/emu/qemu.log
             /tmp/emu/qemu-console.log
             /tmp/emu/emu-logcat-full.txt
