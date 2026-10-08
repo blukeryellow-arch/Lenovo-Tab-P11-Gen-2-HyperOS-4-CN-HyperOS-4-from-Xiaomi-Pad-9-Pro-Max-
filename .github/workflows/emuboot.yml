@@ -198,7 +198,7 @@ jobs:
               # vendor=vdc1, metadata by-name z GPT, data=vdb) - GSI-style test ----
               printf '%s\n' \
                 '/dev/block/vdd   /system     ext4    ro,barrier=1     wait,first_stage_mount' \
-                '/dev/block/vdc1  /vendor     ext4    ro,barrier=1     wait,first_stage_mount' \
+                '/dev/block/platform/a003c00.virtio_mmio/by-name/vendor    /vendor    ext4    ro,barrier=1    wait,first_stage_mount' \
                 '/dev/block/platform/a003c00.virtio_mmio/by-name/metadata    /metadata    ext4    noatime,nosuid,nodev    wait,formattable,first_stage_mount' \
                 '/dev/block/vdb   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,fileencryption=aes-256-xts:aes-256-cts,reservedsize=128M,fsverity,keydirectory=/metadata/vold/metadata_encryption,latemount' \
                 '/dev/block/zram0 none swap  defaults zramsize=75%' \
