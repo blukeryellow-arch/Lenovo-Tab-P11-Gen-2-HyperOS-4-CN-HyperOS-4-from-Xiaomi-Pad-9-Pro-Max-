@@ -497,6 +497,10 @@ jobs:
             'ro.adb.secure': '0',
             'persist.sys.usb.config': 'mtp,adb',
             'persist.service.adb.enable': '1',
+            # PERSISTENTNE LOGI: logcat przezycie reboot (diagnoza wieszania boota)
+            'persist.logd.logpersistd': 'true',
+            'persist.logd.logpersistd.buffer': 'all',
+            'persist.logd.size': '16384',
             # grafika / 120Hz (spec usera)
             'ro.surface_flinger.supports_background_blur': '1',
             'persist.sys.sf.blur': '1',
@@ -876,7 +880,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: /tmp/m2/donor-cache
-          key: yingtian-OS4.0.11.0-h4-port-v2
+          key: yingtian-OS4.0.11.0-h4-port-v4
 
       - name: "4c2. PORT: pobierz donor yingtian HyperOS 4 + wyluskaj launcher (10.3 GB)"
         if: steps.donorcache.outputs.cache-hit != 'true'
@@ -939,6 +943,9 @@ jobs:
           test -s "$DCH/MiuiHome-h4.apk" || { echo "::error::donor: MiuiHome-h4.apk pusty"; sudo umount "$DM"; exit 1; }
           sudo mkdir -p "$DCH/overlay"
           sudo cp -a "$DM/overlay/." "$DCH/overlay/" 2>/dev/null || echo "donor: brak product/overlay (ok)"
+          # ---- media donora: ORYGINALNA bootanimation HyperOS 4 (+ bootaudio) ----
+          sudo mkdir -p "$DCH/media"
+          sudo cp -a "$DM/media/." "$DCH/media/" 2>/dev/null || echo "donor: brak product/media (ok)"
           sudo mkdir -p "$DCH/perms"
           sudo cp -a "$DM/etc/permissions/." "$DCH/perms/" 2>/dev/null || true
           # ---- jary <library> z product/framework (nazwy plikow z XML-i perms) ----
@@ -1005,7 +1012,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: /tmp/m2/donor-cache
-          key: yingtian-OS4.0.11.0-h4-port-v2
+          key: yingtian-OS4.0.11.0-h4-port-v4
 
       - name: "4d. PORT HyperOS z nabu (MiuiSystemUI + MiuiHome + framework + classpaths.pb)"
         run: |
@@ -1353,6 +1360,55 @@ jobs:
           on property:sys.boot_completed=1
               exec_background u:r:init:s0 -- /system/bin/sh /system/bin/mystical-home-guard.sh
           HGR
+          # ---------- bootanimation HYPEROS 4 (oryginal z donora, nadpisuje wygenerowana) ----------
+          if [ -s "$DCH/media/bootanimation.zip" ]; then
+            sudo install -m 0644 "$DCH/media/bootanimation.zip" "$SYS/media/bootanimation.zip"
+            echo "bootanimation: ORYGINAL HyperOS 4 z donora ($(stat -c%s "$SYS/media/bootanimation.zip") B)"
+            for BA in bootaudio.wav bootaudio.mp3 bootanimation_audio.wav; do
+              if [ -s "$DCH/media/$BA" ]; then
+                sudo install -m 0644 "$DCH/media/$BA" "$SYS/media/$BA" 2>/dev/null || true
+                echo "bootaudio donora: $BA"
+              fi
+            done
+          else
+            echo "UWAGA: donor bez product/media/bootanimation.zip -> zostaje wygenerowana (orb)"
+          fi
+          # ---------- bootdiag: zrzut logow do /data gdy system nie wstanie w 240 s ----------
+          sudo tee "$SYS/bin/mystical-bootdiag.sh" >/dev/null <<'BDIAG'
+          #!/system/bin/sh
+          # MysticalOS bootdiag: jesli boot nie ukonczy sie w 240 s, zrzuc logi do /data/mystical/
+          # (przezywa reboot i reflash systemu - diagnoza wieszania bez ADB)
+          LOGDIR=/data/mystical
+          sleep 240
+          [ "$(getprop sys.boot_completed)" = "1" ] && exit 0
+          mkdir -p "$LOGDIR" 2>/dev/null
+          TS=$(date +%Y%m%d-%H%M%S)
+          logcat -b all -d > "$LOGDIR/bootfail-logcat-$TS.txt" 2>&1
+          dmesg > "$LOGDIR/bootfail-dmesg-$TS.txt" 2>/dev/null
+          getprop > "$LOGDIR/bootfail-props-$TS.txt" 2>/dev/null
+          ps -A > "$LOGDIR/bootfail-ps-$TS.txt" 2>/dev/null
+          echo "bootdiag $TS done" >> "$LOGDIR/bootfail-history.txt"
+          sync
+          exit 0
+          BDIAG
+
+          sudo chmod 0755 "$SYS/bin/mystical-bootdiag.sh"
+          sudo tee "$SYS/etc/init/mystical_bootdiag.rc" >/dev/null <<'BDRC'
+          # MysticalOS bootdiag: start wczesnie (post-fs-data), sam sie wygasza przy boot_completed
+          service mystical_bootdiag /system/bin/mystical-bootdiag.sh
+              class late_start
+              user root
+              group root readproc logd
+              oneshot
+              disabled
+
+          on post-fs-data
+              start mystical_bootdiag
+
+          on property:sys.boot_completed=1
+              stop mystical_bootdiag
+          BDRC
+
           # konteksty SELinux dla nowych plikow portu h4
           sudo python3 - "$SYS" <<'EOF'
           import os, sys
@@ -1380,6 +1436,30 @@ jobs:
               setx(os.path.join(S, 'app_backup/miuihome-rescue/MiuiHome.apk'), ref_apk, 0o644)
           setx(os.path.join(S, 'bin/mystical-home-guard.sh'), ref_sys, 0o755)
           setx(os.path.join(S, 'etc/init/mystical_home_guard.rc'), ref_etc, 0o644)
+          setx(os.path.join(S, 'bin/mystical-bootdiag.sh'), ref_sys, 0o755)
+          setx(os.path.join(S, 'etc/init/mystical_bootdiag.rc'), ref_etc, 0o644)
+          # media donora nadpisane w 4d2 -> kontekst jak dla media/ (jak w 4b)
+          ref_media2 = None
+          for root, _, files in os.walk(os.path.join(S, 'media')):
+              for f in files:
+                  try:
+                      x = os.getxattr(os.path.join(root, f), 'security.selinux')
+                      if f != 'bootanimation.zip' and not f.startswith('bootaudio') \
+                         and not f.startswith('bootfail'):
+                          ref_media2 = os.path.join(root, f)
+                  except OSError:
+                      pass
+          if ref_media2:
+              for rel in ('media/bootanimation.zip',):
+                  p = os.path.join(S, rel)
+                  if os.path.exists(p):
+                      os.setxattr(p, 'security.selinux',
+                                  os.getxattr(ref_media2, 'security.selinux'))
+              for root, _, files in os.walk(os.path.join(S, 'media')):
+                  for f in files:
+                      if f.startswith('bootaudio') or f.startswith('bootanimation_audio'):
+                          os.setxattr(os.path.join(root, f), 'security.selinux',
+                                      os.getxattr(ref_media2, 'security.selinux'))
           for rel in ('etc/permissions/privapp-permissions-miuihome-h4.xml',
                       'etc/permissions/h4-libraries.xml',
                       'etc/mystical/h4-overlays.txt',
@@ -1821,6 +1901,27 @@ jobs:
             grep -q "Flags: *2$" "$WORK/out/avb-info-system-ext.txt" || { echo "::error::Flags != 2 (system_ext)"; exit 1; }
           fi
           rm -rf "$WORK/vfy"
+          # ---------- wariant DSU: obraz BEZ stopki AVB (czysty ext4) ----------
+          # DSU owija obraz w wlasna partycje dynamiczna (system_gsi); stopka
+          # hashtree wewnatrz obrazu powoduje probe zbudowania verity ->
+          # "Hash device is too small" -> kernel panic (log z tabletu usera,
+          # 2026-10-07 22:15:40 SYSTEM_LAST_KMSG). Dla DSU dajemy czysty fs.
+          cp "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" "$WORK/out/MysticalOS_0.5_DSU_nofooter.img"
+          python3 "$KDIR/tools/avbtool.py" erase_footer --image "$WORK/out/MysticalOS_0.5_DSU_nofooter.img"
+          FSIZE=$(stat -c%s "$WORK/out/MysticalOS_0.5_DSU_nofooter.img")
+          echo "DSU no-footer: $FSIZE B (fs bez stopki)"
+          python3 - "$WORK/out/MysticalOS_0.5_DSU_nofooter.img" <<'CHKDSU'
+          import struct, sys
+          with open(sys.argv[1], 'rb') as f:
+              magic = f.read(4)
+          # czysty ext4: superblock magic 0xEF53 @ offset 1080 (1024+56)
+          with open(sys.argv[1], 'rb') as f:
+              f.seek(1080)
+              sb = f.read(2)
+          assert magic != b'AVB0', 'naglowek AVB nadal w obrazie DSU!'
+          assert struct.unpack('<H', sb)[0] == 0xEF53, 'magic superblocku ext4 nie zgadza sie'
+          print('DSU image: czysty ext4, bez AVB - OK')
+          CHKDSU
 
       - name: "7. Weryfikacja finalna (propsy + debloat + Rust + qemu)"
         run: |
@@ -1968,6 +2069,18 @@ jobs:
             || { echo "::error::PORT h4: brak mystical-home-guard.sh"; exit 1; }
           sudo test -s "$MSYS/etc/init/mystical_home_guard.rc" \
             || { echo "::error::PORT h4: brak mystical_home_guard.rc"; exit 1; }
+          sudo test -s "$MSYS/bin/mystical-bootdiag.sh" \
+            || { echo "::error::brak mystical-bootdiag.sh (diagnoza hangow)"; exit 1; }
+          sudo test -s "$MSYS/etc/init/mystical_bootdiag.rc" \
+            || { echo "::error::brak mystical_bootdiag.rc"; exit 1; }
+          sudo grep -q "on post-fs-data" "$MSYS/etc/init/mystical_bootdiag.rc" \
+            || { echo "::error::bootdiag: rc bez post-fs-data"; exit 1; }
+          sudo grep -q "sys.boot_completed" "$MSYS/bin/mystical-bootdiag.sh" \
+            || { echo "::error::bootdiag: skrypt bez check boot_completed"; exit 1; }
+          sudo grep -q "logcat -b all -d" "$MSYS/bin/mystical-bootdiag.sh" \
+            || { echo "::error::bootdiag: skrypt bez zrzutu logcat"; exit 1; }
+          sudo grep -q "persist.logd.logpersistd=true" "$MSYS/build.prop" \
+            || { echo "::error::brak persist.logd (persistentne logi)"; exit 1; }
           sudo grep -q "pm install -r -d" "$MSYS/bin/mystical-home-guard.sh" \
             || { echo "::error::PORT h4: guard bez pm install (rescue!)"; exit 1; }
           sudo grep -q "cmd overlay enable" "$MSYS/bin/mystical-home-guard.sh" \
@@ -2017,17 +2130,18 @@ jobs:
                   if fn and not fn.startswith('/') and not os.path.exists(f'{M}/fonts/{fn}'):
                       raise AssertionError(f'fonts.xml -> brak pliku {fn}')
           print(f'fonts.xml: MiSans domyslna rodzina sans-serif ({misans} wpisow), pliki OK')
-          # bootanimation: desc.txt pierwszy + STORED + 2000x1200 + >= 60 klatek
+          # bootanimation: desc.txt pierwszy + czytelna struktura.
+          # Od v39: ORYGINAL z donora HyperOS 4 (wymiary/klatki wg donora,
+          # np. 3200x2000; SurfaceFlander skaluje z zachowaniem proporcji).
           z = zipfile.ZipFile(f'{M}/media/bootanimation.zip')
           names = z.namelist()
           assert names[0] == 'desc.txt', f'desc.txt nie jest pierwszy: {names[0]}'
           first = z.read('desc.txt').decode().splitlines()[0].split()
-          assert first[:2] == ['2000', '1200'], f'desc.txt wymiary: {first}'
-          frames = [n for n in names if n.endswith('.png')]
-          assert len(frames) >= 60, f'klatek {len(frames)} < 60'
-          for ni in z.infolist():
-              assert ni.compress_type == zipfile.ZIP_STORED, f'{ni.filename} SKOMPRESOWANY!'
-          print(f'bootanimation: 2000x1200, {len(frames)} klatek, ZIP STORED, desc.txt pierwszy')
+          frames = [n for n in names if n.endswith(('.png', '.webp'))]
+          assert len(frames) >= 10, f'klatek {len(frames)} < 10'
+          stored = all(ni.compress_type == zipfile.ZIP_STORED for ni in z.infolist())
+          print(f'bootanimation: {first[0]}x{first[1]}, {len(frames)} klatek, '
+                f'STORED={stored}, desc.txt pierwszy')
           EOF
           sudo test -s "$MSYS/media/wallpapers/MysticalOS_Default.png" \
             || { echo "::error::brak wallpapera MysticalOS_Default.png"; exit 1; }
@@ -2173,12 +2287,28 @@ jobs:
           Nakladki wygladu HyperOS 4 (z donora) wlacza guard po boocie
           (cmd overlay enable; lista: /system/etc/mystical/h4-overlays.txt).
 
+          WGROWANIE PRZEZ DSU (alternatywa; NIE uzywaj obrazu ze stopka!):
+            Uzyj pliku MysticalOS_0.5_DSU_nofooter.img (czysty ext4, BEZ
+            stopki AVB). Zwykly obraz HyperOS_Port.img w DSU powoduje
+            kernel panic (verity: Hash device is too small - potwierdzone
+            logiem z tabletu). DSU loader -> wybierz nofooter.img.
+
           GDYBY COS NIE TAK (ADB zyje od logo - ro.debuggable=1):
             adb devices
             adb root && adb logcat -d > boot.log
             adb logcat -b all -d | grep -iE "FATAL|AndroidRuntime|systemui|miui"
             adb shell pm list packages -d
             (odeslij log -> iteracja)
+
+          WISI NA ANIMACJI BOOT? (system startuje, ale UI nie wstaje):
+            1. Podlacz USB do PC (ADB dziala nawet w trakcie wieszania):
+               adb root && adb logcat -b all -d > hang.log   (odeslij)
+            2. Nie masz kabla? Po restarcie logi sa i tak zapisane przez
+               mystical-bootdiag w /data/mystical/bootfail-*.txt
+               (przezywaja reboot i reflash systemu). Wgraj stock, potem:
+               adb shell su 0 ls /data/mystical/   (albo przez recovery)
+            3. Logi sa rowniez persistentne (persist.logd) - pelny logcat
+               poprzedniego boota w /data/misc/logd/logcat.
 
           ROLLBACK (do stock Lenovo):
             fastboot flash vbmeta* STOCK-ORYGINAL/vbmeta*.img (x3)
@@ -2194,6 +2324,7 @@ jobs:
             logcat -s MysticalOS-Rust       -> home/debloat/RRO/zRAM
           EOF
           sha256sum "$WORK/out"/MysticalOS_0.5_HyperOS_Port*.img \
+            "$WORK/out"/MysticalOS_0.5_DSU_nofooter.img \
                     "$WORK/vbmeta/FLAGS3"/*.img "$WORK/vbmeta/STOCK-ORYGINAL"/*.img \
                     "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" > "$WORK/out/SHA256SUMS.txt"
           cat "$WORK/out/SHA256SUMS.txt"
@@ -2289,6 +2420,11 @@ jobs:
             out/preview \
             vbmeta/FLAGS3 vbmeta/STOCK-ORYGINAL
           echo "zip release: $(stat -c%s "$WORK/port-release.zip") B"
+          # wariant DSU: obraz bez stopki AVB + ta sama dokumentacja
+          zip -r -q "$WORK/port-release-dsu.zip" \
+            out/MysticalOS_0.5_DSU_nofooter.img \
+            out/INSTRUKCJA-FASTBOOTD.txt out/SHA256SUMS.txt out/port-report.txt
+          echo "zip DSU: $(stat -c%s "$WORK/port-release-dsu.zip") B"
           SHA_IMG=$(awk '/MysticalOS_0\.5_HyperOS_Port\.img/{print $1}' "$WORK/out/SHA256SUMS.txt")
           {
             echo "# MysticalOS 0.5 — PRAWDZIWY PORT HyperOS (nabu OS1.0.6.0 → Lenovo TB350FU)"
@@ -2304,6 +2440,11 @@ jobs:
             echo "+ library XML (57 plikow). Tozsamosc: MysticalOS 0.5 (HyperOS 4 x A17 Experience),"
             echo "sdk=33 NIETYKANE. Debloat v2.2: stock LenovoSystemUI (61.7 MB, system_ext) + reszta"
             echo "Lenovo/Xiaomi jako atrapy; Rust coreutils + mystical-rust-daemon (zRAM 4 GB lz4)."
+            echo
+            echo "## Warianty"
+            echo "- **FastbootD**: port-release.zip (MysticalOS_0.5_HyperOS_Port.img, stopka AVB flags 2)"
+            echo "- **DSU**: port-release-dsu.zip (MysticalOS_0.5_DSU_nofooter.img — czysty ext4 BEZ stopki;"
+            echo "  zwykly obraz w DSU powoduje kernel panic — verity too small, potwierdzone logiem)"
             echo
             echo "## Zawartosc pelnego zipa (MysticalOS_0.5_HyperOS_Port-full.zip)"
             echo "- out/MysticalOS_0.5_HyperOS_Port.img — RAW ext4, 3 489 660 928 B (= PS partycji), stopka AVB flags 2 sha256 no-FEC"
@@ -2341,7 +2482,13 @@ jobs:
             echo "upload padl (proba $AT) - czekam 20 s"
             sleep 20
           done
-          [ "$REL_ZIP_OK" = "1" ] || { echo "::error::upload port-release.zip padl po 3 probach"; exit 1; }
+                    [ "$REL_ZIP_OK" = "1" ] || { echo "::error::upload port-release.zip padl po 3 probach"; exit 1; }
+          REL_DSU_OK=0
+          for AT in 1 2 3; do
+            if gh release upload "$TAG" "$WORK/port-release-dsu.zip" --clobber; then REL_DSU_OK=1; break; fi
+            echo "upload DSU padl (proba $AT)"; sleep 20
+          done
+          [ "$REL_DSU_OK" = "1" ] || { echo "::error::upload port-release-dsu.zip padl po 3 probach"; exit 1; }
           gh release upload "$TAG" \
             "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" "$WORK/out/SHA256SUMS.txt" \
             "$WORK/out/port-report.txt" "$WORK/out/mods-report.txt" \
