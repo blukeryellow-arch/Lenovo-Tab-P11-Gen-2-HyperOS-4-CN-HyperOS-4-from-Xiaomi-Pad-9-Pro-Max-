@@ -1360,35 +1360,48 @@ jobs:
           on property:sys.boot_completed=1
               exec_background u:r:init:s0 -- /system/bin/sh /system/bin/mystical-home-guard.sh
           HGR
-          # ---------- bootanimation HYPEROS 4 (oryginal z donora, nadpisuje wygenerowana) ----------
-          if [ -s "$DCH/media/bootanimation.zip" ]; then
-            sudo install -m 0644 "$DCH/media/bootanimation.zip" "$SYS/media/bootanimation.zip"
-            echo "bootanimation: ORYGINAL HyperOS 4 z donora ($(stat -c%s "$SYS/media/bootanimation.zip") B)"
-            for BA in bootaudio.wav bootaudio.mp3 bootanimation_audio.wav; do
-              if [ -s "$DCH/media/$BA" ]; then
-                sudo install -m 0644 "$DCH/media/$BA" "$SYS/media/$BA" 2>/dev/null || true
-                echo "bootaudio donora: $BA"
-              fi
-            done
+          # ---------- bootanimation HYPEROS (oryginal, SKALOWANA do 2000x1200) ----------
+          # Android bootanimation NIE skaluje klatek (rysuje 1:1). Animacje
+          # donorow sa pod wyzsze panele (nabu 2560x1600, yingtian 3408x2272)
+          # -> bez skalowania tekst wychodzi na cala szerokosc ekranu 2000x1200.
+          # Priorytet: 1) nabu HyperOS (branding HyperOS, bez "powered by
+          # Xring" z Pad 9 Pro Max), 2) donor yingtian HyperOS 4, 3) wygen.
+          ANIM_SRC=""; ANIM_SRC_DESC=""
+          if sudo test -s "$WORK/nabu-mnt-prod/media/bootanimation.zip"; then
+            ANIM_SRC="$WORK/nabu-mnt-prod/media/bootanimation.zip"; ANIM_SRC_DESC="nabu HyperOS"
+          elif [ -s "$DCH/media/bootanimation.zip" ]; then
+            ANIM_SRC="$DCH/media/bootanimation.zip"; ANIM_SRC_DESC="donor yingtian HyperOS 4"
+          fi
+          if [ -n "$ANIM_SRC" ]; then
+            sudo cp "$ANIM_SRC" "$WORK/anim-src.zip"
+            sudo chown "$(id -u):$(id -g)" "$WORK/anim-src.zip"
+            python3 "$KDIR/tools/scale_bootanim.py" "$WORK/anim-src.zip" 2000 1200 "$WORK/anim-scaled.zip"
+            sudo install -m 0644 "$WORK/anim-scaled.zip" "$SYS/media/bootanimation.zip"
+            echo "bootanimation: ORYGINALNA ($ANIM_SRC_DESC) skalowana do 2000x1200: $(stat -c%s "$SYS/media/bootanimation.zip") B"
           else
-            echo "UWAGA: donor bez product/media/bootanimation.zip -> zostaje wygenerowana (orb)"
+            echo "UWAGA: brak oryginalnej animacji (nabu/donor) -> zostaje wygenerowana 2000x1200"
           fi
           # ---------- bootdiag: zrzut logow do /data gdy system nie wstanie w 240 s ----------
           sudo tee "$SYS/bin/mystical-bootdiag.sh" >/dev/null <<'BDIAG'
           #!/system/bin/sh
-          # MysticalOS bootdiag: jesli boot nie ukonczy sie w 240 s, zrzuc logi do /data/mystical/
-          # (przezywa reboot i reflash systemu - diagnoza wieszania bez ADB)
+          # MysticalOS bootdiag v2: petla zrzutow co 45 s (max 8) dopoki boot
+          # nie ukonczony; logi w /data/mystical (przezywaja reboot i reflash).
+          # v2: krotkie petle crashy system_server (<240 s) tez zostana zalogowane.
           LOGDIR=/data/mystical
-          sleep 240
-          [ "$(getprop sys.boot_completed)" = "1" ] && exit 0
           mkdir -p "$LOGDIR" 2>/dev/null
           TS=$(date +%Y%m%d-%H%M%S)
-          logcat -b all -d > "$LOGDIR/bootfail-logcat-$TS.txt" 2>&1
-          dmesg > "$LOGDIR/bootfail-dmesg-$TS.txt" 2>/dev/null
-          getprop > "$LOGDIR/bootfail-props-$TS.txt" 2>/dev/null
-          ps -A > "$LOGDIR/bootfail-ps-$TS.txt" 2>/dev/null
-          echo "bootdiag $TS done" >> "$LOGDIR/bootfail-history.txt"
-          sync
+          i=1
+          while [ $i -le 8 ]; do
+            sleep 45
+            [ "$(getprop sys.boot_completed)" = "1" ] && exit 0
+            logcat -b all -d > "$LOGDIR/bootfail-logcat-$TS-$i.txt" 2>&1
+            dmesg > "$LOGDIR/bootfail-dmesg-$TS-$i.txt" 2>/dev/null
+            getprop > "$LOGDIR/bootfail-props-$TS-$i.txt" 2>/dev/null
+            ps -A > "$LOGDIR/bootfail-ps-$TS-$i.txt" 2>/dev/null
+            echo "bootdiag $TS dump $i: boot_completed=$(getprop sys.boot_completed) uptime=$(cat /proc/uptime)" >> "$LOGDIR/bootfail-history.txt"
+            sync
+            i=$((i+1))
+          done
           exit 0
           BDIAG
 
