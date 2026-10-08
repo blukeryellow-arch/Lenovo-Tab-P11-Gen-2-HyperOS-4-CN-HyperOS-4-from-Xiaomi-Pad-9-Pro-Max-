@@ -86,8 +86,13 @@ jobs:
           rm -f port-release-dsu.zip
           IMG="$WORK/emu-pkg/out/MysticalOS_0.5_DSU_nofooter.img"
           test -s "$IMG" || { echo "::error::brak obrazu DSU w zipie"; exit 1; }
-          ( cd emu-pkg/out && grep "DSU_nofooter" SHA256SUMS.txt | sha256sum -c - ) \
-            || { echo "::error::sha256 obrazu DSU sie nie zgadza"; exit 1; }
+          # SHA256SUMS z buildera ma sciezki absolutne (/tmp/m2/out/...) -
+          # porownujemy sam hash
+          WANT=$(grep "DSU_nofooter" emu-pkg/out/SHA256SUMS.txt | awk '{print $1}')
+          GOT=$(sha256sum "$IMG" | awk '{print $1}')
+          echo "sha256: plik=$GOT"
+          echo "sha256: suma=$WANT"
+          [ "$WANT" = "$GOT" ] || { echo "::error::sha256 obrazu DSU sie nie zgadza"; exit 1; }
           echo "IMG: $(stat -c%s "$IMG") B"; df -h /
 
       - name: "3. BOOT w emulatorze (arm64 na x86_64, TCG) -> czekamy na boot_completed"
