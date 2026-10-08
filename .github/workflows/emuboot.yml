@@ -159,18 +159,37 @@ jobs:
               truncate -s 2G "$WORK/userdata.img"
               mkfs.ext4 -q -F "$WORK/userdata.img" >/dev/null 2>&1
 
-              # ---- forensyka: fstab z ramdisku (JAK init adresuje partycje) ----
-              sudo apt-get install -qq -y cpio lz4 >/dev/null 2>&1 || true
-              mkdir -p "$WORK/rd"; cd "$WORK/rd"
-              (gzip -dc "$RAMDISK" 2>/dev/null || lz4 -dc "$RAMDISK" 2>/dev/null) \
-                | cpio -idm --quiet 2>/dev/null
-              : > "$WORK/fstab-ranchu.txt"
-              for f in $(find . -name 'fstab*' 2>/dev/null); do
-                echo "===== $f" >> "$WORK/fstab-ranchu.txt"
-                cat "$f" >> "$WORK/fstab-ranchu.txt"
+              # ---- forensyka: PELNA ekstrakcja ramdisku (multi-cpio; GNU cpio
+              # czyta tylko 1. archiwum do TRAILER!!!, android ramdisk = kilka sklejonych) ----
+              sudo apt-get install -qq -y cpio lz4 device-tree-compiler >/dev/null 2>&1 || true
+              if gzip -t "$RAMDISK" 2>/dev/null; then DEC="gzip -dc"
+              else DEC="lz4 -dc"; fi
+              $DEC "$RAMDISK" > "$WORK/rd.cpio" 2>/dev/null
+              rm -rf "$WORK/rd-all"
+              python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/cpio_multi_extract.py" \
+                "$WORK/rd.cpio" "$WORK/rd-all" > "$WORK/ramdisk-extract.log" 2>&1
+              find "$WORK/rd-all" \( -type f -o -type l \) | sed "s|$WORK/rd-all/||" \
+                | sort > "$WORK/ramdisk-list.txt"
+              : > "$WORK/fstab-all.txt"
+              for f in $(find "$WORK/rd-all" -name 'fstab*' 2>/dev/null); do
+                echo "===== RAMDISK: ${f#*rd-all/}" >> "$WORK/fstab-all.txt"
+                cat "$f" >> "$WORK/fstab-all.txt"
               done
-              echo "===== (ls ramdisku top):" >> "$WORK/fstab-ranchu.txt"
-              ls -la "$WORK/rd" | head -30 >> "$WORK/fstab-ranchu.txt" 2>&1
+              mkdir -p /tmp/mnt-sys
+              if sudo mount -o ro,loop "$SYSIMG/system.img" /tmp/mnt-sys 2>/dev/null; then
+                for f in /tmp/mnt-sys/etc/fstab*; do
+                  [ -f "$f" ] || continue
+                  echo "===== SYSTEM.IMG (sysimg): $f" >> "$WORK/fstab-all.txt"
+                  cat "$f" >> "$WORK/fstab-all.txt"
+                done
+                sudo umount /tmp/mnt-sys 2>/dev/null
+              fi
+              # qemu emulatora SDK (bundled): czy ma maszyny ranchu?
+              BQ="$ANDROID_SDK_ROOT/emulator/qemu/linux-x86_64/qemu-system-aarch64-headless"
+              { echo "BQ=$BQ"
+                [ -x "$BQ" ] && "$BQ" -version | head -1
+                [ -x "$BQ" ] && "$BQ" -M help | grep -iE 'ranchu|virt'
+              } > "$WORK/bundled-qemu.txt" 2>&1
               sfdisk --dump "$IMG" > "$WORK/gpt-sys.txt" 2>&1
               sfdisk --dump "$SYSIMG/vendor.img" > "$WORK/gpt-vendor.txt" 2>&1
 
@@ -192,7 +211,8 @@ jobs:
               # permissive: qcow... w VM nie chcemy falszywych FAILow z rozjazdu
               # polityki lenovo-system vs ranchu-vendor; crashe frameworku
               # (FATAL EXCEPTION) sa lapano niezaleznie od SELinux
-              nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
+              nohup qemu-system-aarch64 -M virt,dumpdtb=$WORK/virt.dtb \
+                -cpu cortex-a76 -smp 4 -m 4096 \
                 -kernel "$KERNEL" -initrd "$RAMDISK" \
                 -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 androidboot.adb.tcp.port=5555" \
                 -drive if=none,file="$IMG",format=raw,id=system \
@@ -304,8 +324,24 @@ jobs:
             echo "## qemu stderr"; echo '```'
             tail -30 "$WORK/qemu.log" 2>/dev/null || echo "(brak)"
             echo '```'
-            echo "## fstab.ranchu (z ramdisku sysimg) - jak init adresuje partycje"; echo '```'
-            cat "$WORK/fstab-ranchu.txt" 2>/dev/null || echo "(brak)"
+            echo "## fstab (multi-cpio ramdisk + sysimg system.img) - KLUCZOWE"; echo '```'
+            cat "$WORK/fstab-all.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## ramdisk: pelna lista plikow (multi-cpio)"; echo '```'
+            head -100 "$WORK/ramdisk-list.txt" 2>/dev/null || echo "(brak)"
+            echo "wydobyto: $(cat "$WORK/ramdisk-extract.log" 2>/dev/null | tail -1)"
+            echo '```'
+            echo "## qemu bundled z emulatora SDK: maszyny (ranchu?)"; echo '```'
+            cat "$WORK/bundled-qemu.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## konsola: petle boot + grep init/fs_mgr/Fatal (caly plik)"; echo '```'
+            echo "petle (Run /init): $(grep -ac 'Run /init' "$WORK/qemu-console.log" 2>/dev/null)"
+            grep -aE 'init:|fs_mgr|Fatal|not found|Failed|mount|abort' \
+              "$WORK/qemu-console.log" 2>/dev/null | tail -100
+            echo '```'
+            echo "## DTB qemu virt: wezly android/fstab"; echo '```'
+            dtc -I dtb -O dts "$WORK/virt.dtb" 2>/dev/null \
+              | grep -aiE -B2 -A25 'fstab|firmware' | head -90 || echo "(brak)"
             echo '```'
             echo "## GPT: ms.img(metadata+super) / nasz system / vendor"; echo '```'
             cat "$WORK/gpt-ms.txt" "$WORK/gpt-sys.txt" "$WORK/gpt-vendor.txt" 2>/dev/null || echo "(brak)"
@@ -362,7 +398,10 @@ jobs:
             /tmp/emu/emu-progress.log
             /tmp/emu/emu.log
             /tmp/emu/avd-create.log
-            /tmp/emu/fstab-ranchu.txt
+            /tmp/emu/fstab-all.txt
+            /tmp/emu/ramdisk-list.txt
+            /tmp/emu/ramdisk-extract.log
+            /tmp/emu/bundled-qemu.txt
             /tmp/emu/gpt-ms.txt
             /tmp/emu/gpt-sys.txt
             /tmp/emu/gpt-vendor.txt
