@@ -1,0 +1,210 @@
+# ============================================================================
+# mysticalos-emuboot v1.0 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# ============================================================================
+# CEL: sprawdzic ANIM v41 (obraz MysticalOS) w CI ZANIM trafi na tablet.
+# Nie zgadujemy czy wisie - bootujemy i patrzymy.
+#
+# Srodowisko = maksymalnie bliskie tabletu, na ile emulator pozwala:
+#   - guest ARM64 (jak TB350FU), Android 13 / API 33 (jak TB350FU)
+#   - TEN SAM obraz: MysticalOS_0.5_DSU_nofooter.img z release (sha256 check)
+#   - vendor z emulatora (Treble) - na realnym MTK jest vendor Lenovo;
+#     emulator nie emuluje Helio G99 - to jedyne rozniecenie. Test lapie
+#     crashe frameworku (system_server/SystemUI/launcher/jary), ktore sa
+#     podejrzanym winowajca bootloopa.
+#   - TCG (brak KVM na runnerach): wolny boot, ale deterministyczny.
+#
+# Werdykt: PASS = sys.boot_completed=1; FAIL = bootloop/hang (logcat +
+# FATAL EXCEPTION + AVC denials w evidence); ERROR = emulator nie wstal.
+#
+# Trigger: push z "[EMU]" w komunikacie commita (patrz on:/if:).
+name: mysticalos-emuboot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/emuboot.yml', 'kit-mysticalos3/**']
+
+concurrency:
+  group: emuboot
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  emu:
+    if: contains(github.event.head_commit.message, '[EMU]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      ANDROID_SDK_ROOT: /home/runner/asdk
+      WORK: /tmp/emu
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "0. narzedzia (qemu, java, dysk)"
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK"
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-aarch64 qemu-utils e2fsprogs openjdk-17-jre-headless
+          df -h /
+
+      - name: "1. SDK: emulator + system-image android-33 arm64"
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          curl -fsSL --retry 3 -o /tmp/clt.zip \
+            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          unzip -q /tmp/clt.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"
+          mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          if sdkmanager "platform-tools" "emulator" \
+              "system-images;android-33;google_apis;arm64-v8a" \
+              > "$WORK/sdk-install.log" 2>&1; then
+            echo "sysimg: google_apis arm64-v8a"
+          else
+            echo "google_apis arm64 niedostepny, proba default:"
+            tail -3 "$WORK/sdk-install.log" || true
+            sdkmanager "platform-tools" "emulator" \
+              "system-images;android-33;default;arm64-v8a" > "$WORK/sdk-install2.log" 2>&1
+            echo "sysimg: default arm64-v8a"
+          fi
+          ls "$ANDROID_SDK_ROOT/system-images/android-33/"
+          "$ANDROID_SDK_ROOT/emulator/emulator" -version | head -2
+
+      - name: "2. obraz MysticalOS z release (nofooter; sha256 weryfikowany)"
+        run: |
+          set -euo pipefail
+          cd "$WORK"
+          gh release download 0.5-hyperos-port -p port-release-dsu.zip
+          unzip -q port-release-dsu.zip -d emu-pkg
+          rm -f port-release-dsu.zip
+          IMG="$WORK/emu-pkg/out/MysticalOS_0.5_DSU_nofooter.img"
+          test -s "$IMG" || { echo "::error::brak obrazu DSU w zipie"; exit 1; }
+          ( cd emu-pkg/out && grep "DSU_nofooter" SHA256SUMS.txt | sha256sum -c - ) \
+            || { echo "::error::sha256 obrazu DSU sie nie zgadza"; exit 1; }
+          echo "IMG: $(stat -c%s "$IMG") B"; df -h /
+
+      - name: "3. BOOT w emulatorze (arm64 na x86_64, TCG) -> czekamy na boot_completed"
+        run: |
+          set -uo pipefail
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:$PATH"
+          IMG="$WORK/emu-pkg/out/MysticalOS_0.5_DSU_nofooter.img"
+          SYSIMG=$(echo "$ANDROID_SDK_ROOT"/system-images/android-33/*/arm64-v8a)
+          echo "sysimg: $SYSIMG"; ls "$SYSIMG"
+          TAG=$(basename "$(dirname "$SYSIMG")")
+          echo "no" | avdmanager create avd -n mystical \
+            -k "system-images;android-33;$TAG;arm64-v8a" || true
+          # -wipe-data: swiezy userdata = deterministyczne "jedne do jeden" warunki
+          nohup emulator @mystical -no-window -no-audio -no-boot-anim \
+            -no-snapshot -wipe-data -accel off -gpu swiftshader_indirect \
+            -memory 4096 -cores 4 -system "$IMG" > "$WORK/emu.log" 2>&1 &
+          EMUPID=$!
+          echo "emulator PID: $EMUPID"
+          # faza 1: adb device (do 25 min)
+          ok_dev=0
+          for i in $(seq 1 150); do
+            sleep 10
+            if adb devices 2>/dev/null | grep -q "emulator.*device$"; then ok_dev=1; break; fi
+            if ! kill -0 $EMUPID 2>/dev/null; then echo "EMULATOR PROCES PADL"; break; fi
+          done
+          echo "adb device po ~$((i*10)) s: $ok_dev"
+          if [ "$ok_dev" != "1" ]; then
+            echo "=== emu.log (caly) ==="; cat "$WORK/emu.log"
+            echo "EMU_BOOT=error" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          # faza 2: boot (do 210 min); progres co ~50 s do pliku
+          boot=0
+          : > "$WORK/emu-progress.log"
+          for i in $(seq 1 252); do
+            sleep 50
+            BC=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+            UP=$(adb shell cat /proc/uptime 2>/dev/null | tr -d '\r' | cut -d' ' -f1)
+            ZG=$(adb shell getprop init.svc.zygote 2>/dev/null | tr -d '\r')
+            SS=$(adb shell getprop init.svc.systemui 2>/dev/null | tr -d '\r')
+            echo "t=$((i*50))s bc='$BC' uptime='$UP' zygote='$ZG' systemui='$SS'" >> "$WORK/emu-progress.log"
+            if [ "$BC" = "1" ]; then boot=1; break; fi
+            if ! kill -0 $EMUPID 2>/dev/null; then
+              echo "EMULATOR PROCES PADL (faza boot)" >> "$WORK/emu-progress.log"; break
+            fi
+          done
+          echo "BOOT_COMPLETED=$boot" | tee -a "$WORK/emu-progress.log"
+          echo "EMU_BOOT=$boot" >> "$GITHUB_ENV"
+
+      - name: "4. werdykt + pelne logi (FATAL/AVC)"
+        if: always()
+        run: |
+          set -uo pipefail
+          export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
+          adb logcat -b all -d > "$WORK/emu-logcat-full.txt" 2>/dev/null || true
+          adb shell getprop > "$WORK/emu-props.txt" 2>/dev/null || true
+          adb shell dmesg > "$WORK/emu-dmesg.txt" 2>/dev/null || true
+          V=error
+          if [ "${EMU_BOOT:-none}" = "1" ]; then V=pass
+          elif [ "${EMU_BOOT:-none}" = "0" ]; then V=fail
+          fi
+          {
+            echo "# emuboot run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## Werdykt: $V"
+            if [ "$V" = "pass" ]; then
+              echo "**PASS** - system MysticalOS UKONCZYL boot w emulatorze (arm64, API 33, ten sam obraz co na tablet)."
+            elif [ "$V" = "fail" ]; then
+              echo "**FAIL** - bootloop/hang w emulatorze. To ODTWORZA problem z tabletu bez wgrywania - patrz FATAL/AVC nizej."
+            else
+              echo "**ERROR** - emulator/adb nie wystartowal (patrz emu.log) - problem srodowiska, nie obrazu."
+            fi
+            echo
+            echo "## Warunki testu (jeden do jednego, na ile fizycznie mozliwe)"
+            echo '- obraz: MysticalOS_0.5_DSU_nofooter.img z release (sha256 zweryfikowany w kroku 2)'
+            echo '- guest: arm64-v8a, Android 13 / API 33 (jak TB350FU)'
+            echo '- kernel+vendor: emulator android-33 arm64 (Treble); rozne od MTK Lenovo - crashe sprzetowe HAL nie sa testowane'
+            echo '- SELinux: enforcing (jak na tabletu); denials w dmesg nizej'
+            echo '- TCG (brak KVM na runnerze): boot wolny, ale deterministyczny'
+            echo
+            echo "## progress (co ~50 s)"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
+            echo "## FATAL EXCEPTIONS (caly logcat w artefakcie)"; echo '```'
+            grep -c "FATAL EXCEPTION" "$WORK/emu-logcat-full.txt" 2>/dev/null || echo 0
+            grep -B2 -A40 "FATAL EXCEPTION" "$WORK/emu-logcat-full.txt" 2>/dev/null | head -400 || echo "(brak)"
+            echo '```'
+            echo "## system_server watchdogi / restarty"; echo '```'
+            grep -iE "watchdog|system_server died|Restarting|Zygote" "$WORK/emu-logcat-full.txt" 2>/dev/null | head -40 || echo "(brak)"
+            echo '```'
+            echo "## AVC denials (top)"; echo '```'
+            grep "avc: denied" "$WORK/emu-dmesg.txt" 2>/dev/null | sed 's/.*avc: /avc: /' | sort | uniq -c | sort -rn | head -25 || echo "(brak)"
+            echo '```'
+            echo "## getprop (istotne)"; echo '```'
+            grep -E "ro.build.version|ro.mysticalos|ro.hyperos|sys.boot_completed|init.svc.(zygote|systemui|surfaceflinger)" "$WORK/emu-props.txt" 2>/dev/null || true
+            echo '```'
+            echo "## emulator log (tail 60)"; echo '```'; tail -60 "$WORK/emu.log" 2>/dev/null; echo '```'
+          } > "reports/emuboot-${GITHUB_RUN_ID}.md"
+          head -80 "reports/emuboot-${GITHUB_RUN_ID}.md"
+          [ "$V" = "pass" ] || exit 1
+
+      - name: "5. evidence commit"
+        if: always()
+        run: |
+          set -uo pipefail
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          git add reports/ || true
+          git commit -m "emuboot: evidence run ${GITHUB_RUN_ID}" || echo "nic do commitu"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done
+
+      - name: "6. artifact (pelne logi)"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emuboot-logs-${{ github.run_id }}
+          path: /tmp/emu/
+          retention-days: 90

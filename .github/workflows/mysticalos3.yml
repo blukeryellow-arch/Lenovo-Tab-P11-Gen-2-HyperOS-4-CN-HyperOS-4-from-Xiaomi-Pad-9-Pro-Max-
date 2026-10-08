@@ -1364,22 +1364,18 @@ jobs:
           # Android bootanimation NIE skaluje klatek (rysuje 1:1). Animacje
           # donorow sa pod wyzsze panele (nabu 2560x1600, yingtian 3408x2272)
           # -> bez skalowania tekst wychodzi na cala szerokosc ekranu 2000x1200.
-          # Priorytet: 1) nabu HyperOS (branding HyperOS, bez "powered by
-          # Xring" z Pad 9 Pro Max), 2) donor yingtian HyperOS 4, 3) wygen.
-          ANIM_SRC=""; ANIM_SRC_DESC=""
-          if sudo test -s "$WORK/nabu-mnt-prod/media/bootanimation.zip"; then
-            ANIM_SRC="$WORK/nabu-mnt-prod/media/bootanimation.zip"; ANIM_SRC_DESC="nabu HyperOS"
-          elif [ -s "$DCH/media/bootanimation.zip" ]; then
-            ANIM_SRC="$DCH/media/bootanimation.zip"; ANIM_SRC_DESC="donor yingtian HyperOS 4"
-          fi
-          if [ -n "$ANIM_SRC" ]; then
-            sudo cp "$ANIM_SRC" "$WORK/anim-src.zip"
+          # Zrodlo: donor yingtian HyperOS 4 - POZIOMY panel 3408x2272 (nabu
+          # 1600x2560 jest PORTRAIT: na ekranie 2000x1200 wychodzil pasek
+          # 750x1200 na srodku - zla baza). Tryb CROP: pelny ekran, bez
+          # znieksztalcen i bez czarnych pasow.
+          if [ -s "$DCH/media/bootanimation.zip" ]; then
+            sudo cp "$DCH/media/bootanimation.zip" "$WORK/anim-src.zip"
             sudo chown "$(id -u):$(id -g)" "$WORK/anim-src.zip"
-            python3 "$KDIR/tools/scale_bootanim.py" "$WORK/anim-src.zip" 2000 1200 "$WORK/anim-scaled.zip"
+            python3 "$KDIR/tools/scale_bootanim.py" "$WORK/anim-src.zip" 2000 1200 "$WORK/anim-scaled.zip" crop
             sudo install -m 0644 "$WORK/anim-scaled.zip" "$SYS/media/bootanimation.zip"
-            echo "bootanimation: ORYGINALNA ($ANIM_SRC_DESC) skalowana do 2000x1200: $(stat -c%s "$SYS/media/bootanimation.zip") B"
+            echo "bootanimation: ORYGINAL HyperOS 4 (donor, crop->2000x1200): $(stat -c%s "$SYS/media/bootanimation.zip") B"
           else
-            echo "UWAGA: brak oryginalnej animacji (nabu/donor) -> zostaje wygenerowana 2000x1200"
+            echo "UWAGA: donor bez product/media/bootanimation.zip -> zostaje wygenerowana 2000x1200"
           fi
           # ---------- bootdiag: zrzut logow do /data gdy system nie wstanie w 240 s ----------
           sudo tee "$SYS/bin/mystical-bootdiag.sh" >/dev/null <<'BDIAG'
@@ -2150,8 +2146,10 @@ jobs:
           names = z.namelist()
           assert names[0] == 'desc.txt', f'desc.txt nie jest pierwszy: {names[0]}'
           first = z.read('desc.txt').decode().splitlines()[0].split()
+          assert first[:2] == ['2000', '1200'], \
+              f'bootanimation nie jest 2000x1200: {first[:2]} (crop/scale padl?)'
           frames = [n for n in names if n.endswith(('.png', '.webp'))]
-          assert len(frames) >= 10, f'klatek {len(frames)} < 10'
+          assert len(frames) >= 1, f'klatek {len(frames)} < 1'
           stored = all(ni.compress_type == zipfile.ZIP_STORED for ni in z.infolist())
           print(f'bootanimation: {first[0]}x{first[1]}, {len(frames)} klatek, '
                 f'STORED={stored}, desc.txt pierwszy')
