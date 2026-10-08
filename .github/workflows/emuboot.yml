@@ -199,7 +199,7 @@ jobs:
               printf '%s\n' \
                 '/dev/block/vdd   /system     ext4    ro,barrier=1     wait,first_stage_mount' \
                 '/dev/block/platform/a003c00.virtio_mmio/by-name/vendor    /vendor    ext4    ro,barrier=1    wait,first_stage_mount' \
-                '/dev/block/platform/a003c00.virtio_mmio/by-name/metadata    /metadata    ext4    noatime,nosuid,nodev    wait,formattable,first_stage_mount' \
+                '/dev/block/vda   /metadata   ext4   noatime,nosuid,nodev   wait,formattable,first_stage_mount' \
                 '/dev/block/vdb   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,fileencryption=aes-256-xts:aes-256-cts,reservedsize=128M,fsverity,keydirectory=/metadata/vold/metadata_encryption,latemount' \
                 '/dev/block/zram0 none swap  defaults zramsize=75%' \
                 > "$WORK/rd-all/first_stage_ramdisk/fstab.ranchu"
@@ -209,20 +209,43 @@ jobs:
                 | gzip -1 > "$WORK/ramdisk-mod.img" ) >> "$WORK/ramdisk-extract.log" 2>&1
               ls -la "$WORK/ramdisk-mod.img" >> "$WORK/ramdisk-extract.log" 2>&1
 
-              # ---- dysk GPT z partycjami metadata + super (init ich szuka) ----
-              truncate -s 600M "$WORK/ms.img"
-              printf 'label: gpt\nname=metadata, size=256M\nname=super, size=256M\n' \
-                | sfdisk "$WORK/ms.img" >/dev/null 2>&1
-              sudo losetup -fP "$WORK/ms.img" >/dev/null 2>&1
-              LUP=$(sudo losetup -j "$WORK/ms.img" 2>/dev/null | cut -d: -f1)
-              if [ -n "$LUP" ]; then
-                sudo mkfs.ext4 -q -F "${LUP}p1" 2>/dev/null
-                sudo losetup -d "$LUP" 2>/dev/null
+              # ---- metadata: CALY dysk ext4 jako vda (raw devname dziala jak
+              # vdd/vdb; by-name symlink dla metadata byl zawodny w fazie mount) ----
+              truncate -s 128M "$WORK/meta.img"
+              mkfs.ext4 -q -F "$WORK/meta.img" >/dev/null 2>&1
+
+              # ---- vendor-mod: puste vendor_property_contexts (miks Lenovo-system
+              # + ranchu-vendor => duplikaty kluczy => 'Failed to initialize
+              # property area' w 2. stadionie initu; SELinux permissive) ----
+              cp "$SYSIMG/vendor.img" "$WORK/vendor-mod.img"
+              sudo losetup -fP "$WORK/vendor-mod.img" >/dev/null 2>&1
+              LVP=$(sudo losetup -j "$WORK/vendor-mod.img" 2>/dev/null | cut -d: -f1)
+              if [ -n "$LVP" ]; then
+                if sudo mkdir -p /tmp/mnt-vnd && sudo mount "${LVP}p1" /tmp/mnt-vnd 2>/dev/null; then
+                  sudo ls -la /tmp/mnt-vnd/etc/selinux/ > "$WORK/vendor-selinux-ls.txt" 2>&1
+                  sudo cp /tmp/mnt-vnd/etc/selinux/vendor_property_contexts \
+                    "$WORK/vendor-pc-orig.txt" 2>/dev/null
+                  sudo truncate -s 0 /tmp/mnt-vnd/etc/selinux/vendor_property_contexts 2>/dev/null
+                  sudo umount /tmp/mnt-vnd 2>/dev/null
+                fi
+                sudo losetup -d "$LVP" 2>/dev/null
               fi
-              sfdisk --dump "$WORK/ms.img" > "$WORK/gpt-ms.txt" 2>&1
+              VENDORIMG="$SYSIMG/vendor.img"
+              [ -s "$WORK/vendor-mod.img" ] && VENDORIMG="$WORK/vendor-mod.img"
+              echo "[B] vendor: $VENDORIMG" >> "$WORK/emu-progress.log"
+
+              # ---- forensyka: selinux + property contexts NASZEGO obrazu ----
+              sudo mkdir -p /tmp/mnt-our
+              if sudo mount -o ro,loop "$IMG" /tmp/mnt-our 2>/dev/null; then
+                sudo ls -la /tmp/mnt-our/etc/selinux/ > "$WORK/our-selinux-ls.txt" 2>&1
+                sudo ls -la /tmp/mnt-our/ | head -25 >> "$WORK/our-selinux-ls.txt" 2>&1
+                sudo head -8 /tmp/mnt-our/etc/selinux/plat_property_contexts \
+                  >> "$WORK/our-selinux-ls.txt" 2>&1
+                sudo umount /tmp/mnt-our 2>/dev/null
+              fi
               cd "$WORK"
 
-              echo "[B] surowy qemu: kernel=$(basename $KERNEL) + nasz system + vendor sysimg + ms(metadata+super)" \
+              echo "[B] surowy qemu: kernel=$(basename $KERNEL) + nasz system(vdd) + vendor-mod(vdc1) + data(vdb) + metadata(vda)" \
                 | tee -a "$WORK/emu-progress.log"
               # permissive: qcow... w VM nie chcemy falszywych FAILow z rozjazdu
               # polityki lenovo-system vs ranchu-vendor; crashe frameworku
@@ -235,12 +258,12 @@ jobs:
                 -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 androidboot.adb.tcp.port=5555" \
                 -drive if=none,file="$IMG",format=raw,id=system \
                 -device virtio-blk-device,drive=system \
-                -drive if=none,file="$SYSIMG/vendor.img",format=raw,id=vendor \
+                -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
                 -device virtio-blk-device,drive=vendor \
                 -drive if=none,file="$WORK/userdata.img",format=raw,id=userdata \
                 -device virtio-blk-device,drive=userdata \
-                -drive if=none,file="$WORK/ms.img",format=raw,id=ms \
-                -device virtio-blk-device,drive=ms \
+                -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
+                -device virtio-blk-device,drive=meta \
                 -netdev user,id=n0,hostfwd=tcp::5555-:5555 \
                 -device virtio-net-device,netdev=n0 \
                 -display none -monitor none -serial file:"$WORK/qemu-console.log" \
@@ -360,8 +383,15 @@ jobs:
             grep -aE 'init:|fs_mgr|Fatal|not found|Failed|mount|abort' \
               "$WORK/qemu-console.log" 2>/dev/null | tail -100
             echo '```'
-            echo "## GPT: ms.img(metadata+super) / nasz system / vendor"; echo '```'
-            cat "$WORK/gpt-ms.txt" "$WORK/gpt-sys.txt" "$WORK/gpt-vendor.txt" 2>/dev/null || echo "(brak)"
+            echo "## GPT: nasz system / vendor"; echo '```'
+            cat "$WORK/gpt-sys.txt" "$WORK/gpt-vendor.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## NASZ obraz: /etc/selinux + plat_property_contexts (head)"; echo '```'
+            cat "$WORK/our-selinux-ls.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## vendor(ranchu)-mod: /etc/selinux + vendor_property_contexts (head przed wyzerowaniem)"; echo '```'
+            cat "$WORK/vendor-selinux-ls.txt" 2>/dev/null || echo "(brak)"
+            head -10 "$WORK/vendor-pc-orig.txt" 2>/dev/null
             echo '```'
             echo "## avdmanager (tworzenie AVD)"; echo '```'
             cat "$WORK/avd-create.log" 2>/dev/null || echo "(brak)"
@@ -420,9 +450,11 @@ jobs:
             /tmp/emu/ramdisk-list.txt
             /tmp/emu/ramdisk-extract.log
             /tmp/emu/bundled-qemu.txt
-            /tmp/emu/gpt-ms.txt
             /tmp/emu/gpt-sys.txt
             /tmp/emu/gpt-vendor.txt
+            /tmp/emu/our-selinux-ls.txt
+            /tmp/emu/vendor-selinux-ls.txt
+            /tmp/emu/vendor-pc-orig.txt
             /tmp/emu/qemu.log
             /tmp/emu/qemu-console.log
             /tmp/emu/emu-logcat-full.txt
