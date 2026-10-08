@@ -38,6 +38,7 @@ jobs:
     timeout-minutes: 350
     env:
       ANDROID_SDK_ROOT: /home/runner/asdk
+      ANDROID_HOME: /home/runner/asdk
       ANDROID_AVD_HOME: /home/runner/.android/avd
       ANDROID_USER_HOME: /home/runner/.android
       WORK: /tmp/emu
@@ -117,7 +118,15 @@ jobs:
             echo "=== avd.ini NIE powstal; avdmanager list avd:"
             avdmanager list avd 2>&1 | head -20 | tee -a "$WORK/avd-create.log"
           fi
+          # kluczowy fix: ABSOLUTNA sciezka sysdir w ini (emulator 37 rozwiazuje
+          # wzgledna image.sysdir.1 against ANDROID_HOME preinstalowanego SDK)
+          sed -i "s|^image.sysdir.1=.*|image.sysdir.1=$SYSIMG/|" \
+            "$ANDROID_AVD_HOME/mystical.ini" 2>/dev/null
+          echo "=== mystical.ini po fixie:" | tee -a "$WORK/avd-create.log"
+          cat "$ANDROID_AVD_HOME/mystical.ini" 2>/dev/null | tee -a "$WORK/avd-create.log"
           ls -la "$ANDROID_AVD_HOME" 2>&1 | tee -a "$WORK/avd-create.log"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          echo "emulator bin: $(command -v emulator)"
           nohup emulator @mystical -no-window -no-audio -no-boot-anim \
             -no-snapshot -wipe-data -accel off -gpu swiftshader_indirect \
             -memory 4096 -cores 4 -system "$IMG" > "$WORK/emu.log" 2>&1 &
