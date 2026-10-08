@@ -147,9 +147,18 @@ jobs:
         run: |
           set -uo pipefail
           export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
-          adb logcat -b all -d > "$WORK/emu-logcat-full.txt" 2>/dev/null || true
-          adb shell getprop > "$WORK/emu-props.txt" 2>/dev/null || true
-          adb shell dmesg > "$WORK/emu-dmesg.txt" 2>/dev/null || true
+          # KAŻDE adb z timeoutem - bez tego adb wisi wiecznie gdy emulator padl
+          if timeout 60 adb devices 2>/dev/null | grep -q "emulator.*device$"; then
+            ADB_ALIVE=1
+            timeout 240 adb logcat -b all -d > "$WORK/emu-logcat-full.txt" 2>/dev/null || true
+            timeout 90 adb shell getprop > "$WORK/emu-props.txt" 2>/dev/null || true
+            timeout 90 adb shell dmesg > "$WORK/emu-dmesg.txt" 2>/dev/null || true
+          else
+            ADB_ALIVE=0
+            echo "(adb: brak zywego emulatora)" > "$WORK/emu-props.txt"
+            echo "(adb: brak zywego emulatora)" > "$WORK/emu-dmesg.txt"
+            : > "$WORK/emu-logcat-full.txt"
+          fi
           V=error
           if [ "${EMU_BOOT:-none}" = "1" ]; then V=pass
           elif [ "${EMU_BOOT:-none}" = "0" ]; then V=fail
@@ -188,6 +197,8 @@ jobs:
             grep -E "ro.build.version|ro.mysticalos|ro.hyperos|sys.boot_completed|init.svc.(zygote|systemui|surfaceflinger)" "$WORK/emu-props.txt" 2>/dev/null || true
             echo '```'
             echo "## emulator log (tail 60)"; echo '```'; tail -60 "$WORK/emu.log" 2>/dev/null; echo '```'
+            echo "## adb alive: $ADB_ALIVE"
+            grep -iE "PANIC|cannot|error|not supported|failed" "$WORK/emu.log" 2>/dev/null | head -15 || true
           } > "reports/emuboot-${GITHUB_RUN_ID}.md"
           head -80 "reports/emuboot-${GITHUB_RUN_ID}.md"
           [ "$V" = "pass" ] || exit 1
