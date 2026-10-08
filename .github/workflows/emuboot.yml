@@ -187,11 +187,27 @@ jobs:
               # qemu emulatora SDK (bundled): czy ma maszyny ranchu?
               BQ="$ANDROID_SDK_ROOT/emulator/qemu/linux-x86_64/qemu-system-aarch64-headless"
               { echo "BQ=$BQ"
+                [ -x "$BQ" ] && export LD_LIBRARY_PATH="$ANDROID_SDK_ROOT/emulator/lib64:$ANDROID_SDK_ROOT/emulator/lib:$LD_LIBRARY_PATH"
                 [ -x "$BQ" ] && "$BQ" -version | head -1
                 [ -x "$BQ" ] && "$BQ" -M help | grep -iE 'ranchu|virt'
               } > "$WORK/bundled-qemu.txt" 2>&1
               sfdisk --dump "$IMG" > "$WORK/gpt-sys.txt" 2>&1
               sfdisk --dump "$SYSIMG/vendor.img" > "$WORK/gpt-vendor.txt" 2>&1
+
+              # ---- RAMDISK v2: fstab BEZ logical (system=nasz obraz na vdd,
+              # vendor=vdc1, metadata by-name z GPT, data=vdb) - GSI-style test ----
+              printf '%s\n' \
+                '/dev/block/vdd   /system     ext4    ro,barrier=1     wait,first_stage_mount' \
+                '/dev/block/vdc1  /vendor     ext4    ro,barrier=1     wait,first_stage_mount' \
+                '/dev/block/platform/a003c00.virtio_mmio/by-name/metadata    /metadata    ext4    noatime,nosuid,nodev    wait,formattable,first_stage_mount' \
+                '/dev/block/vdb   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,fileencryption=aes-256-xts:aes-256-cts,reservedsize=128M,fsverity,keydirectory=/metadata/vold/metadata_encryption,latemount' \
+                '/dev/block/zram0 none swap  defaults zramsize=75%' \
+                > "$WORK/rd-all/first_stage_ramdisk/fstab.ranchu"
+              cp "$WORK/rd-all/first_stage_ramdisk/fstab.ranchu" "$WORK/fstab-mod.txt"
+              ( cd "$WORK/rd-all" && find . -print0 \
+                | cpio -0 -o -H newc -R 0:0 2>>"$WORK/ramdisk-extract.log" \
+                | gzip -1 > "$WORK/ramdisk-mod.img" ) >> "$WORK/ramdisk-extract.log" 2>&1
+              ls -la "$WORK/ramdisk-mod.img" >> "$WORK/ramdisk-extract.log" 2>&1
 
               # ---- dysk GPT z partycjami metadata + super (init ich szuka) ----
               truncate -s 600M "$WORK/ms.img"
@@ -211,9 +227,11 @@ jobs:
               # permissive: qcow... w VM nie chcemy falszywych FAILow z rozjazdu
               # polityki lenovo-system vs ranchu-vendor; crashe frameworku
               # (FATAL EXCEPTION) sa lapano niezaleznie od SELinux
-              nohup qemu-system-aarch64 -M virt,dumpdtb=$WORK/virt.dtb \
-                -cpu cortex-a76 -smp 4 -m 4096 \
-                -kernel "$KERNEL" -initrd "$RAMDISK" \
+              RAMDISK2="$RAMDISK"
+              [ -s "$WORK/ramdisk-mod.img" ] && RAMDISK2="$WORK/ramdisk-mod.img"
+              echo "[B] ramdisk: $RAMDISK2" | tee -a "$WORK/emu-progress.log"
+              nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
+                -kernel "$KERNEL" -initrd "$RAMDISK2" \
                 -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 androidboot.adb.tcp.port=5555" \
                 -drive if=none,file="$IMG",format=raw,id=system \
                 -device virtio-blk-device,drive=system \
@@ -327,6 +345,9 @@ jobs:
             echo "## fstab (multi-cpio ramdisk + sysimg system.img) - KLUCZOWE"; echo '```'
             cat "$WORK/fstab-all.txt" 2>/dev/null || echo "(brak)"
             echo '```'
+            echo "## fstab MODYFIKOWANY (sciezka B v2 - nasz system na vdd, bez logical)"; echo '```'
+            cat "$WORK/fstab-mod.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
             echo "## ramdisk: pelna lista plikow (multi-cpio)"; echo '```'
             head -100 "$WORK/ramdisk-list.txt" 2>/dev/null || echo "(brak)"
             echo "wydobyto: $(cat "$WORK/ramdisk-extract.log" 2>/dev/null | tail -1)"
@@ -338,10 +359,6 @@ jobs:
             echo "petle (Run /init): $(grep -ac 'Run /init' "$WORK/qemu-console.log" 2>/dev/null)"
             grep -aE 'init:|fs_mgr|Fatal|not found|Failed|mount|abort' \
               "$WORK/qemu-console.log" 2>/dev/null | tail -100
-            echo '```'
-            echo "## DTB qemu virt: wezly android/fstab"; echo '```'
-            dtc -I dtb -O dts "$WORK/virt.dtb" 2>/dev/null \
-              | grep -aiE -B2 -A25 'fstab|firmware' | head -90 || echo "(brak)"
             echo '```'
             echo "## GPT: ms.img(metadata+super) / nasz system / vendor"; echo '```'
             cat "$WORK/gpt-ms.txt" "$WORK/gpt-sys.txt" "$WORK/gpt-vendor.txt" 2>/dev/null || echo "(brak)"
@@ -399,6 +416,7 @@ jobs:
             /tmp/emu/emu.log
             /tmp/emu/avd-create.log
             /tmp/emu/fstab-all.txt
+            /tmp/emu/fstab-mod.txt
             /tmp/emu/ramdisk-list.txt
             /tmp/emu/ramdisk-extract.log
             /tmp/emu/bundled-qemu.txt
