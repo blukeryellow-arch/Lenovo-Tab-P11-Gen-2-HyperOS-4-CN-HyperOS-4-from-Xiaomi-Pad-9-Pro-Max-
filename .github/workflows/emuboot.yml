@@ -1,22 +1,21 @@
 # ============================================================================
-# mysticalos-emuboot v1.0 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# mysticalos-emuboot v1.2 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
 # ============================================================================
-# CEL: sprawdzic ANIM v41 (obraz MysticalOS) w CI ZANIM trafi na tablet.
-# Nie zgadujemy czy wisie - bootujemy i patrzymy.
+# CEL: sprawdzic obraz MysticalOS w CI ZANIM trafi na tablet.
 #
 # Srodowisko = maksymalnie bliskie tabletu, na ile emulator pozwala:
 #   - guest ARM64 (jak TB350FU), Android 13 / API 33 (jak TB350FU)
-#   - TEN SAM obraz: MysticalOS_0.5_DSU_nofooter.img z release (sha256 check)
-#   - vendor z emulatora (Treble) - na realnym MTK jest vendor Lenovo;
-#     emulator nie emuluje Helio G99 - to jedyne rozniecenie. Test lapie
-#     crashe frameworku (system_server/SystemUI/launcher/jary), ktore sa
-#     podejrzanym winowajca bootloopa.
-#   - TCG (brak KVM na runnerach): wolny boot, ale deterministyczny.
+#   - TEN SAM obraz z release (sha256 weryfikowany)
+#   - vendor z emulatora (Treble); MTK nie da sie emulowac - test lapie
+#     crashe frameworku (system_server/SystemUI/launcher/jary).
 #
-# Werdykt: PASS = sys.boot_completed=1; FAIL = bootloop/hang (logcat +
-# FATAL EXCEPTION + AVC denials w evidence); ERROR = emulator nie wstal.
+# Sciezka A: emulator SDK (arm64 na x86_64) - wspierane tylko czesciowo.
+# Sciezka B (fallback): surowy qemu-system-aarch64 -M virt + kernel+ramdisk
+#   z sysimg + nasz system + vendor z sysimg + swiezy userdata; konsola
+#   szeregowa (console.log) pokazuje kernel+init+crashe frameworku.
 #
-# Trigger: push z "[EMU]" w komunikacie commita (patrz on:/if:).
+# UWAGA techniczna: bash na runnerze dziala z -e (errexit) - kazdy skrypt
+# zaczyna od `set +e` i sam kontroluje bledy.
 name: mysticalos-emuboot
 
 on:
@@ -74,8 +73,8 @@ jobs:
               "system-images;android-33;default;arm64-v8a" > "$WORK/sdk-install2.log" 2>&1
             echo "sysimg: default arm64-v8a"
           fi
-          ls "$ANDROID_SDK_ROOT/system-images/android-33/"
-          "$ANDROID_SDK_ROOT/emulator/emulator" -version | head -2
+          ls "$ANDROID_SDK_ROOT/system-images/android-33/" || true
+          "$ANDROID_SDK_ROOT/emulator/emulator" -version 2>/dev/null | head -2 || true
 
       - name: "2. obraz MysticalOS z release (nofooter; sha256 weryfikowany)"
         run: |
@@ -86,78 +85,146 @@ jobs:
           rm -f port-release-dsu.zip
           IMG="$WORK/emu-pkg/out/MysticalOS_0.5_DSU_nofooter.img"
           test -s "$IMG" || { echo "::error::brak obrazu DSU w zipie"; exit 1; }
-          # SHA256SUMS z buildera ma sciezki absolutne (/tmp/m2/out/...) -
-          # porownujemy sam hash
+          # SHA256SUMS z buildera ma sciezki absolutne - porownujemy sam hash
           WANT=$(grep "DSU_nofooter" emu-pkg/out/SHA256SUMS.txt | awk '{print $1}')
           GOT=$(sha256sum "$IMG" | awk '{print $1}')
-          echo "sha256: plik=$GOT"
-          echo "sha256: suma=$WANT"
+          echo "sha256 plik=$GOT"
+          echo "sha256 suma=$WANT"
           [ "$WANT" = "$GOT" ] || { echo "::error::sha256 obrazu DSU sie nie zgadza"; exit 1; }
           echo "IMG: $(stat -c%s "$IMG") B"; df -h /
+          echo "$IMG" > "$WORK/img-path"
 
-      - name: "3. BOOT w emulatorze (arm64 na x86_64, TCG) -> czekamy na boot_completed"
+      - name: "3. BOOT: sciezka A (emulator SDK) -> fallback B (surowy qemu)"
         run: |
+          set +e
           set -uo pipefail
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:$PATH"
-          IMG="$WORK/emu-pkg/out/MysticalOS_0.5_DSU_nofooter.img"
+          IMG=$(cat "$WORK/img-path")
           SYSIMG=$(echo "$ANDROID_SDK_ROOT"/system-images/android-33/*/arm64-v8a)
-          echo "sysimg: $SYSIMG"; ls "$SYSIMG"
           TAG=$(basename "$(dirname "$SYSIMG")")
+          echo "sysimg: $SYSIMG (tag=$TAG)"; ls "$SYSIMG" 2>/dev/null
+          : > "$WORK/emu-progress.log"
+
+          # ---------- S C I E Z K A   A: emulator SDK ----------
           echo "no" | avdmanager create avd -n mystical \
-            -k "system-images;android-33;$TAG;arm64-v8a" || true
-          # -wipe-data: swiezy userdata = deterministyczne "jedne do jeden" warunki
+            -k "system-images;android-33;$TAG;arm64-v8a" >/dev/null 2>&1
           nohup emulator @mystical -no-window -no-audio -no-boot-anim \
             -no-snapshot -wipe-data -accel off -gpu swiftshader_indirect \
             -memory 4096 -cores 4 -system "$IMG" > "$WORK/emu.log" 2>&1 &
           EMUPID=$!
-          echo "emulator PID: $EMUPID"
-          # faza 1: adb device (do 25 min)
+          echo "[A] emulator PID $EMUPID" | tee -a "$WORK/emu-progress.log"
           ok_dev=0
-          for i in $(seq 1 150); do
+          for i in $(seq 1 90); do
             sleep 10
             if adb devices 2>/dev/null | grep -q "emulator.*device$"; then ok_dev=1; break; fi
-            if ! kill -0 $EMUPID 2>/dev/null; then echo "EMULATOR PROCES PADL"; break; fi
-          done
-          echo "adb device po ~$((i*10)) s: $ok_dev"
-          if [ "$ok_dev" != "1" ]; then
-            echo "=== emu.log (caly) ==="; cat "$WORK/emu.log"
-            echo "EMU_BOOT=error" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          # faza 2: boot (do 210 min); progres co ~50 s do pliku
-          boot=0
-          : > "$WORK/emu-progress.log"
-          for i in $(seq 1 252); do
-            sleep 50
-            BC=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-            UP=$(adb shell cat /proc/uptime 2>/dev/null | tr -d '\r' | cut -d' ' -f1)
-            ZG=$(adb shell getprop init.svc.zygote 2>/dev/null | tr -d '\r')
-            SS=$(adb shell getprop init.svc.systemui 2>/dev/null | tr -d '\r')
-            echo "t=$((i*50))s bc='$BC' uptime='$UP' zygote='$ZG' systemui='$SS'" >> "$WORK/emu-progress.log"
-            if [ "$BC" = "1" ]; then boot=1; break; fi
             if ! kill -0 $EMUPID 2>/dev/null; then
-              echo "EMULATOR PROCES PADL (faza boot)" >> "$WORK/emu-progress.log"; break
+              echo "[A] proces emulatora PADL po ~$((i*10)) s" | tee -a "$WORK/emu-progress.log"
+              break
             fi
           done
-          echo "BOOT_COMPLETED=$boot" | tee -a "$WORK/emu-progress.log"
-          echo "EMU_BOOT=$boot" >> "$GITHUB_ENV"
+          echo "[A] adb-device=$ok_dev" | tee -a "$WORK/emu-progress.log"
+          EMU_PATH=none
+          if [ "$ok_dev" = "1" ]; then
+            EMU_PATH=emulator
+          else
+            echo "[A] emu.log tail:" | tee -a "$WORK/emu-progress.log"
+            tail -25 "$WORK/emu.log" >> "$WORK/emu-progress.log" 2>/dev/null
+            kill $EMUPID 2>/dev/null
+            pkill -f "qemu-system" 2>/dev/null
 
-      - name: "4. werdykt + pelne logi (FATAL/AVC)"
+            # ---------- S C I E Z K A   B: surowy qemu ----------
+            KERNEL="$SYSIMG/kernel"
+            [ -f "$KERNEL" ] || KERNEL="$SYSIMG/kernel-ranchu"
+            RAMDISK="$SYSIMG/ramdisk.img"
+            if [ -f "$KERNEL" ] && [ -f "$RAMDISK" ]; then
+              truncate -s 2G "$WORK/userdata.img"
+              mkfs.ext4 -q -F "$WORK/userdata.img" >/dev/null 2>&1
+              echo "[B] surowy qemu: kernel=$(basename $KERNEL) + nasz system + vendor sysimg" \
+                | tee -a "$WORK/emu-progress.log"
+              # permissive: qcow... w VM nie chcemy falszywych FAILow z rozjazdu
+              # polityki lenovo-system vs ranchu-vendor; crashe frameworku
+              # (FATAL EXCEPTION) sa lapano niezaleznie od SELinux
+              nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
+                -kernel "$KERNEL" -initrd "$RAMDISK" \
+                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 androidboot.adb.tcp.port=5555" \
+                -drive if=none,file="$IMG",format=raw,id=system \
+                -device virtio-blk-device,drive=system \
+                -drive if=none,file="$SYSIMG/vendor.img",format=raw,id=vendor \
+                -device virtio-blk-device,drive=vendor \
+                -drive if=none,file="$WORK/userdata.img",format=raw,id=userdata \
+                -device virtio-blk-device,drive=userdata \
+                -netdev user,id=n0,hostfwd=tcp::5555-:5555 \
+                -device virtio-net-device,netdev=n0 \
+                -display none -monitor none -serial file:"$WORK/qemu-console.log" \
+                > "$WORK/qemu.log" 2>&1 &
+              QPID=$!
+              echo "[B] qemu PID $QPID" | tee -a "$WORK/emu-progress.log"
+              # czekaj na adb tcp (do 30 min) - konsola rosnie rownolegle
+              for i in $(seq 1 180); do
+                sleep 10
+                timeout 10 adb connect localhost:5555 >/dev/null 2>&1
+                if timeout 10 adb -s localhost:5555 shell true >/dev/null 2>&1; then
+                  ok_dev=1; break
+                fi
+                if ! kill -0 $QPID 2>/dev/null; then
+                  echo "[B] qemu PADL po ~$((i*10)) s" | tee -a "$WORK/emu-progress.log"
+                  break
+                fi
+              done
+              echo "[B] adb-device=$ok_dev" | tee -a "$WORK/emu-progress.log"
+              if [ "$ok_dev" = "1" ]; then
+                export ANDROID_SERIAL=localhost:5555
+                EMU_PATH=qemu
+              fi
+            else
+              echo "[B] brak kernel/ramdisk w sysimg - nie ma fallbacku" \
+                | tee -a "$WORK/emu-progress.log"
+            fi
+          fi
+
+          # ---------- faza boot (do 200 min) ----------
+          boot=0
+          if [ "$ok_dev" = "1" ]; then
+            for i in $(seq 1 240); do
+              sleep 50
+              BC=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+              UP=$(adb shell cat /proc/uptime 2>/dev/null | tr -d '\r' | cut -d' ' -f1)
+              ZG=$(adb shell getprop init.svc.zygote 2>/dev/null | tr -d '\r')
+              echo "t=$((i*50))s bc='$BC' uptime='$UP' zygote='$ZG' path=$EMU_PATH" \
+                >> "$WORK/emu-progress.log"
+              if [ "$BC" = "1" ]; then boot=1; break; fi
+            done
+          fi
+          echo "BOOT_COMPLETED=$boot (path=$EMU_PATH)" | tee -a "$WORK/emu-progress.log"
+          {
+            echo "EMU_BOOT=$boot"
+            echo "EMU_PATH=$EMU_PATH"
+          } >> "$GITHUB_ENV"
+          exit 0
+
+      - name: "4. werdykt + pelne logi (FATAL/AVC/konsola)"
         if: always()
         run: |
+          set +e
           set -uo pipefail
           export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
-          # KAŻDE adb z timeoutem - bez tego adb wisi wiecznie gdy emulator padl
-          if timeout 60 adb devices 2>/dev/null | grep -q "emulator.*device$"; then
-            ADB_ALIVE=1
-            timeout 240 adb logcat -b all -d > "$WORK/emu-logcat-full.txt" 2>/dev/null || true
-            timeout 90 adb shell getprop > "$WORK/emu-props.txt" 2>/dev/null || true
-            timeout 90 adb shell dmesg > "$WORK/emu-dmesg.txt" 2>/dev/null || true
+          export ANDROID_SERIAL="${ANDROID_SERIAL:-localhost:5555}"
+          # kazde adb z timeoutem; brak urzadzenia = puste pliki, nie hang
+          if [ "${EMU_PATH:-}" = "emulator" ]; then export ANDROID_SERIAL=emulator-5554; fi
+          if timeout 45 adb devices 2>/dev/null | grep -q "device$\|offline"; then
+            timeout 300 adb logcat -b all -d > "$WORK/emu-logcat-full.txt" 2>/dev/null
+            timeout 90 adb shell getprop > "$WORK/emu-props.txt" 2>/dev/null
+            timeout 90 adb shell dmesg > "$WORK/emu-dmesg.txt" 2>/dev/null
           else
-            ADB_ALIVE=0
-            echo "(adb: brak zywego emulatora)" > "$WORK/emu-props.txt"
-            echo "(adb: brak zywego emulatora)" > "$WORK/emu-dmesg.txt"
             : > "$WORK/emu-logcat-full.txt"
+            echo "(adb: brak zywego urzadzenia)" > "$WORK/emu-props.txt"
+            : > "$WORK/emu-dmesg.txt"
+            timeout 45 adb connect localhost:5555 >/dev/null 2>&1
+            if timeout 60 adb -s localhost:5555 shell true >/dev/null 2>&1; then
+              timeout 300 adb -s localhost:5555 logcat -b all -d > "$WORK/emu-logcat-full.txt" 2>/dev/null
+              timeout 90 adb -s localhost:5555 shell getprop > "$WORK/emu-props.txt" 2>/dev/null
+              timeout 90 adb -s localhost:5555 shell dmesg > "$WORK/emu-dmesg.txt" 2>/dev/null
+            fi
           fi
           V=error
           if [ "${EMU_BOOT:-none}" = "1" ]; then V=pass
@@ -166,50 +233,60 @@ jobs:
           {
             echo "# emuboot run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
             echo
-            echo "## Werdykt: $V"
+            echo "## Werdykt: $V (sciezka: ${EMU_PATH:-brak})"
             if [ "$V" = "pass" ]; then
-              echo "**PASS** - system MysticalOS UKONCZYL boot w emulatorze (arm64, API 33, ten sam obraz co na tablet)."
+              echo "**PASS** - MysticalOS UKONCZYL boot w VM (arm64, API 33, ten sam obraz co na tablet)."
             elif [ "$V" = "fail" ]; then
-              echo "**FAIL** - bootloop/hang w emulatorze. To ODTWORZA problem z tabletu bez wgrywania - patrz FATAL/AVC nizej."
+              echo "**FAIL** - bootloop/hang w VM. Jesli to samo co na tabletu - MAMY ODTWORZONY problem; patrz FATAL/konsola."
             else
-              echo "**ERROR** - emulator/adb nie wystartowal (patrz emu.log) - problem srodowiska, nie obrazu."
+              echo "**ERROR** - zadne srodowisko nie wystartowalo; patrz emu.log / qemu.log / konsola."
             fi
             echo
-            echo "## Warunki testu (jeden do jednego, na ile fizycznie mozliwe)"
-            echo '- obraz: MysticalOS_0.5_DSU_nofooter.img z release (sha256 zweryfikowany w kroku 2)'
-            echo '- guest: arm64-v8a, Android 13 / API 33 (jak TB350FU)'
-            echo '- kernel+vendor: emulator android-33 arm64 (Treble); rozne od MTK Lenovo - crashe sprzetowe HAL nie sa testowane'
-            echo '- SELinux: enforcing (jak na tabletu); denials w dmesg nizej'
-            echo '- TCG (brak KVM na runnerze): boot wolny, ale deterministyczny'
+            echo "## Warunki testu"
+            echo '- obraz: MysticalOS_0.5_DSU_nofooter.img z release (sha256 OK)'
+            echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
+            echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo
-            echo "## progress (co ~50 s)"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
-            echo "## FATAL EXCEPTIONS (caly logcat w artefakcie)"; echo '```'
-            grep -c "FATAL EXCEPTION" "$WORK/emu-logcat-full.txt" 2>/dev/null || echo 0
-            grep -B2 -A40 "FATAL EXCEPTION" "$WORK/emu-logcat-full.txt" 2>/dev/null | head -400 || echo "(brak)"
+            echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
+            echo "## qemu/konsola szeregowa (kernel+init; tail 120)"; echo '```'
+            tail -120 "$WORK/qemu-console.log" 2>/dev/null || echo "(brak)"
             echo '```'
-            echo "## system_server watchdogi / restarty"; echo '```'
-            grep -iE "watchdog|system_server died|Restarting|Zygote" "$WORK/emu-logcat-full.txt" 2>/dev/null | head -40 || echo "(brak)"
+            echo "## qemu stderr"; echo '```'
+            tail -30 "$WORK/qemu.log" 2>/dev/null || echo "(brak)"
             echo '```'
-            echo "## AVC denials (top)"; echo '```'
-            grep "avc: denied" "$WORK/emu-dmesg.txt" 2>/dev/null | sed 's/.*avc: /avc: /' | sort | uniq -c | sort -rn | head -25 || echo "(brak)"
+            echo "## emulator SDK log (tail 40)"; echo '```'
+            tail -40 "$WORK/emu.log" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## FATAL EXCEPTIONS"; echo '```'
+            grep -c "FATAL EXCEPTION" "$WORK/emu-logcat-full.txt" 2>/dev/null
+            grep -B2 -A40 "FATAL EXCEPTION" "$WORK/emu-logcat-full.txt" 2>/dev/null | head -400
+            echo '```'
+            echo "## restarty uslug / watchdogi (konsola+logcat)"; echo '```'
+            { grep -aiE "system_server|zygote|watchdog|init:.*(reap|respawn|died)|Kernel panic" \
+                "$WORK/qemu-console.log" 2>/dev/null | head -40
+              grep -iE "watchdog|system_server died|Restarting" "$WORK/emu-logcat-full.txt" 2>/dev/null | head -20; } || true
+            echo '```'
+            echo "## AVC denials (top 25)"; echo '```'
+            { grep "avc: denied" "$WORK/emu-dmesg.txt" "$WORK/qemu-console.log" 2>/dev/null \
+                | sed 's/.*avc: /avc: /' | sort | uniq -c | sort -rn | head -25; } || true
             echo '```'
             echo "## getprop (istotne)"; echo '```'
-            grep -E "ro.build.version|ro.mysticalos|ro.hyperos|sys.boot_completed|init.svc.(zygote|systemui|surfaceflinger)" "$WORK/emu-props.txt" 2>/dev/null || true
+            grep -E "ro.build.version|ro.mysticalos|ro.hyperos|sys.boot_completed|init.svc" \
+              "$WORK/emu-props.txt" 2>/dev/null || true
             echo '```'
-            echo "## emulator log (tail 60)"; echo '```'; tail -60 "$WORK/emu.log" 2>/dev/null; echo '```'
-            echo "## adb alive: $ADB_ALIVE"
-            grep -iE "PANIC|cannot|error|not supported|failed" "$WORK/emu.log" 2>/dev/null | head -15 || true
           } > "reports/emuboot-${GITHUB_RUN_ID}.md"
-          head -80 "reports/emuboot-${GITHUB_RUN_ID}.md"
+          wc -l "reports/emuboot-${GITHUB_RUN_ID}.md"
+          head -60 "reports/emuboot-${GITHUB_RUN_ID}.md"
           [ "$V" = "pass" ] || exit 1
 
       - name: "5. evidence commit"
         if: always()
         run: |
+          set +e
           set -uo pipefail
           git config user.name "arena-agent"
           git config user.email "arena-agent@users.noreply.github.com"
-          git add reports/ || true
+          git add reports/ 2>/dev/null
           git commit -m "emuboot: evidence run ${GITHUB_RUN_ID}" || echo "nic do commitu"
           for A in 1 2 3; do
             if git push; then echo "evidence: push OK"; break; fi
@@ -217,10 +294,19 @@ jobs:
             sleep 10
           done
 
-      - name: "6. artifact (pelne logi)"
+      - name: "6. artifact (LOGI - bez obrazu!)"
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: emuboot-logs-${{ github.run_id }}
-          path: /tmp/emu/
+          path: |
+            /tmp/emu/emu-progress.log
+            /tmp/emu/emu.log
+            /tmp/emu/qemu.log
+            /tmp/emu/qemu-console.log
+            /tmp/emu/emu-logcat-full.txt
+            /tmp/emu/emu-props.txt
+            /tmp/emu/emu-dmesg.txt
+            /tmp/emu/sdk-install.log
+          if-no-files-found: ignore
           retention-days: 90
