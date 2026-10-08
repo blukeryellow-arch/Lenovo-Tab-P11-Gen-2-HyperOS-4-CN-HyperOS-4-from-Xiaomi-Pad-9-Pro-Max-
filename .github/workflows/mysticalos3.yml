@@ -2373,6 +2373,7 @@ jobs:
             echo "## rust"; echo '```'; cat "$WORK/rust-manifest.txt" 2>/dev/null || true; echo '```'
             echo "## ui-v2"; echo '```'; cat "$WORK/ui-report.txt" 2>/dev/null || true; echo '```'
             echo "## port-hyperos"; echo '```'; cat "$WORK/port-report.txt" 2>/dev/null || true; echo '```'
+            echo "## sha256sums"; echo '```'; cat "$WORK/out/SHA256SUMS.txt" 2>/dev/null || true; echo '```'
             echo "## 4d2-console (diag)"; echo '```'; cat "$WORK/4d2-console.log" 2>/dev/null || true; echo '```'
             echo "## 4d3-console (diag)"; echo '```'; cat "$WORK/4d3-console.log" 2>/dev/null || true; echo '```'
             echo "## sysroot systemu"; echo '```'; cat "$WORK/sysroot-listing.txt" 2>/dev/null || true; echo '```'
@@ -2489,6 +2490,9 @@ jobs:
             echo "upload DSU padl (proba $AT)"; sleep 20
           done
           [ "$REL_DSU_OK" = "1" ] || { echo "::error::upload port-release-dsu.zip padl po 3 probach"; exit 1; }
+          # notatki ZAWSZE z aktualnego runu (SHA img + run id)
+          gh release edit "$TAG" --notes-file "$WORK/NOTES.md" \
+            || { echo "::error::gh release edit (notes) padl"; exit 1; }
           gh release upload "$TAG" \
             "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" "$WORK/out/SHA256SUMS.txt" \
             "$WORK/out/port-report.txt" "$WORK/out/mods-report.txt" \
