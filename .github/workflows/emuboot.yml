@@ -217,32 +217,39 @@ jobs:
               # ---- vendor-mod: puste vendor_property_contexts (miks Lenovo-system
               # + ranchu-vendor => duplikaty kluczy => 'Failed to initialize
               # property area' w 2. stadionie initu; SELinux permissive) ----
+              # vendor_property_contexts RANCHU zawiera typy SELinux nieobecne
+              # w polityce donorowej Xiaomi => fsetxattr EINVAL w bionic
+              # __system_property_area_init => 'Failed to initialize property
+              # area' (potwierdzone w zrodlach bionic: fsetxattr_fail => -1).
+              # RW mount vendor.img niemozliwy (shared_blocks) => debugfs rm
+              # na surowej partycji (unlink nie alokuje blokow).
               cp "$SYSIMG/vendor.img" "$WORK/vendor-mod.img"
-              LVP=$(sudo losetup --find --show -P "$WORK/vendor-mod.img" 2>/dev/null)
-              echo "LVP=$LVP" >> "$WORK/vendor-selinux-ls.txt" 2>&1
-              if [ -n "$LVP" ]; then
-                sudo mkdir -p /tmp/mnt-vnd
-                sudo blkid "${LVP}p1" >> "$WORK/vendor-selinux-ls.txt" 2>&1
-                sudo mount -t ext4 "${LVP}p1" /tmp/mnt-vnd 2>>"$WORK/vendor-selinux-ls.txt" \
-                  || sudo mount -o ro,loop,offset=1048576 "$WORK/vendor-mod.img" /tmp/mnt-vnd \
-                       2>>"$WORK/vendor-selinux-ls.txt"
-                if mountpoint -q /tmp/mnt-vnd; then
-                  { echo "--- /etc/selinux:"; sudo ls -la /tmp/mnt-vnd/etc/selinux/ 2>&1
-                    echo "--- /vendor/etc/selinux:"; sudo ls -la /tmp/mnt-vnd/vendor/etc/selinux/ 2>&1
-                    echo "--- vendor_property_contexts (head 12, przed wyzerowaniem):"
-                    sudo head -12 /tmp/mnt-vnd/etc/selinux/vendor_property_contexts 2>&1
-                    sudo wc -l /tmp/mnt-vnd/etc/selinux/vendor_property_contexts 2>&1
-                  } >> "$WORK/vendor-selinux-ls.txt" 2>&1
-                  sudo cp /tmp/mnt-vnd/etc/selinux/vendor_property_contexts \
-                    "$WORK/vendor-pc-orig.txt" 2>/dev/null
-                  sudo truncate -s 0 /tmp/mnt-vnd/etc/selinux/vendor_property_contexts 2>/dev/null
-                  sudo umount /tmp/mnt-vnd 2>/dev/null
-                fi
-                sudo losetup -d "$LVP" 2>/dev/null
+              VNDSTART=$(sfdisk -d "$WORK/vendor-mod.img" 2>/dev/null \
+                | awk '/p1/{gsub(/[^0-9]/,"",$3); print $3}')
+              VNDSIZE=$(sfdisk -d "$WORK/vendor-mod.img" 2>/dev/null \
+                | awk '/p1/{gsub(/[^0-9]/,"",$4); print $4}')
+              echo "vendor part: start=$VNDSTART sectors, size=$VNDSIZE" \
+                >> "$WORK/vendor-selinux-ls.txt" 2>&1
+              if [ -n "$VNDSTART" ] && [ -n "$VNDSIZE" ]; then
+                dd if="$WORK/vendor-mod.img" of="$WORK/vendor-part.img" \
+                  bs=512 skip="$VNDSTART" count="$VNDSIZE" status=none
+                debugfs -R "stat /etc/selinux/vendor_property_contexts" \
+                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+                debugfs -R "cat /etc/selinux/vendor_property_contexts" \
+                  "$WORK/vendor-part.img" > "$WORK/vendor-pc-orig.txt" 2>/dev/null
+                debugfs -w -R "rm /etc/selinux/vendor_property_contexts" \
+                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+                echo "--- po rm, stat (powinno byc 'not found'):" \
+                  >> "$WORK/vendor-selinux-ls.txt"
+                debugfs -R "stat /etc/selinux/vendor_property_contexts" \
+                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+                dd if="$WORK/vendor-part.img" of="$WORK/vendor-mod.img" \
+                  bs=512 seek="$VNDSTART" count="$VNDSIZE" conv=notrunc status=none
               fi
               VENDORIMG="$SYSIMG/vendor.img"
               [ -s "$WORK/vendor-mod.img" ] && VENDORIMG="$WORK/vendor-mod.img"
-              echo "[B] vendor: $VENDORIMG" >> "$WORK/emu-progress.log"
+              echo "[B] vendor: $VENDORIMG (pc-orig: $(wc -l < "$WORK/vendor-pc-orig.txt" 2>/dev/null || echo 0) linii)" \
+                >> "$WORK/emu-progress.log"
 
               # ---- forensyka: selinux + property contexts NASZEGO obrazu
               # (UWAGA: /etc -> /system/etc to symlink ABSOLUTNY - na runnerze
@@ -278,20 +285,6 @@ jobs:
                 sudo umount /tmp/mnt-our 2>/dev/null
               fi
 
-              # ---- DIAGNOZA: MINIMAL plat_property_contexts (test czy zawartosc
-              # pliku donorowego zabija PropertyInit; obraz lokalnej kopii,
-              # modyfikacja w miejscu; to run DIAGNOSTYCZNY nie 1:1) ----
-              sudo mkdir -p /tmp/mnt-mod
-              if sudo mount -o rw,loop "$IMG" /tmp/mnt-mod 2>/dev/null; then
-                printf 'ro.\tu:object_r:default_prop:s0\npersist.\tu:object_r:default_prop:s0\nsys.\tu:object_r:default_prop:s0\n' \
-                  | sudo tee /tmp/mnt-mod/system/etc/selinux/plat_property_contexts >/dev/null
-                sudo umount /tmp/mnt-mod 2>/dev/null
-                echo "[B] DIAGNOZA: obraz z MINIMAL plat_property_contexts (3 linie)" \
-                  | tee -a "$WORK/emu-progress.log"
-              else
-                echo "[B] UWAGA: nie udalo sie zamontowac obrazu rw - boot na oryginale" \
-                  | tee -a "$WORK/emu-progress.log"
-              fi
               cd "$WORK"
 
               echo "[B] surowy qemu: kernel=$(basename $KERNEL) + nasz system(vdd) + vendor-mod(vdc1) + data(vdb) + metadata(vda)" \
