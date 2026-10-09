@@ -325,8 +325,10 @@ jobs:
                         echo "===== $1" >> "$WORK/disasm-crash.txt"
                         shift
                         python3 "$T" "$D" "$@" >> "$WORK/disasm-crash.txt" 2>&1; }
-                dis "FUNKCJA 0x2246f0 (zwraca status -> FATAL 'Failed to initialize property area'; Lenovo-wlasna area_init?):" \
-                  0x2246f0 0x225600
+                dis "CreateSerializedPropertyInfo (0x122bf0, lokalna; sciezki plikow + ciche powroty):" \
+                  0x122bf0 0x123330
+                dis "FUNKCJA 0x2246f0 = PLT __system_property_area_init (kontekst):" \
+                  0x2246f0 0x224700
                 dis "xref: 'Unable to serialize property contexts':" \
                   find "Unable to serialize property contexts"
                 dis "xref: 'Unable to write serialized property infos to file':" \
@@ -357,6 +359,45 @@ jobs:
               RAMDISK2="$RAMDISK"
               [ -s "$WORK/ramdisk-mod.img" ] && RAMDISK2="$WORK/ramdisk-mod.img"
               echo "[B] ramdisk: $RAMDISK2" | tee -a "$WORK/emu-progress.log"
+
+              # ---- KONTROLA: system.img RANCHU (A13 emulatorowy) jako vdd w
+              # identycznej maszynerii. Jesli przejdzie PropertyInit - harness
+              # czysty i crash jest w NASZYM obrazie (= odtworzony bootloop
+              # tabletu). Jesli tez padnie - problem srodowiska VM. 10 min. ----
+              if [ -f "$SYSIMG/system.img" ]; then
+                echo "[B] KONTROLA: boot ranchu system.img (10 min)" \
+                  | tee -a "$WORK/emu-progress.log"
+                nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
+                  -kernel "$KERNEL" -initrd "$RAMDISK2" \
+                  -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555" \
+                  -drive if=none,file="$SYSIMG/system.img",format=raw,id=system \
+                  -device virtio-blk-device,drive=system \
+                  -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
+                  -device virtio-blk-device,drive=vendor \
+                  -drive if=none,file="$WORK/userdata.img",format=raw,id=userdata \
+                  -device virtio-blk-device,drive=userdata \
+                  -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
+                  -device virtio-blk-device,drive=meta \
+                  -netdev user,id=n0,hostfwd=tcp::5555-:5555 \
+                  -device virtio-net-device,netdev=n0 \
+                  -display none -monitor none -serial file:"$WORK/qemu-console-control.log" \
+                  > "$WORK/qemu-control.log" 2>&1 &
+                CPID=$!
+                for i in $(seq 1 60); do
+                  sleep 10
+                  kill -0 $CPID 2>/dev/null || break
+                  grep -aq "Failed to initialize property area" "$WORK/qemu-console-control.log" 2>/dev/null && break
+                  grep -aqE "init:.*service|zygote|servicemanager" "$WORK/qemu-console-control.log" 2>/dev/null && break
+                done
+                {
+                  echo "CONTROL_PROPERTY_FATAL=$(grep -ac 'Failed to initialize property area' "$WORK/qemu-console-control.log" 2>/dev/null)"
+                  echo "CONTROL_LOOPS=$(grep -ac 'Run /init' "$WORK/qemu-console-control.log" 2>/dev/null)"
+                  echo "--- control: ostatnie linie init:"
+                  grep -aE "init:|selinux:" "$WORK/qemu-console-control.log" 2>/dev/null | tail -12
+                } | tee -a "$WORK/emu-progress.log"
+                kill $CPID 2>/dev/null
+                sleep 3; pkill -f qemu-system-aarch64 2>/dev/null; sleep 2
+              fi
               nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
                 -kernel "$KERNEL" -initrd "$RAMDISK2" \
                 -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555" \
@@ -463,6 +504,9 @@ jobs:
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
+            echo "## KONTROLA: ranchu system.img w tej samej maszynerii (rozroznik obraz-vs-srodowisko)"; echo '```'
+            tail -60 "$WORK/qemu-console-control.log" 2>/dev/null || echo "(brak)"
+            echo '```'
             echo "## qemu/konsola szeregowa (kernel+init; tail 200)"; echo '```'
             tail -200 "$WORK/qemu-console.log" 2>/dev/null || echo "(brak)"
             echo '```'
@@ -579,6 +623,8 @@ jobs:
             /tmp/emu/vendor-pc-orig.txt
             /tmp/emu/qemu.log
             /tmp/emu/qemu-console.log
+            /tmp/emu/qemu-console-control.log
+            /tmp/emu/qemu-control.log
             /tmp/emu/emu-logcat-full.txt
             /tmp/emu/emu-props.txt
             /tmp/emu/emu-dmesg.txt
