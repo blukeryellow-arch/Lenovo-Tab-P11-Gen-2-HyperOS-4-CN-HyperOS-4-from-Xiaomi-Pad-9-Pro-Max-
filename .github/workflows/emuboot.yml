@@ -286,7 +286,30 @@ jobs:
                   sudo strings /tmp/mnt-our/system/lib64/bootstrap/libc.so 2>/dev/null \
                     | grep -E '__properties__|property_info' | head -20
                 } > "$WORK/our-init-strings.txt" 2>&1
+                sudo cp /tmp/mnt-our/system/bin/init "$WORK/init-donor" 2>>"$WORK/our-init-strings.txt"
                 sudo umount /tmp/mnt-our 2>/dev/null
+              fi
+
+              # ---- DISASM: dokladne miejsce crashu PropertyInit ----
+              # pc=0x123ad0 stabilny w kazdym runie; PropertyInit()+1968 to
+              # duzo wiecej niz czysty AOSP - init zawiera kod Lenovo
+              # (lgsi_prop_init). Czytamy maszynowy kod wokol crashu.
+              if [ -s "$WORK/init-donor" ]; then
+                pip install -q capstone pyelftools >/dev/null 2>&1 \
+                  || pip3 install -q --break-system-packages capstone pyelftools >/dev/null 2>&1
+                : > "$WORK/disasm-crash.txt"
+                python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/disasm_propertyinit.py" \
+                  "$WORK/init-donor" find "Failed to initialize property area" \
+                  >> "$WORK/disasm-crash.txt" 2>&1
+                echo "" >> "$WORK/disasm-crash.txt"
+                python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/disasm_propertyinit.py" \
+                  "$WORK/init-donor" 0x123700 0x123ad8 >> "$WORK/disasm-crash.txt" 2>&1
+                echo "" >> "$WORK/disasm-crash.txt"
+                echo "=== imports (dynsym):" >> "$WORK/disasm-crash.txt"
+                python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/disasm_propertyinit.py" \
+                  "$WORK/init-donor" imports >> "$WORK/disasm-crash.txt" 2>&1
+                echo "[B] disasm: $(wc -l < "$WORK/disasm-crash.txt") linii" \
+                  >> "$WORK/emu-progress.log"
               fi
 
               cd "$WORK"
@@ -443,6 +466,9 @@ jobs:
             cat "$WORK/vendor-selinux-ls.txt" 2>/dev/null || echo "(brak)"
             head -10 "$WORK/vendor-pc-orig.txt" 2>/dev/null
             echo '```'
+            echo "## DISASM: crash site PropertyInit (string-xref + okno 0x123700-0x123ad8 + imports)"; echo '```'
+            head -400 "$WORK/disasm-crash.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
             echo "## DONOR init + bootstrap libc: strings (property/serialize) - czy Xiaomi zmienili sciezki"; echo '```'
             cat "$WORK/our-init-strings.txt" 2>/dev/null || echo "(brak)"
             echo '```'
@@ -507,6 +533,7 @@ jobs:
             /tmp/emu/gpt-vendor.txt
             /tmp/emu/our-selinux-ls.txt
             /tmp/emu/our-init-strings.txt
+            /tmp/emu/disasm-crash.txt
             /tmp/emu/vendor-selinux-ls.txt
             /tmp/emu/vendor-pc-orig.txt
             /tmp/emu/qemu.log
