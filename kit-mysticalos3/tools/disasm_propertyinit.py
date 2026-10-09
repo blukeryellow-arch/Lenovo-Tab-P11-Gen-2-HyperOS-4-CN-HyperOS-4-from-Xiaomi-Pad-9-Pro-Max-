@@ -50,10 +50,10 @@ def find_string_xrefs(elf, cs, needle):
     f = elf.stream
     f.seek(0)
     data = f.read()
-    nb = needle.encode() + b"\x00"
+    nb = needle.encode()
     svaddrs = []
     pos = data.find(nb)
-    while pos != -1 and len(svaddrs) < 8:
+    while pos != -1 and len(svaddrs) < 16:
         v = off_to_vaddr(elf, pos)
         if v is not None:
             svaddrs.append(v)
@@ -114,17 +114,27 @@ def parse_plt_map(elf):
     if elf.header["e_machine"] not in ("EM_AARCH64",):
         return {}
     # relocs: GOT vaddr -> nazwa
+    import struct as _struct
     reloc = {}
     for secname in (".rela.plt", ".rela.dyn"):
         sec = elf.get_section_by_name(secname)
         if sec is None:
             continue
         symtab = elf.get_section(sec["sh_link"])
-        for r in sec.iter_relocations():
-            if r["r_info_type"] in (1026, 1025):  # R_AARCH64_JUMP_SLOT / GLOB_DAT
-                sym = symtab.get_symbol(r["r_info_sym"])
-                if sym and sym.name:
-                    reloc[r["r_offset"]] = sym.name
+        data = sec.data()
+        # Elf64_Rela: r_offset, r_info, r_addend (24 B); recznie - sekcja moze
+        # byc SHT_ANDROID_RELA i pyelftools zwroci zwykla Section bez API
+        for i in range(len(data) // 24):
+            r_offset, r_info = _struct.unpack_from("<QQ", data, i * 24)
+            rtype = r_info & 0xFFFFFFFF
+            if rtype not in (1026, 1025):  # JUMP_SLOT / GLOB_DAT
+                continue
+            try:
+                sym = symtab.get_symbol(r_info >> 32)
+            except Exception:
+                sym = None
+            if sym is not None and sym.name:
+                reloc[r_offset] = sym.name
     plt = elf.get_section_by_name(".plt")
     if plt is None:
         return {}

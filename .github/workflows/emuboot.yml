@@ -290,6 +290,27 @@ jobs:
                 sudo umount /tmp/mnt-our 2>/dev/null
               fi
 
+              # ---- HIPOTEZA XATTR: czy pliki selinux w naszym obrazie maja
+              # w ogole etykiety security.selinux? Zly/brak xattr => init nie
+              # czyta plat_property_contexts (access R_OK fail) => cicha sciezka
+              # => brak /dev/__properties__/property_info => area_init FATAL.
+              # Na tablecie (enforcing) to by byl TWARDY deny = bootloop! ----
+              : > "$WORK/our-xattrs.txt"
+              OURIMG="$IMG"
+              for FSEL in \
+                /system/etc/selinux/plat_property_contexts \
+                /system/etc/selinux/plat_sepolicy.cil \
+                /system/etc/selinux/plat_file_contexts \
+                /system/bin/init; do
+                {
+                  echo "===== $FSEL"
+                  debugfs -R "stat $FSEL" "$OURIMG" 2>&1 | grep -E "Inode:|Mode:|Size:|security.selinux|Links:" \
+                    || echo "(stat fail)"
+                } >> "$WORK/our-xattrs.txt"
+              done
+              echo "[B] xattr-check: $(grep -c 'security.selinux' "$WORK/our-xattrs.txt")/4 plikow ma etykiete" \
+                >> "$WORK/emu-progress.log"
+
               # ---- DISASM: dokladne miejsce crashu PropertyInit ----
               # pc=0x123ad0 stabilny w kazdym runie; PropertyInit()+1968 to
               # duzo wiecej niz czysty AOSP - init zawiera kod Lenovo
@@ -316,6 +337,12 @@ jobs:
                 dis "PropertyInit OGON (0x123700-0x123ad8; z adnotacjami PLT):" \
                   0x123700 0x123ad8
                 dis "funkcja 0x11e9c0 (InitPropertySet? lgsi?):" 0x11e600 0x11ea80
+                dis "CreateSerializedPropertyInfo? 0x2246f0 (access/LoadPropertyInfoFromFile/branches):" \
+                  0x2246f0 0x225600
+                dis "xref: 'Unable to serialize property contexts':" \
+                  find "Unable to serialize property contexts"
+                dis "xref: 'Unable to write serialized property infos to file':" \
+                  find "Unable to write serialized property infos to file"
                 dis "statyczna tabela 0x227400-0x227640 (data):" data 0x227400 0x227640
                 dis "imports (dynsym, pelne):" imports
                 echo "[B] disasm: $(wc -l < "$WORK/disasm-crash.txt") linii" \
@@ -476,8 +503,11 @@ jobs:
             cat "$WORK/vendor-selinux-ls.txt" 2>/dev/null || echo "(brak)"
             head -10 "$WORK/vendor-pc-orig.txt" 2>/dev/null
             echo '```'
+            echo "## NASZ obraz: xattr-y SELinux (debugfs stat) - HIPOTEZA BOOTLOOPA"; echo '```'
+            cat "$WORK/our-xattrs.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
             echo "## DISASM: crash site PropertyInit (PLT mapa + xrefy + glowy/tabelka/imports)"; echo '```'
-            head -900 "$WORK/disasm-crash.txt" 2>/dev/null || echo "(brak)"
+            head -1500 "$WORK/disasm-crash.txt" 2>/dev/null || echo "(brak)"
             echo '```'
             echo "## DONOR init + bootstrap libc: strings (property/serialize) - czy Xiaomi zmienili sciezki"; echo '```'
             cat "$WORK/our-init-strings.txt" 2>/dev/null || echo "(brak)"
@@ -543,6 +573,7 @@ jobs:
             /tmp/emu/gpt-vendor.txt
             /tmp/emu/our-selinux-ls.txt
             /tmp/emu/our-init-strings.txt
+            /tmp/emu/our-xattrs.txt
             /tmp/emu/disasm-crash.txt
             /tmp/emu/vendor-selinux-ls.txt
             /tmp/emu/vendor-pc-orig.txt
