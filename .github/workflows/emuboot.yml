@@ -325,26 +325,24 @@ jobs:
                         echo "===== $1" >> "$WORK/disasm-crash.txt"
                         shift
                         python3 "$T" "$D" "$@" >> "$WORK/disasm-crash.txt" 2>&1; }
-                dis "PLT mapa (stub -> import; nazwy wszystkich bl 0x223xxx):" plt
-                dis "xref: 'Failed to initialize property area':" \
-                  find "Failed to initialize property area"
-                dis "xref: 'Failed to load serialized property info file':" \
-                  find "Failed to load serialized property info file"
-                dis "xref: 'setupOneLgsiProperty' (kod Lenovo lgsi):" \
-                  find "setupOneLgsiProperty"
-                dis "PropertyInit GLOWA (0x123330-0x123700; tu jest check area_init):" \
-                  0x123330 0x123700
-                dis "PropertyInit OGON (0x123700-0x123ad8; z adnotacjami PLT):" \
-                  0x123700 0x123ad8
-                dis "funkcja 0x11e9c0 (InitPropertySet? lgsi?):" 0x11e600 0x11ea80
-                dis "CreateSerializedPropertyInfo? 0x2246f0 (access/LoadPropertyInfoFromFile/branches):" \
+                dis "FUNKCJA 0x2246f0 (zwraca status -> FATAL 'Failed to initialize property area'; Lenovo-wlasna area_init?):" \
                   0x2246f0 0x225600
                 dis "xref: 'Unable to serialize property contexts':" \
                   find "Unable to serialize property contexts"
                 dis "xref: 'Unable to write serialized property infos to file':" \
                   find "Unable to write serialized property infos to file"
+                dis "xref: 'setupOneLgsiProperty' (kod Lenovo lgsi):" \
+                  find "setupOneLgsiProperty"
+                dis "xref: 'Failed to initialize property area':" \
+                  find "Failed to initialize property area"
+                dis "xref: 'Failed to load serialized property info file':" \
+                  find "Failed to load serialized property info file"
+                dis "PropertyInit GLOWA (0x123330-0x123700):" 0x123330 0x123700
+                dis "PropertyInit OGON (0x123700-0x123ad8):" 0x123700 0x123ad8
+                dis "funkcja 0x11e9c0 (InitPropertySet? lgsi?):" 0x11e600 0x11ea80
                 dis "statyczna tabela 0x227400-0x227640 (data):" data 0x227400 0x227640
                 dis "imports (dynsym, pelne):" imports
+                dis "PLT mapa (pelna; do grepa):" plt
                 echo "[B] disasm: $(wc -l < "$WORK/disasm-crash.txt") linii" \
                   >> "$WORK/emu-progress.log"
               fi
@@ -547,6 +545,8 @@ jobs:
           set -uo pipefail
           git config user.name "arena-agent"
           git config user.email "arena-agent@users.noreply.github.com"
+          cp "$WORK/disasm-crash.txt" "reports/disasm-${GITHUB_RUN_ID}.txt" 2>/dev/null || true
+          cp "$WORK/vendor-pc-orig.txt" "reports/vendor-pc-${GITHUB_RUN_ID}.txt" 2>/dev/null || true
           git add reports/ 2>/dev/null
           git commit -m "emuboot: evidence run ${GITHUB_RUN_ID}" || echo "nic do commitu"
           for A in 1 2 3; do
