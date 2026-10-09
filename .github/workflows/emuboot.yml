@@ -222,7 +222,11 @@ jobs:
               echo "LVP=$LVP" >> "$WORK/vendor-selinux-ls.txt" 2>&1
               if [ -n "$LVP" ]; then
                 sudo mkdir -p /tmp/mnt-vnd
-                if sudo mount "${LVP}p1" /tmp/mnt-vnd 2>>"$WORK/vendor-selinux-ls.txt"; then
+                sudo blkid "${LVP}p1" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+                sudo mount -t ext4 "${LVP}p1" /tmp/mnt-vnd 2>>"$WORK/vendor-selinux-ls.txt" \
+                  || sudo mount -o ro,loop,offset=1048576 "$WORK/vendor-mod.img" /tmp/mnt-vnd \
+                       2>>"$WORK/vendor-selinux-ls.txt"
+                if mountpoint -q /tmp/mnt-vnd; then
                   { echo "--- /etc/selinux:"; sudo ls -la /tmp/mnt-vnd/etc/selinux/ 2>&1
                     echo "--- /vendor/etc/selinux:"; sudo ls -la /tmp/mnt-vnd/vendor/etc/selinux/ 2>&1
                     echo "--- vendor_property_contexts (head 12, przed wyzerowaniem):"
@@ -251,10 +255,42 @@ jobs:
                   echo "--- plat_property_contexts (head 12 + wc):"
                   sudo head -12 /tmp/mnt-our/system/etc/selinux/plat_property_contexts 2>&1
                   sudo wc -l /tmp/mnt-our/system/etc/selinux/plat_property_contexts 2>&1
+                  echo "--- plat_property_contexts (tail 25):"
+                  sudo tail -25 /tmp/mnt-our/system/etc/selinux/plat_property_contexts 2>&1
+                  echo "--- linie z znakami non-ASCII (potencjalna trucizna parsera):"
+                  sudo grep -nE '[^ -~]' /tmp/mnt-our/system/etc/selinux/plat_property_contexts 2>&1 | head -10
                   echo "--- czy jest SEPolicy.zip (apex):"
                   sudo ls -la /tmp/mnt-our/system/etc/selinux/apex/ 2>&1
                 } > "$WORK/our-selinux-ls.txt" 2>&1
+                { echo "=== init / bootstrap libc: rozmiary:"
+                  sudo ls -la /tmp/mnt-our/system/bin/init \
+                    /tmp/mnt-our/system/lib64/bootstrap/libc.so 2>&1
+                  echo "=== strings init: property/serialize:"
+                  sudo strings /tmp/mnt-our/system/bin/init 2>/dev/null \
+                    | grep -iE 'propert|__properties__|serializ' | head -40
+                  echo "=== strings init: komunikaty o bledach:"
+                  sudo strings /tmp/mnt-our/system/bin/init 2>/dev/null \
+                    | grep -iE 'unable to|failed to' | head -30
+                  echo "=== strings bootstrap libc: __properties__:"
+                  sudo strings /tmp/mnt-our/system/lib64/bootstrap/libc.so 2>/dev/null \
+                    | grep -E '__properties__|property_info' | head -20
+                } > "$WORK/our-init-strings.txt" 2>&1
                 sudo umount /tmp/mnt-our 2>/dev/null
+              fi
+
+              # ---- DIAGNOZA: MINIMAL plat_property_contexts (test czy zawartosc
+              # pliku donorowego zabija PropertyInit; obraz lokalnej kopii,
+              # modyfikacja w miejscu; to run DIAGNOSTYCZNY nie 1:1) ----
+              sudo mkdir -p /tmp/mnt-mod
+              if sudo mount -o rw,loop "$IMG" /tmp/mnt-mod 2>/dev/null; then
+                printf 'ro.\tu:object_r:default_prop:s0\npersist.\tu:object_r:default_prop:s0\nsys.\tu:object_r:default_prop:s0\n' \
+                  | sudo tee /tmp/mnt-mod/system/etc/selinux/plat_property_contexts >/dev/null
+                sudo umount /tmp/mnt-mod 2>/dev/null
+                echo "[B] DIAGNOZA: obraz z MINIMAL plat_property_contexts (3 linie)" \
+                  | tee -a "$WORK/emu-progress.log"
+              else
+                echo "[B] UWAGA: nie udalo sie zamontowac obrazu rw - boot na oryginale" \
+                  | tee -a "$WORK/emu-progress.log"
               fi
               cd "$WORK"
 
@@ -410,6 +446,9 @@ jobs:
             cat "$WORK/vendor-selinux-ls.txt" 2>/dev/null || echo "(brak)"
             head -10 "$WORK/vendor-pc-orig.txt" 2>/dev/null
             echo '```'
+            echo "## DONOR init + bootstrap libc: strings (property/serialize) - czy Xiaomi zmienili sciezki"; echo '```'
+            cat "$WORK/our-init-strings.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
             echo "## avdmanager (tworzenie AVD)"; echo '```'
             cat "$WORK/avd-create.log" 2>/dev/null || echo "(brak)"
             echo '```'
@@ -470,6 +509,7 @@ jobs:
             /tmp/emu/gpt-sys.txt
             /tmp/emu/gpt-vendor.txt
             /tmp/emu/our-selinux-ls.txt
+            /tmp/emu/our-init-strings.txt
             /tmp/emu/vendor-selinux-ls.txt
             /tmp/emu/vendor-pc-orig.txt
             /tmp/emu/qemu.log
