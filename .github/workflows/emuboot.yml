@@ -218,11 +218,17 @@ jobs:
               # + ranchu-vendor => duplikaty kluczy => 'Failed to initialize
               # property area' w 2. stadionie initu; SELinux permissive) ----
               cp "$SYSIMG/vendor.img" "$WORK/vendor-mod.img"
-              sudo losetup -fP "$WORK/vendor-mod.img" >/dev/null 2>&1
-              LVP=$(sudo losetup -j "$WORK/vendor-mod.img" 2>/dev/null | cut -d: -f1)
+              LVP=$(sudo losetup --find --show -P "$WORK/vendor-mod.img" 2>/dev/null)
+              echo "LVP=$LVP" >> "$WORK/vendor-selinux-ls.txt" 2>&1
               if [ -n "$LVP" ]; then
-                if sudo mkdir -p /tmp/mnt-vnd && sudo mount "${LVP}p1" /tmp/mnt-vnd 2>/dev/null; then
-                  sudo ls -la /tmp/mnt-vnd/etc/selinux/ > "$WORK/vendor-selinux-ls.txt" 2>&1
+                sudo mkdir -p /tmp/mnt-vnd
+                if sudo mount "${LVP}p1" /tmp/mnt-vnd 2>>"$WORK/vendor-selinux-ls.txt"; then
+                  { echo "--- /etc/selinux:"; sudo ls -la /tmp/mnt-vnd/etc/selinux/ 2>&1
+                    echo "--- /vendor/etc/selinux:"; sudo ls -la /tmp/mnt-vnd/vendor/etc/selinux/ 2>&1
+                    echo "--- vendor_property_contexts (head 12, przed wyzerowaniem):"
+                    sudo head -12 /tmp/mnt-vnd/etc/selinux/vendor_property_contexts 2>&1
+                    sudo wc -l /tmp/mnt-vnd/etc/selinux/vendor_property_contexts 2>&1
+                  } >> "$WORK/vendor-selinux-ls.txt" 2>&1
                   sudo cp /tmp/mnt-vnd/etc/selinux/vendor_property_contexts \
                     "$WORK/vendor-pc-orig.txt" 2>/dev/null
                   sudo truncate -s 0 /tmp/mnt-vnd/etc/selinux/vendor_property_contexts 2>/dev/null
@@ -234,13 +240,20 @@ jobs:
               [ -s "$WORK/vendor-mod.img" ] && VENDORIMG="$WORK/vendor-mod.img"
               echo "[B] vendor: $VENDORIMG" >> "$WORK/emu-progress.log"
 
-              # ---- forensyka: selinux + property contexts NASZEGO obrazu ----
+              # ---- forensyka: selinux + property contexts NASZEGO obrazu
+              # (UWAGA: /etc -> /system/etc to symlink ABSOLUTNY - na runnerze
+              # wisial w prozni i dawal falszywy 'brak'; wlasciwa sciezka:
+              # system/etc/selinux) ----
               sudo mkdir -p /tmp/mnt-our
               if sudo mount -o ro,loop "$IMG" /tmp/mnt-our 2>/dev/null; then
-                sudo ls -la /tmp/mnt-our/etc/selinux/ > "$WORK/our-selinux-ls.txt" 2>&1
-                sudo ls -la /tmp/mnt-our/ | head -25 >> "$WORK/our-selinux-ls.txt" 2>&1
-                sudo head -8 /tmp/mnt-our/etc/selinux/plat_property_contexts \
-                  >> "$WORK/our-selinux-ls.txt" 2>&1
+                { echo "--- /system/etc/selinux:"
+                  sudo ls -la /tmp/mnt-our/system/etc/selinux/ 2>&1
+                  echo "--- plat_property_contexts (head 12 + wc):"
+                  sudo head -12 /tmp/mnt-our/system/etc/selinux/plat_property_contexts 2>&1
+                  sudo wc -l /tmp/mnt-our/system/etc/selinux/plat_property_contexts 2>&1
+                  echo "--- czy jest SEPolicy.zip (apex):"
+                  sudo ls -la /tmp/mnt-our/system/etc/selinux/apex/ 2>&1
+                } > "$WORK/our-selinux-ls.txt" 2>&1
                 sudo umount /tmp/mnt-our 2>/dev/null
               fi
               cd "$WORK"
@@ -255,7 +268,7 @@ jobs:
               echo "[B] ramdisk: $RAMDISK2" | tee -a "$WORK/emu-progress.log"
               nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
                 -kernel "$KERNEL" -initrd "$RAMDISK2" \
-                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 androidboot.adb.tcp.port=5555" \
+                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555" \
                 -drive if=none,file="$IMG",format=raw,id=system \
                 -device virtio-blk-device,drive=system \
                 -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
@@ -382,6 +395,10 @@ jobs:
             echo "petle (Run /init): $(grep -ac 'Run /init' "$WORK/qemu-console.log" 2>/dev/null)"
             grep -aE 'init:|fs_mgr|Fatal|not found|Failed|mount|abort' \
               "$WORK/qemu-console.log" 2>/dev/null | tail -100
+            echo '```'
+            echo "## konsola: property/serialize/libc (grep; prawdziwa przyczyna crashu PropertyInit)"; echo '```'
+            grep -aiE 'propert|serializ|libc|EACCES|Unable|__properties__|permission denied|context' \
+              "$WORK/qemu-console.log" 2>/dev/null | tail -60
             echo '```'
             echo "## GPT: nasz system / vendor"; echo '```'
             cat "$WORK/gpt-sys.txt" "$WORK/gpt-vendor.txt" 2>/dev/null || echo "(brak)"
