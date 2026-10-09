@@ -297,17 +297,27 @@ jobs:
               if [ -s "$WORK/init-donor" ]; then
                 pip install -q capstone pyelftools >/dev/null 2>&1 \
                   || pip3 install -q --break-system-packages capstone pyelftools >/dev/null 2>&1
+                T="$GITHUB_WORKSPACE/kit-mysticalos3/tools/disasm_propertyinit.py"
+                D="$WORK/init-donor"
                 : > "$WORK/disasm-crash.txt"
-                python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/disasm_propertyinit.py" \
-                  "$WORK/init-donor" find "Failed to initialize property area" \
-                  >> "$WORK/disasm-crash.txt" 2>&1
-                echo "" >> "$WORK/disasm-crash.txt"
-                python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/disasm_propertyinit.py" \
-                  "$WORK/init-donor" 0x123700 0x123ad8 >> "$WORK/disasm-crash.txt" 2>&1
-                echo "" >> "$WORK/disasm-crash.txt"
-                echo "=== imports (dynsym):" >> "$WORK/disasm-crash.txt"
-                python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/disasm_propertyinit.py" \
-                  "$WORK/init-donor" imports >> "$WORK/disasm-crash.txt" 2>&1
+                dis() { echo "" >> "$WORK/disasm-crash.txt"
+                        echo "===== $1" >> "$WORK/disasm-crash.txt"
+                        shift
+                        python3 "$T" "$D" "$@" >> "$WORK/disasm-crash.txt" 2>&1; }
+                dis "PLT mapa (stub -> import; nazwy wszystkich bl 0x223xxx):" plt
+                dis "xref: 'Failed to initialize property area':" \
+                  find "Failed to initialize property area"
+                dis "xref: 'Failed to load serialized property info file':" \
+                  find "Failed to load serialized property info file"
+                dis "xref: 'setupOneLgsiProperty' (kod Lenovo lgsi):" \
+                  find "setupOneLgsiProperty"
+                dis "PropertyInit GLOWA (0x123330-0x123700; tu jest check area_init):" \
+                  0x123330 0x123700
+                dis "PropertyInit OGON (0x123700-0x123ad8; z adnotacjami PLT):" \
+                  0x123700 0x123ad8
+                dis "funkcja 0x11e9c0 (InitPropertySet? lgsi?):" 0x11e600 0x11ea80
+                dis "statyczna tabela 0x227400-0x227640 (data):" data 0x227400 0x227640
+                dis "imports (dynsym, pelne):" imports
                 echo "[B] disasm: $(wc -l < "$WORK/disasm-crash.txt") linii" \
                   >> "$WORK/emu-progress.log"
               fi
@@ -466,8 +476,8 @@ jobs:
             cat "$WORK/vendor-selinux-ls.txt" 2>/dev/null || echo "(brak)"
             head -10 "$WORK/vendor-pc-orig.txt" 2>/dev/null
             echo '```'
-            echo "## DISASM: crash site PropertyInit (string-xref + okno 0x123700-0x123ad8 + imports)"; echo '```'
-            head -400 "$WORK/disasm-crash.txt" 2>/dev/null || echo "(brak)"
+            echo "## DISASM: crash site PropertyInit (PLT mapa + xrefy + glowy/tabelka/imports)"; echo '```'
+            head -900 "$WORK/disasm-crash.txt" 2>/dev/null || echo "(brak)"
             echo '```'
             echo "## DONOR init + bootstrap libc: strings (property/serialize) - czy Xiaomi zmienili sciezki"; echo '```'
             cat "$WORK/our-init-strings.txt" 2>/dev/null || echo "(brak)"

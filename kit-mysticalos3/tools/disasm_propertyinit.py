@@ -106,6 +106,53 @@ def find_string_xrefs(elf, cs, needle):
     return svaddrs, out
 
 
+def parse_plt_map(elf):
+    """map: adres stuba PLT -> nazwa importu.
+    AArch64 PLT stub: adrp x16,#page; ldr x17,[x16,#off]; add x16,x16,#off; br x17
+    GOT wpis = page+off; z .rela.plt (r_offset) bierzemy symbol."""
+    from capstone import Cs, CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN
+    if elf.header["e_machine"] not in ("EM_AARCH64",):
+        return {}
+    # relocs: GOT vaddr -> nazwa
+    reloc = {}
+    for secname in (".rela.plt", ".rela.dyn"):
+        sec = elf.get_section_by_name(secname)
+        if sec is None:
+            continue
+        symtab = elf.get_section(sec["sh_link"])
+        for r in sec.iter_relocations():
+            if r["r_info_type"] in (1026, 1025):  # R_AARCH64_JUMP_SLOT / GLOB_DAT
+                sym = symtab.get_symbol(r["r_info_sym"])
+                if sym and sym.name:
+                    reloc[r["r_offset"]] = sym.name
+    plt = elf.get_section_by_name(".plt")
+    if plt is None:
+        return {}
+    cs = Cs(CS_ARCH_ARM64, CS_MODE_LITTLE_ENDIAN)
+    out = {}
+    base, data = plt["sh_addr"], plt.data()
+    page = None
+    stub_start = None
+    for i in cs.disasm(data, base):
+        if i.mnemonic == "adrp":
+            try:
+                reg, imm = i.op_str.split(", ")
+                if reg == "x16":
+                    page = int(imm.lstrip("#"), 16)
+                    stub_start = i.address
+            except ValueError:
+                pass
+        elif i.mnemonic == "ldr" and page is not None and "x17" in i.op_str:
+            try:
+                off = int(i.op_str.split("#")[1].rstrip("]"), 16)
+                got = page + off
+                if got in reloc and stub_start is not None:
+                    out[stub_start] = reloc[got]
+            except (ValueError, IndexError):
+                pass
+    return out
+
+
 def list_imports(elf):
     out = []
     for secname in (".dynsym",):
@@ -119,6 +166,35 @@ def list_imports(elf):
 
 
 def main():
+    if len(sys.argv) >= 3 and sys.argv[2] == "plt":
+        path = sys.argv[1]
+        out_path = sys.argv[3] if len(sys.argv) > 3 else None
+        elf = ELFFile(open(path, "rb"))
+        m = parse_plt_map(elf)
+        text = "\n".join("0x%x  %s" % (a, n) for a, n in sorted(m.items()))
+        text = "PLT stubow: %d\n" % len(m) + text
+        print(text)
+        if out_path:
+            open(out_path, "w").write(text + "\n")
+        return 0
+    if len(sys.argv) >= 5 and sys.argv[2] == "data":
+        # data <start_hex> <end_hex> [out]
+        path, start_s, end_s = sys.argv[1], sys.argv[3], sys.argv[4]
+        start, end = int(start_s, 16), int(end_s, 16)
+        f = open(path, "rb"); elf = ELFFile(f)
+        o = vaddr_to_offset(elf, start)
+        f.seek(o); blob = f.read(end - start)
+        lines = []
+        for p in range(0, len(blob), 16):
+            chunk = blob[p:p+16]
+            hx = " ".join("%02x" % b for b in chunk)
+            asc = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
+            lines.append("0x%08x  %-48s  %s" % (start+p, hx, asc))
+        text = "\n".join(lines)
+        print(text)
+        if len(sys.argv) > 5:
+            open(sys.argv[5], "w").write(text + "\n")
+        return 0
     if len(sys.argv) >= 3 and sys.argv[2] == "imports":
         # tryb: disasm_propertyinit.py <elf> imports [out.txt]
         path = sys.argv[1]
@@ -164,6 +240,10 @@ def main():
         print("nieznana arch: %s" % machine)
         return 1
     syms = load_symbols(elf)
+    try:
+        plt_map = parse_plt_map(elf)
+    except Exception:
+        plt_map = {}
 
     lines = []
     lines.append("# %s [%s]; zakres 0x%x-0x%x; symboli: %d"
@@ -186,7 +266,9 @@ def main():
             except ValueError:
                 pass
         if tgt is not None:
-            if tgt in syms:
+            if plt_map and tgt in plt_map:
+                note = "  ; -> PLT:%s" % plt_map[tgt]
+            elif tgt in syms:
                 note = "  ; -> %s" % syms[tgt]
             else:
                 # sprobuj najblizszego symbolu (PLT stub -> GOT -> import)
