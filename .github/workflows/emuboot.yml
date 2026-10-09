@@ -225,11 +225,15 @@ jobs:
               # na surowej partycji (unlink nie alokuje blokow).
               cp "$SYSIMG/vendor.img" "$WORK/vendor-mod.img"
               VNDSTART=$(sfdisk -d "$WORK/vendor-mod.img" 2>/dev/null \
-                | awk '/p1/{gsub(/[^0-9]/,"",$3); print $3}')
+                | grep -o 'start= *[0-9]*' | head -1 | grep -o '[0-9]*')
               VNDSIZE=$(sfdisk -d "$WORK/vendor-mod.img" 2>/dev/null \
-                | awk '/p1/{gsub(/[^0-9]/,"",$4); print $4}')
+                | grep -o 'size= *[0-9]*' | head -1 | grep -o '[0-9]*')
               echo "vendor part: start=$VNDSTART sectors, size=$VNDSIZE" \
                 >> "$WORK/vendor-selinux-ls.txt" 2>&1
+              if [ -z "$VNDSTART" ] || [ -z "$VNDSIZE" ]; then
+                echo "::error::NIE udalo sie sparsowac partycji vendor (start/size puste) - fix nie zadziala"
+                sfdisk -d "$WORK/vendor-mod.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+              fi
               if [ -n "$VNDSTART" ] && [ -n "$VNDSIZE" ]; then
                 dd if="$WORK/vendor-mod.img" of="$WORK/vendor-part.img" \
                   bs=512 skip="$VNDSTART" count="$VNDSIZE" status=none
