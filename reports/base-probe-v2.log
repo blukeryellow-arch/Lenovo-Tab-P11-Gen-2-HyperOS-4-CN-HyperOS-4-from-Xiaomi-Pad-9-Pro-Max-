@@ -1,0 +1,189 @@
+### base-probe v3 2026-09-29T17:30:17Z
+== HEAD ==
+HTTP/2 200 
+server: nginx
+date: Tue, 29 Sep 2026 17:30:17 GMT
+content-type: application/zip
+content-length: 4692836474
+last-modified: Fri, 05 Dec 2025 11:07:13 GMT
+etag: "6932bce1-117b7007a"
+alt-svc: h3=":443"; ma=86400
+strict-transport-security: max-age=63072000
+accept-ranges: bytes
+
+== GET pierwsze 64 KB (206?) ==
+http=206 size=65536
+== range z ogona (central directory) ==
+content-length=[4692836474]
+http=206 size=1000000
+EOCD w tailu: 999978 rozmiar tailu: 1000000
+central dir: size=110350 off=4294967295 (plik 4692836474 B)
+== pobranie zipa ==
+/dev/root        72G   59G   14G  82% /
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0  0 4475M    0  8192    0     0  16277      0 80:05:10 --:--:-- 80:05:10 16253  0 4475M    0 1464k    0     0  1003k      0  1:16:07  0:00:01  1:16:06 1002k  0 4475M    0 24.1M    0     0   9.8M      0  0:07:36  0:00:02  0:07:34  9.8M  1 4475M    1 89.1M    0     0  25.7M      0  0:02:53  0:00:03  0:02:50 25.7M  3 4475M    3  148M    0     0  33.3M      0  0:02:14  0:00:04  0:02:10 33.3M  4 4475M    4  200M    0     0  36.1M      0  0:02:03  0:00:05  0:01:58 39.8M  5 4475M    5  245M    0     0  37.5M      0  0:01:59  0:00:06  0:01:53 48.0M  6 4475M    6  285M    0     0  37.9M      0  0:01:57  0:00:07  0:01:50 51.6M  7 4475M    7  325M    0     0  38.2M      0  0:01:56  0:00:08  0:01:48 46.8M  8 4475M    8  366M    0     0  38.5M      0  0:01:56  0:00:09  0:01:47 43.1M  9 4475M    9  410M    0     0  38.9M      0  0:01:54  0:00:10  0:01:44 41.9M 10 4475M   10  461M    0     0  40.1M      0  0:01:51  0:00:11  0:01:40 43.6M 11 4475M   11  511M    0     0  41.0M      0  0:01:49  0:00:12  0:01:37 45.7M 12 4475M   12  554M    0     0  41.1M      0  0:01:48  0:00:13  0:01:35 46.2M 13 4475M   13  594M    0     0  41.0M      0  0:01:48  0:00:14  0:01:34 45.9M 14 4475M   14  636M    0     0  41.1M      0  0:01:48  0:00:15  0:01:33 45.9M 15 4475M   15  677M    0     0  41.1M      0  0:01:48  0:00:16  0:01:32 43.4M 16 4475M   16  726M    0     0  41.5M      0  0:01:47  0:00:17  0:01:30 42.7M 17 4475M   17  782M    0     0  42.3M      0  0:01:45  0:00:18  0:01:27 45.5M 18 4475M   18  842M    0     0  43.2M      0  0:01:43  0:00:19  0:01:24 49.6M 20 4475M   20  895M    0     0  42.4M      0  0:01:45  0:00:21  0:01:24 45.7M 20 4475M   20  917M    0     0  42.6M      0  0:01:44  0:00:21  0:01:23 47.4M 21 4475M   21  977M    0     0  43.4M      0  0:01:43  0:00:22  0:01:21 50.0M 23 4475M   23 1032M    0     0  43.9M      0  0:01:41  0:00:23  0:01:18 49.7M 23 4475M   23 1072M    0     0  43.8M      0  0:01:42  0:00:24  0:01:18 45.9M 24 4475M   24 1116M    0     0  43.8M      0  0:01:42  0:00:25  0:01:17 50.9M 26 4475M   26 1170M    0     0  44.2M      0  0:01:41  0:00:26  0:01:15 51.2M 27 4475M   27 1219M    0     0  44.4M      0  0:01:40  0:00:27  0:01:13 48.8M 28 4475M   28 1277M    0     0  44.8M      0  0:01:39  0:00:28  0:01:11 48.8M 29 4475M   29 1333M    0     0  45.2M      0  0:01:38  0:00:29  0:01:09 52.4M 30 4475M   30 1373M    0     0  45.0M      0  0:01:39  0:00:30  0:01:09 51.3M 31 4475M   31 1421M    0     0  45.1M      0  0:01:39  0:00:31  0:01:08 50.1M 32 4475M   32 1462M    0     0  45.0M      0  0:01:39  0:00:32  0:01:07 48.5M 33 4475M   33 1505M    0     0  44.9M      0  0:01:39  0:00:33  0:01:06 46.0M 34 4475M   34 1542M    0     0  44.7M      0  0:01:39  0:00:34  0:01:05 41.7M 35 4475M   35 1578M    0     0  44.5M      0  0:01:40  0:00:35  0:01:05 41.0M 36 4475M   36 1619M    0     0  44.4M      0  0:01:40  0:00:36  0:01:04 39.7M 37 4475M   37 1660M    0     0  44.3M      0  0:01:40  0:00:37  0:01:03 39.6M 38 4475M   38 1701M    0     0  44.2M      0  0:01:41  0:00:38  0:01:03 39.2M 38 4475M   38 1743M    0     0  44.0M      0  0:01:41  0:00:39  0:01:02 39.5M 39 4475M   39 1783M    0     0  44.0M      0  0:01:41  0:00:40  0:01:01 40.5M 40 4475M   40 1819M    0     0  43.8M      0  0:01:41  0:00:41  0:01:00 40.0M 41 4475M   41 1860M    0     0  43.7M      0  0:01:42  0:00:42  0:01:00 39.6M 42 4475M   42 1903M    0     0  43.7M      0  0:01:42  0:00:43  0:00:59 40.3M 43 4475M   43 1948M    0     0  43.8M      0  0:01:42  0:00:44  0:00:58 41.5M 44 4475M   44 1995M    0     0  43.9M      0  0:01:41  0:00:45  0:00:56 43.0M 45 4475M   45 2043M    0     0  43.9M      0  0:01:41  0:00:46  0:00:55 44.2M 46 4475M   46 2078M    0     0  43.7M      0  0:01:42  0:00:47  0:00:55 43.0M 47 4475M   47 2115M    0     0  43.6M      0  0:01:42  0:00:48  0:00:54 42.3M 48 4475M   48 2155M    0     0  43.5M      0  0:01:42  0:00:49  0:00:53 41.5M 49 4475M   49 2196M    0     0  43.5M      0  0:01:42  0:00:50  0:00:52 40.1M 50 4475M   50 2238M    0     0  43.5M      0  0:01:42  0:00:51  0:00:51 39.4M 50 4475M   50 2278M    0     0  43.4M      0  0:01:43  0:00:52  0:00:51 40.8M 51 4475M   51 2323M    0     0  43.4M      0  0:01:42  0:00:53  0:00:49 41.6M 52 4475M   52 2371M    0     0  43.5M      0  0:01:42  0:00:54  0:00:48 43.2M 54 4475M   54 2422M    0     0  43.6M      0  0:01:42  0:00:55  0:00:47 45.0M 55 4475M   55 2475M    0     0  43.8M      0  0:01:42  0:00:56  0:00:46 47.4M 56 4475M   56 2531M    0     0  44.0M      0  0:01:41  0:00:57  0:00:44 50.6M 57 4475M   57 2575M    0     0  44.0M      0  0:01:41  0:00:58  0:00:43 50.4M 58 4475M   58 2615M    0     0  43.9M      0  0:01:41  0:00:59  0:00:42 48.6M 59 4475M   59 2657M    0     0  43.9M      0  0:01:41  0:01:00  0:00:41 46.9M 60 4475M   60 2699M    0     0  43.8M      0  0:01:42  0:01:01  0:00:41 44.0M 61 4475M   61 2735M    0     0  43.8M      0  0:01:42  0:01:02  0:00:40 40.8M 62 4475M   62 2776M    0     0  43.7M      0  0:01:42  0:01:03  0:00:39 40.2M 62 4475M   62 2817M    0     0  43.7M      0  0:01:42  0:01:04  0:00:38 40.4M 63 4475M   63 2857M    0     0  43.6M      0  0:01:42  0:01:05  0:00:37 40.1M 64 4475M   64 2899M    0     0  43.6M      0  0:01:42  0:01:06  0:00:36 40.5M 65 4475M   65 2936M    0     0  43.5M      0  0:01:42  0:01:07  0:00:35 40.0M 66 4475M   66 2980M    0     0  43.5M      0  0:01:42  0:01:08  0:00:34 40.8M 67 4475M   67 3020M    0     0  43.4M      0  0:01:42  0:01:09  0:00:33 40.5M 68 4475M   68 3072M    0     0  43.5M      0  0:01:42  0:01:10  0:00:32 42.8M 69 4475M   69 3112M    0     0  43.5M      0  0:01:42  0:01:11  0:00:31 42.6M 70 4475M   70 3149M    0     0  43.4M      0  0:01:43  0:01:12  0:00:31 42.1M 71 4475M   71 3192M    0     0  43.4M      0  0:01:42  0:01:13  0:00:29 42.2M 72 4475M   72 3243M    0     0  43.5M      0  0:01:42  0:01:14  0:00:28 44.6M 73 4475M   73 3285M    0     0  43.5M      0  0:01:42  0:01:15  0:00:27 42.2M 74 4475M   74 3325M    0     0  43.4M      0  0:01:42  0:01:16  0:00:26 42.2M 75 4475M   75 3365M    0     0  43.4M      0  0:01:43  0:01:17  0:00:26 43.5M 76 4475M   76 3405M    0     0  43.4M      0  0:01:43  0:01:18  0:00:25 42.6M 77 4475M   77 3446M    0     0  43.3M      0  0:01:43  0:01:19  0:00:24 40.4M 77 4475M   77 3481M    0     0  43.2M      0  0:01:43  0:01:20  0:00:23 39.2M 78 4475M   78 3521M    0     0  43.2M      0  0:01:43  0:01:21  0:00:22 39.1M 79 4475M   79 3560M    0     0  43.1M      0  0:01:43  0:01:22  0:00:21 39.1M 80 4475M   80 3601M    0     0  43.0M      0  0:01:43  0:01:23  0:00:20 38.3M 81 4475M   81 3636M    0     0  43.0M      0  0:01:43  0:01:24  0:00:19 38.1M 82 4475M   82 3676M    0     0  43.0M      0  0:01:44  0:01:25  0:00:19 39.2M 82 4475M   82 3713M    0     0  42.9M      0  0:01:44  0:01:26  0:00:18 38.4M 83 4475M   83 3752M    0     0  42.9M      0  0:01:44  0:01:27  0:00:17 38.2M 84 4475M   84 3791M    0     0  42.8M      0  0:01:44  0:01:28  0:00:16 38.8M 85 4475M   85 3832M    0     0  42.8M      0  0:01:44  0:01:29  0:00:15 39.1M 86 4475M   86 3871M    0     0  42.7M      0  0:01:44  0:01:30  0:00:14 39.0M 87 4475M   87 3911M    0     0  42.7M      0  0:01:44  0:01:31  0:00:13 39.5M 88 4475M   88 3951M    0     0  42.7M      0  0:01:44  0:01:32  0:00:12 39.9M 89 4475M   89 3992M    0     0  42.7M      0  0:01:44  0:01:33  0:00:11 40.1M 90 4475M   90 4042M    0     0  42.7M      0  0:01:44  0:01:34  0:00:10 41.4M 91 4475M   91 4095M    0     0  42.9M      0  0:01:44  0:01:35  0:00:09 44.8M 92 4475M   92 4143M    0     0  42.9M      0  0:01:44  0:01:36  0:00:08 46.8M 93 4475M   93 4187M    0     0  42.9M      0  0:01:44  0:01:37  0:00:07 47.1M 94 4475M   94 4232M    0     0  42.9M      0  0:01:44  0:01:38  0:00:06 47.2M 95 4475M   95 4262M    0     0  42.8M      0  0:01:44  0:01:39  0:00:05 44.4M 96 4475M   96 4298M    0     0  42.7M      0  0:01:44  0:01:40  0:00:04 40.6M 96 4475M   96 4338M    0     0  42.7M      0  0:01:44  0:01:41  0:00:03 39.1M 98 4475M   98 4392M    0     0  42.8M      0  0:01:44  0:01:42  0:00:02 40.9M 99 4475M   99 4442M    0     0  42.9M      0  0:01:44  0:01:43  0:00:01 42.5M100 4475M  100 4475M    0     0  42.8M      0  0:01:44  0:01:44 --:--:-- 43.7M
+4692836474
+== unzip -lv posortowane po uncompressed (top 40) ==
+8981816780         4692655020  48%                            626 files
+8297863612  Defl:N 4554222166  45% 2025-11-03 13:39 eb28bf1f  TB350FU_S230982_251013_ROW/image/super.img
+314572800  Defl:N   371030 100% 2025-11-03 13:39 138b2f07  TB350FU_S230982_251013_ROW/image/lenovocust.img
+67108864  Defl:N 21466253  68% 2025-11-03 13:39 4258b76b  TB350FU_S230982_251013_ROW/image/boot-debug.img
+67108864  Defl:N 20777913  69% 2025-11-03 13:39 2f66b559  TB350FU_S230982_251013_ROW/image/boot.img
+67108864  Defl:N 18700715  72% 2025-11-03 13:39 364cc3f0  TB350FU_S230982_251013_ROW/image/vendor_boot.img
+31191152  Defl:N  7383843  76% 2025-11-03 13:39 0ec94054  TB350FU_S230982_251013_ROW/image/vendor_dlkm.img
+23158784  Defl:N 18838043  19% 2025-11-03 13:39 0826d785  TB350FU_S230982_251013_ROW/image/vendor_boot-debug.img
+16777216  Defl:N    19698 100% 2025-11-03 13:39 a47ca14a  TB350FU_S230982_251013_ROW/image/lenovoraw.img
+ 8548676  Defl:N  2740676  68% 2025-11-03 13:39 6d1bedc0  TB350FU_S230982_251013_ROW/image/userdata.img
+ 8388608  Defl:N    18798 100% 2025-11-03 13:39 9666b3f0  TB350FU_S230982_251013_ROW/image/dtbo.img
+ 5978744  Defl:N  2120754  65% 2025-11-03 13:39 be72943e  TB350FU_S230982_251013_ROW/Qt5Gui.dll
+ 5298296  Defl:N  2386412  55% 2025-11-03 13:39 64941a23  TB350FU_S230982_251013_ROW/Qt5Core.dll
+ 4955120  Defl:N  4581502   8% 2025-11-03 13:39 f7d48e1c  TB350FU_S230982_251013_ROW/image/logo.bin
+ 4951360  Defl:N  4579970   8% 2025-11-03 13:39 23d7cebf  TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/logo.bin
+ 4669264  Defl:N  4663324   0% 2025-11-03 13:39 49ee96a8  TB350FU_S230982_251013_ROW/image/gz.img
+ 4657984  Stored  4657984   0% 2025-11-03 13:39 f0cbf225  TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/gz.img
+ 4595832  Defl:N  2050047  55% 2025-11-03 13:39 d9f217cc  TB350FU_S230982_251013_ROW/Qt5Widgets.dll
+ 3409408  Defl:N  2043156  40% 2025-11-03 13:39 c14434a2  TB350FU_S230982_251013_ROW/SPFlashToolV6.exe
+ 3288903  Defl:N  1148785  65% 2025-11-03 13:39 f1922f2b  TB350FU_S230982_251013_ROW/image/testcases/sigma/scripts/PFService/cygwin1.dll
+ 2998440  Defl:N  1165598  61% 2025-11-03 13:39 5a29853d  TB350FU_S230982_251013_ROW/image/testcases/TFLiteRunner.vendor/arm64/TFLiteRunner
+ 2776784  Defl:N  2406182  13% 2025-11-03 13:39 9f3ae1d6  TB350FU_S230982_251013_ROW/image/tee.img
+ 2769264  Defl:N  2403084  13% 2025-11-03 13:39 cc8062e0  TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/tee.img
+ 2633376  Defl:N  1024613  61% 2025-11-03 13:39 476b6555  TB350FU_S230982_251013_ROW/image/lk.img
+ 2618336  Defl:N  1018844  61% 2025-11-03 13:39 ede9e1ce  TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/lk.img
+ 2316920  Defl:N   812966  65% 2025-11-03 13:39 85d56843  TB350FU_S230982_251013_ROW/Qt5XmlPatterns.dll
+ 2031284  Defl:N  1082604  47% 2025-11-03 13:39 58a1bdf0  TB350FU_S230982_251013_ROW/image/testcases/TFLiteRunner.vendor/arm/TFLiteRunner
+ 1323082  Defl:N   593608  55% 2025-11-03 13:39 dcb6bcf5  TB350FU_S230982_251013_ROW/libeay32.dll
+ 1221752  Defl:N   603226  51% 2025-11-03 13:39 3ec8a33b  TB350FU_S230982_251013_ROW/plugins/platforms/qwindows.dll
+ 1140224  Defl:N   501711  56% 2025-11-03 13:39 07608dc0  TB350FU_S230982_251013_ROW/flash.dll
+ 1115256  Defl:N   458677  59% 2025-11-03 13:39 f14f6d33  TB350FU_S230982_251013_ROW/Qt5Network.dll
+ 1073648  Defl:N   357829  67% 2025-11-03 13:39 0d742dba  TB350FU_S230982_251013_ROW/image/scp.img
+ 1066128  Defl:N   354782  67% 2025-11-03 13:39 7448f2af  TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/scp.img
+  845607  Defl:N   593409  30% 2025-11-03 13:39 1a42ec1d  TB350FU_S230982_251013_ROW/image/testcases/sigma/scripts/CertProgram/NAN_R2R3/NanBleTool.abc
+  845607  Defl:N   593409  30% 2025-11-03 13:39 1a42ec1d  TB350FU_S230982_251013_ROW/image/testcases/sigma/scripts/CertProgram/NAN_R1/NanBleTool.abc
+  727436  Defl:N   336975  54% 2025-11-03 13:39 3716ad51  TB350FU_S230982_251013_ROW/image/download_agent/DA_BR.bin
+  720560  Defl:N   639085  11% 2025-11-03 13:39 2c02f123  TB350FU_S230982_251013_ROW/image/sspm.img
+  716800  Defl:N   637542  11% 2025-11-03 13:39 ca2e89bf  TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/sspm.img
+  508392  Defl:N   173009  66% 2025-11-03 13:39 35225541  TB350FU_S230982_251013_ROW/image/testcases/sigma/scripts/wfa_dut
+  486912  Defl:N   229009  53% 2025-11-03 13:39 0fb927f3  TB350FU_S230982_251013_ROW/imageChecker.dll
+sort: write failed: 'standard output': Broken pipe
+sort: write error
+== katalog image/ ==
+Name
+----
+TB350FU_S230982_251013_ROW/image/
+TB350FU_S230982_251013_ROW/image/APDB_MT6789___W2252
+TB350FU_S230982_251013_ROW/image/APDB_MT6789___W2252_ENUM
+TB350FU_S230982_251013_ROW/image/boot-debug.img
+TB350FU_S230982_251013_ROW/image/boot.img
+TB350FU_S230982_251013_ROW/image/CheckSum_Generate.exe
+TB350FU_S230982_251013_ROW/image/download_agent/
+TB350FU_S230982_251013_ROW/image/download_agent/da.auth
+TB350FU_S230982_251013_ROW/image/download_agent/DA_BR.bin
+TB350FU_S230982_251013_ROW/image/download_agent/flash.xml
+TB350FU_S230982_251013_ROW/image/download_agent/flash.xsd
+TB350FU_S230982_251013_ROW/image/dpm.img
+TB350FU_S230982_251013_ROW/image/dtbo.img
+TB350FU_S230982_251013_ROW/image/gz.img
+TB350FU_S230982_251013_ROW/image/imageChecker.dll
+TB350FU_S230982_251013_ROW/image/installed-files-ramdisk.t
+TB350FU_S230982_251013_ROW/image/installed-files-vendor.t
+TB350FU_S230982_251013_ROW/image/lenovocust.img
+TB350FU_S230982_251013_ROW/image/lenovoraw.img
+TB350FU_S230982_251013_ROW/image/lk.img
+TB350FU_S230982_251013_ROW/image/logo.bin
+TB350FU_S230982_251013_ROW/image/mcupm.img
+TB350FU_S230982_251013_ROW/image/MT6789_Android_scatter.t
+TB350FU_S230982_251013_ROW/image/MT6789_Android_scatter.x
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/dpm.img
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/gz.img
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/lk.img
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/logo.bin
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/mcupm.img
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/pi_img.img
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/scp.img
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/spmfw.img
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/sspm.img
+TB350FU_S230982_251013_ROW/image/mtk_unsigned_images/tee.img
+TB350FU_S230982_251013_ROW/image/odm_dlkm.img
+TB350FU_S230982_251013_ROW/image/odm_dlkm.map
+TB350FU_S230982_251013_ROW/image/pi_img.img
+TB350FU_S230982_251013_ROW/image/preloader.img
+TB350FU_S230982_251013_ROW/image/preloader_emmc.img
+TB350FU_S230982_251013_ROW/image/preloader_raw.img
+TB350FU_S230982_251013_ROW/image/preloader_tulip_row_wifi.bin
+TB350FU_S230982_251013_ROW/image/preloader_ufs.img
+TB350FU_S230982_251013_ROW/image/product.map
+TB350FU_S230982_251013_ROW/image/scatter_checksum.x
+TB350FU_S230982_251013_ROW/image/scp.img
+TB350FU_S230982_251013_ROW/image/spmfw.img
+TB350FU_S230982_251013_ROW/image/sspm.img
+grep: write error: Broken pipe
+== flash.xml ==
+<?xml version="1.0" encoding="UTF-8" ?> 
+<flashtool-config version="2.0"> 
+    <general> 
+        <chip-name>MT6785</chip-name> 
+        <storage-type>EMMC</storage-type> 
+        <download-agent>MTK_AllInOne_DA_p11.bin</download-agent> 
+        <authentication></authentication> 
+        <certification></certification> 
+        <connection type="BromUSB" high-speed="true" power="AutoDetect" da_log_level="Info" timeout-count="3600000" com-port="" /> 
+        <checksum-level>none</checksum-level> 
+    </general> 
+    <commands>
+        <firmware-upgrade>
+            <scene>FIRMWARE_UPGRADE</scene>
+            <readback>
+                <physical-readback is-physical-readback="false" />
+            </readback>
+            <format validation="false" physical="false" erase-flag="NormalErase" auto-format="true" auto-format-flag="FormatAll" />
+            <da-download-all />
+            <write-memory>
+                <write-memory-item input-mode="FromFile" program-mode="PageOnly" addr-mode="LogicalAddress" address="0x000000001f600000" input-length="0x00000000" part-id="0" is_by_sram="0"></write-memory-item>
+            </write-memory>
+        </firmware-upgrade>
+    </commands>
+</flashtool-config> 
+== python zipfile: super.img + metody kompresji ==
+pliki .img: 37
+  boot-debug.img: comp=21466253 uncomp=67108864 method=8
+  boot.img: comp=20777913 uncomp=67108864 method=8
+  dpm.img: comp=117636 uncomp=148128 method=8
+  dtbo.img: comp=18798 uncomp=8388608 method=8
+  gz.img: comp=4663324 uncomp=4669264 method=8
+  lenovocust.img: comp=371030 uncomp=314572800 method=8
+  lenovoraw.img: comp=19698 uncomp=16777216 method=8
+  lk.img: comp=1024613 uncomp=2633376 method=8
+  mcupm.img: comp=59109 uncomp=127904 method=8
+  dpm.img: comp=114054 uncomp=136848 method=8
+  gz.img: comp=4657984 uncomp=4657984 method=0
+  lk.img: comp=1018844 uncomp=2618336 method=8
+  mcupm.img: comp=57606 uncomp=124144 method=8
+  pi_img.img: comp=5224 uncomp=12592 method=8
+  scp.img: comp=354782 uncomp=1066128 method=8
+  spmfw.img: comp=6728 uncomp=10928 method=8
+  sspm.img: comp=637542 uncomp=716800 method=8
+  tee.img: comp=2403084 uncomp=2769264 method=8
+  odm_dlkm.img: comp=4016 uncomp=73864 method=8
+  pi_img.img: comp=6693 uncomp=16352 method=8
+  preloader.img: comp=203699 uncomp=363844 method=8
+  preloader_emmc.img: comp=203699 uncomp=363844 method=8
+  preloader_raw.img: comp=203585 uncomp=359748 method=8
+  preloader_ufs.img: comp=203699 uncomp=363844 method=8
+  scp.img: comp=357829 uncomp=1073648 method=8
+  spmfw.img: comp=8284 uncomp=14688 method=8
+  sspm.img: comp=639085 uncomp=720560 method=8
+  super.img: comp=4554222166 uncomp=8297863612 method=8
+  super_empty.img: comp=365 uncomp=5184 method=8
+  tee.img: comp=2406182 uncomp=2776784 method=8
+  userdata.img: comp=2740676 uncomp=8548676 method=8
+  vbmeta.img: comp=3353 uncomp=8192 method=8
+  vbmeta_system.img: comp=1254 uncomp=4096 method=8
+  vbmeta_vendor.img: comp=1162 uncomp=4096 method=8
+  vendor_boot-debug.img: comp=18838043 uncomp=23158784 method=8
+  vendor_boot.img: comp=18700715 uncomp=67108864 method=8
+  vendor_dlkm.img: comp=7383843 uncomp=31191152 method=8
+super.img glowa: magic=0xed26ff3a bytes=3aff26ed
+  -> SPARSE (simg2img przed lpunpack)
+metody kompresji: [0, 8]

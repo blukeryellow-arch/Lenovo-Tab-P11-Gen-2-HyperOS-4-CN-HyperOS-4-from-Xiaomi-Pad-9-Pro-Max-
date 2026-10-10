@@ -1,0 +1,8 @@
+plik	bajty	sha256	uwaga
+system_ext_hyperos4_p11g2.img	632840192	7340a8367d3da8e4bdcf56a0f53dd7b77d87f81389d08b2a7e9e449fc02a5385	donor oryginal (bieg drive-probe 36030150849, md5 Google f879747f…)
+system_hyperos4_p11g2.img	920039424	4836dcd4c8d5f6c0f9a6adbde94c65917e70ac1b054bd7acc05705ec9f66b816	lokalnie z drzewa (identyczny z lekkim), weryfikacja 1:1 (verify_image.sh)
+product_hyperos4_p11g2.img	75198464	a961bec46085883d6d9c3737b804afdf9dcdf2f512cbedad6f161177705ad1b7	lokalnie (identyczny z lekkim)
+vbmeta_hyperos4_p11g2.img	4096	9cf2e7e4e165687abe78fb0f084e2b07707c317376efd5d4ffbdea75537e6141	lokalnie (Flags 3, testkey AOSP — identyczny z lekkim)
+flash-all.sh	7662	0c27359521fb7cbf946942ea61372947fd31546ee6eff7e22b8b47364307fac1	lokalnie
+rollback.sh	1345	95931988b05fdea48fda35e89a104f0628a281496c7e7e19a79c3f408aaa58c9	lokalnie (z ostrzezeniem o jednokierunkowym system_ext)
+device-probe.sh	6897	d9636ee1a8709a40dac8f7d4d3288eec30dea7e9a54fa29086333f8cb2ac144b	lokalnie (identyczny z lekkim)

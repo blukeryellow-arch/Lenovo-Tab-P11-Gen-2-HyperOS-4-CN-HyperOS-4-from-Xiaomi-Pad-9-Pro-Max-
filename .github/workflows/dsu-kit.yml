@@ -1,0 +1,1115 @@
+name: dsu-kit
+# v1.0 - DSU PREVIEW MysticalOS 3 (zadanie usera: test przez DSU Sideloader
+# z wymuszonym software renderingiem).
+#
+# UCZCIWA INZYNIERIA (dlaczego NIE "super.img przemianowany na system.img"):
+# gsid/DSU NIE parsuje geometrii super - wpisuje bajty obrazu do JEDNEJ
+# partycji system goscia. Super.img = kontener LP (metadane + system/product/
+# vendor/...), wiec po przemianowaniu gosc probuje montowac kontener jako
+# system -> mount pada ZANIM odpali sie cokolwiek graficznego (propsy w
+# ogole by sie nie zaladowaly). Nie istnieje zadna sciezka "trikowania"
+# gsid - to nie parser, to dd.
+#
+# Co zamiast tego (i dlaczego zadziala): system.img MysticalOS 3 jest na
+# BAZIE LENONO (stock SF/framework na vendorze Lenova) - jako gosc DSU
+# wstaje na vendorze hosta (wlasnie brak konfliktu HWC, ktory user
+# raportowal przy starych systemach HyperOS v12-v16). Ten obraz to:
+#   - system Lenova: purge GMS + microG + Aurora,
+#   - transplant apek MIUI + fontow + motywow (z product donora),
+#   - od iteracji 2: miui-framework.jar + deklaracje <library> (bez nich
+#     apki MIUI dostaja "Missing shared library"/ClassNotFound),
+#   - PROPSY "forced CPU" (v1.1 - FULL SPEC usera po re-send 3 X 19:30):
+#     debug.sf.hw=0, debug.egl.hw=0, persist.sys.composition.type=cpu,
+#     ro.hardware.egl=android (SwiftShader - CPU GL; UI wolniejsze, wg
+#     zyczenia usera), debug.sf.disable_hwc=1 - WSZYSTKIE 5/5, wstrzykiete
+#     do build.prop ORAZ etc/prop.default (v1.0 mial 4/5 tylko build.prop).
+#     Zip: MysticalOS_V16_DSU_ForcedCPU.zip (nazwa wg spec usera).
+# v1.2 (5. polecenie, 4 X ~01:05 - "PURE GSI, stop containers"): standalone
+#     system.img bez zmian kontenerowych (layout DSU "1 of 2"), nazwa
+#     MysticalOS_V16_PureGSI_SoftRender.zip + jawny test NON-SPARSE
+#     (raw EROFS: offset 0 != 0xED26FF3A, offset 1024 = EROFS magic).
+# v1.3 (0.5 STABILITY): permanentny kernel wake_lock mystic_dsu_hold przy
+#     persist.sys.mystic.suspend_block=1 + Doze/AppStandby OFF (Faza 1).
+# v1.4 (FAZA 2 - SMART SUSPEND, spec usera 4 X wieczor): domyslnie BEZ
+#     permanentnego wake_locka (suspend_block=0 -> deep sleep DOZWOLONY).
+#     Nowy demon mystic-suspend-guard.sh (service bez seclabel = kontekst
+#     inita, wg init/README.md "defaults to the init context" -> umie
+#     pisac /sys/power/wake_lock): trzyma KROTKI wake_lock
+#     mystic_screensettle przy gasnacym ekranie (settle, domyslnie 4 s)
+#     i po kazdym wznowieniu przy OFF ekranie (faza zamrozenia procesu
+#     wykryta przez skok zegara = byl suspend) -> tlumi szybkie cykle
+#     suspend/resume; potem puscza -> deep sleep wraca. Propsy Wi-Fi safe
+#     (spec usera): persist.sys.wifi.supplicant_scan_interval=180,
+#     ro.wifi.suspend.enabled=0, vendor.wifi.suspend=0 (CELOWO nie
+#     persist.vendor.*: persist zapisuje sie we wspoldzielonym
+#     /data/property i wyciekalby do hosta Lenovo po wyjsciu z DSU -
+#     sprzeczne z "vendor bajt w bajt"); + settings
+#     wifi_supplicant_scan_interval=180000 (framework czyta ms z
+#     Settings.Global) + cmd wifi set-scan-always-available disabled
+#     (potwierdzone w AOSP WifiShellCommand). Touch (spekulacyjne,
+#     nieszkodliwe): ro.input.noresample=1. Narzedzie mystic-ctl.sh
+#     (status | block on|off | wifi-safe on|off | settle <ms>) TYLKO na
+#     settings/svc/cmd (shell ma WRITE_SECURE_SETTINGS i DEVICE_POWER -
+#     dziala na user build; setprop persist.* z adb bywa AVC-denied na
+#     user build). Twardy blok (Faza 1) nadal dostepny:
+#     persist.sys.mystic.suspend_block=1. Nazwa:
+#     MysticalOS_0.6_DSU_SmartSuspend.zip. Build 0.5 (v1.3, run
+#     37202081348) zostaje zywy jako Faza 1 do porownania A/B.
+# v1.5 (0.7 TREBLE COMPAT, spec usera 4 X wieczor): (1) ro.vndk.version=34
+#     + identyfikacja SoC (ro.soc.model=MT6789, ro.soc.manufacturer=MediaTek,
+#     ro.mediatek.platform=MT6789); (2) grafika HIDL: ro.hardware.hwcomposer=
+#     mtkhwcomposer + ro.hardware.gralloc=mt6789 (nazwy modulow passthrough
+#     MTK, FALLBACK); (3) AUTONOMIA: pelny blok tozsamosci ro.product.* +
+#     ro.build.product (system zyje bez Lenovo product/system_ext) + twarde
+#     bramki na wlasne zasoby systemu (mystical-miui-libs.xml,
+#     privapp-permissions-mystical.xml z evidence m3). KLUCZOWA semantyka:
+#     ro.* = first-set-wins, /system/build.prop laduje sie PO vendor/product
+#     -> caly blok 0.7 to CZYSTY FALLBACK (w DSU nie zmienia zachowania
+#     hosta; ozywa gdy product/system_ext nie narzucaja wlasnych wartosci).
+#     CELOWO nie w /system/etc/prop.default (to by SILOWO nadpisalo vendor -
+#     ryzyko zepsucia nazw modulow MTK). UCZCIWIE: HIDL HALs (gralloc/
+#     hwcomposer 2.3, audio, power) maja WBUDOWANA degradacje AIDL->HIDL->
+#     brak w frameworku (PowerHalWrapper/SF/AudioFlinger) - nie wymuszamy
+#     AIDL, ktorych vendor A14 nie ma; audio routing = domena vendora
+#     (vendor/etc/audio_policy_configuration.xml) - system jej NIE nadpisuje;
+#     libshimy pomijamy (wymagaja kompilacji pod znane symbole, nie
+#     spekulujemy). Nazwa: MysticalOS_0.7_DSU_TrebleCompat.zip.
+# v1.6 (0.8 TAB A7 LITE EDITION, spec usera 4 X wieczor - Samsung SM-T220):
+#     CROSS-DEVICE (baza obrazu nadal MysticalOS 3; tozsamosc/tuning pod
+#     Samsung Galaxy Tab A7 Lite: MT6765/MT8768T, PowerVR GE8320, 32 GB/3 GB).
+#     (a) build.prop: BLOK SAMSUNG wg spec usera (ro.product.* = samsung/
+#     gta7litewifi/SM-T220/gta7litewifixx, ro.soc.model=MT8768T, ro.mediatek.
+#     platform=MT6765, SF wide_color/HDR=false) + ro.build.ab_update=true
+#     (A/B) + ro.build.product=gta7litewifi; (b) 3 GB RAM: LMK oficjalne
+#     propsy (ro.lmk.medium=850 - conservative, ro.lmk.critical=0 bezczn.,
+#     ro.lmk.kill_heaviest_task=true, ro.lmk.downgrade_pressure=60; nazwy
+#     zweryfikowane w AOSP lmkd docs) + settings cached_apps_freezer=enabled
+#     + max_cached_processes=24 + nowy service mystic-zram-setup.sh (init
+#     ctx): jesli zram0 nieaktywny -> lz4 + 1536M (50% RAM) + swapon; jesli
+#     vendor mial wlasny zram (Samsung ma) -> NIC, tylko log; (c) Samsung
+#     backlight fix: persist.sys.phh.samsung_backlight=1 (phhusson #1007,
+#     fix potwierdzony przez phhussona; no-op gdy framework nie czyta) +
+#     guard czyta dodatkowo /sys/class/backlight/panel/brightness;
+#     (d) KNOX/SEC overlay: cmd overlay disable dla overlayow samsung/knox/
+#     sec z product hosta (best-effort, stan w /data goscia - bez wycieku);
+#     (e) DIET 32 GB: usuniete motywy miui-themes (~-200 MB) + log top-15
+#     najwiekszych katalogow app/ (evidence na przyszlosc); audio policy
+#     NADAL domena vendora (nie nadpisujemy - jak 0.7). Nazwa:
+#     MysticalOS_0.8_DSU_TabA7Lite.zip. 0.7 (Lenovo) zyje na run 37218138076.
+# v1.7 (0.9 TAB A7 LITE / ANDROID 13, spec usera "podpasuj pod Androida 13"):
+#     target vendor = A13 (SM-T220 na One UI 5; VNDK 33). Zmiany vs 0.8:
+#     ro.vndk.version=33 (wzorzec: A14->34, A13->33; fallback semantyka jak
+#     zawsze) + ro.mysticalos.vendor_target=a13 (marker wlasny). UCZCIWIE:
+#     A13 to dla systemu A14 NAJBEZPIECZNIEJSZY target cross-version - Treble
+#     gwarantuje system N + vendor N-1 (system nowszy niz vendor = kierunek
+#     WSPARTY). Bazy obrazu (A14, z Lenova) nie da sie "przedzialowac" na A13
+#     - nie ma zrodla A13 w projekcie i nie falszujemy SDK. Reszta 0.8
+#     bez zmian (tozsamosc Samsung, LMK 3 GB, zram, backlight fix, knox
+#     overlay-off, diet). Nazwa: MysticalOS_0.9_DSU_TabA7Lite_A13.zip.
+# v1.8 (1.0 TB350FU / ANDROID 13, spec usera 4 X wieczor - rollback Lenova
+#     udany): KAMIEN MILOWY - oryginalne urzadzenie + DOPASOWANY vendor.
+#     User cofnal TB350FU do oficjalnego stabilnego A13 (seria S13, VNDK 33,
+#     MT6789/MT8781). (1) build.prop: BLOK USERA 12/12 (ro.vndk.version=33,
+#     MT6789, mtkhwcomposer/gralloc mt6789, tozsamosc Lenovo TB350FU) +
+#     ro.mysticalos.vendor_target=a13 + ro.build.ab_update=true. A14 system
+#     + A13 vendor = kierunek WSPARTY przez Treble (system N + vendor N-1).
+#     (2) AUTONOMIA (hard gates): miui-framework.jar MUSI byc w
+#     /system/framework (dotad soft-warning) + deklaracja <library miui> +
+#     privapp-permissions microG - system samowystarczalny bez Lenovo
+#     product/system_ext (ZUI). (3) FIX JASNOSCI wbudowany: guard czyta 4
+#     sciezki backlight (lcd-backlight/panel/panel-0/pwm - pokrywa Lenovo
+#     + Samsung) + persist.sys.phh.samsung_backlight=1 (no-op na naszym
+#     frameworku, zgodnie ze spec "Samsung/Lenovo backlight overlay").
+#     (4) FIX AUDIO MT6789 wbudowany: nowy service mystic-audio-fix (init
+#     ctx): 20 s po boocie ctl.restart audioserver (re-probe routingu -
+#     sprawdzony trik GSI na wyscig rejestracji HAL audio vs montowanie
+#     DSU); UCZCIWIE: konfiguracja routingu zyje w vendorze
+#     (audio_policy_configuration.xml) - system JEJ NIE nadpisuje; log
+#     /data/local/tmp/mystic-audio-fix.log; toggle
+#     persist.sys.mystic.audio_restart; mystic-ctl dostaje 'audio-fix'.
+#     (5) FORMAT WYJSCIOWY (spec usera): SUROWY system.img (EROFS
+#     non-sparse) + SHA256SUMS.txt bez naszego zipa (artifact i tak
+#     opakowuje GH). DIET zostaje (miui-themes out). Stack Smart Suspend
+#     zostaje. Nazwa artifactu: MysticalOS_1.0_DSU_TB350FU_A13.
+# v1.9 (1.1 TB350FU / A13 + STOPKA AVB, spec usera 5 X): receipt z logu
+#     init DSU na hoście A13: "AVB footer verification failed at offset /
+#     No such file or directory -> Hash device is too small -> Couldn't
+#     create verity device" - fstab/verity hosta A13 WYMAGA stopki AVB na
+#     system.img; wszystkie nasze dotychczasowe obrazy DSU wychodzily z
+#     mkfs.erofs BEZ stopki (na hoście A14/ZUI to przechodzilo). Fix:
+#     avbtool.py (z kitu) add_hashtree_footer z flagami DOKLADNIE wg spec
+#     usera: --flags 2 (AVB_VBMETA_IMAGE_FLAGS_HASHTREE_ERROR_MODE_LOGGING
+#     - dm-verity w trybie logowania, nie blokuje montowania),
+#     --algorithm SHA256_RSA2048, klucz testowy (openssl genrsa 2048 per
+#     build; bootloader odblokowany + flags 2 -> lancuch podpisu nie
+#     egzekwowany - tak samo dzialaja GSI phh z testkey AOSP).
+#     Odchylenia techniczne od komendy usera (uczciwie, wymagane):
+#     --partition_size (avbtool wymaga; stopka laduje na koncu partycji,
+#     gsid tworzy partycje o rozmiarze obrazu), --hash_algorithm sha256
+#     (avbtool 1.3 defaultuje sha1 - ostrzezenie w smoke tescie),
+#     --do_not_generate_fec (FEC zbedne do verity; pure-python FEC przy
+#     2,9 GB = ryzyko timeoutu 90 min). Bramka: info_image MUST miec
+#     Hashtree descriptor + SHA256_RSA2048 + Flags: 2 + sha256 + system.
+#     Artifact niesie tez avb-info.txt (dowod stopki). Nazwa:
+#     MysticalOS_1.1_DSU_TB350FU_A13_AVB. Format surowy zostaje.
+# v1.10 (1.2 PRAWdziwa STOPKA AVB, receipt usera 5 X: "po 1.1 dalej ten sam
+#     blad"). Analiza zrodel (fs_mgr/libfs_avb/fs_avb.cpp + docs DSU):
+#     (a) fs_mgr przy statusie kHashtreeDisabled lub kVerificationDisabled
+#     zwraca kDisabled i NIE tworzy urzadzenia verity - flags 3 ustawia OBA
+#     (HASHTREE_DISABLED|VERIFICATION_DISABLED) = najmocniejszy sygnal;
+#     (b) docs DSU "Rollback protection": porownanie security_patch z AVB
+#     PROPERTY DESCRIPTOROW obu obrazow - prawdziwe GSI/AOSP je maja, nasz
+#     1.1 NIE mial (sama stopka bez propsow!). 1.2 = stopka jak w prawdziwych
+#     GSI: --flags 3, --prop com.android.build.system.os_version:14,
+#     --prop com.android.build.system.security_patch:2026-09-05 (nowszy niz
+#     host A13), --block_size 4096 jawny, PS wyrownany do 4 MiB, asercja
+#     fs%4096==0. Dowod w bramce: avbtool verify_image (pelny lancuch:
+#     podpis SHA256_RSA2048 + hashtree sha256; smoke test lokalny OK) +
+#     surowa magic AVBf w ostatnich 64 B pliku + avb-verify.txt w artifactcie.
+#     Nazwa: MysticalOS_1.2_DSU_TB350FU_A13_AVB.
+#   Propsy SA TYLKO w podgladzie DSU - do obrazu docelowego (m3) NIE
+#   wchodza (persist.sys.composition.type=cpu to prop z epoki MTK; gdyby
+#   SF Lenova go czytal, zepsulby wydladnosci na PRAWDZIWYM flashu).
+#
+# CAVEAT podgladu (uczciwie): DSU podmienia TYLKO system - product i
+# system_ext goscia to STOCK HOSTA, czyli Google apki WRACAJA i prawdziwe
+# GMS przykrywa microG. Podglad sluzy testowi: czy apki MIUI/fonty/
+# framework dzialaja i czy system jest stabilny na tym sprzecie. Pelne
+# M3 (bez GMS, z purge product) = tylko flash super (CALOSC).
+#
+# Wchodzace: release mysticalos-3-super (32 czesci super_mystical3.img).
+# Lancuch: cat parts | simg2img_stream | stream_lpunpack --only system
+# (zero 9,7G raw na dysku; te same narzedzia co m3/donor-pipeline).
+# Dysk: parts 6,3G + system 3,4G -> parts usuwane -> tree 3,7G (extract)
+# -> mkfs na /dev/shm -> tree usuwane -> zip 3,4G. Peak < 10G.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/dsu-kit.yml']
+    # dispatch API 404/403 (workflow nie na default branch) - trigger przez
+    # push tej sciezki; komentarz-version wystarczy do re-run.
+
+concurrency:
+  group: dsu-kit
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  dsu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      WORK: /tmp/dsu
+      KDIR: ${{ github.workspace }}/kit-mysticalos3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "0. Zaleznosci + dysk"
+        run: |
+          set -e
+          command -v python3 >/dev/null && python3 -c 'import sys; sys.exit(0 if sys.version_info>=(3,7) else 1)'
+          for B in mkfs.erofs fsck.erofs; do
+            [ -x "$KDIR/bin/$B" ] || { echo "::error::brak $KDIR/bin/$B"; exit 1; }
+          done
+          # 1.1: avbtool (stopka AVB) + modul cryptography
+          [ -f "$KDIR/tools/avbtool.py" ] || { echo "::error::brak $KDIR/tools/avbtool.py"; exit 1; }
+          python3 -c 'import cryptography' 2>/dev/null || pip3 install --quiet cryptography
+          python3 "$KDIR/tools/avbtool.py" version >/dev/null \
+            || { echo "::error::avbtool.py nie dziala (python/cryptography)"; exit 1; }
+          df -h /
+          AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+          [ "$AV" -ge 10 ] || { echo "::error::dysk ${AV}G < 10G"; exit 1; }
+          mkdir -p "$WORK/parts" "$WORK/out" "$WORK/tree" reports
+
+      - name: "1. Super z release mysticalos-3-super (czesci, retry)"
+        run: |
+          set -euo pipefail
+          OK=0
+          for A in 1 2 3; do
+            if gh release download mysticalos-3-super --clobber \
+                 -p 'super_mystical3.part.*' -p 'SHA256SUMS.txt' \
+                 --dir "$WORK/parts"; then OK=1; break; fi
+            echo "::warning::download super: proba $A/3 - pauza 30s"; sleep 30
+          done
+          [ "$OK" = 1 ] || { echo "::error::nie pobraly sie czesci super z release"; exit 1; }
+          N=$(ls "$WORK/parts"/super_mystical3.part.* | wc -l)
+          echo "czesci: $N"; df -h /
+          [ "$N" -ge 30 ] || { echo "::error::czesci $N < 30 - niepelny release?"; exit 1; }
+
+      - name: "2. Stream: czesci -> simg2img -> lpunpack --only system"
+        run: |
+          set -euo pipefail
+          cat "$WORK/parts"/super_mystical3.part.* \
+            | python3 tools/simg2img_stream.py \
+            | python3 tools/stream_lpunpack.py --stdin --out "$WORK/out" --only system \
+            | tee "$WORK/stream-manifest.txt"
+          awk -F'\t' '$1=="P"&&$2=="system"{f=1} END{exit f?0:1}' "$WORK/stream-manifest.txt" \
+            || { echo "::error::brak partycji system w stream-manifest"; cat "$WORK/stream-manifest.txt"; exit 1; }
+          awk -F'\t' '$1=="W"&&$2=="system"&&$5!="OK"&&$5!="SKIP"{bad=1} END{exit bad?1:0}' \
+            "$WORK/stream-manifest.txt" || { echo "::error::system NIEPELNY w streamie"; exit 1; }
+          rm -rf "$WORK/parts"    # zwolnij 6,3G
+          df -h /
+          S="$WORK/out/system.img"
+          SZ=$(stat -c%s "$S")
+          [ "$SZ" -gt 2000000000 ] || { echo "::error::system.img ${SZ}B < 2G?"; exit 1; }
+          python3 - "$S" <<'EOF'
+          import os, struct, sys
+          with open(sys.argv[1], "rb") as f:
+              head = f.read(4); f.seek(1024); m = f.read(4)
+          assert struct.unpack("<I", head)[0] != 0xED26FF3A, "SPARSE magic?! (wymagany raw)"
+          assert m == bytes.fromhex("e2e1f5e0"), "zly magic EROFS: %s" % m.hex()
+          print("system.img: EROFS OK, NON-SPARSE (raw), %d B" % os.path.getsize(sys.argv[1]))
+          EOF
+
+      - name: "3. Propsy forced-CPU (extract -> build.prop -> mkfs EROFS)"
+        # Propsy TYLKO do podgladu DSU (patrz naglowek workflow). Konteksty
+        # SELinux z plat_file_contexts samego obrazu (wzorzec m3/donor).
+        run: |
+          set -euo pipefail
+          T="$WORK/tree"
+          "$KDIR/bin/fsck.erofs" --extract="$T" "$WORK/out/system.img" >/dev/null 2>&1 \
+            || { echo "::error::fsck.erofs extract padl"; exit 1; }
+          if [ ! -d "$T/app" ] && [ ! -d "$T/priv-app" ]; then
+            INNER=$(find "$T" -maxdepth 2 -type d -name app | head -1)
+            [ -n "$INNER" ] || { echo "::error::extract bez /app"; exit 1; }
+            INNER=$(dirname "$INNER")
+            mv "$INNER" "$WORK/tree_i"; rm -rf "$T"; mv "$WORK/tree_i" "$T"
+          fi
+          FC="$T/etc/selinux/plat_file_contexts"
+          [ -f "$FC" ] || FC=$(find "$T" -name plat_file_contexts -type f | head -1)
+          [ -f "$FC" ] || { echo "::error::brak plat_file_contexts w system.img"; exit 1; }
+          BP="$T/build.prop"
+          [ -f "$BP" ] || { echo "::error::brak build.prop"; exit 1; }
+          # === MysticalOS 0.6: SMART SUSPEND (Faza 2, spec usera) ===
+          # Receipt: panik mtk_sdio_pm_suspend / wlan_mt7902_sdio_mt6789,
+          # Oops 96000145, DMA paging przy system suspend; A14 kernel+vendor
+          # nietkniety. Strategia: NIE zabijamy deep sleep, tylko wyciszamy
+          # Wejscia w sciezke PM SDIO: settle przy screen-off + po resume.
+          mkdir -p "$T/etc/init" "$T/bin"
+          cat > "$T/etc/init/mystic-power.rc" <<'RCEOF'
+          # MysticalOS 0.6 - SMART SUSPEND (TB350FU DSU, panik mtk_sdio_pm_suspend)
+          # Domyslnie ZADEN permanentny wake lock - deep sleep dziala.
+          # Twardy blok (opcja, dla pewnosci): persist.sys.mystic.suspend_block=1
+          # (init przytrzyma mystic_dsu_hold -> suspend nie wejdzie w ogole).
+          on property:sys.boot_completed=1 && property:persist.sys.mystic.suspend_block=1
+              write /sys/power/wake_lock mystic_dsu_hold
+          on property:persist.sys.mystic.suspend_block=0
+              write /sys/power/wake_unlock mystic_dsu_hold
+          on shutdown
+              write /sys/power/wake_unlock mystic_dsu_hold
+              write /sys/power/wake_unlock mystic_screensettle
+
+          # Settle guard: krotki wake_lock przy gasnacym ekranie i po kazdym
+          # wznowieniu przy OFF ekranie -> system wchodzi w suspend (sciezka
+          # mtk_sdio_pm_suspend) dopiero gdy ruch SDIO/Wi-Fi ustaty; potem
+          # puscza -> deep sleep. Bez seclabel = kontekst inita (umie pisac
+          # /sys/power/wake_lock; init/README: "defaults to the init context").
+          service mystic_suspend_guard /system/bin/sh /system/bin/mystic-suspend-guard.sh
+              user root
+              group root
+              disabled
+              oneshot
+
+          on property:sys.boot_completed=1 && property:persist.sys.mystic.suspend_guard=1
+              start mystic_suspend_guard
+
+          # Boot-time tune: Doze/AppStandby OFF + Wi-Fi safe (raz po boocie).
+          service mystic_power_tune /system/bin/sh /system/bin/mystic-power-tune.sh
+              user root
+              group root shell
+              disabled
+              oneshot
+              seclabel u:r:shell:s0
+
+          on property:sys.boot_completed=1 && property:persist.sys.mystic.power_tune=1
+              start mystic_power_tune
+
+          # zRAM dla 3 GB RAM (init ctx: sysfs write + swapon; gdy vendor mial
+          # wlasny zram - skrypt nic nie rusza, tylko loguje)
+          service mystic_zram_setup /system/bin/sh /system/bin/mystic-zram-setup.sh
+              user root
+              group root
+              disabled
+              oneshot
+
+          on property:sys.boot_completed=1 && property:persist.sys.mystic.zram_setup=1
+              start mystic_zram_setup
+
+          # Audio routing fix MT6789 (init ctx: umie setprop ctl.restart):
+          # restart audioservera po pelnym boocie = re-probe routingu (fix
+          # na wyscig rejestracji HAL audio vs montowanie DSU). Konfiguracja
+          # routingu zyje w VENDORZE - system jej nie nadpisuje.
+          service mystic_audio_fix /system/bin/sh /system/bin/mystic-audio-fix.sh
+              user root
+              group root
+              disabled
+              oneshot
+
+          on property:sys.boot_completed=1 && property:persist.sys.mystic.audio_restart=1
+              start mystic_audio_fix
+          RCEOF
+          # 2) boot-time tune: Doze/AppStandby OFF (stlumione, deep sleep wraca)
+          #    + Wi-Fi SAFE MODE (rzadkie skany, throttling, supplicant 180 s)
+          cat > "$T/bin/mystic-power-tune.sh" <<'SHEOF'
+          #!/system/bin/sh
+          # MysticalOS 0.6 - Smart Suspend boot tune (TB350FU DSU, A14 MTK vendor)
+          # Cel: stlumic Doze/AppStandby i tloc Wi-Fi w idle, ALE nie blokowac
+          # deep sleep (to robi tylko opcjonalny suspend_block/guard settle).
+          LOG=/data/local/tmp/mystic-power-tune.log
+          {
+            echo "== $(date) mystic-power-tune 1.0 (TB350FU A13 + Smart Suspend) start =="
+            # Doze OFF (likwiduje idle suspend bursts):
+            cmd deviceidle disable all 2>&1
+            settings put global app_standby_enabled 0
+            settings put global adaptive_battery_management_enabled 0
+            # Fallback: gdyby deviceidle ktos wrocil, fazy Doze = nieskonczonosc
+            settings put global device_idle_constants "inactive_to=9223372036854775807,sensing_to=0,locating_to=0,motion_inactive_to=0,idle_after_inactive_to=9223372036854775807,idle_pending_to=0,max_idle_pending_to=0,idle_pending_factor=2.0,quick_doze_delay_to=9223372036854775807,max_idle_to=9223372036854775807,idle_to=43200000"
+            # Testy przy USB bez usypiania; normalny timeout 10 min:
+            settings put global stay_on_while_plugged_in 7
+            settings put system screen_off_timeout 600000
+            # Wi-Fi SAFE MODE: idle cicho = mniej przejsc SDIO przy suspend:
+            settings put global wifi_scan_always_enabled 0
+            settings put global wifi_scan_throttle_enabled 1
+            settings put global wifi_supplicant_scan_interval 180000
+            cmd wifi set-scan-always-available disabled 2>&1 || true
+            # 1.0 TB350FU: zram/audio obsluguja wlasne serwisy (rc) - tu tylko status
+            echo "-- zram stan: $(cat /sys/block/zram0/disksize 2>/dev/null || echo 'brak zram0')"
+            echo "-- audio fix: $(getprop persist.sys.mystic.audio_restart) (1=aktywny; log w mystic-audio-fix.log)"
+            echo "== done =="
+          } > "$LOG" 2>&1
+          SHEOF
+          chmod 0755 "$T/bin/mystic-power-tune.sh"
+          # 3) SMART SUSPEND GUARD: demon settle (kontekst inita - patrz rc).
+          #    Krotki wake_lock przy gasnacym ekranie + po kazdym resume przy
+          #    OFF ekranie (skok zegara = proces byl zamrozony w suspend).
+          cat > "$T/bin/mystic-suspend-guard.sh" <<'GUARDEOF'
+          #!/system/bin/sh
+          # MysticalOS 0.6 - SMART SUSPEND GUARD (TB350FU, panik mtk_sdio_pm_suspend)
+          # Trzyma KROTKI wake_lock przy gasnacym ekranie (domyslnie 4 s), zeby
+          # system wszedl w suspend (sciezka mtk_sdio_pm_suspend) dopiero gdy
+          # ruch SDIO/Wi-Fi ustaty; potem puscza -> deep sleep wraca. Po kazdym
+          # wznowieniu przy OFF ekranie (proces byl zamrozony - widac skok
+          # zegara) doklada krotki settle - tlumi szybkie cykle suspend/resume.
+          # Kontekst: init (rc bez seclabel). Log: /data/local/tmp/mystic-suspend-guard.log
+          LOGF=/data/local/tmp/mystic-suspend-guard.log
+          log() {
+            echo "mystic-guard: $*" > /dev/kmsg 2>/dev/null
+            echo "$(date '+%m-%d %H:%M:%S') $*" >> "$LOGF" 2>/dev/null
+          }
+          # Czytnik stanu ekranu: backlight (0 = OFF); fb blank (0 = ON, 4 = OFF)
+          BL=
+          for p in /sys/class/leds/lcd-backlight/brightness /sys/class/backlight/panel/brightness /sys/class/backlight/panel-0/brightness /sys/class/backlight/pwm-backlight/brightness; do
+            if [ -r "$p" ]; then BL="$p"; break; fi
+          done
+          if [ -z "$BL" ]; then
+            for p in /sys/class/backlight/*/brightness; do
+              if [ -r "$p" ]; then BL="$p"; break; fi
+            done
+          fi
+          if [ -z "$BL" ]; then
+            for p in /sys/class/graphics/fb*/blank; do
+              if [ -r "$p" ]; then BL="$p"; break; fi
+            done
+          fi
+          if [ -z "$BL" ]; then
+            log "brak czytelnego wezla backlight/blank - guard bierny, koncze"
+            exit 0
+          fi
+          FBBLANK=0
+          case "$BL" in
+            */blank) FBBLANK=1 ;;
+          esac
+          screen_state() {
+            v=$(cat "$BL" 2>/dev/null)
+            if [ -z "$v" ]; then return 1; fi
+            if [ "$FBBLANK" = "1" ]; then
+              if [ "$v" = "0" ]; then echo on; else echo off; fi
+            else
+              if [ "$v" = "0" ]; then echo off; else echo on; fi
+            fi
+          }
+          settle_ms=$(getprop persist.sys.mystic.settle_ms)
+          case "$settle_ms" in
+            ''|*[!0-9]*) settle_ms=4000 ;;
+          esac
+          if [ "$settle_ms" -gt 30000 ]; then settle_ms=30000; fi
+          if [ "$settle_ms" -lt 1000 ]; then settle_ms=1000; fi
+          settle_s=$((settle_ms / 1000))
+          hold_settle() {
+            if echo mystic_screensettle > /sys/power/wake_lock 2>/dev/null; then
+              log "settle lock na ${settle_s}s (kalm wejscia w suspend)"
+              sleep "$settle_s"
+              echo mystic_screensettle > /sys/power/wake_unlock 2>/dev/null
+              log "settle lock puszczony - deep sleep dozwolony"
+              return 0
+            else
+              log "BLAD zapisu wake_lock - guard bierny, koncze"
+              exit 0
+            fi
+          }
+          log "start 1.0 TB350FU A13 Smart Suspend: node=$BL settle=${settle_s}s"
+          seen_on=0
+          zeros=0
+          resume_settles=0
+          last_t=$(date +%s)
+          while :; do
+            sleep 0.2
+            t=$(date +%s)
+            dt=$((t - last_t))
+            last_t=$t
+            s=$(screen_state)
+            if [ -z "$s" ]; then
+              continue
+            fi
+            if [ "$s" = "on" ]; then
+              zeros=0
+              seen_on=1
+              resume_settles=0
+              continue
+            fi
+            # ekran OFF:
+            if [ "$dt" -ge 3 ]; then
+              # skok czasu = proces byl zamrozony -> wlasnie RESUME z suspend
+              # przy OFF ekranie -> settle chroni przed natychmiastowym
+              # powrotem do suspend (szybkie cykle = okno paniki)
+              if [ "$resume_settles" -lt 3 ]; then
+                resume_settles=$((resume_settles + 1))
+                log "resume przy OFF ekranie (dt=${dt}s) - settle #$resume_settles"
+                hold_settle
+                last_t=$(date +%s)
+                continue
+              fi
+            elif [ "$seen_on" = "1" ] && [ "$zeros" -ge 1 ]; then
+              # klasyczne przejscie ON->OFF (2 prob = ~0.4 s) - settle teraz
+              zeros=0
+              seen_on=0
+              resume_settles=0
+              hold_settle
+              last_t=$(date +%s)
+              continue
+            fi
+            zeros=$((zeros + 1))
+          done
+          GUARDEOF
+          chmod 0755 "$T/bin/mystic-suspend-guard.sh"
+          # 3b) zRAM dla 3 GB RAM (init ctx = sysfs write + swapon mozliwe):
+          #     NIE rusza zram skonfigurowanego przez vendora (Samsung ma wlasny)
+          cat > "$T/bin/mystic-zram-setup.sh" <<'ZRAMEOF'
+          #!/system/bin/sh
+          # MysticalOS 0.8 - zRAM setup (Tab A7 Lite, 3 GB RAM)
+          # Cel: zram 1536 MB (50% RAM) lz4, TYLKO gdy vendor nie skonfigurowal
+          # wlasnego (Samsung stock zwykle MA zram0 aktywny - wtedy log only).
+          LOGF=/data/local/tmp/mystic-zram-setup.log
+          {
+            echo "== $(date) mystic-zram-setup start =="
+            if [ ! -e /sys/block/zram0 ]; then
+              echo "brak /sys/block/zram0 - kernel bez zram; nic nie robie"
+              exit 0
+            fi
+            ZD=$(cat /sys/block/zram0/disksize 2>/dev/null)
+            echo "zram0 disksize: ${ZD:-?}"
+            if [ -n "$ZD" ] && [ "$ZD" != "0" ]; then
+              echo "vendor zram JEST aktywny - nie ruszam (log only)"
+              echo "algorithm: $(cat /sys/block/zram0/comp_algorithm 2>/dev/null)"
+              cat /proc/swaps 2>/dev/null
+              exit 0
+            fi
+            # zram nieaktywny -> skonfiguruj (lz4 jesli dostepne, 1536 MB)
+            if grep -qw lz4 /sys/block/zram0/comp_algorithm 2>/dev/null; then
+              echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null \
+                && echo "algorithm: lz4 OK" || echo "algorithm: set lz4 FAIL (zostaje domyslny)"
+            fi
+            echo 1610612736 > /sys/block/zram0/disksize 2>/dev/null \
+              && echo "disksize: 1536M OK" || { echo "disksize: FAIL - zram niedostepny, koncze"; exit 0; }
+            swapon /dev/block/zram0 2>/dev/null \
+              && echo "swapon zram0 OK" || echo "swapon FAIL (moze wymagac init ctx)"
+            cat /proc/swaps 2>/dev/null
+            echo "== done =="
+          } > "$LOGF" 2>&1
+          ZRAMEOF
+          chmod 0755 "$T/bin/mystic-zram-setup.sh"
+          # 3c) AUDIO ROUTING FIX MT6789 (wbudowany; init ctx = ctl.restart OK)
+          cat > "$T/bin/mystic-audio-fix.sh" <<'AUDIOEOF'
+          #!/system/bin/sh
+          # MysticalOS 1.0 - audio routing fix (TB350FU, vendor A13, MT6789)
+          # Mechanizm (uczciwie): tabele routingu zyja w VENDORZE
+          # (/vendor/etc/audio_policy_configuration.xml) - system NIE nadpisuje
+          # wlasna (to by zepsulo routing). Wbudowany fix = restart audioservera
+          # 20 s po pelnym boocie: gdy rejestracja HAL audio wyscigowala sie z
+          # montowaniem partycji DSU, restart re-probuje polaczenie z HAL i
+          # routing (sprawdzony trik swiata GSI). Toggle: prop
+          # persist.sys.mystic.audio_restart (0 = wylaczony). Log nizej.
+          LOGF=/data/local/tmp/mystic-audio-fix.log
+          {
+            echo "== $(date) mystic-audio-fix start =="
+            echo "-- stan audio PRZED (dumpsys, 2 linie):"
+            dumpsys audio 2>/dev/null | head -n 2
+            echo "czekam 20 s na ustabilizowanie systemu po boocie..."
+            sleep 20
+            echo "restart audioservera (re-probe routingu MT6789)..."
+            if setprop ctl.restart audioserver 2>/dev/null; then
+              echo "ctl.restart audioserver OK"
+            else
+              echo "ctl.restart zabroniony (kontekst) - recznie: adb shell stop audioserver && adb shell start audioserver"
+            fi
+            sleep 5
+            echo "-- stan audio PO (dumpsys, 2 linie):"
+            dumpsys audio 2>/dev/null | head -n 2
+            echo "== done =="
+          } > "$LOGF" 2>&1
+          AUDIOEOF
+          chmod 0755 "$T/bin/mystic-audio-fix.sh"
+          # 4) narzedzie reczne (user-build safe: settings/svc/cmd; setprop
+          #    persist.* moze byc AVC-denied na user build - obsluzone)
+          cat > "$T/bin/mystic-ctl.sh" <<'CTLEOF'
+          #!/system/bin/sh
+          # MysticalOS 0.6 - mystic-ctl: reczne przelaczanie (adb shell):
+          #   sh /system/bin/mystic-ctl.sh status
+          #   sh /system/bin/mystic-ctl.sh block on|off     # twardy blok suspendu
+          #   sh /system/bin/mystic-ctl.sh wifi-safe on|off # ciche Wi-Fi w idle
+          #   sh /system/bin/mystic-ctl.sh settle 4000      # ms settle (screen-off)
+          #   sh /system/bin/mystic-ctl.sh audio-fix          # restart audioservera (routing MT6789)
+          cmd_status() {
+            echo "== MysticalOS 1.0 TB350FU A13 - status =="
+            echo "suspend_block (prop; domyslnie 0): $(getprop persist.sys.mystic.suspend_block)"
+            echo "suspend_guard (prop): $(getprop persist.sys.mystic.suspend_guard) / settle_ms: $(getprop persist.sys.mystic.settle_ms)"
+            echo "kernel wake locks: $(cat /sys/power/wake_lock 2>/dev/null)"
+            echo "screen_off_timeout: $(settings get system screen_off_timeout) ms / stay_on_plugged: $(settings get global stay_on_while_plugged_in)"
+            echo "wifi scan_always: $(settings get global wifi_scan_always_enabled) / throttle: $(settings get global wifi_scan_throttle_enabled) / supplicant_ms: $(settings get global wifi_supplicant_scan_interval)"
+            dumpsys deviceidle 2>/dev/null | grep -m1 -i "enabled" || echo "doze: ?"
+            echo "-- guard log (ostatnie 6):"
+            tail -n 6 /data/local/tmp/mystic-suspend-guard.log 2>/dev/null
+            echo "-- tune log (ostatnie 3):"
+            tail -n 3 /data/local/tmp/mystic-power-tune.log 2>/dev/null
+            echo "-- audio fix log (ostatnie 3):"
+            tail -n 3 /data/local/tmp/mystic-audio-fix.log 2>/dev/null
+          }
+          cmd_block() {
+            case "$1" in
+              on)
+                # Warstwa 1 (zawsze dziala): ekran sam nie zgasnie + stay-on przy USB
+                settings put global stay_on_while_plugged_in 7
+                settings put system screen_off_timeout 7200000
+                # Warstwa 2 (gdy build pozwala setprop): kernel wake lock
+                if setprop persist.sys.mystic.suspend_block 1 2>/dev/null; then
+                  echo "block ON: wake_lock mystic_dsu_hold + stay-on + timeout 2h"
+                else
+                  echo "block ON: stay-on + timeout 2h (setprop zabroniony na user"
+                  echo "build - kernel wake_lock aktywuje sie tylko z build.prop)"
+                fi
+                ;;
+              off)
+                settings put global stay_on_while_plugged_in 0
+                settings put system screen_off_timeout 600000
+                setprop persist.sys.mystic.suspend_block 0 2>/dev/null
+                echo "block OFF (smart suspend + guard dalej pracuja)"
+                ;;
+              *) echo "uzycie: mystic-ctl block on|off" ;;
+            esac
+          }
+          cmd_wifi() {
+            case "$1" in
+              on)
+                settings put global wifi_scan_always_enabled 0
+                settings put global wifi_scan_throttle_enabled 1
+                settings put global wifi_supplicant_scan_interval 180000
+                cmd wifi set-scan-always-available disabled 2>/dev/null || true
+                echo "Wi-Fi Safe Mode ON: skany w tle OFF, interwal 180 s, throttle ON"
+                ;;
+              off)
+                settings put global wifi_scan_always_enabled 1
+                settings put global wifi_scan_throttle_enabled 1
+                settings delete global wifi_supplicant_scan_interval 2>/dev/null
+                cmd wifi set-scan-always-available enabled 2>/dev/null || true
+                echo "Wi-Fi Safe Mode OFF (skany wracaja)"
+                ;;
+              *) echo "uzycie: mystic-ctl wifi-safe on|off" ;;
+            esac
+          }
+          cmd_audio() {
+            echo "restart audioservera (re-probe routingu MT6789)..."
+            if setprop ctl.restart audioserver 2>/dev/null; then
+              echo "OK - audio odbuduje routing w kilka sekund"
+            else
+              echo "ctl.restart zabroniony z shell (user build). Alternatywy:"
+              echo "  adb shell stop audioserver && adb shell start audioserver"
+              echo "  (albo reboot - audio fix odpala sie sam po boocie)"
+            fi
+          }
+          case "$1" in
+            status) cmd_status ;;
+            block) cmd_block "$2" ;;
+            wifi-safe) cmd_wifi "$2" ;;
+            audio-fix) cmd_audio ;;
+            settle)
+              case "$2" in
+                ''|*[!0-9]*) echo "uzycie: mystic-ctl settle <ms 1000-30000>" ;;
+                *)
+                  if setprop persist.sys.mystic.settle_ms "$2" 2>/dev/null; then
+                    echo "settle=$2 ms (guard podniesie w kolejnym obrocie petli)"
+                  else
+                    echo "setprop zabroniony na user build - settle zmienisz przez"
+                    echo "rebuild (persist.sys.mystic.settle_ms w build.prop)"
+                  fi
+                  ;;
+              esac ;;
+            *) echo "MysticalOS 1.0 mystic-ctl"
+               echo "uzycie: mystic-ctl status | block on|off | wifi-safe on|off | audio-fix | settle <ms>" ;;
+          esac
+          CTLEOF
+          chmod 0755 "$T/bin/mystic-ctl.sh"
+          # 5) propsy (bez render-propsow - diagnoza usera: unrelated).
+          #    CELOWO vendor.wifi.suspend (NIE persist.vendor.*): persist zapisuje
+          #    sie we wspoldzielonym /data/property i wyciekalby do hosta Lenovo.
+          { echo ""
+            echo "# === MysticalOS 0.6: SMART SUSPEND (deep sleep DOZWOLONY) ==="
+            echo "persist.sys.mystic.suspend_block=0"
+            echo "persist.sys.mystic.power_tune=1"
+            echo "persist.sys.mystic.suspend_guard=1"
+            echo "persist.sys.mystic.settle_ms=4000"
+            echo "persist.sys.mystic.wifi_safe=1"
+            echo "# Wi-Fi safe (spec usera; ro/vendor = per-boot, bez wycieku do hosta):"
+            echo "persist.sys.wifi.supplicant_scan_interval=180"
+            echo "ro.wifi.suspend.enabled=0"
+            echo "vendor.wifi.suspend=0"
+            echo "# Touch (spekulacyjne, nieszkodliwe gdy nieczytane):"
+            echo "ro.input.noresample=1"
+            echo "# Z 0.5 (bez zmian):"
+            echo "ro.surface_flinger.use_content_detection_for_refresh_rate=false"; } >> "$BP"
+          # DIET pod 32 GB ROM: motywy MIUI out (~-200 MB; apki/fonty zostaja)
+          find "$T" -maxdepth 3 -type d -iname "*miui-theme*" 2>/dev/null | while read -r D; do
+            echo "DIET: usuwam $D ($(du -sm "$D" 2>/dev/null | cut -f1) MB)"
+            rm -rf "$D"
+          done
+          echo "-- top-15 najwiekszych katalogow app/priv-app (evidence diety):"
+          du -sm "$T/app"/* "$T/priv-app"/* 2>/dev/null | sort -rn | head -15 || true
+          # 6) TREBLE COMPAT 1.0: TB350FU / VENDOR ANDROID 13 (rollback usera
+          #    udany; seria S13, VNDK 33, MT6789/MT8781, ARM64 A/B SAR).
+          #    Semantyka ro.*: first-set-wins + /system/build.prop laduje sie
+          #    PO vendor/product -> CZYSTY FALLBACK. CELOWO nie w prop.default.
+          #    BLOK USERA 12/12 (kolejnosc wg spec) + dodatki 1.0.
+          { echo ""
+            echo "# === MysticalOS 1.0: TB350FU / VENDOR ANDROID 13 (VNDK 33, MT6789/MT8781) ==="
+            echo "ro.vndk.version=33"
+            echo "ro.soc.manufacturer=MediaTek"
+            echo "ro.soc.model=MT6789"
+            echo "ro.mediatek.platform=MT6789"
+            echo "ro.hardware.hwcomposer=mtkhwcomposer"
+            echo "ro.hardware.gralloc=mt6789"
+            echo "ro.product.brand=Lenovo"
+            echo "ro.product.manufacturer=Lenovo"
+            echo "ro.product.name=TB350FU"
+            echo "ro.product.device=TB350FU"
+            echo "ro.product.model=Lenovo Tab P11 Gen 2"
+            echo "ro.build.product=TB350FU"
+            echo "# Dodatki 1.0 (target + A/B + fixy):"
+            echo "ro.mysticalos.vendor_target=a13"
+            echo "ro.build.ab_update=true"
+            echo "# Fix jasnosci (Samsung/Lenovo backlight overlay; phh #1007; no-op na naszym frameworku):"
+            echo "persist.sys.phh.samsung_backlight=1"
+            echo "# Fix audio (service mystic-audio-fix; 1 = restart audioservera po boocie):"
+            echo "persist.sys.mystic.audio_restart=1"; } >> "$BP"
+          echo "1.0: rc + 5 skryptow + build.prop OK; treble-compat TB350FU A13 (blok usera 12/12 + dodatki) OK"
+          echo "== mkfs system_dsu (EROFS + konteksty, tmpfs) =="
+          TM_AV=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
+          [ "$TM_AV" -ge 3500 ] || { echo "::error::tmpfs ${TM_AV}M < 3500M"; exit 1; }
+          "$KDIR/bin/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c0000000d \
+            --file-contexts="$FC" /dev/shm/system_dsu.img "$T" \
+            || { echo "::error::mkfs padl"; exit 1; }
+          rm -rf "$T"
+          mv /dev/shm/system_dsu.img "$WORK/out/system.img"
+          df -h /
+          echo "system_dsu.img: $(stat -c%s "$WORK/out/system.img") B"
+          # === 1.2: STOPKA AVB jak w PRAWDZIWYCH GSI (receipt usera: po 1.1
+          # dalej "AVB footer verification failed / Hash device is too small /
+          # Couldn't create verity device"). fs_avb.cpp: kHashtreeDisabled/
+          # kVerificationDisabled -> fs_mgr NIE tworzy urzadzenia verity;
+          # docs DSU: rollback porownuje security_patch z AVB property
+          # descriptorow (prawdziwe GSI je maja). Zmiany vs 1.1: flags 3,
+          # property descriptors, block_size 4096 jawny, PS do 4 MiB, dowod. ===
+          IMG=$(stat -c%s "$WORK/out/system.img")
+          [ $((IMG % 4096)) -eq 0 ] \
+            || { echo "::error::fs $IMG B nie jest 4096-aligned (wymaga hashtree)"; exit 1; }
+          openssl genrsa -out /tmp/avb_key.pem 2048 2>/dev/null
+          PS=$(( (IMG + IMG/100 + 16777216 + 4194303) / 4194304 * 4194304 ))
+          python3 "$KDIR/tools/avbtool.py" add_hashtree_footer \
+            --image "$WORK/out/system.img" \
+            --partition_name system \
+            --partition_size "$PS" \
+            --flags 3 \
+            --algorithm SHA256_RSA2048 \
+            --key /tmp/avb_key.pem \
+            --hash_algorithm sha256 \
+            --block_size 4096 \
+            --do_not_generate_fec \
+            --prop com.android.build.system.os_version:14 \
+            --prop com.android.build.system.security_patch:2026-09-05 \
+            || { echo "::error::avbtool add_hashtree_footer padl"; exit 1; }
+          rm -f /tmp/avb_key.pem
+          python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/system.img" \
+            | tee "$WORK/out/avb-info.txt"
+          # KRYPTOGRAFICZNY DOWOD (avbtool szuka partycji w katalogu obrazu
+          # - dlatego cwd=$WORK/out i plik nazywa sie system.img):
+          ( cd "$WORK/out" && python3 "$KDIR/tools/avbtool.py" verify_image \
+              --image system.img | tee avb-verify.txt ) \
+            || { echo "::error::verify_image: stopka NIE przechodzi weryfikacji"; exit 1; }
+          grep -q "Successfully verified footer" "$WORK/out/avb-verify.txt" \
+            || { echo "::error::brak potwierdzenia podpisu vbmeta"; exit 1; }
+          grep -q "Successfully verified sha256 hashtree" "$WORK/out/avb-verify.txt" \
+            || { echo "::error::brak potwierdzenia hashtree"; exit 1; }
+          # Surowe bajty: magic stopki AVBf w ostatnich 64 B pliku:
+          SZ=$(stat -c%s "$WORK/out/system.img")
+          dd if="$WORK/out/system.img" bs=1 skip=$((SZ-64)) count=64 2>/dev/null \
+            | grep -aq "AVBf" \
+            || { echo "::error::brak magic AVBf w ostatnich 64 bajtach!"; exit 1; }
+          echo "system.img ze stopka AVB (PELNA): $(stat -c%s "$WORK/out/system.img") B (fs: $IMG B + hashtree/vbmeta/footer); podpis + hashtree zweryfikowane kryptograficznie"
+
+      - name: "4. Weryfikacja obrazu (mount + smart-suspend + kluczowe pliki)"
+        run: |
+          set -euo pipefail
+          MNT="$WORK/mnt"; mkdir -p "$MNT"
+          sudo mount -t erofs -o ro,loop "$WORK/out/system.img" "$MNT" \
+            || { echo "::error::montaz weryfikacyjny padl"; exit 1; }
+          P="$MNT"; [ -d "$MNT/system" ] && P="$MNT/system"
+          grep -q "ro.mysticalos.version=3" "$P/build.prop" || { echo "::error::brak mysticalos.version=3"; exit 1; }
+          # SMART SUSPEND: rc (wake_lock opcjonalny + guard) + 3 skrypty + propsy
+          grep -q "wake_lock mystic_dsu_hold" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak wake_lock mystic_dsu_hold"; exit 1; }
+          grep -q "service mystic_suspend_guard" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak service mystic_suspend_guard"; exit 1; }
+          grep -q "start mystic_suspend_guard" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak start mystic_suspend_guard"; exit 1; }
+          grep -q "seclabel u:r:shell:s0" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak seclabel uslugi tune"; exit 1; }
+          grep -q "cmd deviceidle disable all" "$P/bin/mystic-power-tune.sh" \
+            || { echo "::error::skrypt: brak deviceidle disable"; exit 1; }
+          grep -q "device_idle_constants" "$P/bin/mystic-power-tune.sh" \
+            || { echo "::error::skrypt: brak device_idle_constants"; exit 1; }
+          grep -q "wifi_supplicant_scan_interval" "$P/bin/mystic-power-tune.sh" \
+            || { echo "::error::skrypt: brak wifi_supplicant_scan_interval"; exit 1; }
+          grep -q "mystic_screensettle" "$P/bin/mystic-suspend-guard.sh" \
+            || { echo "::error::guard: brak mystic_screensettle"; exit 1; }
+          grep -q "wake_unlock" "$P/bin/mystic-suspend-guard.sh" \
+            || { echo "::error::guard: brak wake_unlock (deep sleep!)"; exit 1; }
+          grep -q "cmd wifi set-scan-always-available disabled" "$P/bin/mystic-ctl.sh" \
+            || { echo "::error::ctl: brak wifi set-scan-always-available"; exit 1; }
+          for S in mystic-power-tune.sh mystic-suspend-guard.sh mystic-ctl.sh; do
+            [ -x "$P/bin/$S" ] || { echo "::error::$S nie jest wykonywalny"; exit 1; }
+            sh -n "$P/bin/$S" || { echo "::error::$S: blad skladni sh"; exit 1; }
+          done
+          for KV in "persist.sys.mystic.suspend_block=0" "persist.sys.mystic.power_tune=1" \
+                    "persist.sys.mystic.suspend_guard=1" "persist.sys.mystic.settle_ms=4000" \
+                    "persist.sys.wifi.supplicant_scan_interval=180" \
+                    "ro.wifi.suspend.enabled=0" "vendor.wifi.suspend=0" \
+                    "ro.input.noresample=1" \
+                    "ro.surface_flinger.use_content_detection_for_refresh_rate=false"; do
+            grep -q "$KV" "$P/build.prop" || { echo "::error::brak $KV w build.prop"; exit 1; }
+          done
+          # KRYTYCZNE: build MUSI byc smart (0.5 z =1 to osobny build Fazy 1)
+          if grep -q "persist.sys.mystic.suspend_block=1" "$P/build.prop"; then
+            echo "::error::suspend_block=1 w 0.6?! (to spec 0.5/Stability)"; exit 1
+          fi
+          echo "smart-suspend w obrazie: rc(wake_lock+guard+tune) + 3 skrypty (0755, sh -n OK) + propsy 9/9 + domyslne 0 OK"
+          # TREBLE COMPAT 1.0: TB350FU / ANDROID 13 (blok usera 12/12 + dodatki)
+          for KV in "ro.vndk.version=33" "ro.soc.manufacturer=MediaTek" \
+                    "ro.soc.model=MT6789" "ro.mediatek.platform=MT6789" \
+                    "ro.hardware.hwcomposer=mtkhwcomposer" "ro.hardware.gralloc=mt6789" \
+                    "ro.product.brand=Lenovo" "ro.product.manufacturer=Lenovo" \
+                    "ro.product.name=TB350FU" "ro.product.device=TB350FU" \
+                    "ro.product.model=Lenovo Tab P11 Gen 2" "ro.build.product=TB350FU" \
+                    "ro.mysticalos.vendor_target=a13" "ro.build.ab_update=true" \
+                    "persist.sys.phh.samsung_backlight=1" "persist.sys.mystic.audio_restart=1"; do
+            grep -q "^$KV$" "$P/build.prop" || { echo "::error::brak $KV w build.prop (treble compat 1.0)"; exit 1; }
+          done
+          # 1.0 = TB350FU/A13: Niedotykalne (VNDK 34 zakazany; zero resztek Samsung)
+          if grep -q "^ro.vndk.version=34$" "$P/build.prop"; then
+            echo "::error::ro.vndk.version=34 w 1.0?! (target A13 -> 33)"; exit 1
+          fi
+          if grep -qE "^(ro.product.brand=samsung|ro.soc.model=MT8768T|ro.lmk.medium=)" "$P/build.prop"; then
+            echo "::error::resztki buildu Samsung (0.8/0.9) w 1.0?!"; exit 1
+          fi
+          # FIX AUDIO (wymog usera): service + skrypt + ctl audio-fix
+          grep -q "service mystic_audio_fix" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak service mystic_audio_fix"; exit 1; }
+          [ -x "$P/bin/mystic-audio-fix.sh" ] || { echo "::error::mystic-audio-fix.sh nie jest wykonywalny"; exit 1; }
+          sh -n "$P/bin/mystic-audio-fix.sh" || { echo "::error::mystic-audio-fix.sh: blad skladni sh"; exit 1; }
+          grep -q "ctl.restart audioserver" "$P/bin/mystic-audio-fix.sh" \
+            || { echo "::error::audio-fix: brak ctl.restart audioserver"; exit 1; }
+          grep -q "audio-fix" "$P/bin/mystic-ctl.sh" \
+            || { echo "::error::ctl: brak podkomendy audio-fix"; exit 1; }
+          # zRAM service zostaje (generyczny; no-op gdy vendor ma wlasny)
+          grep -q "service mystic_zram_setup" "$P/etc/init/mystic-power.rc" \
+            || { echo "::error::rc: brak service mystic_zram_setup"; exit 1; }
+          [ -x "$P/bin/mystic-zram-setup.sh" ] || { echo "::error::mystic-zram-setup.sh nie jest wykonywalny"; exit 1; }
+          sh -n "$P/bin/mystic-zram-setup.sh" || { echo "::error::mystic-zram-setup.sh: blad skladni sh"; exit 1; }
+          # DIET: motywy miui-themes usuniete
+          if find "$P" -maxdepth 3 -type d -iname "*miui-theme*" | grep -q .; then
+            echo "::error::miui-themes nadal w obrazie (DIET)"; exit 1
+          fi
+          # AUTONOMIA (STANDALONE, wymog usera 1.0): wlasne biblioteki + permisje
+          grep -rq '<library name="miui"' "$P/etc/permissions/" \
+            || { echo "::error::brak deklaracji <library name=miui> w /system/etc/permissions (autonomia)"; exit 1; }
+          ls "$P/framework" | grep -qi miui \
+            || { echo "::error::brak miui-framework.jar w /system/framework (autonomia: HARD gate od 1.0)"; exit 1; }
+          grep -q 'package="com.google.android.gms"' "$P/etc/permissions/privapp-permissions-mystical.xml" \
+            || { echo "::error::brak privapp-permissions dla microG (autonomia)"; exit 1; }
+          echo "treble-compat 1.0 w obrazie: propsy 16/16 (blok usera 12 + dodatki) + audio-fix svc + zram svc + miui-framework HARD + diet OK"
+          for CHK in "priv-app/microG/GmsCore.apk" "priv-app/FakeStore/FakeStore.apk"; do
+            [ -f "$P/$CHK" ] || { echo "::error::brak $CHK"; exit 1; }
+          done
+          NA=$(ls "$P/app" 2>/dev/null | grep -ci miui || true)
+          echo "apki MIUI w /system/app: $NA"
+          [ "$NA" -ge 1 ] || { echo "::error::0 apek MIUI w system.img"; exit 1; }
+          echo "miui-framework: OBECNY (hard gate autonomii 1.0 - sprawdzono wyzej)"
+          sudo umount "$MNT"
+          # 1.2: STOPKA AVB PELNA (flags 3 + propsy + dowod kryptograficzny)
+          AVBI=$(python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/system.img")
+          echo "$AVBI" | grep -q "Hashtree descriptor:" \
+            || { echo "::error::brak Hashtree descriptor (stopka AVB!)"; exit 1; }
+          echo "$AVBI" | grep -qE "^Algorithm: *SHA256_RSA2048" \
+            || { echo "::error::AVB algorytm != SHA256_RSA2048"; exit 1; }
+          echo "$AVBI" | grep -qE "^Flags: *3$" \
+            || { echo "::error::AVB Flags != 3 (HASHTREE+VERIFICATION DISABLED)"; exit 1; }
+          echo "$AVBI" | grep -qE "Hash Algorithm: *sha256" \
+            || { echo "::error::hashtree != sha256 (avbtool 1.3 default sha1!)"; exit 1; }
+          echo "$AVBI" | grep -qE "Partition Name: *system$" \
+            || { echo "::error::AVB partition_name != system"; exit 1; }
+          echo "$AVBI" | grep -q "Prop: com.android.build.system.security_patch" \
+            || { echo "::error::brak property descriptor security_patch (rollback DSU!)"; exit 1; }
+          echo "$AVBI" | grep -q "Prop: com.android.build.system.os_version" \
+            || { echo "::error::brak property descriptor os_version"; exit 1; }
+          grep -q "Successfully verified footer" "$WORK/out/avb-verify.txt" \
+            || { echo "::error::avb-verify.txt: podpis niezweryfikowany"; exit 1; }
+          grep -q "Successfully verified sha256 hashtree" "$WORK/out/avb-verify.txt" \
+            || { echo "::error::avb-verify.txt: hashtree niezweryfikowany"; exit 1; }
+          echo "AVB footer 1.2: Hashtree + SHA256_RSA2048 + Flags:3 (PELNE wylaczenie verity) + sha256 + system + propsy (rollback) + podpis zweryfikowany OK"
+
+      - name: "5. README + SUROWY system.img (bez naszego zipa - wymog usera 1.0)"
+        # zip CLI nie ma na runnerze (receipt 37071968684) - python zipfile.
+        # EROFS jest juz skompresowany, STORED = zero strat czasu CPU.
+        run: |
+          set -euo pipefail
+          cd "$WORK/out"
+          cat > CZYTAJ-TO-DSU.txt <<'XEOF'
+          ====================================================================
+          MysticalOS 1.2 - TB350FU / ANDROID 13 + PRAWdziwa STOPKA AVB (A17-look)
+          ====================================================================
+          Cel: MysticalOS na Lenovo Tab P11 Gen 2 (TB350FU, MT6789/MT8781,
+          Helio G99) po rollbacku do oficjalnego stabilnego ANDROIDA 13
+          (seria S13). System z interfejsem/funkcjami Androida 17 (HyperOS
+          look, baza MysticalOS 3) na vendorze A13 - kierunek WSPARTY przez
+          Treble (system N + vendor N-1). Pelny stack Smart Suspend zostaje:
+          settle guard, Doze OFF, Wi-Fi safe, mystic-ctl, twardy blok.
+
+          1. SETTLE GUARD (mystic-suspend-guard.sh, demon w kontekscie inita):
+             przy GASnacym ekranie krotki wake_lock mystic_screensettle
+             (domyslnie 4 s) -> suspend (i panika mtk_sdio_pm_suspend)
+             wchodzi dopiero gdy ruch SDIO/Wi-Fi ustaty; po wznowieniu przy
+             OFF ekranie doklada settle -> tlumi szybkie cykle suspend/resume.
+          2. DOZE/APP STANDBY OFF + device_idle_constants=Long.MAX.
+          3. Wi-Fi SAFE MODE: skany tla OFF, throttle, supplicant 180 s +
+             propsy persist.sys.wifi.supplicant_scan_interval=180,
+             ro.wifi.suspend.enabled=0, vendor.wifi.suspend=0.
+          4. stay_on_while_plugged_in=7 + screen_off_timeout 10 min.
+          5. TWARDY BLOK zapasowo: sh /system/bin/mystic-ctl.sh block on
+             (permanentny wake_lock mystic_dsu_hold jak w 0.5).
+
+          TB350FU / VENDOR ANDROID 13 (nowosc 1.0):
+          - BLOK PROPSOW (wg spec usera; fallback first-set-wins):
+            ro.vndk.version=33, ro.soc.model=MT6789, mtkhwcomposer +
+            gralloc mt6789, tozsamosc Lenovo TB350FU, ro.build.ab_update
+            =true (A/B), ro.mysticalos.vendor_target=a13.
+          - AUTONOMIA (STANDALONE): system SAM niesie miui-framework.jar +
+            deklaracje <library> + privapp-permissions (microG/FakeStore) +
+            apki MIUI + fonty - NIE potrzebuje product/system_ext ZUI.
+            (W DSU product hosta i tak sie montuje - nie przeszkadza.)
+          - FIX JASNOSCI (wbudowany): guard czyta 4 sciezki backlight
+            (lcd-backlight / panel / panel-0 / pwm-backlight - pokrywa
+            Lenovo i Samsung) + persist.sys.phh.samsung_backlight=1
+            (phh #1007; no-op na naszym frameworku - wg spec
+            "Samsung/Lenovo backlight overlay").
+          - FIX AUDIO MT6789 (wbudowany): service mystic-audio-fix - 20 s
+            po boocie ctl.restart audioserver (re-probe routingu; fix na
+            wyscig rejestracji HAL audio vs montowanie partycji DSU).
+            UCZCIWIE: tabele routingu zyja w VENDORZE
+            (/vendor/etc/audio_policy_configuration.xml) - system ich NIE
+            nadpisuje (wladowanie wlasnych = zepsuty routing). Toggle:
+            persist.sys.mystic.audio_restart (0=off). Recznie:
+            sh /system/bin/mystic-ctl.sh audio-fix
+          - zRAM service (generyczny): konfiguruje zram0 TYLKO gdy vendor
+            nie mial wlasnego (Lenovo ma - wtedy log only).
+          - DIET: motywy miui-themes usuniete (mniejszy obraz).
+
+          FORMAT WYJSCIOWY (spec usera): SUROWY system.img (EROFS,
+          non-sparse, Z WBUDOWANA STOPKA AVB) + SHA256SUMS.txt +
+          avb-info.txt + avb-verify.txt (kryptograficzny dowod: podpis
+          SHA256_RSA2048 + hashtree sha256 zweryfikowane) - bez naszego zipa. Uwaga: GitHub
+          opakowuje artifact w zip przy pobraniu - rozpakuj RAZ i masz
+          czysty, surowy system.img.
+
+          STOPKA AVB (fix 1.1 - receipt z logu init DSU na hoscie A13:
+          "AVB footer verification failed / Hash device is too small /
+          Couldn't create verity device"). Hosc A13 (po rollbacku do
+          oficjalnego S13) WYMAGA stopki AVB na system.img; nasze wczesniejsze
+          obrazy z mkfs.erofs jej nie mialy (na hoscie A14 przechodzilo).
+          1.2 (po receiptu "dalej ten sam blad"): stopka jak w PRAWDZIWYCH
+          GSI. Zrodla: (a) fs_mgr/libfs_avb - gdy vbmeta ma status
+          kHashtreeDisabled lub kVerificationDisabled, fs_mgr zwraca
+          kDisabled i W OGOLE NIE TWORZY urzadzenia verity -> ustawiamy
+          --flags 3 = HASHTREE_DISABLED | VERIFICATION_DISABLED (pelne
+          wylaczenie; flags 2 z 1.1 teoretycznie tez pomijalo weryfikacje,
+          ale hashtree setup pozostawalo aktywne); (b) oficjalne docs DSU
+          "Rollback protection": DSU porownuje security_patch z AVB PROPERTY
+          DESCRIPTOROW obrazow - prawdziwe GSI/AOSP je maja, nasz 1.1 NIE
+          mial! Teraz: --prop com.android.build.system.security_patch=
+          2026-09-05 (nowszy niz host A13) + --prop ...os_version=14.
+          Dowod (w bramce builda + plik avb-verify.txt): avbtool
+          verify_image przechodzi PELNY lancuch - podpis SHA256_RSA2048
+          + hashtree sha256; do tego surowa magic AVBf w ostatnich 64
+          bajtach pliku. Dodatki techniczne: --partition_size (stopka na
+          koncu), --hash_algorithm sha256 + --block_size 4096 jawne,
+          --do_not_generate_fec, PS wyrownany do 4 MiB, fs%4096==0.
+          Klucz testowy RSA2048 (bootloader odblokowany + flags 3 -> lancuch
+          podpisu nie egzekwowany; jak GSI phh z testkey AOSP).
+          JESLI NADAL TEN SAM BLAD: znaczy, ze host S13 czyta WLASNY vbmeta
+          (fstab Lenovo) zamiast stopki obrazu - wtedy zaden GSI nie wstanie
+          przez DSU na S13; prosba o log, a droga docelowa = fastboot flash.
+
+          STEROWANIE (adb shell):
+            sh /system/bin/mystic-ctl.sh status
+            sh /system/bin/mystic-ctl.sh block on|off
+            sh /system/bin/mystic-ctl.sh wifi-safe on|off
+            sh /system/bin/mystic-ctl.sh audio-fix        # restart audioservera
+            sh /system/bin/mystic-ctl.sh settle 4000      # ms, 1000-30000
+          (setprop persist.* bywa AVC-denied na user build - ctl uzywa
+          settings/svc/cmd, ktore dzialaja zawsze)
+
+          Weryfikacja po boocie (adb):
+            getprop ro.vndk.version      -> 33 (target A13; 34 = stare buildy A14)
+            getprop ro.soc.model         -> MT6789
+            getprop ro.product.model     -> Lenovo Tab P11 Gen 2
+            (stopke AVB mozesz podejrzec: avbtool info_image
+             system.img -> Flags: 3, Hashtree descriptor + Prop descriptors)
+            cat /data/local/tmp/mystic-audio-fix.log  (restart audioservera)
+            cat /sys/power/wake_lock     -> pusto w smart; mystic_screensettle
+                                          ~4 s po zgaszeniu ekranu
+            dumpsys deviceidle | head -5 -> enabled=false (Doze OFF)
+            cat /data/local/tmp/mystic-power-tune.log
+            ps -A | grep mystic          -> guard zywy
+
+          CO TO JEST:
+          Prawdziwy system.img MysticalOS (baza Lenovo A14 + interfejs/
+          funkcje A17 HyperOS-look + microG + Aurora + apki MIUI + fonty
+          Mi + miui-framework) do testu przez DSU Sideloader. NIC nie
+          zapisuje na stale - restart z discard i wracasz do stocka A13.
+          Tablet: Lenovo Tab P11 Gen 2 (TB350FU) po rollbacku do A13,
+          bootloader odblokowany.
+
+          CO POTRZEBUJESZ:
+          - apka DSU Sideloader (F-Droid: vegabobo.dsusideloader / GitHub
+            VegaBobo/DSU-Sideloader),
+          - tablet z wlaczonym USB debugging,
+          - Komputer z adb (tryb ADB) LUB Shizuku.
+
+          KROKI:
+          1. Pobierz artifact -> rozpakuj (raz) -> bedzie plik system.img
+             (~3,0 GB, ze stopka AVB) + SHA256SUMS.txt (sprawdz:
+             sha256sum -c SHA256SUMS.txt) + avb-info.txt + avb-verify.txt.
+          2. Zainstaluj i otworz DSU Sideloader; daj mu dostep do folderu
+             (stworzy folder tymczasowy - wybezsieczenie).
+          3. Wybierz plik system.img. Rozmiar userdata zostaw domyslny.
+          4. Tryb bez roota: ADB - apka pokaze komende; odpal ja na PC z
+             podpietym tabletem. Pokaze sie ekran DSU -> potwierdz.
+          5. Instalacja trwa kilka minut (pasek w powiadomieniach).
+          6. Po instalacji: powiadomienie "Dynamic System" -> "Restart".
+          7. Pierwszy boot goscia: 5-15 min (optymalizacja).
+
+          UCZCIWIE - CZEGO SIE SPODZIEWAC:
+          - DSU podmienia TYLKO system. Product/system_ext zostaja STOCK
+            hosta (A13, ZUI Lenovo), czyli apki Google WRACAJA i prawdziwe
+            GMS przykrywa microG. To normalne - tak dziala DSU. Autonomia
+            1.0 = system NIE ZALEZY od product/system_ext, ale w DSU i tak
+            z nich korzysta.
+          - Aparat: Lenovo (sprzetowy, vendor A13). MiuiCamera moze byc
+            okrojona.
+          - System A14/A17-look na vendorze A13 = kierunek WSPARTY (system
+            nowszy o 1 generacje); pojedyncze HALy nadal moga wymagac
+            uwagi (audio fix wbudowany; logi w /data/local/tmp/mystic-*).
+          - Pelne MysticalOS (GMS OUT, purge product, microG aktywne) =
+            tylko flash super.img (kit MysticalOS3-CALOSC, FLASH-ALL.bat).
+
+          WYJSCIE Z PODGLADU:
+          W DSU Sideloader: "Discard" (albo ustawienia -> reset DSU).
+          UWAGA: w trybie DSU NIC nie flashowac i nie aktualizowac systemu!
+
+          AWARYJNIE:
+          Gosc nie wstaje (bootloop w DSU)? Przytrzymaj Power ~30 s
+          (wymuszony restart) - po kilku probach system wraca do hosta
+          albo wejdz w fastboot (Vol- + Power) i po prostu uruchom ponownie
+          - DSU nie rusza slotow A/B, nic nie zepsutes.
+          XEOF
+          # SUROWY system.img (wymog usera): bez naszego zipa. GH sam opakowuje
+          # artifact w zip przy pobraniu - user rozpakowuje raz i ma czysty obraz.
+          python3 - system.img <<'EOF'
+          import os, struct, sys
+          with open(sys.argv[1], "rb") as f:
+              head = f.read(4); f.seek(1024); m = f.read(4)
+          assert struct.unpack("<I", head)[0] != 0xED26FF3A, "SPARSE magic?! (wymagany raw)"
+          assert m == bytes.fromhex("e2e1f5e0"), "zly magic EROFS: %s" % m.hex()
+          print("system.img RAW (non-sparse) EROFS OK: %d B" % os.path.getsize(sys.argv[1]))
+          EOF
+          sha256sum system.img | tee SHA256SUMS.txt
+          stat -c '%n %s B' system.img CZYTAJ-TO-DSU.txt
+          df -h /
+
+      - name: "6. Artifact (SUROWY system.img + README + SHA256SUMS + avb-info + avb-verify)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: MysticalOS_1.2_DSU_TB350FU_A13_AVB
+          path: |
+            /tmp/dsu/out/system.img
+            /tmp/dsu/out/CZYTAJ-TO-DSU.txt
+            /tmp/dsu/out/SHA256SUMS.txt
+            /tmp/dsu/out/avb-info.txt
+            /tmp/dsu/out/avb-verify.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: "7. Publiczne mirrory (bez logowania)"
+        run: |
+          set -uo pipefail
+          HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
+            bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
+            "$WORK/out/system.img" \
+            "$WORK/out/dsu-links.md" || true
+          cat "$WORK/out/dsu-links.md" || true
+
+      - name: "8. Evidence (reports/)"
+        if: always()
+        run: |
+          set -uo pipefail
+          R="reports/dsu-kit-${GITHUB_RUN_ID}.md"
+          {
+            echo "# dsu-kit run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## stream-manifest"; echo '```'; cat "$WORK/stream-manifest.txt" 2>/dev/null || true; echo '```'
+            echo "## linki publiczne"; echo '```'; cat "$WORK/out/dsu-links.md" 2>/dev/null || true; echo '```'
+            echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
+          } > "$R"
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          git add "$R" || true
+          git commit -m "dsu-kit: evidence run ${GITHUB_RUN_ID}" \
+            || echo "nic do commitu"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done
+          echo "RAPORT: $R"

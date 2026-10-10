@@ -1,0 +1,31 @@
+# cel x podpis x wystepowalność na tablecie Lenovo (product/overlay, 67 apk, bieg 35897100768)
+# uwaga: 'android' = framework-res; RRO wymaga tego samego klucza co pakiet-docel
+targetPackage	klucz	wymagany_pakiet	liczba
+android	MIUI	AOSP-nazwa	16
+android	inny	AOSP-nazwa	10
+com.android.settings	MIUI	AOSP-nazwa	6
+com.miui.miwallpaper	MIUI	XIAOMI-tylko	6
+com.android.systemui	MIUI	AOSP-nazwa	4
+com.android.providers.settings	MIUI	AOSP-nazwa	2
+com.android.server.telecom	MIUI	AOSP-nazwa	2
+com.miui.rom	MIUI	XIAOMI-tylko	2
+com.android.bluetooth	MIUI	AOSP-nazwa	1
+com.android.companiondevicemanager	inny	AOSP-nazwa	1
+com.android.managedprovisioning	MIUI	AOSP-nazwa	1
+com.android.networkstack	MIUI	AOSP-nazwa	1
+com.android.phone	MIUI	AOSP-nazwa	1
+com.android.phone	inny	AOSP-nazwa	1
+com.android.providers.contacts	MIUI	AOSP-nazwa	1
+com.android.providers.telephony	MIUI	AOSP-nazwa	1
+com.android.providers.telephony	inny	AOSP-nazwa	1
+com.android.thememanager	MIUI	AOSP-nazwa	1
+com.android.wifi.resources	MIUI	AOSP-nazwa	1
+com.google.android.cellbroadcastreceiver	MIUI	AOSP-nazwa	1
+com.google.android.cellbroadcastservice	MIUI	AOSP-nazwa	1
+com.google.android.wifi.resources	MIUI	AOSP-nazwa	1
+com.miui.securitycore	MIUI	XIAOMI-tylko	1
+com.miui.system	MIUI	XIAOMI-tylko	1
+com.newcall	MIUI	XIAOMI-tylko	1
+com.xiaomi.bluetooth	MIUI	XIAOMI-tylko	1
+com.xiaomi.phone	MIUI	XIAOMI-tylko	1
+# podsumowanie: MIUI=54  inny=13  xiaomi-only=13

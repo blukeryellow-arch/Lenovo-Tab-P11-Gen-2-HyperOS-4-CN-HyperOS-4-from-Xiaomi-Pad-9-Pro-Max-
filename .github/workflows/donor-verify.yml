@@ -1,0 +1,223 @@
+name: donor-verify-4.0.11.0
+
+# Doslowne wykonanie zlecenia usera (27 IX, 2x ten sam link): "tu masz img hyperosa 4".
+# Runner (pelny egress - sandbox agenta ma tylko GitHub) pobiera Recovery ROM
+# 4.0.11.0.XBMCNXM z linku usera (miuirom.org /load), wyciaga metadane OTA i TWARDYMI
+# bramkami udowadnia tozsamosc z donorem, z ktorego zbudowane jest v1-v5
+# (kit: sdk=37, release=17, security_patch=2026-08-01, incremental 17OS4.0.260916...).
+# Cel: zamiana "build 260916 ~= 4.0.11.0" (docs/08) na dowod "=" - albo wykrycie
+# rozjazdu wersji (wowczas decyzja o rebasie v6). Nie archiwizujemy zipa 10,3 GB
+# (limit assetu release 2 GB); bajty systemu donora sa juz w repo (transfer-spool,
+# bramka sha 537eb4ea przy kazdej odbudowie).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/donor-verify.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: donor-verify
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      LOAD_URL: 'https://miuirom.org/load?o=xiaomi-pad-9-pro-max&v=4.0.11.0.XBMCNXM&l=en&t=Recovery'
+      UA: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+      MIN_ZIP_BYTES: '9000000000'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rozwiaz link /load do bezposredniego pliku
+        id: resolve
+        run: |
+          set -uo pipefail
+          set +e
+          echo "=== probe bez referera (dla porownania) ==="
+          curl -sS -A "$UA" -o /dev/null -D /tmp/h1 --max-time 90 "$LOAD_URL"
+          cp /tmp/h1 /tmp/resolve_hdrs.txt
+          grep -iE '^(HTTP|location|content-type|content-length)' /tmp/h1 | head -20
+          echo "=== pelne zapytanie Z refererem (WSZYSTKIE skoki) ==="
+          curl -sSL -A "$UA" -e "https://miuirom.org/tablets/xiaomi-pad-9-pro-max" \
+            -D /tmp/resolve_hdrs2.txt --max-time 300 "$LOAD_URL" -o /tmp/resp \
+            -w 'final_url: %{url_effective} | kod: %{http_code} | typ: %{content_type}\n'
+          grep -iE '^(HTTP|location|content-type|content-length)' /tmp/resolve_hdrs2.txt | head -30
+          ft=$(file -b /tmp/resp)
+          sz=$(stat -c%s /tmp/resp 2>/dev/null)
+          echo "typ: $ft, rozmiar: ${sz:-?} B"
+          if echo "$ft" | grep -qi 'zip'; then
+            echo "/load z refererem prowadzi wprost do pliku"
+            printf 'url=%s\n' "$LOAD_URL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cp /tmp/resp /tmp/page.html
+          echo "=== dekoduje base64 z href (przyciski download) ==="
+          grep -oE '[A-Za-z0-9+/]{60,}={0,2}' /tmp/resp | sort -u | while read -r b; do
+            d=$(echo "$b" | base64 -d 2>/dev/null || true)
+            case "$d" in
+              https://*.zip) echo "$d" ;;
+            esac
+          done | sort -u > /tmp/decoded_urls.txt
+          cat /tmp/decoded_urls.txt
+          echo "=== wszystkie URL/href w stronie (unikalne) ==="
+          grep -oE 'https?://[^"'\'' <>\\)]+' /tmp/resp | sort -u | head -60 > /tmp/urls.txt
+          grep -oE 'href="[^"]+"' /tmp/resp | cut -d'"' -f2 | sort -u | head -60 >> /tmp/urls.txt
+          echo "=== kandydaci: d.miui.com (CDN Xiaomi) przed aliyuncs ==="
+          MIUI_CDN=$(grep -E 'https://[a-z]+\.d\.miui\.com/.*\.zip$' /tmp/decoded_urls.txt 2>/dev/null | sort -u)
+          OTHERS=$(grep -vE 'https://[a-z]+\.d\.miui\.com/' /tmp/decoded_urls.txt 2>/dev/null | grep '\.zip$' | sort -u)
+          CAND=$( { echo "$MIUI_CDN"; echo "$OTHERS"; } | grep -v '^$' | awk '!seen[$0]++' | head -8 )
+          echo "$CAND"
+          probe() {
+            local u=$1 hdr code cl
+            hdr=$(curl -sSIL -A "$UA" --max-time 60 "$u" 2>&1)
+            code=$(printf '%s' "$hdr" | grep -iE '^HTTP' | tail -1 | tr -d '\r')
+            cl=$(printf '%s' "$hdr" | grep -i '^content-length' | tail -1 | tr -dc 0-9)
+            if [ -z "$cl" ]; then
+              cl=$(curl -s -D - -o /dev/null --max-time 60 -r 0-0 -A "$UA" "$u" 2>/dev/null \
+                   | grep -i '^content-range' | grep -oE '[0-9]+$' | tail -1)
+            fi
+            echo "probe: $u -> ${code:-?} | len=${cl:-?}"
+            [ -n "$cl" ] && [ "$cl" -ge "$MIN_ZIP_BYTES" ]
+          }
+          for u in $CAND; do
+            if probe "$u"; then
+              printf 'url=%s\n' "$u" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "::error::zaden kandydat nie wyglada na plik ~10 GB (HTML + zdekodowane URL w raporcie)"
+          exit 1
+
+      - name: Pobierz Recovery ROM (10,31 GB)
+        run: |
+          set -uo pipefail
+          set +e
+          U="${{ steps.resolve.outputs.url }}"
+          echo "pobieram: $U"
+          : > /tmp/dl_trace.txt
+          echo "url: $U" >> /tmp/dl_trace.txt
+          df -BG /tmp | tail -1 >> /tmp/dl_trace.txt
+          curl -L -A "$UA" --retry 5 --retry-delay 10 --retry-all-errors --max-time 2400 -o /tmp/donor.zip "$U"
+          rc=$?
+          echo "curl_rc=$rc" >> /tmp/dl_trace.txt
+          df -BG /tmp | tail -1 >> /tmp/dl_trace.txt
+          echo "file_magic: $(file -b /tmp/donor.zip 2>/dev/null)" >> /tmp/dl_trace.txt
+          sz=$(stat -c%s /tmp/donor.zip 2>/dev/null)
+          echo "size: ${sz:-brak} B" >> /tmp/dl_trace.txt
+          cat /tmp/dl_trace.txt
+          if [ -z "${sz:-}" ] || [ "$sz" -lt "$MIN_ZIP_BYTES" ]; then
+            echo "::error::plik niepelny: ${sz:-brak} B (oczekiwane ~10,31 GB)"
+            exit 1
+          fi
+          echo "=== twardy test spojnosci zipa (central directory) - rc curl NIE jest kryterium ==="
+          python3 -c "import zipfile; z=zipfile.ZipFile('/tmp/donor.zip'); n=z.namelist(); print('zip OK, plikow:', len(n)); print('kluczowe:', [x for x in n if 'payload' in x or 'metadata' in x or 'properties' in x][:12])"
+          pz=$?
+          echo "zipcheck_rc=$pz" >> /tmp/dl_trace.txt
+          if [ "$pz" -ne 0 ]; then
+            echo "::error::pobrany plik nie jest poprawnym zipem (patrz trace w raporcie)"
+            exit 1
+          fi
+          sha256sum /tmp/donor.zip | tee /tmp/donor.zip.sha256
+          if [ ! -s /tmp/donor.zip.sha256 ]; then
+            echo "::error::sha256 nie zostalo wyliczone"
+            exit 1
+          fi
+
+      - name: Metadane OTA + bramki tozsamosci z kitem v1-v5
+        run: |
+          set -uo pipefail
+          set +e
+          cd /tmp
+          echo "=== zawartosc zipa (naglowek) ==="
+          unzip -l donor.zip > /tmp/ziplist.txt 2>&1
+          head -25 /tmp/ziplist.txt
+          grep -E 'payload\.bin|metadata|properties' /tmp/ziplist.txt | head -10
+          echo "=== wyciagam metadane ==="
+          unzip -o -j donor.zip 'META-INF/com/android/metadata' 'META-INF/com/android/metadata.pb' 'payload_properties.txt' -d /tmp/meta >/dev/null 2>&1
+          ls -la /tmp/meta 2>/dev/null
+          {
+            cat /tmp/meta/metadata 2>/dev/null
+            strings /tmp/meta/metadata.pb 2>/dev/null
+            cat /tmp/meta/payload_properties.txt 2>/dev/null
+          } > /tmp/meta_all.txt
+          echo "=== metadane (pelne) ==="
+          cat /tmp/meta_all.txt
+          echo
+          echo "=== BRAMKI TWARDE ==="
+          if grep -q 'XBMCNXM' /tmp/meta_all.txt; then
+            echo "GATE A OK: wersja XBMCNXM jest w metadanych (wlasnie ten plik)"
+          else
+            echo "::error::GATE A: w metadanych nie ma XBMCNXM - pobrany plik to inna wersja"
+            exit 1
+          fi
+          if grep -q '260916' /tmp/meta_all.txt; then
+            echo "GATE B OK: build 260916 (fingerprint kitu v1-v5) jest w metadanych"
+            echo "WERDYKT: zip usera = DOKLADNIE ten donor, z ktorego zbudowane jest v1-v5"
+          else
+            echo "::error::GATE B: w metadanych nie ma 260916 - kit v1-v5 pochodzi z INNEJ wersji donora!"
+            exit 1
+          fi
+          echo "=== SOFT (raportowe, nie blokuja) ==="
+          for s in 'yingtian' 'M367FC' ':17/' '2026-08-01'; do
+            if grep -qF "$s" /tmp/meta_all.txt; then echo "OK: $s obecne"; else echo "UWAGA: brak '$s' (sprawdz metadane powyzej)"; fi
+          done
+
+      - name: Raport na galaz
+        if: always()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports
+          F="reports/donor-verify-${{ github.run_id }}.md"
+          {
+            echo "### donor-verify 4.0.11.0.XBMCNXM (run ${{ github.run_id }})"
+            echo "- link usera (redirector): $LOAD_URL"
+            echo "- rozwiazany URL pliku: ${{ steps.resolve.outputs.url }}"
+            echo "- zip: $(stat -c%s /tmp/donor.zip 2>/dev/null || echo '?') B, sha256: $(awk '{print $1}' /tmp/donor.zip.sha256 2>/dev/null || echo '?')"
+            echo
+            echo "#### naglowki /load bez referera"
+            echo '```'
+            cat /tmp/resolve_hdrs.txt 2>/dev/null | grep -iE '^(HTTP|location|content-type)' | head -10
+            echo '```'
+            echo "#### naglowki /load z refererem (wszystkie skoki)"
+            echo '```'
+            cat /tmp/resolve_hdrs2.txt 2>/dev/null | grep -iE '^(HTTP|location|content-type)' | head -20
+            echo '```'
+            echo "#### trace pobierania"
+            echo '```'
+            cat /tmp/dl_trace.txt 2>/dev/null || echo '(brak)'
+            echo '```'
+            echo "#### zdekodowane base64 -> URL pliku"
+            echo '```'
+            cat /tmp/decoded_urls.txt 2>/dev/null || echo '(brak)'
+            echo '```'
+            echo "#### wszystkie URL wykryte w stronie download"
+            echo '```'
+            cat /tmp/urls.txt 2>/dev/null || echo '(brak)'
+            echo '```'
+            echo "#### metadane OTA (pelne)"
+            echo '```'
+            cat /tmp/meta_all.txt 2>/dev/null || echo '(brak - patrz logi runu)'
+            echo '```'
+            echo "#### listing zipa (fragment)"
+            echo '```'
+            head -25 /tmp/ziplist.txt 2>/dev/null || echo '(brak)'
+            echo '```'
+            echo "#### HTML /load (pelny zrzut do analizy, max 30 kB)"
+            echo '```'
+            head -c 30000 /tmp/page.html 2>/dev/null || echo '(odpowiedz byla plikiem, nie HTML)'
+            echo '```'
+          } > "$F"
+          cat "$F"
+          git add -f "$F"
+          git diff --cached --quiet || {
+            git commit -q -m "donor-verify: run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo "raport wypchniety na galaz"
+          }

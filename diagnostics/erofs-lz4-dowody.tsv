@@ -1,0 +1,14 @@
+pomiar	wartosc	znaczenie
+system.img incompatible features	lz4_0padding	kernel bez CONFIG_EROFS_FS_LZ4 NIE zamontuje (feature jest 'incompatible', nie 'compatible')
+system.img lz4_max_distance	65535	uaktywniony algorytm w superblocku
+system.img required kernel	5.4	TB350FU (A12L, kernel >=5.10) spelnia
+system.img pliki skompresowane	2738	z 3892 regularnych
+system.img pliki bez kompresji	1828	lz4 odrzucil niepakowalne - dlatego obraz nie jest 'caly skompresowany'
+system.img suma oryginalna	1376005374	B vs obraz 967503872 B => oszczednosc 29,7%
+mkfs.erofs(bez HAVE_LZ4) -zlz4	rc=1	nie umial skompresowac - stary blad '1376899072 B'
+fsck.erofs(bez HAVE_LZ4) na obrazie lz4	rc=0/1	zebrane ponizej - nie wyciagam wnioskow z pomiaru, ktorego nie zrobilem
+system.img -zlz4hc,9	920047616	surowe drzewo 1376899072 B => -33,2%; o 47456256 B (45,3 MiB, 4,9%) mniej niz -zlz4 (967503872 B, linia wyzej). mkfs 25 s zamiast 11 s
+product.img wariant lekki -zlz4hc,9	75198464	era lz4 miala 77619200 B (dist/release/HyperOS4_P11Gen2/release-manifest.tsv w commitcie 41f1ebf) => zysk 2420736 B
+product.img wariant -full -zlz4hc,9	150560768	era lz4 miala 153391104 B (ten sam manifest) => zysk 2830336 B
+suma do flasha (lekki) lz4 -> lz4hc	1045127168 -> 995250176	-49876992 B = -4,77% partycji 1 GB; liczby z manifestow obu epok, nie z tabeli w README
+feature bity obrazu lz4hc	compat sb_csum mtime; incompat lz4_0padding	identyczne jak przy -zlz4, dump.erofs obu obrazow nie do rozroznienia => kernel nie dostaje nowego zadania, koszty sa po stronie mkfs

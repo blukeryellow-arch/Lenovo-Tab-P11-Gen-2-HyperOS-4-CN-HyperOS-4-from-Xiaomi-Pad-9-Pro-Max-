@@ -1,0 +1,691 @@
+# ============================================================================
+# mysticalos-emuboot v2.21 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# v2.21: run 38081844818 (v2.20): z fstabem vendora apexd-bootstrap pada
+#        ('Failed to collect APEX keys: Can't open /system_ext/apex:
+#        Permission denied' -> exit 1 -> reboot,bootstrap-apexd-failed).
+#        v2.19 (bez fstab vendora) mial apexd OK i system zywy 49 min.
+#        => wracamy do v2.19 + zostawiamy ZYGOTE FIX (rc + ro.zygote).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/emuboot.yml', 'kit-mysticalos3/**']
+
+concurrency:
+  group: emuboot
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  emu:
+    if: contains(github.event.head_commit.message, '[EMU]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      ANDROID_SDK_ROOT: /home/runner/asdk
+      ANDROID_HOME: /home/runner/asdk
+      ANDROID_AVD_HOME: /home/runner/.android/avd
+      ANDROID_USER_HOME: /home/runner/.android
+      WORK: /tmp/emu
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "0. narzedzia (qemu, java, dysk)"
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK"
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-system-aarch64 qemu-utils e2fsprogs openjdk-17-jre-headless
+          df -h /
+
+      - name: "1. SDK: emulator + system-image android-33 arm64"
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          curl -fsSL --retry 3 -o /tmp/clt.zip \
+            "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          unzip -q /tmp/clt.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"
+          mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          if sdkmanager "platform-tools" "emulator" \
+              "system-images;android-33;google_apis;arm64-v8a" \
+              > "$WORK/sdk-install.log" 2>&1; then
+            echo "sysimg: google_apis arm64-v8a"
+          else
+            echo "google_apis arm64 niedostepny, proba default:"
+            tail -3 "$WORK/sdk-install.log" || true
+            sdkmanager "platform-tools" "emulator" \
+              "system-images;android-33;default;arm64-v8a" > "$WORK/sdk-install2.log" 2>&1
+            echo "sysimg: default arm64-v8a"
+          fi
+          ls "$ANDROID_SDK_ROOT/system-images/android-33/" || true
+          "$ANDROID_SDK_ROOT/emulator/emulator" -version 2>/dev/null | head -2 || true
+
+      - name: "2. obraz MysticalOS z release (nofooter; sha256 weryfikowany)"
+        run: |
+          set -euo pipefail
+          cd "$WORK"
+          gh release download 0.5-hyperos-port -p port-release-dsu.zip
+          unzip -q port-release-dsu.zip -d emu-pkg
+          rm -f port-release-dsu.zip
+          IMG="$WORK/emu-pkg/out/MysticalOS_0.5_DSU_nofooter.img"
+          test -s "$IMG" || { echo "::error::brak obrazu DSU w zipie"; exit 1; }
+          # SHA256SUMS z buildera ma sciezki absolutne - porownujemy sam hash
+          WANT=$(grep "DSU_nofooter" emu-pkg/out/SHA256SUMS.txt | awk '{print $1}')
+          GOT=$(sha256sum "$IMG" | awk '{print $1}')
+          echo "sha256 plik=$GOT"
+          echo "sha256 suma=$WANT"
+          [ "$WANT" = "$GOT" ] || { echo "::error::sha256 obrazu DSU sie nie zgadza"; exit 1; }
+          echo "IMG: $(stat -c%s "$IMG") B"; df -h /
+          echo "$IMG" > "$WORK/img-path"
+
+      - name: "3. BOOT: sciezka A (emulator SDK) -> fallback B (surowy qemu)"
+        run: |
+          set +e
+          set -uo pipefail
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:$PATH"
+          IMG=$(cat "$WORK/img-path")
+          SYSIMG=$(echo "$ANDROID_SDK_ROOT"/system-images/android-33/*/arm64-v8a)
+          TAG=$(basename "$(dirname "$SYSIMG")")
+          echo "sysimg: $SYSIMG (tag=$TAG)"; ls "$SYSIMG" 2>/dev/null
+          : > "$WORK/emu-progress.log"
+
+          run_qemu() {
+            nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
+              -kernel "$KERNEL" -initrd "$RAMDISK2" \
+              -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003e00.virtio_mmio,a003c00.virtio_mmio,a003a00.virtio_mmio,a003800.virtio_mmio" \
+              -drive if=none,file="$WORK/super-gpt.img",format=raw,id=super \
+              -device virtio-blk-device,drive=super \
+              -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
+              -device virtio-blk-device,drive=vendor \
+              -drive if=none,file="$WORK/userdata.img",format=raw,id=userdata \
+              -device virtio-blk-device,drive=userdata \
+              -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
+              -device virtio-blk-device,drive=meta \
+              -netdev user,id=n0,hostfwd=tcp::5555-:5555 \
+              -device virtio-net-device,netdev=n0 \
+              -display none -monitor none -serial file:"$1" \
+              > "$2" 2>&1 &
+            QPID=$!
+          }
+          CTXDIRS="/system/etc/selinux /system/system_ext/etc/selinux /system/product/etc/selinux"
+          build_super() {
+            # puste ext4: product/system_ext
+            for P in product system_ext; do
+              [ -s "$WORK/empty-$P.img" ] && continue
+              truncate -s 16M "$WORK/empty-$P.img" && mkfs.ext4 -q -F "$WORK/empty-$P.img" >/dev/null 2>&1
+            done
+            python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/mksuper.py" \
+              "$WORK/super-raw.img" \
+              system="$IMG" vendor="$WORK/vendor-part.img" \
+              product="$WORK/empty-product.img" system_ext="$WORK/empty-system_ext.img" \
+              >> "$WORK/emu-progress.log" 2>&1
+            truncate -s 1M "$WORK/super-gpt.img"
+            cat "$WORK/super-raw.img" >> "$WORK/super-gpt.img"
+            truncate -s +2M "$WORK/super-gpt.img"
+            SECT=$(( $(stat -c%s "$WORK/super-raw.img") / 512 ))
+            printf 'label: gpt\nstart=2048, size=%s, name=super\n' "$SECT" \
+              | sfdisk "$WORK/super-gpt.img" > "$1" 2>&1
+          }
+
+          # ---------- S C I E Z K A   A: emulator SDK ----------
+          export ANDROID_AVD_HOME=/home/runner/.android/avd
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "=== avdmanager create (glosno):"
+          echo "no" | avdmanager create avd -n mystical --force \
+            -k "system-images;android-33;$TAG;arm64-v8a" 2>&1 | tee "$WORK/avd-create.log"
+          if [ ! -f "$ANDROID_AVD_HOME/mystical.ini" ]; then
+            echo "=== avd.ini NIE powstal; avdmanager list avd:"
+            avdmanager list avd 2>&1 | head -20 | tee -a "$WORK/avd-create.log"
+          fi
+          # kluczowy fix: ABSOLUTNA sciezka sysdir w ini (emulator 37 rozwiazuje
+          # wzgledna image.sysdir.1 against ANDROID_HOME preinstalowanego SDK)
+          sed -i "s|^image.sysdir.1=.*|image.sysdir.1=$SYSIMG/|" \
+            "$ANDROID_AVD_HOME/mystical.ini" 2>/dev/null
+          echo "=== mystical.ini po fixie:" | tee -a "$WORK/avd-create.log"
+          cat "$ANDROID_AVD_HOME/mystical.ini" 2>/dev/null | tee -a "$WORK/avd-create.log"
+          ls -la "$ANDROID_AVD_HOME" 2>&1 | tee -a "$WORK/avd-create.log"
+          export ANDROID_HOME="$ANDROID_SDK_ROOT"
+          echo "emulator bin: $(command -v emulator)"
+          nohup emulator @mystical -no-window -no-audio -no-boot-anim \
+            -no-snapshot -wipe-data -accel off -gpu swiftshader_indirect \
+            -memory 4096 -cores 4 -system "$IMG" > "$WORK/emu.log" 2>&1 &
+          EMUPID=$!
+          echo "[A] emulator PID $EMUPID" | tee -a "$WORK/emu-progress.log"
+          ok_dev=0
+          for i in $(seq 1 240); do
+            sleep 10
+            if adb devices 2>/dev/null | grep -q "emulator.*device$"; then ok_dev=1; break; fi
+            if ! kill -0 $EMUPID 2>/dev/null; then
+              echo "[A] proces emulatora PADL po ~$((i*10)) s" | tee -a "$WORK/emu-progress.log"
+              break
+            fi
+          done
+          echo "[A] adb-device=$ok_dev" | tee -a "$WORK/emu-progress.log"
+          EMU_PATH=none
+          if [ "$ok_dev" = "1" ]; then
+            EMU_PATH=emulator
+          else
+            echo "[A] emu.log tail:" | tee -a "$WORK/emu-progress.log"
+            tail -25 "$WORK/emu.log" >> "$WORK/emu-progress.log" 2>/dev/null
+            kill $EMUPID 2>/dev/null
+            pkill -f "qemu-system" 2>/dev/null
+
+            # ---------- S C I E Z K A   B: surowy qemu ----------
+            KERNEL="$SYSIMG/kernel"
+            [ -f "$KERNEL" ] || KERNEL="$SYSIMG/kernel-ranchu"
+            RAMDISK="$SYSIMG/ramdisk.img"
+            if [ -f "$KERNEL" ] && [ -f "$RAMDISK" ]; then
+              truncate -s 2G "$WORK/userdata.img"
+              mkfs.ext4 -q -F "$WORK/userdata.img" >/dev/null 2>&1
+
+              # ---- forensyka: PELNA ekstrakcja ramdisku (multi-cpio; GNU cpio
+              # czyta tylko 1. archiwum do TRAILER!!!, android ramdisk = kilka sklejonych) ----
+              sudo apt-get install -qq -y cpio lz4 device-tree-compiler >/dev/null 2>&1 || true
+              if gzip -t "$RAMDISK" 2>/dev/null; then DEC="gzip -dc"
+              else DEC="lz4 -dc"; fi
+              $DEC "$RAMDISK" > "$WORK/rd.cpio" 2>/dev/null
+              rm -rf "$WORK/rd-all"
+              python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/cpio_multi_extract.py" \
+                "$WORK/rd.cpio" "$WORK/rd-all" > "$WORK/ramdisk-extract.log" 2>&1
+              find "$WORK/rd-all" \( -type f -o -type l \) | sed "s|$WORK/rd-all/||" \
+                | sort > "$WORK/ramdisk-list.txt"
+              : > "$WORK/fstab-all.txt"
+              for f in $(find "$WORK/rd-all" -name 'fstab*' 2>/dev/null); do
+                echo "===== RAMDISK: ${f#*rd-all/}" >> "$WORK/fstab-all.txt"
+                cat "$f" >> "$WORK/fstab-all.txt"
+              done
+              mkdir -p /tmp/mnt-sys
+              if sudo mount -o ro,loop "$SYSIMG/system.img" /tmp/mnt-sys 2>/dev/null; then
+                for f in /tmp/mnt-sys/etc/fstab*; do
+                  [ -f "$f" ] || continue
+                  echo "===== SYSTEM.IMG (sysimg): $f" >> "$WORK/fstab-all.txt"
+                  cat "$f" >> "$WORK/fstab-all.txt"
+                done
+                sudo umount /tmp/mnt-sys 2>/dev/null
+              fi
+              # qemu emulatora SDK (bundled): czy ma maszyny ranchu?
+              BQ="$ANDROID_SDK_ROOT/emulator/qemu/linux-x86_64/qemu-system-aarch64-headless"
+              { echo "BQ=$BQ"
+                [ -x "$BQ" ] && export LD_LIBRARY_PATH="$ANDROID_SDK_ROOT/emulator/lib64:$ANDROID_SDK_ROOT/emulator/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+                [ -x "$BQ" ] && "$BQ" -version | head -1
+                [ -x "$BQ" ] && "$BQ" -M help | grep -iE 'ranchu|virt'
+              } > "$WORK/bundled-qemu.txt" 2>&1
+              sfdisk --dump "$IMG" > "$WORK/gpt-sys.txt" 2>&1
+              sfdisk --dump "$SYSIMG/vendor.img" > "$WORK/gpt-vendor.txt" 2>&1
+
+              # ---- RAMDISK v2: fstab BEZ logical (system=nasz obraz na vdd,
+              # vendor=vdc1, metadata by-name z GPT, data=vdb) - GSI-style test ----
+              printf '%s\n' \
+                'system   /system     ext4    ro,barrier=1     wait,logical,first_stage_mount' \
+                '/dev/block/platform/a003c00.virtio_mmio/by-name/vendor    /vendor    ext4    ro,barrier=1    wait,first_stage_mount' \
+                '/dev/block/vda   /metadata   ext4   noatime,nosuid,nodev   wait,formattable,first_stage_mount' \
+                '/dev/block/vdb   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,fileencryption=aes-256-xts:aes-256-cts,reservedsize=128M,fsverity,keydirectory=/metadata/vold/metadata_encryption,latemount' \
+                '/dev/block/zram0 none swap  defaults zramsize=75%' \
+                > "$WORK/rd-all/first_stage_ramdisk/fstab.ranchu"
+              cp "$WORK/rd-all/first_stage_ramdisk/fstab.ranchu" "$WORK/fstab-mod.txt"
+              ( cd "$WORK/rd-all" && find . -print0 \
+                | cpio -0 -o -H newc -R 0:0 2>>"$WORK/ramdisk-extract.log" \
+                | gzip -1 > "$WORK/ramdisk-mod.img" ) >> "$WORK/ramdisk-extract.log" 2>&1
+              ls -la "$WORK/ramdisk-mod.img" >> "$WORK/ramdisk-extract.log" 2>&1
+
+              # ---- metadata: CALY dysk ext4 jako vda (raw devname dziala jak
+              # vdd/vdb; by-name symlink dla metadata byl zawodny w fazie mount) ----
+              truncate -s 128M "$WORK/meta.img"
+              mkfs.ext4 -q -F "$WORK/meta.img" >/dev/null 2>&1
+
+              # ---- vendor-mod: puste vendor_property_contexts (typy ranchu
+              # nieobecne w naszej polityce => EINVAL) + nadpisany fstab.ranchu;
+              # debugfs na surowej partycji (RW mount niemozliwy: shared_blocks) ----
+              cp "$SYSIMG/vendor.img" "$WORK/vendor-mod.img"
+              VNDSTART=$(sfdisk -d "$WORK/vendor-mod.img" 2>/dev/null \
+                | grep -o 'start= *[0-9]*' | head -1 | grep -o '[0-9]*')
+              VNDSIZE=$(sfdisk -d "$WORK/vendor-mod.img" 2>/dev/null \
+                | grep -o 'size= *[0-9]*' | head -1 | grep -o '[0-9]*')
+              echo "vendor part: start=$VNDSTART sectors, size=$VNDSIZE" \
+                >> "$WORK/vendor-selinux-ls.txt" 2>&1
+              if [ -z "$VNDSTART" ] || [ -z "$VNDSIZE" ]; then
+                echo "::error::NIE udalo sie sparsowac partycji vendor (start/size puste) - fix nie zadziala"
+                sfdisk -d "$WORK/vendor-mod.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+              fi
+              if [ -n "$VNDSTART" ] && [ -n "$VNDSIZE" ]; then
+                dd if="$WORK/vendor-mod.img" of="$WORK/vendor-part.img" \
+                  bs=512 skip="$VNDSTART" count="$VNDSIZE" status=none
+                debugfs -R "stat /etc/selinux/vendor_property_contexts" \
+                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+                debugfs -R "cat /etc/selinux/vendor_property_contexts" \
+                  "$WORK/vendor-part.img" > "$WORK/vendor-pc-orig.txt" 2>/dev/null
+                debugfs -w -R "rm /etc/selinux/vendor_property_contexts" \
+                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+                echo "--- po rm, stat (powinno byc 'not found'):" \
+                  >> "$WORK/vendor-selinux-ls.txt"
+                debugfs -R "stat /etc/selinux/vendor_property_contexts" \
+                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+                # fstab.ranchu vendora: USUWAMY (jak v2.19 - vold wtedy
+                # 'continuing anyways' i apexd przechodzi; z fstabem v2.20
+                # apexd padal na /system_ext/apex EACCES)
+                debugfs -R "cat /etc/fstab.ranchu" \
+                  "$WORK/vendor-part.img" > "$WORK/vendor-fstab-orig.txt" 2>/dev/null || true
+                debugfs -w -R "rm /etc/fstab.ranchu" \
+                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1 || true
+                dd if="$WORK/vendor-part.img" of="$WORK/vendor-mod.img" \
+                  bs=512 seek="$VNDSTART" count="$VNDSIZE" conv=notrunc status=none
+              fi
+              VENDORIMG="$SYSIMG/vendor.img"
+              [ -s "$WORK/vendor-mod.img" ] && VENDORIMG="$WORK/vendor-mod.img"
+              echo "[B] vendor: $VENDORIMG (pc-orig: $(wc -l < "$WORK/vendor-pc-orig.txt" 2>/dev/null || echo 0) linii)" \
+                >> "$WORK/emu-progress.log"
+
+              # ---- forensyka: selinux + property contexts NASZEGO obrazu
+              # (UWAGA: /etc -> /system/etc to symlink ABSOLUTNY - na runnerze
+              # wisial w prozni i dawal falszywy 'brak'; wlasciwa sciezka:
+              # system/etc/selinux) ----
+              sudo mkdir -p /tmp/mnt-our
+              if sudo mount -o ro,loop "$IMG" /tmp/mnt-our 2>/dev/null; then
+                { echo "--- /system/etc/selinux:"
+                  sudo ls -la /tmp/mnt-our/system/etc/selinux/ 2>&1
+                  echo "--- plat_property_contexts (head 12 + wc):"
+                  sudo head -12 /tmp/mnt-our/system/etc/selinux/plat_property_contexts 2>&1
+                  sudo wc -l /tmp/mnt-our/system/etc/selinux/plat_property_contexts 2>&1
+                  echo "--- plat_property_contexts (tail 25):"
+                  sudo tail -25 /tmp/mnt-our/system/etc/selinux/plat_property_contexts 2>&1
+                  echo "--- linie z znakami non-ASCII (potencjalna trucizna parsera):"
+                  sudo grep -nE '[^ -~]' /tmp/mnt-our/system/etc/selinux/plat_property_contexts 2>&1 | head -10
+                  echo "--- czy jest SEPolicy.zip (apex):"
+                  sudo ls -la /tmp/mnt-our/system/etc/selinux/apex/ 2>&1
+                } > "$WORK/our-selinux-ls.txt" 2>&1
+                { echo "=== init / bootstrap libc: rozmiary:"
+                  sudo ls -la /tmp/mnt-our/system/bin/init \
+                    /tmp/mnt-our/system/lib64/bootstrap/libc.so 2>&1
+                  echo "=== strings init: property/serialize:"
+                  sudo strings /tmp/mnt-our/system/bin/init 2>/dev/null \
+                    | grep -iE 'propert|__properties__|serializ' | head -40
+                  echo "=== strings init: komunikaty o bledach:"
+                  sudo strings /tmp/mnt-our/system/bin/init 2>/dev/null \
+                    | grep -iE 'unable to|failed to' | head -30
+                  echo "=== strings bootstrap libc: __properties__:"
+                  sudo strings /tmp/mnt-our/system/lib64/bootstrap/libc.so 2>/dev/null \
+                    | grep -E '__properties__|property_info' | head -20
+                } > "$WORK/our-init-strings.txt" 2>&1
+                sudo cp /tmp/mnt-our/system/bin/init "$WORK/init-donor" 2>>"$WORK/our-init-strings.txt"
+                sudo umount /tmp/mnt-our 2>/dev/null
+              fi
+
+              : > "$WORK/our-xattrs.txt"
+              OURIMG="$IMG"
+              for FSEL in \
+                /system/etc/selinux/plat_property_contexts \
+                /system/etc/selinux/plat_sepolicy.cil \
+                /system/etc/selinux/plat_file_contexts \
+                /system/bin/init; do
+                {
+                  echo "===== $FSEL"
+                  debugfs -R "stat $FSEL" "$OURIMG" 2>&1 | grep -E "Inode:|Mode:|Size:|security.selinux|Links:" \
+                    || echo "(stat fail)"
+                } >> "$WORK/our-xattrs.txt"
+              done
+              echo "[B] xattr-check: $(grep -c 'security.selinux' "$WORK/our-xattrs.txt")/4 plikow ma etykiete" \
+                >> "$WORK/emu-progress.log"
+
+              # ---- DISASM: dokladne miejsce crashu PropertyInit ----
+              # pc=0x123ad0 stabilny w kazdym runie; PropertyInit()+1968 to
+              # duzo wiecej niz czysty AOSP - init zawiera kod Lenovo
+              # (lgsi_prop_init). Czytamy maszynowy kod wokol crashu.
+              if [ -s "$WORK/init-donor" ]; then
+                pip install -q capstone pyelftools >/dev/null 2>&1 \
+                  || pip3 install -q --break-system-packages capstone pyelftools >/dev/null 2>&1
+                T="$GITHUB_WORKSPACE/kit-mysticalos3/tools/disasm_propertyinit.py"
+                D="$WORK/init-donor"
+                : > "$WORK/disasm-crash.txt"
+                dis() { echo "" >> "$WORK/disasm-crash.txt"
+                        echo "===== $1" >> "$WORK/disasm-crash.txt"
+                        shift
+                        python3 "$T" "$D" "$@" >> "$WORK/disasm-crash.txt" 2>&1; }
+                dis "CreateSerializedPropertyInfo (0x122bf0, lokalna; sciezki plikow + ciche powroty):" \
+                  0x122bf0 0x123330
+                dis "FUNKCJA 0x2246f0 = PLT __system_property_area_init (kontekst):" \
+                  0x2246f0 0x224700
+                dis "xref: 'Unable to serialize property contexts':" \
+                  find "Unable to serialize property contexts"
+                dis "xref: 'Unable to write serialized property infos to file':" \
+                  find "Unable to write serialized property infos to file"
+                dis "xref: 'setupOneLgsiProperty' (kod Lenovo lgsi):" \
+                  find "setupOneLgsiProperty"
+                dis "xref: 'Failed to initialize property area':" \
+                  find "Failed to initialize property area"
+                dis "xref: 'Failed to load serialized property info file':" \
+                  find "Failed to load serialized property info file"
+                dis "PropertyInit GLOWA (0x123330-0x123700):" 0x123330 0x123700
+                dis "PropertyInit OGON (0x123700-0x123ad8):" 0x123700 0x123ad8
+                dis "funkcja 0x11e9c0 (InitPropertySet? lgsi?):" 0x11e600 0x11ea80
+                dis "statyczna tabela 0x227400-0x227640 (data):" data 0x227400 0x227640
+                dis "imports (dynsym, pelne):" imports
+                dis "PLT mapa (pelna; do grepa):" plt
+                echo "[B] disasm: $(wc -l < "$WORK/disasm-crash.txt") linii" \
+                  >> "$WORK/emu-progress.log"
+              fi
+
+              cd "$WORK"
+
+              echo "[B] qemu: super 4-partycyjny + data + metadata - BOOT 1:1" | tee -a "$WORK/emu-progress.log"
+              # permissive: qcow... w VM nie chcemy falszywych FAILow z rozjazdu
+              # polityki lenovo-system vs ranchu-vendor; crashe frameworku
+              # (FATAL EXCEPTION) sa lapano niezaleznie od SELinux
+              RAMDISK2="$RAMDISK"
+              [ -s "$WORK/ramdisk-mod.img" ] && RAMDISK2="$WORK/ramdisk-mod.img"
+              echo "[B] ramdisk: $RAMDISK2" | tee -a "$WORK/emu-progress.log"
+
+              # ---- FORENSYKA PROPERTY: typy contexts vs CIL ----
+              : > "$WORK/propctx-report.txt"
+              debugfs -R "cat /etc/selinux/vendor_sepolicy.cil" \
+                "$WORK/vendor-part.img" > "$WORK/vendor_sepolicy.cil" 2>/dev/null
+              sudo mkdir -p /tmp/mnt-ctx
+              if sudo mount -o ro,loop "$IMG" /tmp/mnt-ctx 2>/dev/null; then
+                for D in $CTXDIRS; do
+                  sudo python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/propctx.py" check \
+                    "/tmp/mnt-ctx$D" --extra-cil "$WORK/vendor_sepolicy.cil" \
+                    >> "$WORK/propctx-report.txt" 2>&1 || true
+                done
+                sudo umount /tmp/mnt-ctx 2>/dev/null || true
+                echo "[B] propctx-report.txt gotowy" | tee -a "$WORK/emu-progress.log"
+              else
+                echo "[B] UWAGA: montowanie ro obrazu pod forensyke nie wyszlo" \
+                  | tee -a "$WORK/emu-progress.log"
+              fi
+
+              # ---- SUPER: 4 logiczne partycje; GPT name=super na vdd ----
+              build_super "$WORK/gpt-super.txt"
+
+              run_qemu "$WORK/qemu-console.log" "$WORK/qemu.log"
+              QPID=$!
+              echo "[B] qemu PID $QPID" | tee -a "$WORK/emu-progress.log"
+              # czekaj na adb tcp (do 30 min) - konsola rosnie rownolegle
+              for i in $(seq 1 180); do
+                sleep 10
+                timeout 10 adb connect localhost:5555 >/dev/null 2>&1
+                if timeout 10 adb -s localhost:5555 shell true >/dev/null 2>&1; then
+                  ok_dev=1; break
+                fi
+                if ! kill -0 $QPID 2>/dev/null; then
+                  echo "[B] qemu PADL po ~$((i*10)) s" | tee -a "$WORK/emu-progress.log"
+                  break
+                fi
+              done
+              echo "[B] adb-device=$ok_dev" | tee -a "$WORK/emu-progress.log"
+              echo "[B] PROPERTY_FATAL_F1=$(grep -ac 'Failed to initialize property area' "$WORK/qemu-console.log" 2>/dev/null) / BOOTLOOPS_F1=$(grep -ac 'Run /init' "$WORK/qemu-console.log" 2>/dev/null)" | tee -a "$WORK/emu-progress.log"
+              if [ "$ok_dev" = "1" ]; then
+                export ANDROID_SERIAL=localhost:5555
+                EMU_PATH=qemu
+              fi
+            else
+              echo "[B] brak kernel/ramdisk w sysimg - nie ma fallbacku" \
+                | tee -a "$WORK/emu-progress.log"
+            fi
+          fi
+
+          # ---------- faza boot (do 200 min) ----------
+          boot=0
+          if [ "$ok_dev" = "1" ]; then
+            for i in $(seq 1 240); do
+              sleep 50
+              BC=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+              UP=$(adb shell cat /proc/uptime 2>/dev/null | tr -d '\r' | cut -d' ' -f1)
+              ZG=$(adb shell getprop init.svc.zygote 2>/dev/null | tr -d '\r')
+              echo "t=$((i*50))s bc='$BC' uptime='$UP' zygote='$ZG' path=$EMU_PATH" \
+                >> "$WORK/emu-progress.log"
+              if [ "$BC" = "1" ]; then boot=1; break; fi
+            done
+          fi
+          # ---------- faza 2: FIX-TEST property_contexts + naturalny boot ----------
+          # (nieznane typy -> default_prop; polityka w locie ~9 s; 45 min na adb)
+          if [ "${EMU_PATH:-}" != "emulator" ] && [ "$boot" = "0" ] && [ -s "$WORK/qemu-console.log" ]; then
+            pkill -f qemu-system-aarch64 2>/dev/null; sleep 3
+            sudo mkdir -p /tmp/mnt-ctx
+            FIXED=0
+            if sudo mount -o rw,loop "$IMG" /tmp/mnt-ctx 2>/dev/null; then
+              : > "$WORK/propctx-fix.txt"
+              for D in $CTXDIRS; do
+                sudo python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/propctx.py" fix \
+                  "/tmp/mnt-ctx$D" --extra-cil "$WORK/vendor_sepolicy.cil" \
+                  2>&1 | tee -a "$WORK/propctx-fix.txt" | tee -a "$WORK/emu-progress.log"
+              done
+              # ZYGOTE: obraz nie ma init.zygote64.rc -> kanoniczny AOSP rc + ro.zygote
+              sudo mkdir -p /tmp/mnt-ctx/system/etc/init/hw
+              sudo cp "$GITHUB_WORKSPACE/kit-mysticalos3/tools/init.zygote64.rc" \
+                /tmp/mnt-ctx/system/etc/init/hw/init.zygote64.rc
+              sudo grep -q "^ro.zygote=" /tmp/mnt-ctx/system/build.prop \
+                || echo "ro.zygote=zygote64" | sudo tee -a /tmp/mnt-ctx/system/build.prop
+              echo "[B2] zygote rc OK" | tee -a "$WORK/emu-progress.log"
+              sudo umount /tmp/mnt-ctx 2>/dev/null || true
+              FIXED=1
+            else
+              echo "[B2] montowanie rw nie wyszlo - brak fazy 2" | tee -a "$WORK/emu-progress.log"
+            fi
+            if [ "$FIXED" = "1" ]; then
+              build_super "$WORK/gpt-super2.txt"
+              echo "[B2] fix OK -> super -> boot (45 min)" | tee -a "$WORK/emu-progress.log"
+              run_qemu "$WORK/qemu-console2.log" "$WORK/qemu2.log"
+              for i in $(seq 1 54); do
+                sleep 50
+                timeout 10 adb connect localhost:5555 >/dev/null 2>&1
+                if timeout 10 adb -s localhost:5555 shell true >/dev/null 2>&1; then
+                  BC=$(timeout 10 adb -s localhost:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+                  echo "[B2] t=$((i*50))s bc='$BC'" >> "$WORK/emu-progress.log"
+                  if [ "$BC" = "1" ]; then boot=1; EMU_PHASE2=1; break; fi
+                fi
+                kill -0 $QPID 2>/dev/null || { echo "[B2] qemu padl po ~$((i*50))s" | tee -a "$WORK/emu-progress.log"; break; }
+              done
+              echo "[B2] PROPERTY_FATAL_F2=$(grep -ac 'Failed to initialize property area' "$WORK/qemu-console2.log" 2>/dev/null) / BOOTLOOPS_F2=$(grep -ac 'Run /init' "$WORK/qemu-console2.log" 2>/dev/null)" | tee -a "$WORK/emu-progress.log"
+              echo "[B2] BOOT_FIXTEST=$boot" | tee -a "$WORK/emu-progress.log"
+            fi
+          fi
+
+          echo "BOOT_COMPLETED=$boot (path=$EMU_PATH)" | tee -a "$WORK/emu-progress.log"
+          {
+            echo "EMU_BOOT=$boot"
+            echo "EMU_PATH=$EMU_PATH"
+          } >> "$GITHUB_ENV"
+          exit 0
+
+      - name: "4. werdykt + pelne logi (FATAL/AVC/konsola)"
+        if: always()
+        run: |
+          set +e
+          set -uo pipefail
+          export PATH="$ANDROID_SDK_ROOT/platform-tools:$PATH"
+          export ANDROID_SERIAL="${ANDROID_SERIAL:-localhost:5555}"
+          # kazde adb z timeoutem; brak urzadzenia = puste pliki, nie hang
+          if [ "${EMU_PATH:-}" = "emulator" ]; then export ANDROID_SERIAL=emulator-5554; fi
+          if timeout 45 adb devices 2>/dev/null | grep -q "device$\|offline"; then
+            timeout 300 adb logcat -b all -d > "$WORK/emu-logcat-full.txt" 2>/dev/null
+            timeout 90 adb shell getprop > "$WORK/emu-props.txt" 2>/dev/null
+            timeout 90 adb shell dmesg > "$WORK/emu-dmesg.txt" 2>/dev/null
+          else
+            : > "$WORK/emu-logcat-full.txt"
+            echo "(adb: brak zywego urzadzenia)" > "$WORK/emu-props.txt"
+            : > "$WORK/emu-dmesg.txt"
+            timeout 45 adb connect localhost:5555 >/dev/null 2>&1
+            if timeout 60 adb -s localhost:5555 shell true >/dev/null 2>&1; then
+              timeout 300 adb -s localhost:5555 logcat -b all -d > "$WORK/emu-logcat-full.txt" 2>/dev/null
+              timeout 90 adb -s localhost:5555 shell getprop > "$WORK/emu-props.txt" 2>/dev/null
+              timeout 90 adb -s localhost:5555 shell dmesg > "$WORK/emu-dmesg.txt" 2>/dev/null
+            fi
+          fi
+          V=error
+          if [ "${EMU_BOOT:-none}" = "1" ]; then V=pass
+          elif [ "${EMU_BOOT:-none}" = "0" ]; then V=fail
+          fi
+          {
+            echo "# emuboot run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## Werdykt: $V (sciezka: ${EMU_PATH:-brak})"
+            if [ "$V" = "pass" ]; then
+              echo "**PASS** - MysticalOS UKONCZYL boot w VM (arm64, API 33, ten sam obraz co na tablet)."
+            elif [ "$V" = "fail" ]; then
+              echo "**FAIL** - bootloop/hang w VM. Jesli to samo co na tabletu - MAMY ODTWORZONY problem; patrz FATAL/konsola."
+            else
+              echo "**ERROR** - zadne srodowisko nie wystartowalo; patrz emu.log / qemu.log / konsola."
+            fi
+            echo
+            echo "## Warunki testu"
+            echo '- obraz: MysticalOS_0.5_DSU_nofooter.img z release (sha256 OK)'
+            echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
+            echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
+            echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'
+            echo '- v2.21: POWROT do stanu v2.19 (vendor bez fstab.ranchu - vold continuing anyways, apexd OK) + zygote fix (init.zygote64.rc + ro.zygote); v2.20 z fstabem vendora -> apexd EACCES /system_ext/apex -> bootstrap-apexd-failed'
+            echo '- faza 1: BOOT 1:1 (bez patchy). faza 2 (jesli 1:1 padlo): NOP-patch property FATAL-i (0x12337c/0x12339c)'
+            echo
+            echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
+            echo "## vendor/etc/fstab.ranchu PRZED nadpisaniem (zrodlo volda!)"; echo '```'
+            cat "$WORK/vendor-fstab-orig.txt" 2>/dev/null || echo "(brak - vendor nie mial fstab.ranchu)"
+            echo '```'
+            echo "## FORENSYKA PROPERTY: contexts vs typy polityki (propctx.py check - KLUCZOWE)"; echo '```'
+            cat "$WORK/propctx-report.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## GPT super (sfdisk dump - faza 1)"; echo '```'
+            cat "$WORK/gpt-super.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## wczesna konsola fazy 1: cmdline + by-name/mapper (DOWOD fixu boot_devices)"; echo '```'
+            grep -aiE "Kernel command line|by-name|mapper|device-mapper: (create|reload)|liblp|libfs_mgr|super" "$WORK/qemu-console.log" 2>/dev/null | head -30
+            echo '```'
+            echo "## FAZA 2 (naturalny boot, bez selinux=0 - jak na tablecie): konsola (tail 220)"; echo '```'
+            tail -220 "$WORK/qemu-console2.log" 2>/dev/null || echo "(brak - faza 2 nie ruszyla)"
+            echo '```'
+            echo "## FAZA 2: SELinux/zygote/uslugi (grep calej konsoli) + FIX property_contexts"; echo '```'
+            cat "$WORK/propctx-fix.txt" 2>/dev/null | grep -aE "FIX|NIEZNANE|PODSUMOWANIE" | head -20
+            echo "--- counts (pelna konsola fazy 2):"
+            echo "PROPERTY_FATAL_F2=$(grep -ac 'Failed to initialize property area' "$WORK/qemu-console2.log" 2>/dev/null)"
+            echo "BOOTLOOPS_F2=$(grep -ac 'Run /init' "$WORK/qemu-console2.log" 2>/dev/null)"
+            grep -aiE "zygote|apexd|Unable to read|class_start|servicemanager|surfaceflinger|boot_completed|vold|received signal|updatable" "$WORK/qemu-console2.log" 2>/dev/null | head -45
+            echo '```'
+            echo "## qemu/konsola szeregowa (kernel+init; tail 200)"; echo '```'
+            tail -200 "$WORK/qemu-console.log" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## qemu stderr"; echo '```'
+            tail -30 "$WORK/qemu.log" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## fstab (multi-cpio ramdisk + sysimg system.img) - KLUCZOWE"; echo '```'
+            cat "$WORK/fstab-all.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## fstab MODYFIKOWANY (v2.11: system LOGICAL z super, vendor by-name vdb1, data vdc, metadata vda)"; echo '```'
+            cat "$WORK/fstab-mod.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## ramdisk: pelna lista plikow (multi-cpio)"; echo '```'
+            head -100 "$WORK/ramdisk-list.txt" 2>/dev/null || echo "(brak)"
+            echo "wydobyto: $(cat "$WORK/ramdisk-extract.log" 2>/dev/null | tail -1)"
+            echo '```'
+            echo "## qemu bundled z emulatora SDK: maszyny (ranchu?)"; echo '```'
+            cat "$WORK/bundled-qemu.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## konsola: petle boot + grep init/fs_mgr/Fatal (caly plik)"; echo '```'
+            echo "petle (Run /init): $(grep -ac 'Run /init' "$WORK/qemu-console.log" 2>/dev/null)"
+            grep -aE 'init:|fs_mgr|Fatal|not found|Failed|mount|abort' \
+              "$WORK/qemu-console.log" 2>/dev/null | tail -100
+            echo '```'
+            echo "## konsola: property/serialize/libc (grep; prawdziwa przyczyna crashu PropertyInit)"; echo '```'
+            grep -aiE 'propert|serializ|libc|EACCES|Unable|__properties__|permission denied|context' \
+              "$WORK/qemu-console.log" 2>/dev/null | tail -60
+            echo '```'
+            echo "## GPT: nasz system / vendor / ranchu-system(kontrola)"; echo '```'
+            cat "$WORK/gpt-sys.txt" "$WORK/gpt-vendor.txt" "$WORK/gpt-ranchu-sys.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## NASZ obraz: /etc/selinux + plat_property_contexts (head)"; echo '```'
+            cat "$WORK/our-selinux-ls.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## vendor(ranchu)-mod: /etc/selinux + vendor_property_contexts (head przed wyzerowaniem)"; echo '```'
+            cat "$WORK/vendor-selinux-ls.txt" 2>/dev/null || echo "(brak)"
+            head -10 "$WORK/vendor-pc-orig.txt" 2>/dev/null
+            echo '```'
+            echo "## NASZ obraz: xattr-y SELinux (debugfs stat) - HIPOTEZA BOOTLOOPA"; echo '```'
+            cat "$WORK/our-xattrs.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## DISASM: crash site PropertyInit (PLT mapa + xrefy + glowy/tabelka/imports)"; echo '```'
+            head -1500 "$WORK/disasm-crash.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## DONOR init + bootstrap libc: strings (property/serialize) - czy Xiaomi zmienili sciezki"; echo '```'
+            cat "$WORK/our-init-strings.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## avdmanager (tworzenie AVD)"; echo '```'
+            cat "$WORK/avd-create.log" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## emulator SDK log (tail 40)"; echo '```'
+            tail -40 "$WORK/emu.log" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## FATAL EXCEPTIONS"; echo '```'
+            grep -c "FATAL EXCEPTION" "$WORK/emu-logcat-full.txt" 2>/dev/null
+            grep -B2 -A40 "FATAL EXCEPTION" "$WORK/emu-logcat-full.txt" 2>/dev/null | head -400
+            echo '```'
+            echo "## restarty uslug / watchdogi (konsola+logcat)"; echo '```'
+            { grep -aiE "system_server|zygote|watchdog|init:.*(reap|respawn|died)|Kernel panic" \
+                "$WORK/qemu-console.log" 2>/dev/null | head -40
+              grep -iE "watchdog|system_server died|Restarting" "$WORK/emu-logcat-full.txt" 2>/dev/null | head -20; } || true
+            echo '```'
+            echo "## AVC denials (top 25)"; echo '```'
+            { grep "avc: denied" "$WORK/emu-dmesg.txt" "$WORK/qemu-console.log" 2>/dev/null \
+                | sed 's/.*avc: /avc: /' | sort | uniq -c | sort -rn | head -25; } || true
+            echo '```'
+            echo "## getprop (istotne)"; echo '```'
+            grep -E "ro.build.version|ro.mysticalos|ro.hyperos|sys.boot_completed|init.svc" \
+              "$WORK/emu-props.txt" 2>/dev/null || true
+            echo '```'
+          } > "reports/emuboot-${GITHUB_RUN_ID}.md"
+          wc -l "reports/emuboot-${GITHUB_RUN_ID}.md"
+          head -60 "reports/emuboot-${GITHUB_RUN_ID}.md"
+          [ "$V" = "pass" ] || exit 1
+
+      - name: "5. evidence commit"
+        if: always()
+        run: |
+          set +e
+          set -uo pipefail
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          cp "$WORK/disasm-crash.txt" "reports/disasm-${GITHUB_RUN_ID}.txt" 2>/dev/null || true
+          cp "$WORK/vendor-pc-orig.txt" "reports/vendor-pc-${GITHUB_RUN_ID}.txt" 2>/dev/null || true
+          git add reports/ 2>/dev/null
+          git commit -m "emuboot: evidence run ${GITHUB_RUN_ID}" || echo "nic do commitu"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done
+
+      - name: "6. artifact (LOGI - bez obrazu!)"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emuboot-logs-${{ github.run_id }}
+          path: |
+            /tmp/emu/emu-progress.log
+            /tmp/emu/emu.log
+            /tmp/emu/avd-create.log
+            /tmp/emu/fstab-all.txt
+            /tmp/emu/fstab-mod.txt
+            /tmp/emu/ramdisk-list.txt
+            /tmp/emu/ramdisk-extract.log
+            /tmp/emu/bundled-qemu.txt
+            /tmp/emu/gpt-sys.txt
+            /tmp/emu/gpt-vendor.txt
+            /tmp/emu/gpt-ranchu-sys.txt
+            /tmp/emu/our-selinux-ls.txt
+            /tmp/emu/our-init-strings.txt
+            /tmp/emu/our-xattrs.txt
+            /tmp/emu/disasm-crash.txt
+            /tmp/emu/vendor-selinux-ls.txt
+            /tmp/emu/vendor-pc-orig.txt
+            /tmp/emu/qemu.log
+            /tmp/emu/qemu-console.log
+            /tmp/emu/qemu-console-control.log
+            /tmp/emu/qemu-control.log
+            /tmp/emu/emu-logcat-full.txt
+            /tmp/emu/emu-props.txt
+            /tmp/emu/emu-dmesg.txt
+            /tmp/emu/sdk-install.log
+          if-no-files-found: ignore
+          retention-days: 90

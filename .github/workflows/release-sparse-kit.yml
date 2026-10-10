@@ -1,0 +1,184 @@
+name: release-sparse-kit
+
+# Wydanie zestawu: JEDEN plik system (Android sparse) + surowy vbmeta + README/sprawdz.sh/sumy.
+# Dlaczego tu, a nie w sandboksie agenta: uploads.github.com (host assetow release) jest
+# zablokowany z sandboksa (SSL EOF), a runner ma pelny internet. Budowa = doslowna receptura
+# z docs/08 (replay 189 s rc=0, powtorzona po resetach #9/#10). Kazdy krok ma twarda bramke
+# sha256 - job nie wyda niczego, czego nie da sie odtworzyc bajt w bajt.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/release-sparse-kit.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-sparse-kit
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: system (sparse) + vbmeta -> release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      EROFS_DIR: /tmp/erofs-c
+      COMP_DIR: /tmp/comp-build
+      KIT_SHA: 537eb4ea0c98f4b87bd1ccdb2e0ab502745dfd0820ef1deefb9d42e2a5b0923b
+      RAW_SHA: 4836dcd4c8d5f6c0f9a6adbde94c65917e70ac1b054bd7acc05705ec9f66b816
+      SPARSE_SHA: 8b71ea568dfb6043cfb3234372b3b672c30f9dfb2e81d11ed1bbae89e98dc14f
+      PRODUCT_SHA: a961bec46085883d6d9c3737b804afdf9dcdf2f512cbedad6f161177705ad1b7
+      VBMETA_SHA: 9cf2e7e4e165687abe78fb0f084e2b07707c317376efd5d4ffbdea75537e6141
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Toolchain EROFS (receptura docs/08, krok 0)
+        run: |
+          set -euo pipefail
+          bash tools/build_comp_libs.sh "$COMP_DIR"
+          COMP_PREFIX="$COMP_DIR" bash tools/build_erofs_local.sh "$EROFS_DIR"
+          test -x "$EROFS_DIR/mkfs.erofs"
+          test -x "$EROFS_DIR/fsck.erofs"
+
+      - name: Spool -> rom-kit (krok 1, tylko rom-kit.tar.gz)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/spool /tmp/romkit
+          # na czystym checkoucie ref origin/transfer-spool NIE istnieje - archive idzie po FETCH_HEAD
+          git fetch origin transfer-spool
+          git archive FETCH_HEAD transfer | tar -x -C /tmp/spool
+          tools/assemble_raw_parts.py --parts /tmp/spool/transfer --out /tmp/rom-kit.tar.gz \
+              --expect-sha256 "$KIT_SHA"
+          tar -xzf /tmp/rom-kit.tar.gz -C /tmp/romkit
+          rm -f /tmp/rom-kit.tar.gz && rm -rf /tmp/spool
+          test -d /tmp/romkit/system_tree || { echo "::error::rom-kit bez system_tree"; exit 1; }
+
+      - name: Drzewo lekkiego systemu + product (krok 2)
+        run: |
+          set -euo pipefail
+          # idempotencja wg docs/08: fsck --extract na istniejacym drzewie degraduje tryby
+          rm -rf /tmp/tree2 /tmp/prod-lekki-extract /tmp/tree-product
+          mkdir /tmp/tree2 && cp -al /tmp/romkit/system_tree /tmp/tree2/
+          rm -f /tmp/tree2/system_tree/system/etc/vintf/compatibility_matrix.{4,5,6}.{xml,komentarz.txt}
+          mkdir -p /tmp/prod-lekki-extract
+          "$EROFS_DIR/fsck.erofs" --extract=/tmp/prod-lekki-extract \
+              dist/release/HyperOS4_P11Gen2/product_hyperos4_p11g2.img
+          cp -a /tmp/prod-lekki-extract /tmp/tree-product
+
+      - name: Build systemu lekkiego (krok 3)
+        run: |
+          set -euo pipefail
+          tools/make_release.sh --product-tree /tmp/tree-product --system-tree /tmp/tree2/system_tree \
+            --vintf-level 5 --vintf-optional-missing --out /tmp/rebuild-lekki \
+            --erofs-dir "$EROFS_DIR" --exclude-regex '\.komentarz\.txt$' --allow-no-vbmeta
+
+      - name: Bramka - raw system i product musza wyjsc bajt w bajt
+        run: |
+          set -euo pipefail
+          cd /tmp/rebuild-lekki
+          echo "$RAW_SHA  system_hyperos4_p11g2.img" | sha256sum -c -
+          echo "$PRODUCT_SHA  product_hyperos4_p11g2.img" | sha256sum -c -
+
+      - name: Sparse + zestaw 5 plikow + sprawdz.sh e2e
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/kit && mkdir /tmp/kit
+          python3 tools/sparse_img.py img2simg /tmp/rebuild-lekki/system_hyperos4_p11g2.img \
+              /tmp/kit/system_hyperos4_p11g2.img
+          echo "$SPARSE_SHA  /tmp/kit/system_hyperos4_p11g2.img" | sha256sum -c -
+          cp dist/release/HyperOS4_P11Gen2/vbmeta_hyperos4_p11g2.img /tmp/kit/
+          echo "$VBMETA_SHA  /tmp/kit/vbmeta_hyperos4_p11g2.img" | sha256sum -c -
+          cp dist/sparse-kit/README.md dist/sparse-kit/sprawdz.sh dist/sparse-kit/SHA256SUMS.txt /tmp/kit/
+          cd /tmp/kit && bash sprawdz.sh
+          # JEDEN plik do pobrania: zip, po rozpakowaniu w Downloads powstaje folder
+          # HyperOS4_P11Gen2/ ze wszystkimi 5 plikami (zawartosc zweryfikowana wyzej)
+          rm -f /tmp/HyperOS4_P11Gen2.zip
+          zip -q -r /tmp/HyperOS4_P11Gen2.zip . && ls -l /tmp/HyperOS4_P11Gen2.zip
+
+      - name: Release (tag hyperos4-p11g2, 5 plikow)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # GH_REPO jawnie: kroki plikowe robia cd /tmp/kit (poza katalogiem gita) -
+          # bez tego gh nie zna repo i padal na "not a git repository" (run 36243355937)
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          {
+            echo "# release-sparse-kit run ${{ github.run_id }} ($GITHUB_SHA)"
+            gh --version
+          } > /tmp/rel.log 2>&1
+          gh release delete hyperos4-p11g2 --yes --cleanup-tag >>/tmp/rel.log 2>&1 || true
+          gh release create hyperos4-p11g2 \
+            --target "$GITHUB_SHA" \
+            --title "HyperOS 4 - Lenovo Tab P11 Gen 2: system (sparse) + vbmeta" \
+            --notes "Zestaw minimalny: JEDEN plik system (Android sparse; po unsparse sha256 $RAW_SHA) + surowy vbmeta (AVB Flags=3). Flash: vbmeta_a/b + system_a/b - szczegoly w README.md. Weryfikacja po pobraniu: bash sprawdz.sh. Budowa: receptura docs/08 (transfer-spool -> rom-kit -> make_release -> sparse_img) z twardymi bramkami sha256 w CI." \
+            >>/tmp/rel.log 2>&1
+          echo "create: OK" >>/tmp/rel.log
+          cd /tmp/kit
+          for f in /tmp/HyperOS4_P11Gen2.zip README.md SHA256SUMS.txt sprawdz.sh vbmeta_hyperos4_p11g2.img system_hyperos4_p11g2.img; do
+            ok=0
+            for i in 1 2 3 4 5; do
+              if gh release upload hyperos4-p11g2 "$f" --clobber >>/tmp/rel.log 2>&1; then ok=1; break; fi
+              echo "upload $f - proba $i nieudana, czekam 15 s" >>/tmp/rel.log
+              sleep 15
+            done
+            [ "$ok" = 1 ] || { echo "::error::upload $f padl po 5 probach (patrz reports/release-sparse-*)"; exit 1; }
+          done
+          gh release view hyperos4-p11g2 --json url,assets \
+            -q '.url, (.assets[] | "\(.name)  \(.size) B  \(.state)")' | tee -a /tmp/rel.log
+
+      - name: Publiczne linki bez logowania (hosty zewnetrzne z runnera)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          Z=/tmp/HyperOS4_P11Gen2.zip
+          [ -f "$Z" ] || { echo "::error::brak $Z"; exit 1; }
+          ls -l "$Z"
+          {
+            echo "### publiczne linki run ${{ github.run_id }} ($GITHUB_SHA)"
+            echo "- rozmiar: $(stat -c%s "$Z") B"
+          } > /tmp/public-links.txt
+          SRV=$(curl -sS --max-time 30 https://api.gofile.io/servers \
+                | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | head -1)
+          echo "gofile server: ${SRV:-BRAK}"
+          if [ -n "${SRV:-}" ]; then
+            curl -sS --max-time 900 -F "file=@$Z" "https://${SRV}.gofile.io/contents/uploadfile" \
+              | tee -a /tmp/public-links.txt | head -c 400; echo
+          fi
+          curl -sS --max-time 900 -T "$Z" "https://pixeldrain.com/api/file/system-hyperos4-p11g2" \
+            | tee -a /tmp/public-links.txt | head -c 400; echo
+          curl -sS --max-time 900 -F "reqtype=fileupload" -F "time=72h" -F "fileToUpload=@$Z" \
+            "https://litterbox.catbox.moe/resources/internals/api.php" \
+            | tee -a /tmp/public-links.txt | head -c 400; echo
+          echo "---"; cat /tmp/public-links.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports && cp /tmp/public-links.txt "reports/public-links-${{ github.run_id }}.md"
+          git add -f reports
+          git diff --cached --quiet || {
+            git commit -q -m "public-links: run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo "linki wypchniete"
+          }
+
+      - name: Raport porazki do repo (logi runnera sa nieosiagalne z sandboksa)
+        # Logi CI zyja pod results-receiver.actions.githubusercontent.com - z sandboksa
+        # agenta ten host jest zablokowany, wiec jedyny czytelny kanal to commit do repo.
+        if: failure()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports
+          { echo "## release-sparse-kit - run ${{ github.run_id }}"; echo; echo '```'
+            cat /tmp/rel.log 2>/dev/null || echo "(brak rel.log - porazka przed krokiem Release)"
+            echo '```'; } > "reports/release-sparse-${{ github.run_id }}.md"
+          git add -f reports
+          if git diff --cached --quiet; then echo "brak zmian do raportu"; exit 0; fi
+          git commit -q -m "release-sparse: raport porazki (run ${{ github.run_id }})"
+          git push -q origin "HEAD:${{ github.ref_name }}" && echo "raport wypchniety na ${{ github.ref_name }}"

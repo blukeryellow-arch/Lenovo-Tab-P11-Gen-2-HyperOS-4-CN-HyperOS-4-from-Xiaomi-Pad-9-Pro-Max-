@@ -1,0 +1,14 @@
+<manifest version="1.0" type="device">
+    <hal>
+        <name>android.hardware.media.c2</name>
+        <transport>hwbinder</transport>
+        <version>1.2</version>
+        <interface>
+            <name>IComponentStore</name>
+            <instance>default</instance>
+        </interface>
+        <!-- Tulip_t code for OTULIPT-101 by tianjh3 at 20230224 start-->
+        <fqname>@1.0::IComponentStore/default1</fqname>
+        <!-- Tulip_t code for OTULIPT-101 by tianjh3 at 20230224 start-->
+    </hal>
+</manifest>

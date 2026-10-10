@@ -1,0 +1,754 @@
+name: release-mystical1
+# retrigger: bump 2026-10-02 noc - donor-cache retry (Drive dlawil 5h; probujemy ponownie)
+# tych samych skladnikach - build jest deterministyczny).
+
+# MysticalOS GSI-1 = "V16 GSI REPACK" ze zlecenia usera (28 IX wieczor):
+# NIE kompilujemy AOSP - to DETERMINISTYCZNY REPACK prekompilowanego obrazu,
+# dokładnie ta sama klasa pipeline'u co HyperOS v1-v16.
+#
+# Pipeline (zlecenie doslowne):
+#   1. OFICJALNY Google AOSP Android 17 GSI (arm64, bez GMS) = canvas.
+#      aosp_arm64-exp-CP41.260831.007-16416850-5e61c946.zip (build 24 IX 2026,
+#      security patch Sep 2026), sha256 opublikowany przez Google = twardy pin.
+#   2. PURGE GMS: audyt /system/{app,priv-app} + etc/{permissions,sysconfig}
+#      pod katem Google/GMS/SetupWizard -> wymuszone usuniecie wszystkiego
+#      znalezionego (oczekiwany wynik na aosp_*: 0 - to receipt czystosci).
+#   3. INJECT: microG GmsCore v0.3.16.252432 + FakeStore (com.android.vending)
+#      do /system/priv-app (z privapp-permissions), Aurora Store 4.8.4 wariant
+#      PRELOAD (do ROM-ow) do /system/app, + default-permissions (lokalization
+#      background + powiadomienia nadane out-of-the-box).
+#   4. TRANSPLANT HyperOS: MiuiHome / MiuiGallery / MiuiMusic / MiuiFileManager
+#      + fonty Mi* z pelnego product.img donora do /system/app + /system/fonts.
+#      TIER 1: product.img z Drive (md5 Google = pin). TIER 2 (aktywny od 28 IX
+#      noca): oficjalny fastboot ROM CN yingtian z CDN Xiaomi (stream tar wycina
+#      product.img; md5 calego tgz = pin). TIER 3: fonty Mi z product-assets.tar.gz
+#      (spool w repo). Audyt zaleznosci: licznik klas miui.* w dex
+#      kazdego APK (Launcher Xiaomi bez frameworku MIUI bedzie padal - GSI
+#      zachowuje Launcher3 jako fallback; to jest udokumentowany kompromis).
+#   5. KONTEKSTY SELinux: debugfs rdump traci xattr, a GSI jest ENFORCING ->
+#      pre-flight tools/fc_fixup.py (dry-run: 0 niedopasowanych) + wypiekanie
+#      mkfs.erofs --file-contexts=<GSI>/system/etc/selinux/plat_file_contexts
+#      przez SHIM libselinux (tools/selinux_shim - bez systemowej biblioteki).
+#   6. PACK: EROFS+lz4, -T 0 -U <uuid> = deterministyczny; niesparse'owany
+#      system.img -> tar.gz + zip + linki publiczne + release GH.
+#
+# Architektura DSU (z analiza bugreportow v14/v15): gosc = nasz SYSTEM + 
+# product/system_ext/vendor LENOVO A14 hosta. AOSP GSI nie ma wlasnosciowych
+# zaleznosci Xiaomi (to bylo zabijalo HyperOS: biały ekran -> v15 RGB flash ->
+# twarda smierc) - dlatego baza AOSP omija cala klase awarii display.
+#
+# Odmowa utrzymana (3x ten sam substrat): Rust-refactor binder/SF/SystemServer
+# i "kompilacja AOSP" - nie ma zrodel ani zasobow; repack obrazow to cala
+# mozliwosc tego srodowiska i wlasnie ja wykonuje.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/release-mystical1.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-mystical1
+  cancel-in-progress: true
+
+jobs:
+  mystical1:
+    name: MysticalOS GSI-1 (AOSP 17 GSI repack - microG + Aurora + transplant HyperOS) -> release + linki
+    runs-on: ubuntu-latest
+    # 300 min: stream fastboot ROM 12,6 GB z CDN Xiaomi. Receipty: 36474547084
+    # (85+ min, timeout 100), 36516170816 (speed-pick wybral bkt-sgp 3,7 MB/s
+    # burst, ale stream nie zdazyl w 180 min = CDN dlawi po burst). Stad guard
+    # --speed-limit 100k/90s (porzucenie mulajacego transferu -> nastepny mirror)
+    # + budzet 300 min. Raz zbudowany donor-cache konczy te epoke.
+    timeout-minutes: 300
+    env:
+      EROFS_DIR: /tmp/erofs-c
+      COMP_DIR: /tmp/comp-build
+      # --- GSI (oficjalny Google, Android 17, AOSP arm64 bez GMS) ---
+      # Priorytet 1 (QPR2-beta, 24 IX 2026). Google nie ujawnia href-ow pobrania
+      # (licencja/flash-tool), a wzorzec sciezki niepewny (run 36467193303: 404 w <1 s)
+      # -> krok Skladniki SONDUJE 3 buildy x 3 wzorce i bierze pierwszy z HTTP 200
+      # (kandydaci QPR1-stable CP3A i stable CP2A z pełnymi sha z tabel Google).
+      GSI_URL: https://dl.google.com/android/gsi/aosp_arm64-exp-CP41.260831.007-16416850-5e61c946.zip
+      GSI_SHA256: 5e61c946ee45680365336968827bf62509d90f66ed78938f88e4deedda40a7fe
+      # --- microG v0.3.16.252432 (GmsCore + FakeStore/Companion) ---
+      GMS_APK_URL: https://github.com/microg/GmsCore/releases/download/v0.3.16.252432/com.google.android.gms-252432032.apk
+      GMS_APK_SIZE: "108051947"
+      VENDING_APK_URL: https://github.com/microg/GmsCore/releases/download/v0.3.16.252432/com.android.vending-84022632.apk
+      VENDING_APK_SIZE: "4205370"
+      # --- Aurora Store 4.8.4 (wariant preload - do wbudowania w ROM) ---
+      AURORA_URL: https://gitlab.com/-/project/6922885/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk
+      # --- donor HyperOS: pelny product.img (tu sa MiuiHome/Gallery/Music/FileManager) ---
+      # TIER 1: Drive (ID ponizej; size+md5 walidowane) - plik zniknal z Drive 28 IX
+      # (get_file=404), czeka na ponowny upload usera.
+      # TIER 2 (AKTYWNY): oficjalny fastboot ROM CN yingtian (HyperOS 4.0.11.0.XBMCNXM)
+      # z CDN Xiaomi - katalog xmfirmwareupdater.com (to samo zrodlo co miuirom.org);
+      # stream tar wycina product.img bez zapisu 12,6 GB tgz; md5 tgz = pin
+      # (60633b4ba6490a2bd98bb58df3b9d850, z oficjalnej strony pobrania).
+      # TIER 3: product-assets.tar.gz ze spoola (fonty Mi) - gdy 1 i 2 zawioda.
+      PRODUCT_DRIVE_ID: 1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1
+      PRODUCT_SIZE: "6445187072"
+      PRODUCT_MD5: 2b8d393435091c45c864c525ce769340
+      PRODUCT_ASSETS_SHA256: a53ff508fb4e9224350635fb87a5bc60e8829504b93f86a61e4ae1963c063ff6
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Spool donorow (checkout transfer-spool)
+        # Zrodlo fallbackowe: product-assets.tar.gz (fonty Mi donora) z keeperskiego
+        # brancha transfer-spool (czastki <100 MB - limit plikow GitHub).
+        uses: actions/checkout@v4
+        with:
+          ref: transfer-spool
+          path: spool
+
+      - name: Toolchain EROFS (+ shim libselinux dla --file-contexts)
+        run: |
+          set -euo pipefail
+          bash tools/build_comp_libs.sh "$COMP_DIR"
+          COMP_PREFIX="$COMP_DIR" bash tools/build_erofs_local.sh "$EROFS_DIR"
+          # BRAMKA: bez --file-contexts caly pipeline kontekstow jest NOP-em
+          "$EROFS_DIR/mkfs.erofs" --help 2>&1 | grep -q -- --file-contexts
+          echo "mkfs.erofs --file-contexts: AKTYWNE (shim libselinux)"
+          df -h / | tail -1
+
+      - name: Donor HyperOS - transplanty z pelnego product.img (best-effort)
+        run: |
+          set -uo pipefail
+          # UWAGA dyskowa (receipt ENOSPC z v15): product.img 6,4 GB + pelna ekstrakcja
+          # (~10 GB) = ~17 GB peak. Dlatego: (a) ten krok PIERWSZY po toolchainie,
+          # (b) probojemy loop-mount EROFS przez sudo (peak ~7,5 GB), (c) fallbackiem
+          # jest pelna ekstrakcja TYLKO gdy jest miejsce, (d) sprzatamy natychmiast.
+          echo "== product.img donora (Drive $PRODUCT_DRIVE_ID, oczekiwane $PRODUCT_SIZE B, md5 $PRODUCT_MD5) =="
+          mkdir -p /tmp/keep/app /tmp/keep/fonts
+          REASON=""
+          MOUNTED=""
+          get_from_drive() { # $1=id $2=plik (obieg znany z build.yml/drive-probe)
+            local id=$1 out=$2 u sz act f
+            for u in \
+              "https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t&authuser=0" \
+              "https://drive.google.com/uc?export=download&confirm=t&id=$id"; do
+              rm -f "$out" /tmp/hdr.body /tmp/hdr.html
+              curl -sSL --retry 2 --connect-timeout 25 -c /tmp/dk.txt -D /tmp/hdr.head -o /tmp/hdr.body "$u" || continue
+              cp /tmp/hdr.body /tmp/hdr.html
+              if [ "$(stat -c%s /tmp/hdr.html 2>/dev/null || echo 0)" -gt 4096 ] && ! head -c 400 /tmp/hdr.html | grep -qi '<!doctype html'; then
+                mv /tmp/hdr.html "$out"; return 0
+              fi
+              if grep -qiE 'download warning|virus scan|can.t scan|too large' /tmp/hdr.html 2>/dev/null; then
+                python3 tools/drive_form_post.py --html /tmp/hdr.html --jar /tmp/dk.txt --out "$out" --id "$id" --log /tmp/post.log 2>/dev/null \
+                  && { sz=$(stat -c%s "$out" 2>/dev/null || echo 0); [ "$sz" -gt 4096 ] && ! head -c 400 "$out" | grep -qi '<!doctype html' && return 0; }
+              fi
+              if grep -qi 'drive.usercontent.google.com/download' /tmp/hdr.html 2>/dev/null; then
+                act=$(grep -o 'action="[^"]*"' /tmp/hdr.html | head -1 | sed 's/action="//;s/"$//')
+                [ -n "$act" ] || act="https://drive.usercontent.google.com/download"
+                for f in id uuid confirm export token; do
+                  eval "F_$f=\"$(sed -n 's/.*name="'$f'"[^>]*value="\([^"]*\)".*/\1/p' /tmp/hdr.html | head -1)\""
+                done
+                rm -f "$out"
+                curl -sSL --retry 2 --connect-timeout 25 -b /tmp/dk.txt -c /tmp/dk.txt -o "$out" -X POST "$act" \
+                  --data-urlencode "id=${F_id:-$id}" --data-urlencode "export=download" \
+                  ${F_uuid:+--data-urlencode "uuid=$F_uuid"} ${F_confirm:+--data-urlencode "confirm=$F_confirm"} ${F_token:+--data-urlencode "token=$F_token"} || continue
+                sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
+                if [ "$sz" -gt 4096 ] && ! head -c 400 "$out" | grep -qi '<!doctype html'; then return 0; fi
+              fi
+            done
+            return 1
+          }
+          if get_from_drive "$PRODUCT_DRIVE_ID" /tmp/product-donor.img; then
+            sz=$(stat -c%s /tmp/product-donor.img)
+            echo "pobrano: $sz B"
+            if [ "$sz" != "$PRODUCT_SIZE" ]; then REASON="rozmiar $sz != $PRODUCT_SIZE"; fi
+            if [ -z "$REASON" ]; then
+              echo "$PRODUCT_MD5  /tmp/product-donor.img" | md5sum -c - || REASON="md5 niezgodne z Google"
+            fi
+          else
+            REASON="Drive nie oddal pliku (link/udostepnienie)"
+          fi
+          # ---- TIER 2a: cache z release donor-cache (GitHub CDN = sekundy) ----
+          # Raz pozyskany product.img zapisujemy jako assety release "donor-cache"
+          # (czesci 1,6 GB + manifest); nastepne runy skladaja go z GitHub CDN
+          # zamiast streamowac 12,6 GB tgz z CDN Xiaomi (85-140+ min).
+          if [ -n "$REASON" ]; then
+            if gh release view donor-cache --json assets --jq '.assets[].name' 2>/dev/null | grep -q '^donor-product\.part\.'; then
+              echo "== TIER 2a: product.img z release donor-cache (GitHub CDN) ==" | tee -a /tmp/urlprobe.log
+              rm -rf /tmp/dcache && mkdir -p /tmp/dcache
+              if gh release download donor-cache --pattern 'donor-product.part.*' --pattern 'donor-product.manifest' --dir /tmp/dcache 2>/dev/null; then
+                PMD5=$(sed -n 's/^md5=//p' /tmp/dcache/donor-product.manifest 2>/dev/null)
+                PSZ=$(sed -n 's/^size=//p' /tmp/dcache/donor-product.manifest 2>/dev/null)
+                cat /tmp/dcache/donor-product.part.* > /tmp/product-donor.img
+                rm -rf /tmp/dcache
+                GOTMD5=$(md5sum /tmp/product-donor.img 2>/dev/null | awk '{print $1}')
+                GOTSZ=$(stat -c%s /tmp/product-donor.img 2>/dev/null || echo 0)
+                if [ -n "$PMD5" ] && [ "$GOTMD5" = "$PMD5" ] && [ "$GOTSZ" = "$PSZ" ]; then
+                  echo "TIER 2a OK: product.img $GOTSZ B z cache (md5 zgodne)" | tee -a /tmp/urlprobe.log
+                  REASON=""
+                else
+                  echo "TIER 2a niezgodne (md5=$GOTMD5 vs $PMD5, size=$GOTSZ vs $PSZ) - przechodze do CDN" | tee -a /tmp/urlprobe.log
+                  rm -f /tmp/product-donor.img
+                fi
+              else
+                echo "TIER 2a: download nie wyszedl - przechodze do CDN" | tee -a /tmp/urlprobe.log
+              fi
+            fi
+          fi
+          # ---- TIER 2: oficjalny fastboot ROM yingtian z CDN Xiaomi ----
+          # Pelny product.img donora zniknal z Drive (28 IX). Zrodlo zastepcze =
+          # fastboot ROM CN Xiaomi Pad 9 Pro Max "yingtian" (HyperOS 4.0.11.0.XBMCNXM,
+          # Android 17, 2026-09-16, z katalogu xmfirmwareupdater.com = to samo
+          # zrodlo co miuirom.org) - w srodku PELNY product.img z MiuiHome/Gallery/
+          # Music/FileManager. Strona pobrania ma 5 mirrorow CDN; hrefy wyciaga
+          # resolver HTML (jak przy GSI). STREAM: tgz 12,6 GB NIE ląduje na dysku -
+          # tar wycina w locie tylko product.img, a md5 CALEGO tgz liczone jest
+          # rownolegle ze strumienia (pelna weryfikacja bez zapisu 12,6 GB).
+          if [ -n "$REASON" ]; then
+            echo "== TIER 2: fastboot ROM yingtian (CDN Xiaomi) =="
+            ROM_PAGE="https://xmfirmwareupdater.com/hyperos/yingtian/stable/OS4.0.11.0.XBMCNXM/"
+            ROM_TGZ="yingtian-images-OS4.0.11.0.XBMCNXM-user-20260916.0000.00-17.0-cn-60633b4ba6.tgz"
+            ROM_MD5="60633b4ba6490a2bd98bb58df3b9d850"
+            AV2=$(df --output=avail -B1G /tmp | tail -1 | tr -dc '0-9')
+            echo "TIER2 miejsce na dysku: ${AV2}G (potrzeba >=7G na product.img)"
+            PAGE2=$(curl -sSL --connect-timeout 30 --max-time 120 "$ROM_PAGE") || PAGE2=""
+            MIRRORS=""
+            [ -n "$PAGE2" ] && MIRRORS=$(printf '%s' "$PAGE2" | sed 's/&amp;/\&/g' \
+              | grep -oE "https://[^\"'<> ]+/${ROM_TGZ}" | sort -u || true)
+            if [ -z "$MIRRORS" ]; then
+              # fallback: znane wzorce CDN Xiaomi (version-dir + filename; wzorzec
+              # z lat PUBLICZNYCH linkow bigota/bn.d/cdnorg/cdn-ota)
+              for CDNB in cdnorg.download.miui.com bigota.d.miui.com bn.d.miui.com cdn-ota.azureedge.net; do
+                CU="https://$CDNB/OS4.0.11.0.XBMCNXM/$ROM_TGZ"
+                CC=$(curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$CU" 2>/dev/null || echo ERR)
+                echo "SONDA TIER2 $CC $CU" | tee -a /tmp/urlprobe.log
+                if [ "$CC" = "200" ]; then MIRRORS="$CU"; break; fi
+              done
+            else
+              echo "TIER2 mirrory z HTML: $MIRRORS" | tee -a /tmp/urlprobe.log
+            fi
+            # wybor NAJSZYBSZEGO mirrora: pomiar 10 MB (range) z kazdego; run
+            # 36474547084 jechal 85+ min bo bral pierwszy z brzegu (~2,5 MB/s)
+            if [ -n "$MIRRORS" ]; then
+              MIRRORS=$(for U in $MIRRORS; do
+                SPD=$(curl -s -o /dev/null -w '%{speed_download}' -r 0-10485759 -L --connect-timeout 15 --max-time 45 "$U" 2>/dev/null || echo 0)
+                echo "TIER2 speed ${SPD%.*} B/s: $U" | tee -a /tmp/urlprobe.log
+                printf '%012.0f %s\n' "${SPD:-0}" "$U" 2>/dev/null || echo "000000000000 $U"
+              done | sort -rn | cut -d' ' -f2-)
+              echo "TIER2 kolejność wg szybkosci: $MIRRORS" | tee -a /tmp/urlprobe.log
+            fi
+            echo "TIER2 mirrory CDN: ${MIRRORS:-BRAK (receipt)}" | tee -a /tmp/urlprobe.log
+            if [ -z "$MIRRORS" ]; then
+              REASON="TIER2: brak mirrorow CDN w HTML strony pobrania"
+            elif [ "${AV2:-0}" -lt 7 ]; then
+              REASON="TIER2: za malo miejsca (${AV2}G < 7G)"
+            else
+              for U in $MIRRORS; do
+                echo "TIER2 proba: $U" | tee -a /tmp/urlprobe.log
+                rm -rf /tmp/romx && mkdir -p /tmp/romx
+                if curl -fL --retry 2 --connect-timeout 30 \
+                  --speed-limit 100000 --speed-time 90 "$U" 2>>/tmp/urlprobe.log \
+                  | tee >(md5sum > /tmp/rom-tgz.md5) \
+                  | tar -xz -C /tmp/romx --wildcards '*/product.img' 2>>/tmp/urlprobe.log; then
+                  GOT=$(find /tmp/romx -name product.img -size +100M | head -1)
+                  MD5GOT=$(awk '{print $1}' /tmp/rom-tgz.md5 2>/dev/null)
+                  if [ -n "$GOT" ] && [ "$MD5GOT" = "$ROM_MD5" ]; then
+                    mv "$GOT" /tmp/product-donor.img && rm -rf /tmp/romx
+                    echo "TIER 2 OK: product.img $(stat -c%s /tmp/product-donor.img) B z fastboot ROM (md5 tgz zgodne)"
+                    REASON=""
+                    break
+                  fi
+                  echo "TIER2 niezgodne: md5=${MD5GOT:-brak} plik=${GOT:-brak}" | tee -a /tmp/urlprobe.log
+                fi
+                rm -rf /tmp/romx /tmp/product-donor.img
+              done
+              [ -z "$REASON" ] || REASON="TIER2: zaden mirror nie dal poprawnego product.img (patrz sondy)"
+            fi
+          fi
+          # product.img z fastboot ROM moze byc SPARSE (Android sparse magic
+          # 0x3A69ED55) - loop-mount i fsck.erofs czytaja tylko raw. Konwersja
+          # wlasnym simg2img (MAGIC naprawiony 28 IX: byl bledny 0x3AED2684 -
+          # round-trip self-test testowal wlasny zapis i tego nie zlapal).
+          # Guard dyskowy: przy <13G wolnego czyscimy duze czastki spoola
+          # (rom-kit/system_hyperos/13e) - czastki assets (fonty) zostaja.
+          if [ -z "$REASON" ] && [ -f /tmp/product-donor.img ]; then
+            AVC=$(df --output=avail -B1G /tmp | tail -1 | tr -dc '0-9')
+            if [ "${AVC:-0}" -lt 13 ]; then
+              rm -f spool/transfer/rom-kit.tar.gz.part.* \
+                    spool/transfer/system_hyperos4_p11g2.img.part.* \
+                    spool/transfer/drive-13e-*.img.part.* 2>/dev/null || true
+              echo "TIER2: oczyszczono duze czastki spoola (assets do fallbacku fontow zostaja); wolne teraz: $(df --output=avail -B1G /tmp | tail -1 | tr -dc '0-9')G"
+            fi
+            if python3 tools/simg2img.py /tmp/product-donor.img /tmp/product-raw.img 2>/tmp/sparse.log; then
+              echo "product.img byl SPARSE -> skonwertowany do raw ($(stat -c%s /tmp/product-donor.img) B)"
+              rm -f /tmp/product-donor.img && mv /tmp/product-raw.img /tmp/product-donor.img
+            else
+              echo "product.img = raw (nie sparse) - zostaje jak jest"
+              rm -f /tmp/product-raw.img
+            fi
+          fi
+          # ---- CACHE WRITE: product.img -> assety release donor-cache ----
+          # (po konwersji do raw; tylko gdy cache pusty i jest miejsce na split)
+          if [ -f /tmp/product-donor.img ] && [ -s /tmp/product-donor.img ]; then
+            if ! gh release view donor-cache --json assets --jq '.assets[].name' 2>/dev/null | grep -q '^donor-product\.part\.'; then
+              AVCW=$(df --output=avail -B1G /tmp | tail -1 | tr -dc '0-9')
+              if [ "${AVCW:-0}" -ge 8 ]; then
+                PMD5W=$(md5sum /tmp/product-donor.img | awk '{print $1}')
+                PSZW=$(stat -c%s /tmp/product-donor.img)
+                echo "CACHE WRITE: product.img ($PSZW B, md5 $PMD5W) -> release donor-cache" | tee -a /tmp/urlprobe.log
+                rm -rf /tmp/dcache && mkdir -p /tmp/dcache
+                split -b 1600m -d -a 3 /tmp/product-donor.img /tmp/dcache/donor-product.part.
+                printf 'md5=%s\nsize=%s\n' "$PMD5W" "$PSZW" > /tmp/dcache/donor-product.manifest
+                gh release create donor-cache --title "donor-cache: product.img yingtian (auto)" \
+                  --notes "Cache product.img donora HyperOS (autozapis pipeline'u mystical1; czesci 1,6 GB + manifest md5/size)." 2>/dev/null || true
+                gh release upload donor-cache /tmp/dcache/* --clobber 2>&1 | tail -2 || echo "CACHE WRITE: upload nie wyszedl (receipt)" | tee -a /tmp/urlprobe.log
+                rm -rf /tmp/dcache
+              else
+                echo "CACHE WRITE: brak miejsca (${AVCW}G < 8G) - pomijam (receipt)"
+              fi
+            else
+              echo "CACHE: donor-cache juz zapelniony - pomijam zapis"
+            fi
+          fi
+          P=""
+          if [ -z "$REASON" ]; then
+            mkdir -p /tmp/prodmnt
+            if sudo mount -o loop,ro /tmp/product-donor.img /tmp/prodmnt 2>/dev/null; then
+              P=/tmp/prodmnt; MOUNTED=1
+              echo "loop-mount EROFS: OK (oszczedza ~10 GB ekstrakcji)"
+            else
+              AVAIL=$(df --output=avail -B1G /tmp | tail -1 | tr -d ' ')
+              echo "loop-mount nie wyszedl - fallback: pelna ekstrakcja (dostepne ${AVAIL}G)"
+              if [ "${AVAIL:-0}" -ge 17 ]; then
+                rm -rf /tmp/prodtree && mkdir -p /tmp/prodtree
+                if "$EROFS_DIR/fsck.erofs" --extract=/tmp/prodtree /tmp/product-donor.img >/dev/null 2>&1; then
+                  P=/tmp/prodtree
+                else
+                  REASON="fsck.erofs nie rozpakowal product.img"
+                fi
+              else
+                REASON="za malo miejsca (${AVAIL}G < 17G) na pelna ekstrakcje product.img bez loop-mount"
+              fi
+            fi
+          fi
+          if [ -n "$P" ]; then
+            echo "== zawartosc product donora (app/priv-app/themes) =="
+            ls "$P/app" 2>/dev/null | head -20 || true
+            ls "$P/priv-app" 2>/dev/null | head -20 || true
+            ls "$P/themes" 2>/dev/null | head -5 || echo "(themes: brak katalogu - receipt)"
+            N=0
+            for NAME in MiuiHome MiuiGallery Gallery MiuiMusic MiuiFileManager FileManager; do
+              for BASE in app priv-app; do
+                if [ -d "$P/$BASE/$NAME" ]; then
+                  mkdir -p "/tmp/keep/app/$NAME"
+                  # deodex: bez oat/ (dex w apk, bez artefaktow AOT)
+                  (cd "$P/$BASE/$NAME" && find . -type f ! -path './oat/*' -exec cp -a {} "/tmp/keep/app/$NAME/" \;)
+                  echo "transplant: $BASE/$NAME ($(find /tmp/keep/app/$NAME -type f | wc -l) plikow)"
+                  N=$((N+1))
+                  break
+                fi
+              done
+            done
+            if [ -d "$P/fonts" ]; then
+              find "$P/fonts" -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} /tmp/keep/fonts/ \; 2>/dev/null || true
+            fi
+            echo "apki do transplantu: $N; fonty Mi: $(ls /tmp/keep/fonts 2>/dev/null | wc -l)"
+            if [ "$N" = "0" ]; then REASON="w product.img nie znaleziono zadnego z MiuiHome/Gallery/Music/FileManager"; fi
+          fi
+          [ -n "$MOUNTED" ] && sudo umount /tmp/prodmnt 2>/dev/null || true
+          rm -rf /tmp/prodtree /tmp/prodmnt /tmp/product-donor.img /tmp/hdr.*
+          # ---- FALLBACK: product-assets.tar.gz ze spoola (fonty Mi donora) ----
+          # Pelny product.img zniknal z Drive (28 IX: get_file=404, kosz pusty) -
+          # apk MIUI nieosiagalne, ale fonty Mi donora mamy w repo (transfer-spool).
+          if [ -n "$REASON" ]; then
+            AS=spool/transfer/drive-1IjQeuVkiaE6B5c9YZkZJTpiAI-n4EU_1-assets.tar.gz
+            if ls ${AS}.part.* >/dev/null 2>&1; then
+              cat ${AS}.part.* > /tmp/product-assets.tar.gz
+              if echo "$PRODUCT_ASSETS_SHA256  /tmp/product-assets.tar.gz" | sha256sum -c -; then
+                rm -rf /tmp/pa && mkdir -p /tmp/pa
+                tar -xzf /tmp/product-assets.tar.gz -C /tmp/pa
+                find /tmp/pa/fonts -maxdepth 1 -name 'Mi*.ttf' -size +100k -exec cp -a {} /tmp/keep/fonts/ \; 2>/dev/null || true
+                echo "FALLBACK AKTYWNY: fonty Mi z product-assets.tar.gz (spool): $(ls /tmp/keep/fonts 2>/dev/null | wc -l)"
+              else
+                echo "assets-tar ze spoola niezgodny z sha256 (receipt)"
+              fi
+              rm -rf /tmp/pa /tmp/product-assets.tar.gz
+            else
+              echo "brak czastek assets-tar w spoolu (receipt)"
+            fi
+          fi
+          if [ -n "$REASON" ]; then
+            NF=$(ls /tmp/keep/fonts 2>/dev/null | wc -l)
+            echo "TRANSPLANT APK POMINIETY: $REASON" | tee /tmp/transplant.status
+            if [ "${NF:-0}" -gt 0 ]; then
+              echo "FALLBACK CZESCIOWY: fonty Mi ($NF) w obrazie; apk MIUI (MiuiHome/Gallery/Music/FileManager) NIE" | tee -a /tmp/transplant.status
+            fi
+            echo "build kontynuuje (GSI + microG + Aurora komplet)"
+          else
+            echo "OK" > /tmp/transplant.status
+            echo "keepers: $(du -sh /tmp/keep 2>/dev/null | cut -f1)"
+          fi
+          df -h / | tail -1
+
+      - name: Skladniki (GSI + microG + Aurora) - pobranie z pinami
+        run: |
+          set -euo pipefail
+          # DIAGNOZA run 36467193303/36468238008: wszystkie 9 sond dl.google.com x
+          # 3 wzorce = 404. Google nie wystawia jawnie <a href> (pobranie za licencja),
+          # ale surowy HTML strony releases zawiera URL-e w atrybutach/przyciskach JS
+          # (markdown je gubi) - metoda resolvera PixelStockGSIs (resolve_official_
+          # pixel_image.py, build z 27-28 IX dzialal). Kolejnosc: (1) resolver HTML,
+          # (2) sonda wzorcow sciezek (receipt), (3) error z pelnym logiem sond.
+          probe() { curl -s -o /dev/null -w '%{http_code}' -I -L --connect-timeout 15 --max-time 30 "$1" 2>/dev/null || echo ERR; }
+          : > /tmp/urlprobe.log
+          echo "== resolver HTML: developer.android.com/topic/generic-system-image/releases =="
+          PAGE=$(curl -sSL --connect-timeout 30 --max-time 120 \
+            "https://developer.android.com/topic/generic-system-image/releases") || PAGE=""
+          echo "HTML: ${#PAGE} B"
+          URLS=""
+          if [ -n "$PAGE" ]; then
+            URLS=$(printf '%s' "$PAGE" | sed 's/&amp;/\&/g' \
+              | grep -oE 'https://[a-zA-Z0-9./_?=&%~-]+[.]zip' | sort -u || true)
+          fi
+          if [ -n "$URLS" ]; then
+            echo "== URL-e zip znalezione w HTML ==" | tee -a /tmp/urlprobe.log
+            printf '%s\n' "$URLS" | tee -a /tmp/urlprobe.log
+          else
+            echo "resolver: 0 URL-i w HTML (receipt)" | tee -a /tmp/urlprobe.log
+          fi
+          GSI_PICK=""; GSI_PICK_SHA=""
+          while IFS='|' read -r F SHA; do
+            [ -n "$F" ] || continue
+            U=$(printf '%s\n' "$URLS" | grep -F "/$F" | head -1 || true)
+            if [ -z "$U" ]; then
+              for B in "https://dl.google.com/android/gsi" "https://dl.google.com/android/repository/gsi" "https://dl.google.com/android/repository"; do
+                C=$(probe "$B/$F")
+                echo "SONDA $C $B/$F" | tee -a /tmp/urlprobe.log
+                if [ "$C" = "200" ] && [ -z "$U" ]; then U="$B/$F"; fi
+              done
+            else
+              echo "RESOLVER: $U" | tee -a /tmp/urlprobe.log
+            fi
+            if [ -n "$U" ]; then GSI_PICK="$U"; GSI_PICK_SHA="$SHA"; break; fi
+          done <<'CAND'
+          aosp_arm64-exp-CP41.260831.007-16416850-5e61c946.zip|5e61c946ee45680365336968827bf62509d90f66ed78938f88e4deedda40a7fe
+          aosp_arm64-exp-CP3A.260905.010-16176746-4a869a69.zip|4a869a6959a50fee15ff871ce378853ced4485f2aa456eb64dbdbf7a2c0408aa
+          aosp_arm64-exp-CP2A.260605.012-15430684-8e545e1e.zip|8e545e1e1e977c3b43b4e54a3af463f3e7d1c3177b120e772138334e15f48f75
+          CAND
+          test -n "$GSI_PICK" || { echo "::error::GSI: ani resolver HTML, ani sonda nie daly URL (patrz sondy w raporcie)"; exit 1; }
+          echo "GSI WYBRANY: $GSI_PICK"
+          echo "GSI SHA256:  $GSI_PICK_SHA"
+          curl -fSL --retry 3 --connect-timeout 30 -o /tmp/gsi.zip "$GSI_PICK"
+          echo "$GSI_PICK_SHA  /tmp/gsi.zip" | sha256sum -c -
+          cd /tmp && unzip -q gsi.zip -d gsi-unpack
+          GSI_IMG=$(find gsi-unpack -name '*.img' | head -1)
+          test -n "$GSI_IMG"
+          mv "$GSI_IMG" /tmp/gsi-system.img
+          rm -rf /tmp/gsi-unpack /tmp/gsi.zip
+          ls -la /tmp/gsi-system.img
+          echo "== microG GmsCore + FakeStore =="
+          curl -fSL --retry 3 -o /tmp/gmscore.apk "$GMS_APK_URL"
+          test "$(stat -c%s /tmp/gmscore.apk)" = "$GMS_APK_SIZE"
+          curl -fSL --retry 3 -o /tmp/fakestore.apk "$VENDING_APK_URL"
+          test "$(stat -c%s /tmp/fakestore.apk)" = "$VENDING_APK_SIZE"
+          echo "== Aurora Store 4.8.4 (preload) - sonda wzorcow URL =="
+          AURORA_PICK=""
+          for U in "$AURORA_URL" "https://gitlab.com/AuroraOSS/AuroraStore/uploads/3376fef895820893ddeb7154b056a07e/AuroraStore-preload-4.8.4.apk"; do
+            C=$(probe "$U")
+            echo "SONDA $C $U" | tee -a /tmp/urlprobe.log
+            if [ "$C" = "200" ] && [ -z "$AURORA_PICK" ]; then AURORA_PICK="$U"; fi
+          done
+          test -n "$AURORA_PICK" || { echo "::error::AuroraStore preload: zaden URL nie odpowiada 200"; exit 1; }
+          curl -fSL --retry 3 -o /tmp/aurora.apk "$AURORA_PICK"
+          test "$(stat -c%s /tmp/aurora.apk)" -gt 3000000
+          sha256sum /tmp/gsi-system.img /tmp/gmscore.apk /tmp/fakestore.apk /tmp/aurora.apk | tee /tmp/assets.sha
+          df -h / | tail -1
+
+      - name: GSI -> drzewo (simg2img + debugfs rdump)
+        run: |
+          set -euo pipefail
+          # sparse -> raw (wlasne narzedzie; runner nie ma android-sdk tools)
+          if python3 tools/simg2img.py /tmp/gsi-system.img /tmp/gsi-raw.img; then
+            echo "GSI byl sparse -> surowy ext4"
+          else
+            echo "GSI nie jest sparse - zostaje jak jest"; cp /tmp/gsi-system.img /tmp/gsi-raw.img
+          fi
+          rm -f /tmp/gsi-system.img
+          command -v debugfs >/dev/null || { echo "::error::brak debugfs (e2fsprogs) na runnerze"; exit 1; }
+          debugfs -R "stats" /tmp/gsi-raw.img 2>/dev/null | head -5
+          rm -rf /tmp/gsitree && mkdir -p /tmp/gsitree
+          cd /tmp/gsitree
+          debugfs -R "rdump / /tmp/gsitree" /tmp/gsi-raw.img >/tmp/rdump.log 2>&1 || { tail -5 /tmp/rdump.log; echo "::error::rdump nie wyszedl"; exit 1; }
+          rm -f /tmp/gsi-raw.img
+          echo "plikow w drzewie: $(find /tmp/gsitree -type f | wc -l)"
+          test -f /tmp/gsitree/system/build.prop || { echo "::error::brak system/build.prop - zly layout obrazu"; exit 1; }
+          grep -m1 "ro.build.version.release" /tmp/gsitree/system/build.prop || true
+          grep -m1 "ro.build.version.sdk" /tmp/gsitree/system/build.prop || true
+          df -h / | tail -1
+
+      - name: PURGE GMS + audyt czystosci bazy
+        run: |
+          set -euo pipefail
+          T=/tmp/gsitree/system
+          echo "== audyt GMS/SetupWizard w /system (oczekiwane na aosp_*: 0) =="
+          HITS=$(find "$T/app" "$T/priv-app" -maxdepth 1 -type d 2>/dev/null | grep -iE "gms|google|setupwizard|vending|gsf" || true)
+          if [ -n "$HITS" ]; then
+            echo "$HITS" | tee /tmp/gms-purge.list
+            echo "$HITS" | xargs -r rm -rf
+            echo "USUNIETO: $(wc -l < /tmp/gms-purge.list) pakietow Google"
+          else
+            echo "0 pakietow Google/GMS/SetupWizard (czysty AOSP - receipt)"
+          fi
+          XML=$(find "$T/etc/permissions" "$T/etc/sysconfig" -name '*.xml' 2>/dev/null | xargs -r grep -liE "google|gms" || true)
+          if [ -n "$XML" ]; then
+            echo "$XML" | tee -a /tmp/gms-purge.list
+            echo "$XML" | xargs -r rm -f
+            echo "USUNIETO xml Google: $(echo "$XML" | wc -l)"
+          else
+            echo "0 plikow xml Google w permissions/sysconfig (receipt)"
+          fi
+          test ! -d "$T/priv-app/com.google.android.gms"
+
+      - name: INJECT microG + Aurora + transplant HyperOS + uprawnienia
+        run: |
+          set -euo pipefail
+          T=/tmp/gsitree/system
+          # --- microG (priv-app) + FakeStore ---
+          mkdir -p "$T/priv-app/microG" "$T/priv-app/FakeStore"
+          cp /tmp/gmscore.apk  "$T/priv-app/microG/GmsCore.apk"
+          cp /tmp/fakestore.apk "$T/priv-app/FakeStore/FakeStore.apk"
+          # privapp-permissions: FAKE_PACKAGE_SIGNATURE na niepatchowanym AOSP jest
+          # niezadeklarowane -> wpis inertny (warning, nie crash). Pelny sigspoof
+          # wymaga patcha frameworku (brak zrodel - udokumentowana granica).
+          cat > "$T/etc/permissions/privapp-permissions-mystical.xml" <<'XEOF'
+          <permissions>
+              <privapp-permissions package="com.google.android.gms">
+                  <permission name="android.permission.FAKE_PACKAGE_SIGNATURE"/>
+              </privapp-permissions>
+              <privapp-permissions package="com.android.vending">
+                  <permission name="android.permission.FAKE_PACKAGE_SIGNATURE"/>
+              </privapp-permissions>
+          </permissions>
+          XEOF
+          # default-permissions: lokalizacja (tez background) + powiadomienia
+          # out-of-the-box dla microG/FakeStore/Aurory (zlecenie doslowne).
+          mkdir -p "$T/etc/default-permissions"
+          cat > "$T/etc/default-permissions/mystical.xml" <<'XEOF'
+          <exceptions>
+              <exception package="com.google.android.gms">
+                  <permission name="android.permission.ACCESS_FINE_LOCATION" fixed="false" granted="true"/>
+                  <permission name="android.permission.ACCESS_COARSE_LOCATION" fixed="false" granted="true"/>
+                  <permission name="android.permission.ACCESS_BACKGROUND_LOCATION" fixed="false" granted="true"/>
+                  <permission name="android.permission.POST_NOTIFICATIONS" fixed="false" granted="true"/>
+              </exception>
+              <exception package="com.aurora.store">
+                  <permission name="android.permission.ACCESS_FINE_LOCATION" fixed="false" granted="true"/>
+                  <permission name="android.permission.ACCESS_COARSE_LOCATION" fixed="false" granted="true"/>
+                  <permission name="android.permission.ACCESS_BACKGROUND_LOCATION" fixed="false" granted="true"/>
+                  <permission name="android.permission.POST_NOTIFICATIONS" fixed="false" granted="true"/>
+              </exception>
+              <exception package="com.android.vending">
+                  <permission name="android.permission.POST_NOTIFICATIONS" fixed="false" granted="true"/>
+              </exception>
+          </exceptions>
+          XEOF
+          python3 -c "import xml.dom.minidom as m; m.parse('$T/etc/permissions/privapp-permissions-mystical.xml'); m.parse('$T/etc/default-permissions/mystical.xml')"
+          # --- Aurora Store (preload) ---
+          mkdir -p "$T/app/AuroraStore"
+          cp /tmp/aurora.apk "$T/app/AuroraStore/AuroraStore.apk"
+          # --- transplanty z donora (jesli sa) ---
+          if [ -d /tmp/keep/app ] && [ -n "$(ls /tmp/keep/app 2>/dev/null)" ]; then
+            for D in /tmp/keep/app/*; do
+              NAME=$(basename "$D")
+              mkdir -p "$T/app/$NAME"
+              cp -a "$D"/. "$T/app/$NAME/"
+              echo "transplant: /system/app/$NAME"
+            done
+          fi
+          if [ -d /tmp/keep/fonts ] && [ -n "$(ls /tmp/keep/fonts 2>/dev/null)" ]; then
+            cp -a /tmp/keep/fonts/*.ttf "$T/fonts/" 2>/dev/null || true
+            echo "fonty Mi: $(ls "$T/fonts"/Mi*.ttf 2>/dev/null | wc -l) (skopiowane; rejestracja w fonts.xml celowo NIE ruszana - inertne, zero ryzyka boota)"
+          fi
+          # --- audyt zaleznosci: klasy miui.* w dex transplantow (receipt ryzyka) ---
+          echo "== audyt zaleznosci miui-framework w transplantach =="
+          for APK in $(find "$T/app" -maxdepth 2 -name '*.apk' 2>/dev/null); do
+            REF=$(unzip -p "$APK" classes.dex 2>/dev/null | strings -a 2>/dev/null | grep -cE "^Lmiui/|^Lcom/miui/" || true)
+            echo "  $(basename "$APK"): $REF odniesien miui.* $( [ "${REF:-0}" -gt 0 ] && echo '(wymaga frameworku MIUI - moze padac; Launcher3 zostaje fallbackiem)' || echo '(samodzielna)')"
+          done
+          test -f "$T/priv-app/microG/GmsCore.apk"
+          test -f "$T/app/AuroraStore/AuroraStore.apk"
+          echo "INJECT kompletny"
+
+      - name: Konteksty SELinux - pre-flight (wszystkie sciezki pokryte)
+        run: |
+          set -euo pipefail
+          FC=/tmp/gsitree/system/etc/selinux/plat_file_contexts
+          test -f "$FC" || { echo "::error::brak plat_file_contexts w GSI"; exit 1; }
+          python3 tools/fc_fixup.py --contexts "$FC" --root /tmp/gsitree --dry-run --report /tmp/fc-report.txt
+          # BRAMKA: pliki przez nas dodane MUSZA byc pokryte kontekstem
+          if grep -E "MISS .*(priv-app/microG|priv-app/FakeStore|app/AuroraStore|app/Miui|app/Gallery|app/MiuiMusic|app/FileManager|permissions-mystical|default-permissions/mystical|fonts/Mi)" /tmp/fc-report.txt; then
+            echo "::error::dodane pliki bez kontekstu (patrz wyzej)"; exit 1
+          fi
+          echo "pre-flight kontekstow: dodane pliki pokryte"
+          df -h / | tail -1
+
+      - name: Build systemu MysticalOS GSI-1 (EROFS + lz4 + file-contexts)
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/reports"
+          exec > >(tee "$GITHUB_WORKSPACE/reports/mystical1-build-trace.log") 2>&1
+          set -x
+          FC=/tmp/gsitree/system/etc/selinux/plat_file_contexts
+          # UUID deterministyczny, czysto hexowy ("mystical" w ASCII hex; fix: run
+          # 36469032983 padl na 'invalid UUID' - mkfs.erofs 1.8.2 wymaga hex):
+          "$EROFS_DIR/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c00000001 \
+            --file-contexts="$FC" \
+            /tmp/mystical-system.img /tmp/gsitree
+          ls -la /tmp/mystical-system.img
+          # DOWOD: wypieczone etykiety w obrazie (stringi kontekstow jako bajty xattr)
+          for C in surfaceflinger_exec system_file sepolicy_file; do
+            N=$(grep -ac "$C" /tmp/mystical-system.img || true)
+            echo "kontekst $C w obrazie: $N trafien"
+            [ "$N" -gt 0 ]
+          done
+          # DOWOD: round-trip + obecnosc dodanych plikow
+          rm -rf /tmp/imgcheck && mkdir -p /tmp/imgcheck
+          "$EROFS_DIR/fsck.erofs" --extract=/tmp/imgcheck /tmp/mystical-system.img >/dev/null 2>&1
+          C=/tmp/imgcheck/system
+          test -f "$C/priv-app/microG/GmsCore.apk"
+          test -f "$C/priv-app/FakeStore/FakeStore.apk"
+          test -f "$C/app/AuroraStore/AuroraStore.apk"
+          test -f "$C/etc/permissions/privapp-permissions-mystical.xml"
+          test -f "$C/etc/default-permissions/mystical.xml"
+          test -f "$C/bin/surfaceflinger"
+          test -f "$C/build.prop"
+          for A in MiuiHome Gallery MiuiMusic MiuiFileManager FileManager; do
+            [ -d "$C/app/$A" ] && echo "transplant w obrazie: /system/app/$A ($(find "$C/app/$A" -type f | wc -l) plikow)" || true
+          done
+          if grep -q "OK" /tmp/transplant.status 2>/dev/null; then
+            test -n "$(find "$C/app" -maxdepth 1 -type d | grep -E "MiuiHome|Gallery|MiuiMusic|FileManager")"
+          else
+            echo "transplant: POMINIETY ($(cat /tmp/transplant.status 2>/dev/null | head -1)) - obraz bez aplikacji HyperOS"
+          fi
+          echo "PURGE GMS: $(find "$C/app" "$C/priv-app" -maxdepth 1 -type d 2>/dev/null | grep -icE 'google|gms' || echo 0) pakietow Google (oczekiwane 0)"
+          rm -rf /tmp/imgcheck /tmp/gsitree
+          sha256sum /tmp/mystical-system.img | tee /tmp/mystical1.sha
+          echo "RAW_MYSTICAL1=$(awk '{print $1}' /tmp/mystical1.sha)" >> "$GITHUB_ENV"
+          df -h / | tail -1
+
+      - name: Zestaw MysticalOS GSI-1 - RAW + tar.gz + zip
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/kitm && mkdir /tmp/kitm
+          cp /tmp/mystical-system.img /tmp/kitm/mysticalos_gsi1_system.img
+          cd /tmp/kitm
+          TRANSPLANT=$(grep -q OK /tmp/transplant.status 2>/dev/null && echo "TAK" || echo "NIE ($(head -1 /tmp/transplant.status 2>/dev/null))")
+          cat > sprawdz.sh <<'EOF'
+          #!/usr/bin/env bash
+          # Weryfikacja MysticalOS GSI-1 (obraz NIESPARSE'OWANY - raw EROFS): suma wystarcza.
+          set -u
+          rc=0
+          echo "== sha256sum -c SHA256SUMS.txt =="
+          sha256sum -c SHA256SUMS.txt || rc=1
+          echo
+          if [ $rc -eq 0 ]; then echo "WSZYSTKO ZGODNE."; else echo "NIEZGODNE - pobierz ponownie."; fi
+          exit $rc
+          EOF
+          chmod +x sprawdz.sh
+          cat > README.md <<EOT
+          # MysticalOS GSI-1 - Lenovo Tab P11 Gen 2 (TB350FU): AOSP 17 GSI repack + microG + Aurora
+
+          To jest "V16 GSI REPACK" ze zlecenia z 28 IX: czysty, oficjalny Google AOSP Android 17
+          GSI (arm64, bez GMS) zmodyfikowany binarnie - bez kompilacji AOSP, deterministyczny
+          repack tym samym toolchainem co HyperOS v1-v16.
+
+          ## Baza
+          - aosp_arm64-exp-CP41.260831.007-16416850-5e61c946 (Google, 24 IX 2026,
+            security patch Sep 2026, QPR2-beta), sha256 opublikowany przez Google = pin,
+          - czysty AOSP = ZERO GMS (audyt: 0 pakietow Google/SetupWizard - patrz trace),
+          - AOSP nie ma wlasnosciowych zaleznosci Xiaomi (composer HIDL 2.3 hosta wystarcza),
+            wiec omija klase awarii display, ktora zabijala port HyperOS (bialy ekran v14,
+            RGB flash + twarda smierc v15).
+
+          ## Zawartosc dodana
+          - microG Services v0.3.16.252432 (GmsCore) + microG Companion (FakeStore),
+            /system/priv-app, privapp-permissions + default-permissions: lokalizacja
+            (z background) i powiadomienia nadane out-of-the-box,
+          - UWAGA sigspoof: oficjalny GSI nie ma patcha signature-spoofing, wiec
+            "system spoofs signature" w self-check microG bedzie NIEaktywne (to granica
+            bez-zrodlowa; pelny sigspoof wymaga patcha frameworku),
+          - Aurora Store 4.8.4 (wariant preload), /system/app,
+          - transplant z donora HyperOS (miara: $TRANSPLANT):
+            pelny = MiuiHome / MiuiGallery / MiuiMusic / MiuiFileManager do
+            /system/app (deodex, bez oat/) + fonty Mi* do /system/fonts (pliki
+            tylko; fonts.xml nietkniety).
+            fallback (product.img niedostepny na Drive - 28 IX: 404) = tylko
+            fonty Mi z product-assets.tar.gz (spool w repo).
+            Te aplikacje sa budowane pod framework MIUI - na AOSP moga padac przy
+            uruchomieniu (audyt zaleznosci miui.* w trace); Launcher3 AOSP pozostaje
+            domyslnym fallbackiem, wiec urzadzenie zostaje uzytealne.
+
+          ## Konteksty SELinux
+          - GSI jest ENFORCING: ekstrakcja ext4 traci xattr, wiec etykiety sa WYPIEKANE
+            do obrazu przy budowie (mkfs.erofs --file-contexts na plat_file_contexts
+            samego GSI, przez wlasny shim libselinux). Pre-flight: 0 niedopasowanych
+            sciezek; dowod w trace (stringi kontekstow w obrazie).
+
+          ## Jak uruchomic (DSU, jak zawsze)
+          1. DSU Sideloader -> mysticalos_gsi1_system.img (slot bez znaczenia),
+          2. pierwszy boot moze trwac dluiej (odex nowego frameworku na starym sprzecie),
+          3. UWAGA architektura DSU: gosc dostaje product/system_ext/vendor HOSTA
+             (Lenovo A14) - nakladki i aplikacje Lenovo widoczne w overlayach to
+             normalne zachowanie GSI na tym urzadzeniu,
+          4. revert: reboot bez DSU (notyfikacja/przycisk w Sideloaderze).
+
+          | plik | rozmiar | sha256 |
+          |---|---|---|
+          | mysticalos_gsi1_system.img | $(stat -c%s /tmp/kitm/mysticalos_gsi1_system.img) B | $RAW_MYSTICAL1 |
+          EOT
+          sha256sum mysticalos_gsi1_system.img > SHA256SUMS.txt
+          bash sprawdz.sh
+          tar czf /tmp/MysticalOS_GSI1.tar.gz .
+          zip -q -r /tmp/MysticalOS_GSI1.zip .
+          ls -l /tmp/MysticalOS_GSI1.tar.gz /tmp/MysticalOS_GSI1.zip
+          df -h / | tail -1
+
+      - name: Release mysticalos-gsi-1 (tar.gz + zip + raw)
+        run: |
+          set -euo pipefail
+          gh release delete mysticalos-gsi-1 --yes --cleanup-tag 2>/dev/null || true
+          gh release create mysticalos-gsi-1 --target "$GITHUB_SHA" \
+            --title "MysticalOS GSI-1 - Lenovo Tab P11 Gen 2: AOSP 17 GSI repack (microG + Aurora + transplant HyperOS)" \
+            --notes "MysticalOS GSI-1 = 'V16 GSI REPACK' (zlecenie 28 IX): oficjalny Google AOSP Android 17 GSI (aosp_arm64-exp-CP41.260831.007, sha256 Google = pin) + PURGE GMS (audyt: 0 znalezionych - czysty AOSP) + microG v0.3.16.252432 (GmsCore + FakeStore, priv-app, uprawnienia lokalizacji/powiadomien out-of-the-box) + Aurora Store 4.8.4 preload + transplant HyperOS z product.img donora (MiuiHome/Gallery/Music/FileManager + fonty Mi; krok best-effort - 28 IX: pelny product.img zniknal z Drive (404), fallback = fonty Mi z product-assets.tar.gz (spool, sha256 = pin); status w trace) + wypieczone konteksty SELinux (mkfs.erofs --file-contexts przez shim libselinux; GSI zostaje ENFORCING). Deterministyczny EROFS+lz4, obraz niesparse'owany. Architektura DSU: product/system_ext/vendor = host Lenovo A14; AOSP bez zaleznosci Xiaomi omija klase awarii display z portu HyperOS. Sigspoof niedostepny na niepatchowanym AOSP (granica bez-zrodlowa, udokumentowana). Surowy system sha256 $RAW_MYSTICAL1." \
+            /tmp/MysticalOS_GSI1.tar.gz /tmp/MysticalOS_GSI1.zip
+          gh release view mysticalos-gsi-1 --json url,assets -q '.url, (.assets[] | "\(.name) \(.size)B [\(.state)]")'
+
+      - name: Linki publiczne (tar.gz + zip)
+        run: |
+          set -uo pipefail
+          bash tools/public_links.sh /tmp/MysticalOS_GSI1.tar.gz /tmp/links-m1-tgz.md || true
+          bash tools/public_links.sh /tmp/MysticalOS_GSI1.zip /tmp/links-m1-zip.md || true
+
+      - name: Raport z linkami + trace do repo
+        if: always()
+        run: |
+          set -u
+          git config user.name "github-actions[bot]" || true
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com" || true
+          mkdir -p reports
+          F="reports/mystical1-links-${{ github.run_id }}.md"
+          { echo "### MysticalOS GSI-1 links (run ${{ github.run_id }})"
+            echo "RAW_MYSTICAL1=${RAW_MYSTICAL1:-brak}"
+            echo "transplant: $(cat /tmp/transplant.status 2>/dev/null | head -1 || echo '?')"
+            echo
+            echo "--- tar.gz ---"; cat /tmp/links-m1-tgz.md 2>/dev/null || echo "(brak)"
+            echo "--- zip ---"; cat /tmp/links-m1-zip.md 2>/dev/null || echo "(brak)"
+            echo "--- sondy URL (diagnoza dostepnosci skladnikow) ---"; cat /tmp/urlprobe.log 2>/dev/null || echo "(brak)"; } > "$F" || true
+          cat "$F" || true
+          if [ -f reports/mystical1-build-trace.log ]; then
+            echo "trace builda: reports/mystical1-build-trace.log ($(stat -c%s reports/mystical1-build-trace.log) B)"
+          fi
+          git add -f reports || true
+          git commit -q -m "m1-links+trace: run ${{ github.run_id }}" || true
+          git push -q origin "HEAD:${{ github.ref_name }}" || echo "push nie wyszedl"
+          exit 0

@@ -1,0 +1,2512 @@
+# ============================================================================
+# mysticalos3 v1.0 - MYSTICALOS 0.5 PRAWDZIWY PORT HYPEROS (Rozkaz 17)
+# ============================================================================
+# PORT (nie kosmetyka!): natywne apki Xiaomi z oficjalnego ROM-u tabletu
+# Xiaomi Pad 5 (nabu) HyperOS 1.0.6.0.TKXMIXM Global = Android 13 = SDK 33
+# (dokladnie nasz poziom API; HyperOS OS2+/A14+ nie wystartuje na A13).
+#   1. MiuiSystemUI (Control Center HyperOS: powiadomienia oddzielnie od
+#      przełącznikow, Gaussian Blur) ZASTAPUJE Lenovo SystemUI (-> atrapa).
+#   2. MiuiHome (natywny launcher tabletowy HyperOS: dock, gesty, Super-Ikony).
+#   3. framework/miui*.jar (miui-framework, miui-services, miuisdk...) na
+#      BOOTCLASSPATH - PRZEZ /system/etc/classpaths/bootclasspath.pb (mechanizm
+#      derive_classpath, Android 12+: fragment /system sklejany po ART apex;
+#      zweryfikowane w zrodlach AOSP SdkExtensions + proto classpaths.proto).
+#      ZERO dotykania boot.img - wgrywamy TYLKO partycje system!
+#   4. app/miui + etc/device_features + privapp-permissions (systemui/miui).
+#   5. KIT port/mkclasspathpb.py (binarny proto ExportedClasspathsJars;
+#      cross-check z google.protobuf; bootimg.py zostaje w kitu jako backup).
+# Tozsamosc: display.id=MysticalOS 0.5 (HyperOS 4 x A17 Experience),
+#   hyperos=4.0.0, miui.ui=V16/16, release=17, sdk=33 NIETYKANE.
+# Debloat: agresywny (Lenovo OTA/LSF/UE/DSA/TbEngine/center + Xiaomi
+#   analytics/msa/discover/cloudservice/yellowpage/joyose) - stuby + daemon.
+# Rust: coreutils + mystical-rust-daemon v0.6 (zRAM 4GB lz4, 120Hz,
+#   schedutil, debloat disable-user, RRO, home=MiuiHome). BOOTCLASSPATH
+#   nie rusza demona (start po boot_completed, exec_background init).
+# Wyjscie: MysticalOS_0.5_HyperOS_Port.img (RAW ext4, PS=3489660928,
+#   stopka AVB flags 2 sha256 no-FEC). WGROWANIE: TYLKO system (jak 2.1/0.5).
+# ============================================================================
+# V2.1 (Rozkaz 15 - eliminacja soft-bootloopa v2.0, wislo na logo Lenovo):
+# 1. SAFE DEBLOAT: NIE usuwamy folderow z /system/priv-app - struktura zostaje,
+#    APK zastapione pustymi atrapami (poprawny pusty ZIP; te same nazwy, tryby
+#    i konteksty SELinux); telemetria Lenovo wylaczana WARSTWA USLUG
+#    (pm disable-user) przez mystical-rust-daemon PO zaladowaniu frameworka.
+#    (v2.0: fizyczne usuwanie -> DeadObjectException w system_server przez
+#     powiazania IPC z /product i /system_ext).
+# 2. ADB OD PIERWSZEJ SEKUNDY: ro.debuggable=1, ro.secure=0, ro.adb.secure=0,
+#    persist.sys.usb.config=mtp,adb, persist.service.adb.enable=1 (oba build.prop).
+# 3. Rust: coreutils + daemon jako u:object_r:system_file:s0 (0755); rc startuje
+#    dopiero on property:sys.boot_completed=1 przez exec_background u:r:init:s0
+#    (v2.0: serwis class main we wczesnym inita - ryzyko blokady boota).
+# 4. Tozsamosc: display.id=MysticalOS 0.5 (HyperOS 4 x A17 Full UI), sdk=33 NIETYKANE,
+#    120Hz/blur/dalvik/zRAM bez zmian.
+# 5. AVB: jak w v2.0 - flags 2, sha256, no FEC, PS 3489660928 B.
+# ============================================================================
+# ============================================================================
+# CEL: pelny, samodzielny obraz system.img (+ system_ext.img) ze STOCKA
+# Lenovo TB350FU_S130714_250118_ROW (A13/VNDK33) do wgrania FastbootD.
+# Koniec z DSU - modyfikacje na STALE wbudowane w system plikow ext4.
+#
+# SPEC (user):
+# 1. Baza: oficjalny system.img z paczki ROW S130714 (lolinet 7,3 GB);
+#    surowy ext4 z kontekstami SELinux; ro.build.version.sdk=33 NIETYKANE.
+# 2. /system/build.prop (+ system_ext/etc/build.prop): maska A17/HyperOS 4
+#    (release=17, display.id=MysticalOS 0.5, hyperos=4.0.0, miui.ui=V16,
+#    security_patch=2026-10-05) + flagi graficzne 120Hz/blur/skiagl
+#    + dodatki z wlasnego system.prop usera (heap/dalvik/MT6789).
+# 3. DEBLOAT fizyczny: LSF/LSF-Device-Phone, LenovoExtend, HecAgent,
+#    UdcPlatform, LenovoUserExperience, LenovoCenter, DSA, TbEngine,
+#    EngineeringCode. NIETYKALNE: PenService, Dolby, Audio, Wi-Fi, display.
+# 4. RUST ENGINE: statyczna aarch64-musl binarka coreutils (uutils multicall,
+#    ELF64 EXEC static - dostarczona przez usera, zweryfikowana) ->
+#    /system/bin/coreutils; demon /system/bin/mystical-rust-daemon (zRAM 4GB
+#    LZ4 + schedutil tuning, skrypt usera); serwis init mystical_rust.rc
+#    DOKLADNIE wg spec (class main / user root / group root / oneshot,
+#    bez seclabel = kontekst inita - sprawdzony wzorzec mystic-* rc).
+# 5. Stopka AVB wg komendy ze spec: add_hashtree_footer --partition_name
+#    system --hash_algorithm sha256 --do_not_generate_fec --flags 2
+#    (+PS z oryginalu, algorytm SHA256_RSA2048, klucz testowy).
+#
+# ZRODLO: lolinet /firmware/lenowow/2022/Tab_P11_2nd_Gen/TB350FU/
+#        TB350FU_S130714_250118_ROW.zip (7,3 GB) - obsluga payload.bin
+#        (ssut/payload-dumper-go 2.1.0) ORAZ super.img (stream_lpunpack).
+# PS partycji = rozmiar oryginalnego obrazu z paczki (fs+hashtree+footer
+# = dokladnie rozmiar partycji logicznej); fs zrzucany erase_footer.
+# Drzewo: mount ro -> tar --selinux --acls --xattrs -> mody -> mke2fs ext4
+# -> tar-in (konteksty wlascicieli zachowane 1:1). Konteksty nowych plikow
+# kopiowane z sasiadow (bin/sh, istniejacy .rc) przez getxattr/setxattr.
+# WYJSCIE: MysticalOS_0.5_HyperOS_Port.img + _System_ext.img + vbmetty
+# FLAGS3 (do wgrania PRZED system - stopka flags 2 nie obejmie wlasnego
+# rozmiaru stockowej vbmetty) + instrukcja FastbootD.
+# ============================================================================
+
+name: mysticalos3
+# bump3: retry - run 7 (8e93eb2) cancelled w kolejce (zewn. canceler); fix SIGPIPE nie wykonal sie
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/mysticalos3.yml', 'kit-mysticalos3/**']
+
+concurrency:
+  group: mysticalos3
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      WORK: /tmp/m2
+      KDIR: ${{ github.workspace }}/kit-mysticalos3
+      STOCK_URL: https://mirrors.lolinet.com/firmware/lenowow/2022/Tab_P11_2nd_Gen/TB350FU/TB350FU_S130714_250118_ROW.zip
+      # Xiaomi Pad 5 (nabu) HyperOS 1.0.6.0 Global - Android 13 (SDK 33!)
+      NABU_URL: https://bigota.d.miui.com/OS1.0.6.0.TKXMIXM/miui_NABUGlobal_OS1.0.6.0.TKXMIXM_4af37553d5_13.0.zip
+      NABU_URL2: https://hugeparallel1.d.miui.com/OS1.0.6.0.TKXMIXM/miui_NABUGlobal_OS1.0.6.0.TKXMIXM_4af37553d5_13.0.zip
+      NABU_URL3: https://hugeparallel2.d.miui.com/OS1.0.6.0.TKXMIXM/miui_NABUGlobal_OS1.0.6.0.TKXMIXM_4af37553d5_13.0.zip
+      NABU_URL4: https://cdnorg.d.miui.com/OS1.0.6.0.TKXMIXM/miui_NABUGlobal_OS1.0.6.0.TKXMIXM_4af37553d5_13.0.zip
+      NABU_URL5: https://hugebackup.d.miui.com/OS1.0.6.0.TKXMIXM/miui_NABUGlobal_OS1.0.6.0.TKXMIXM_4af37553d5_13.0.zip
+      MISANS_BASE: https://raw.githubusercontent.com/Explore0416/MiSans-ttf/main
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "0. Zaleznosci + dysk"
+        run: |
+          set -euo pipefail
+          # ~20 GB wolnego (zip 7,3 + super/payload ~8 + drzewa + 2 obrazy)
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup 2>/dev/null || true
+          sudo apt-get update -q >/dev/null 2>&1 || true
+          sudo apt-get install -y -q qemu-user-static >/dev/null 2>&1 || sudo apt-get install -y qemu-user-static
+          for T in mke2fs e2fsck resize2fs tar blkid unzip qemu-aarch64-static openssl; do
+            command -v "$T" >/dev/null || { echo "::error::brak $T"; exit 1; }
+          done
+          python3 -c "import cryptography" 2>/dev/null || pip install --quiet cryptography
+          python3 "$KDIR/tools/avbtool.py" version
+          df -h /
+
+      - name: "1. Rust engine + vbmetty STOCK z kitu + patch FLAGS3"
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK/rust" "$WORK/out" "$WORK/vbmeta/FLAGS3" "$WORK/vbmeta/STOCK-ORYGINAL"
+          cp "$KDIR/rust-engine/coreutils" "$KDIR/rust-engine/mystical-rust-daemon" "$WORK/rust/"
+          python3 - "$WORK/rust/coreutils" <<'EOF'
+          import struct, sys
+          d = open(sys.argv[1], 'rb').read(20)
+          assert d[:4] == b'\x7fELF', 'coreutils: to nie ELF'
+          assert d[4] == 2, 'coreutils: nie ELF64'
+          assert struct.unpack('<H', d[18:20])[0] == 183, 'coreutils: nie AArch64!'
+          full = open(sys.argv[1], 'rb').read()
+          assert b'ld-linux' not in full and b'/ld-musl' not in full, 'coreutils: dynamiczny?!'
+          print('coreutils: ELF64 AArch64 STATIC (musl, uutils multicall), %d B' % len(full))
+          EOF
+          sh -n "$WORK/rust/mystical-rust-daemon"
+          chmod 0755 "$WORK/rust/coreutils" "$WORK/rust/mystical-rust-daemon"
+          sha256sum "$WORK/rust/coreutils" "$WORK/rust/mystical-rust-daemon" | tee "$WORK/rust-manifest.txt"
+          for N in vbmeta vbmeta_system vbmeta_vendor; do
+            cp "$KDIR/stock-vbmeta-S130714/$N.img" "$WORK/vbmeta/STOCK-ORYGINAL/"
+          done
+          # fingerprint-proof: to vbmetty z S130714_250118_ROW
+          python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/vbmeta/STOCK-ORYGINAL/vbmeta_system.img" \
+            | tee "$WORK/vbmeta-stock-info.txt"
+          grep -q "S130714_250118_ROW" "$WORK/vbmeta-stock-info.txt" \
+            || { echo "::error::vbmeta_system: fingerprint != S130714_250118_ROW"; exit 1; }
+          # patch flags 0 -> 3 (HASHTREE_DISABLED|VERIFICATION_DISABLED):
+          # u32 BE @ offset 120 w naglowku AVB0; zmiana DOKLADNIE 1 bajtu
+          python3 - "$WORK" <<'EOF'
+          import struct, sys
+          W = sys.argv[1]
+          for n in ['vbmeta', 'vbmeta_system', 'vbmeta_vendor']:
+              src = f'{W}/vbmeta/STOCK-ORYGINAL/{n}.img'
+              dst = f'{W}/vbmeta/FLAGS3/{n}.img'
+              data = bytearray(open(src, 'rb').read())
+              assert data[:4] == b'AVB0', n + ': zla magic'
+              assert bytes(data[128:135]) == b'avbtool', n + ': release string nie na 128'
+              old = struct.unpack('>I', data[120:124])[0]
+              assert old == 0, n + ': flags != 0'
+              data[120:124] = struct.pack('>I', 3)
+              orig = open(src, 'rb').read()
+              assert [i for i in range(len(orig)) if orig[i] != data[i]] == [123], n + ': diff != 1 bajt'
+              open(dst, 'wb').write(bytes(data))
+              print(n, 'flags 0 -> 3 OK (1 bajt, reszta oryginal Lenovo)')
+          EOF
+          for N in vbmeta vbmeta_system vbmeta_vendor; do
+            python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/vbmeta/FLAGS3/$N.img" \
+              | grep -q "Flags: *3$" || { echo "::error::FLAGS3/$N.img: Flags != 3"; exit 1; }
+          done
+
+      - name: "2. Stock ROW S130714 z lolinet (7,3 GB, resume)"
+        run: |
+          set -euo pipefail
+          # run 37550790970: lolinet z 44 MB/s (3,5 min); innym razem 1,6 MB/s
+          # (120 min!) - dlawienie per-polaczenie. aria2c x16 + fallback curl.
+          STOCK_OK=""
+          for A in 1 2 3 4 5 6 7 8; do
+            if aria2c --continue=true --file-allocation=none \
+                 --max-connection-per-server=16 --split=16 --min-split-size=8M \
+                 --max-tries=5 --retry-wait=10 --timeout=60 --connect-timeout=30 \
+                 --lowest-speed-limit=5K --summary-interval=60 \
+                 --auto-file-renaming=false --allow-overwrite=true \
+                 --dir="$WORK" --out=stock.zip "$STOCK_URL"; then
+              STOCK_OK=1; break
+            fi
+            echo "aria2c (lolinet) proba $A nieudana - resume za 10 s"; sleep 10
+          done
+          # fallback curl (czyscimy czesciowy plik aria2 - sparse dziury!)
+          if [ -z "$STOCK_OK" ]; then
+            rm -f "$WORK/stock.zip" "$WORK/stock.zip.aria2"
+            for A in 1 2 3; do
+              if curl -fL --retry 3 --retry-delay 5 -C - --connect-timeout 30 -o "$WORK/stock.zip" "$STOCK_URL"; then
+                STOCK_OK=1; break
+              fi
+              echo "proba $A nieudana - czekam 20 s"; sleep 20
+            done
+          fi
+          [ -n "$STOCK_OK" ] || { echo "::error::lolinet nieosiagalny z runera (zip nie pobrany)"; exit 1; }
+          SZ=$(stat -c%s "$WORK/stock.zip")
+          [ "$SZ" -gt 7000000000 ] || { echo "::error::stock.zip ${SZ} B < 7 GB?!"; exit 1; }
+          echo "stock.zip: ${SZ} B OK"
+          unzip -l "$WORK/stock.zip" > "$WORK/ziplist.txt" || true
+          head -40 "$WORK/ziplist.txt"
+          grep -E "system|super|payload|vbmeta" "$WORK/ziplist.txt" || true
+          df -h /
+
+      - name: "3. Wyluskaj system + system_ext (payload.bin ALBO super.img)"
+        run: |
+          set -euo pipefail
+          # sparse (0x3AFF26ED) -> raw; flashtool images bywaja sparse (product.img
+          # 2474779240 B nie jest 4096-aligned = prawie na pewno sparse)
+          desparse() {
+            local M
+            M=$(python3 -c "import struct,sys; print('1' if struct.unpack('<I', open(sys.argv[1],'rb').read(4))[0]==0xED26FF3A else '0')" "$1")
+            if [ "$M" = "1" ]; then
+              python3 "$KDIR/tools/simg2img.py" "$1" "$1.raw" \
+                || { echo "::error::simg2img $1 padl"; return 1; }
+              mv "$1.raw" "$1"
+              echo "$1: SPARSE -> raw ($(stat -c%s "$1") B)"
+            else
+              echo "$1: raw ($(stat -c%s "$1") B)"
+            fi
+          }
+          # UWAGA: grep zawsze na PLIKU - "echo | grep -q" to wyścig SIGPIPE
+          # (grep -q zamyka rure po 1. trafieniu; listing >64 KB bufora rury ->
+          # 'echo: write error: Broken pipe' pod pipefail; run 37371231584)
+          unzip -l "$WORK/stock.zip" > "$WORK/ziplist.txt" || true
+          if grep -q "payload\.bin$" "$WORK/ziplist.txt"; then
+            echo "== paczka OTA: payload.bin =="
+            unzip -o -q "$WORK/stock.zip" "*payload.bin" -d "$WORK"
+            PB=$(find "$WORK" -maxdepth 2 -name "payload.bin" | head -1)
+            [ -n "$PB" ] || { echo "::error::payload.bin nie rozpakowany"; exit 1; }
+            rm -f "$WORK/stock.zip"
+            curl -fL --retry 3 -o "$WORK/pdg.tgz" \
+              https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
+            tar -xzf "$WORK/pdg.tgz" -C "$WORK"
+            rm -f "$WORK/pdg.tgz"
+            "$WORK/payload-dumper-go" -p system,system_ext -o "$WORK/out" "$PB" \
+              || { echo "payload: system_ext moze nie istniec - retry tylko system"
+                   "$WORK/payload-dumper-go" -p system -o "$WORK/out" "$PB" \
+                     || { echo "::error::payload-dumper-go padl"; exit 1; } }
+            rm -f "$PB"
+            rm -f "$WORK/payload-dumper-go"
+          elif grep -q "system\.img$" "$WORK/ziplist.txt"; then
+            echo "== paczka flashtool: luzne obrazy partycji (image/*.img) =="
+            unzip -o -q "$WORK/stock.zip" "*system.img" "*system_ext*.img" -d "$WORK/fl" 2>/dev/null || true
+            rm -f "$WORK/stock.zip"
+            SYS=$(find "$WORK/fl" -type f -name "system.img" | head -1)
+            SEXT=$(find "$WORK/fl" -type f -name "system_ext.img" | head -1)
+            [ -n "$SYS" ] || { echo "::error::brak system.img w paczce flashtool"; exit 1; }
+            desparse "$SYS"
+            mv "$SYS" "$WORK/out/system.img"
+            echo "system.img: $(stat -c%s "$WORK/out/system.img") B"
+            if [ -n "$SEXT" ]; then
+              desparse "$SEXT"
+              mv "$SEXT" "$WORK/out/system_ext.img"
+              echo "system_ext.img: $(stat -c%s "$WORK/out/system_ext.img") B"
+            fi
+            rm -rf "$WORK/fl"
+          elif grep -q "super\.img$" "$WORK/ziplist.txt"; then
+            echo "== paczka flashtool: super.img =="
+            unzip -o -q "$WORK/stock.zip" "*super.img" -d "$WORK"
+            SU=$(find "$WORK" -maxdepth 2 -name "super.img" | head -1)
+            [ -n "$SU" ] || { echo "::error::super.img nie rozpakowany"; exit 1; }
+            rm -f "$WORK/stock.zip"
+            python3 - "$SU" <<'EOF'
+          import struct, sys
+          raw = open(sys.argv[1], 'rb').read(4)
+          print('super magic:', raw.hex(), '(3aff26ed = sparse)')
+          open(sys.argv[1] + '.sparse', 'w').write(
+              '1' if struct.unpack('<I', raw)[0] == 0xED26FF3A else '0')
+          EOF
+            if [ "$(cat "$SU.sparse")" = "1" ]; then
+              python3 "$KDIR/tools/simg2img_stream.py" < "$SU" \
+                | python3 "$KDIR/tools/stream_lpunpack.py" --stdin --out "$WORK/out" --only system,system_ext \
+                | tee "$WORK/stream-manifest.txt"
+            else
+              python3 "$KDIR/tools/stream_lpunpack.py" --file "$SU" --out "$WORK/out" --only system,system_ext \
+                | tee "$WORK/stream-manifest.txt"
+            fi
+            for P in system system_ext; do
+              awk -F'\t' -v p="$P" '$1=="P"&&$2==p{f=1} END{exit f?0:1}' "$WORK/stream-manifest.txt" \
+                || { echo "::error::brak partycji $P w super"; exit 1; }
+            done
+            rm -f "$SU" "$SU.sparse"
+          else
+            head -80 "$WORK/ziplist.txt"
+            echo "::error::nieznana struktura paczki (brak payload.bin, super.img i system.img)"
+            exit 1
+          fi
+          # PS = rozmiar oryginalnego obrazu (fs+hashtree+footer = partycja);
+          # potem erase_footer -> czysty fs. Brak stopki = PS wg wzorca.
+          for P in system system_ext; do
+            S="$WORK/out/$P.img"
+            if [ -s "$S" ]; then
+              PS=$(stat -c%s "$S")
+              echo "$PS" > "$WORK/ps-$P"
+              python3 "$KDIR/tools/avbtool.py" info_image --image "$S" > "$WORK/out/avb-stock-$P.txt" 2>/dev/null || true
+              if grep -q "Footer magic" "$WORK/out/avb-stock-$P.txt" 2>/dev/null; then
+                python3 "$KDIR/tools/avbtool.py" erase_footer --image "$S" \
+                  || { echo "::error::erase_footer $P"; exit 1; }
+                echo "$P: stopka stock zrzucona (PS=$PS B z oryginalu)"
+              else
+                # brak stopki: fs = Image Size z deskryptora hashtree dla tej
+                # partycji (stock vbmeta_system z kitu), plik moze zawierac
+                # hashtree/FEC bez footera -> trim; PS = max(plik, wzorzec)
+                FSZ=$(stat -c%s "$S")
+                TRIM=$(awk -v tgt="$P" '/Hashtree descriptor:/{h=1;next} h&&/Image Size:/{v=$3} h&&/Partition Name:/{if($NF==tgt){print v; exit}}' "$WORK/vbmeta-stock-info.txt")
+                if [ -n "$TRIM" ] && [ "$TRIM" -gt 100000000 ] && [ "$TRIM" -lt "$FSZ" ] && [ $((TRIM % 4096)) -eq 0 ]; then
+                  truncate -s "$TRIM" "$S"
+                  echo "$P: brak stopki -> fs TRIM do deskryptora vbmeta ($TRIM B z $FSZ B)"
+                else
+                  echo "$P: brak stopki i deskryptora -> fs = caly plik ($FSZ B)"
+                fi
+                FORM=$(( (FSZ + FSZ/100 + 16777216 + 4194303) / 4194304 * 4194304 ))
+                [ "$PS" -ge "$FORM" ] || PS="$FORM"
+                echo "$PS" > "$WORK/ps-$P"
+                echo "$P: PS wg pliku/wzorca = $PS B"
+              fi
+              FSZ=$(stat -c%s "$S")
+              echo "$FSZ" > "$WORK/fsz-$P"
+              [ $((FSZ % 4096)) -eq 0 ] || { echo "::error::$P: fs $FSZ % 4096 != 0"; exit 1; }
+              TYPE=$(blkid -o value -s TYPE "$S" || true)
+              echo "${TYPE:-unknown}" > "$WORK/fstype-$P"
+              echo "== $P: fs=$FSZ B, PS=$(cat "$WORK/ps-$P") B, typ=${TYPE:-?} =="
+            else
+              echo "UWAGA: $P.img nie ma w paczce - pomijam te partycje"
+              touch "$WORK/no-$P"
+            fi
+          done
+          [ -s "$WORK/out/system.img" ] || { echo "::error::brak system.img!"; exit 1; }
+          df -h /
+
+      - name: "4. Drzewo SELinux + debloat + propsy A17 + Rust engine"
+        run: |
+          set -euo pipefail
+          for P in system system_ext; do
+            if [ -e "$WORK/no-$P" ]; then continue; fi
+            S="$WORK/out/$P.img"; T="$WORK/tree-$P"
+            TYPE=$(cat "$WORK/fstype-$P")
+            M="$WORK/mnt-$P"; sudo mkdir -p "$M"
+            if ! sudo mount -o ro,loop "$S" "$M" 2>/dev/null; then
+              sudo mount -t erofs -o ro,loop "$S" "$M" 2>/dev/null \
+                || sudo mount -t ext4 -o ro,loop "$S" "$M" \
+                || { echo "::error::$P: montaz zrodlowy padl (typ=$TYPE)"; exit 1; }
+            fi
+            mkdir -p "$T"
+            sudo tar -C "$M" --acls --xattrs --selinux -cf - . \
+              | sudo tar -C "$T" --acls --xattrs --selinux -xf - \
+              || { echo "::error::$P: tar roundtrip padl"; exit 1; }
+            sudo umount "$M"; sudo rmdir "$M"
+            rm -f "$S"
+            echo "$P: drzewo OK ($(sudo find "$T" 2>/dev/null | wc -l) wpisow)"; df -h /
+          done
+          # SYSROOT: PERMANENT = struktura stocka 1:1 (BEZ shiftu!). Flashtool
+          # images mialy wrapper (krok 4 runa 37368017357: brak app/ w korzeniu,
+          # root-owned storage/data/lost+found) - tylko wskazujemy sciezke.
+          T="$WORK/tree-system"
+          if sudo test -d "$T/app"; then SYS="$T"
+          elif sudo test -d "$T/system/app"; then SYS="$T/system"
+          else
+            A=$(sudo find "$T" -maxdepth 3 -type d -name app -print -quit 2>/dev/null || true)
+            [ -n "$A" ] || { echo "::error::brak app/ w drzewie systemu! Diagnostyka:"
+                             sudo ls -la "$T"; sudo ls -la "$T/system" 2>/dev/null || true
+                             exit 1; }
+            SYS=$(dirname "$A")
+          fi
+          echo "$SYS" > "$WORK/sysroot-system"
+          echo "sysroot systemu: ${SYS#"$T"/} -> $SYS"
+          sudo test -f "$SYS/build.prop" \
+            || { echo "::error::brak build.prop w sysroot"; sudo ls -la "$SYS"; exit 1; }
+          sudo ls -la "$SYS" > "$WORK/sysroot-listing.txt" || true
+          # system_ext FOLDED? (zip flashtool S130714 nie ma system_ext.img)
+          SEBP=""
+          if [ -e "$WORK/no-system_ext" ]; then
+            for CAND in "$SYS/system_ext/etc/build.prop" "$T/system_ext/etc/build.prop"; do
+              if sudo test -f "$CAND"; then SEBP="$CAND"; echo "system_ext FOLDED: $SEBP"; break; fi
+            done
+            [ -n "$SEBP" ] || echo "UWAGA: brak system_ext/etc/build.prop w drzewie - propsy tylko /system"
+          fi
+          if [ -n "$SEBP" ]; then echo "${SEBP#"$T"/}" > "$WORK/sebp-rel"; else : > "$WORK/sebp-rel"; fi
+          # ---- konteksty zachowane? (probka; sudo - drzewo root-owned) ----
+          sudo python3 - "$SYS" <<'EOF'
+          import os, sys
+          S = sys.argv[1]
+          for rel in ['bin/sh', 'build.prop', 'etc/selinux']:
+              lbl = os.getxattr(os.path.join(S, rel), 'security.selinux')
+              assert lbl and lbl.startswith(b'u:object_r:'), rel + ': brak kontekstu SELinux!'
+              print('kontekst OK:', rel, '->', lbl.decode())
+          EOF
+          # ---- DEBLOAT FIZYCZNY (9 pozycji ze spec; run 37374889233: tylko
+          # 3/9 mialo "podrecznikowe" nazwy - reszta ma inne nazwy folderow w
+          # stocku LUB zyje w product (nieosiagalne z system.img). Skan tez
+          # app_backup (staging OTA Lenovo). Miekki fail: listing do logu. ----
+          # v2.2: skanujemy tez system_ext/ (FOLDED w drzewie systemu - stock
+          # S130714 nie ma osobnej partycji). WAZNE: tam zyje stock SystemUI
+          # Lenovo (com.android.systemui) - po porcie MiuiSystemUI (ten sam
+          # pakiet!) stock MUSI zostac atrapa, inaczej konflikt pakietow.
+          sudo python3 - "$WORK" "$SYS" <<'EOF'
+          import os, re, shutil, sys
+          W = sys.argv[1]; T = sys.argv[2]
+          TOKENS = [r'\blsf\b|lsf-device-phone|lsf\.device|com\.lenovo\.lsf',
+                    r'lenovoextend|hecextend|com\.lenovo\.hec\.lenovoextend',
+                    r'hec[._-]?agent|hecplatform|com[.]lenovo[.]hecplatform',
+                    r'udcplatform|com\.lenovo\.udcplatform',
+                    r'userexperience|lenovoue|tabletue|com[.]lenovo[.]ue[.]device|com[.]lenovo[.]ue',
+                    r'lencenter|lenovocenter|tabletcenter|com[.]tblenovo[.]center',
+                    r'\bdsa\b|com\.lenovo\.dsa',
+                    r'tbengine|com\.lenovo\.tbengine',
+                    r'desktoplauncher|com[.]tblenovo[.]desktop',
+                    r'lenovolauncher|com[.]lenovo[.]launcher',
+                    r'systemui|com[.]android[.]systemui',
+                    r'lenovo.?ota|\bfota\b|otaplatform',
+                    r'wpsoffice|wps.?office',
+                    r'lenovowhatsnew|whatsnew',
+                    r'lenovopai',
+                    r'lenovologgerpannel|loggerpannel',
+                    r'hq_opera|hq_preinstallprovider',
+                    r'engineeringcode|com\.lenovo\.engineeringcode']
+          PROTECT = re.compile(r'pen|dolby|atmos|audio|wifi|wlan|display|driver|framework|boot', re.I)
+          stubbed = []
+          listing = []
+          STUB = b'PK\x05\x06' + b'\x00' * 18   # poprawny pusty ZIP = atrapa APK
+          BASES = ['app', 'priv-app', 'app_backup',
+                   'system_ext/app', 'system_ext/priv-app', 'system_ext/app_backup']
+          for base in BASES:
+              d = os.path.join(T, base)
+              if not os.path.isdir(d):
+                  continue
+              for name in sorted(os.listdir(d)):
+                  full = os.path.join(d, name)
+                  if not os.path.isdir(full):
+                      continue
+                  entries = [name] + os.listdir(full)
+                  listing.append(base + '/' + name + '  [' + ' '.join(sorted(entries)[:6]) + ']')
+                  if PROTECT.search(name):
+                      continue
+                  hay = ' '.join(entries).lower()
+                  if any(re.search(t, hay) for t in TOKENS):
+                      saved = 0; napks = 0
+                      for root, dirs, files in os.walk(full):
+                          for f in files:
+                              if not f.endswith('.apk'):
+                                  continue
+                              px = os.path.join(root, f)
+                              try:
+                                  xctx = os.getxattr(px, 'security.selinux')
+                              except OSError:
+                                  xctx = None
+                              saved += os.path.getsize(px)
+                              with open(px, 'wb') as fh:
+                                  fh.write(STUB)
+                              os.chmod(px, 0o644)
+                              if xctx:
+                                  os.setxattr(px, 'security.selinux', xctx)
+                              saved -= len(STUB)
+                              napks += 1
+                      stubbed.append((base, name, saved, napks))
+                      print(f'ATRAPA: {base}/{name}: {napks} APK -> stuby (odchudzone {saved/1e6:.1f} MB)')
+          print(f'DEBLOAT-SAFE v2.1: {len(stubbed)} folderow jako atrapy (struktura zachowana)')
+          open(f'{W}/debloat-report.txt', 'w').write(
+              '\n'.join(f'{a}/{b} apks={d_} saved={c}' for a, b, c, d_ in stubbed) + '\n')
+          open(f'{W}/applist.txt', 'w').write('\n'.join(listing) + '\n')
+          if len(stubbed) < 5:
+              print('UWAGA: stub < 5 trafien - pelny listing folderow:')
+              print('\n'.join(listing))
+              print('(pozostale cele zyja w product - wylaczy je pm disable-user w demonie)')
+          EOF
+          # ---- PROPSY (spec 20 + dodatki z system.prop usera) ----
+          sudo python3 - "$WORK" "$SYS" "$SEBP" <<'EOF'
+          import os, sys
+          W, SYS, SEBP = sys.argv[1], sys.argv[2], sys.argv[3]
+          PROPS = {
+            # tozsamosc A17 / HyperOS 4 (spec usera)
+            'ro.build.version.release': '17',
+            'ro.build.version.release_or_codename': '17',
+            'ro.build.display.id': 'MysticalOS 0.5 (HyperOS 4 x A17 Experience)',
+            'ro.build.version.incremental': 'MysticalOS-0.5-HyperOSPort',
+            'ro.build.version.security_patch': '2026-10-05',
+            'ro.mysticalos.version': '0.5',
+            'ro.mysticalos.edition': 'HyperOS Port Edition',
+            'ro.hyperos.version': '4.0.0',
+            'ro.miui.ui.version.name': 'V16',
+            'ro.miui.ui.version.code': '16',
+            # ADB OD PIERWSZEJ SEKUNDY (spec v2.1 - live debugging na logo)
+            'ro.debuggable': '1',
+            'ro.secure': '0',
+            'ro.adb.secure': '0',
+            'persist.sys.usb.config': 'mtp,adb',
+            'persist.service.adb.enable': '1',
+            # PERSISTENTNE LOGI: logcat przezycie reboot (diagnoza wieszania boota)
+            'persist.logd.logpersistd': 'true',
+            'persist.logd.logpersistd.buffer': 'all',
+            'persist.logd.size': '16384',
+            # grafika / 120Hz (spec usera)
+            'ro.surface_flinger.supports_background_blur': '1',
+            'persist.sys.sf.blur': '1',
+            'persist.sys.background_blur': '1',
+            'persist.sys.lenovo.refresh_rate': '120',
+            'ro.surface_flinger.set_idle_timer_ms': '0',
+            'ro.surface_flinger.set_touch_timer_ms': '1000',
+            'persist.sys.miui.anim.enabled': 'true',
+            'persist.sys.miui_anim_duration_ratio': '0.85',
+            'debug.hwui.renderer': 'skiagl',
+            'debug.renderengine.backend': 'skiaglthreaded',
+            # dodatki z wlasnego system.prop usera (modul 2.0)
+            'persist.sys.sf.native_mode': '1',
+            'ro.surface_flinger.max_frame_buffer_acquired_buffers': '3',
+            'debug.sf.latch_unsignaled': '1',
+            'debug.sf.enable_gl_backpressure': '1',
+            'ro.surface_flinger.use_content_detection_for_refresh_rate': 'true',
+            'touch.pressure.scale': '0.001',
+            'persist.sys.purgeable_assets': '1',
+            'ro.config.low_ram': 'false',
+            'dalvik.vm.heapgrowthlimit': '384m',
+            'dalvik.vm.heapsize': '768m',
+            'dalvik.vm.heaptargetutilization': '0.75',
+            'dalvik.vm.heapminfree': '8m',
+            'dalvik.vm.heapmaxfree': '32m',
+            'dalvik.vm.dex2oat-filter': 'speed-profile',
+            'dalvik.vm.image-dex2oat-filter': 'speed-profile',
+            'renderthread.skia.reduceopstasksplitting': 'true',
+          }
+          def apply(path):
+              if not os.path.isfile(path):
+                  os.makedirs(os.path.dirname(path), exist_ok=True)
+                  open(path, 'w').write('# MysticalOS 0.5 Full UI\n')
+              raw = open(path, encoding='utf-8', errors='surrogateescape').read()
+              lines = raw.split('\n')
+              out, seen = [], set()
+              for l in lines:
+                  if '=' in l and not l.lstrip().startswith('#'):
+                      k = l.split('=', 1)[0].strip()
+                      if k in PROPS:
+                          out.append(k + '=' + PROPS[k]); seen.add(k); continue
+                  out.append(l)
+              missing = [k for k in PROPS if k not in seen]
+              if missing:
+                  out.append('# ==== MysticalOS 0.5 (HyperOS 4 x A17 / Full UI / Rust) ====')
+                  for k in missing:
+                      out.append(k + '=' + PROPS[k])
+              open(path, 'w', encoding='utf-8', errors='surrogateescape').write('\n'.join(out))
+              return len(seen), len(missing)
+          r1 = apply(f'{SYS}/build.prop')
+          print('/system/build.prop:', r1[0], 'podmieniono,', r1[1], 'dodano')
+          if SEBP:
+              r2 = apply(SEBP)
+              print('system_ext/etc/build.prop (folded):', r2[0], 'podmieniono,', r2[1], 'dodano')
+          # KRYTYCZNE: SDK 33 NIETYKANE (stabilnosc system_server + Mali-G57)
+          bp = open(f'{SYS}/build.prop').read()
+          assert 'ro.build.version.sdk=33' in bp, 'sdk != 33?!'
+          assert 'ro.build.version.sdk=34' not in bp and 'ro.build.version.sdk=36' not in bp
+          print('ro.build.version.sdk=33 NIETYKANE OK')
+          EOF
+          # ---- RUST ENGINE (binarka usera + demon + rc DOKLADNIE ze spec) ----
+          sudo install -m 0755 "$WORK/rust/coreutils" "$SYS/bin/coreutils"
+          sudo install -m 0755 "$WORK/rust/mystical-rust-daemon" "$SYS/bin/mystical-rust-daemon"
+          cat > "$WORK/mystical_rust.rc" <<'RCEOF'
+          # MysticalOS 0.5 Full UI - Rust Engine (start PO pelnym boocie; nie blokuje inita)
+          # v2.0: serwis w klasie main startowal WE WCZESNYM inita (przed frameworkiem)
+          # -> wczesny reset zRAM/swapon mogl zawieszac boot na logo. v2.1: wyzwalacz
+          # boot_completed + exec_background w kontekscie inita (blok ze spec usera).
+          on property:sys.boot_completed=1
+              exec_background u:r:init:s0 -- /system/bin/mystical-rust-daemon
+          RCEOF
+          sudo install -m 0644 "$WORK/mystical_rust.rc" "$SYS/etc/init/mystical_rust.rc"
+          # konteksty SELinux nowych plikow = konteksty sasiadow z tego obrazu
+          sudo python3 - "$SYS" <<'EOF'
+          import os, sys
+          S = sys.argv[1]
+          # v2.1 spec: binarki Rust jako u:object_r:system_file:s0 (0755)
+          sysf = b'u:object_r:system_file:s0'
+          rc_ctx = None
+          idir = f'{S}/etc/init'
+          for f in sorted(os.listdir(idir)):
+              if f.endswith('.rc'):
+                  rc_ctx = os.getxattr(os.path.join(idir, f), 'security.selinux'); break
+          if rc_ctx is None:
+              rc_ctx = sysf
+          for rel, ctx, mod in [('bin/coreutils', sysf, 0o755),
+                                ('bin/mystical-rust-daemon', sysf, 0o755),
+                                ('etc/init/mystical_rust.rc', rc_ctx, 0o644)]:
+              os.setxattr(os.path.join(S, rel), 'security.selinux', ctx)
+              os.chmod(os.path.join(S, rel), mod)
+              print('kontekst+tryb nadany:', rel, '->', ctx.decode(), oct(mod))
+          EOF
+          echo "== mody drzewa OK =="; df -h /
+
+      - name: "4b. UI v2 (MiSans + generator HyperOS-look + RRO + dzwieki)"
+        run: |
+          set -euo pipefail
+          SYS=$(cat "$WORK/sysroot-system")
+          UIDIR="$WORK/ui"; mkdir -p "$UIDIR"
+          # ---------- 0) narzedzia: java + build-tools (aapt2/apksigner) + android.jar ----------
+          if ! command -v java >/dev/null 2>&1; then
+            sudo apt-get update -qq >/dev/null 2>&1 || true
+            sudo apt-get install -y -qq openjdk-17-jre-headless >/dev/null 2>&1 || true
+          fi
+          java -version 2>&1 | head -1
+          if ! python3 -c "import PIL" >/dev/null 2>&1; then
+            sudo apt-get update -qq >/dev/null 2>&1 || true
+            sudo apt-get install -y -qq python3-pil >/dev/null 2>&1 || true
+          fi
+          python3 -c "import PIL; print('PIL', PIL.__version__)"
+          BT_OK=""
+          for BTU in "https://dl.google.com/android/repository/build-tools_r34-linux.zip" \
+                     "https://dl.google.com/android/repository/build-tools_r33.0.2-linux.zip"; do
+            if curl -fsSL --retry 3 -o "$UIDIR/bt.zip" "$BTU"; then BT_OK=1; break; fi
+          done
+          [ -n "$BT_OK" ] || { echo "::error::build-tools: pobranie padlo"; exit 1; }
+          unzip -q "$UIDIR/bt.zip" -d "$UIDIR/bt"
+          BT=$(find "$UIDIR/bt" -maxdepth 1 -mindepth 1 -type d | head -1)
+          AAPT2="$BT/aapt2"; APKSIGNER="$BT/apksigner"; ZIPALIGN="$BT/zipalign"
+          chmod +x "$AAPT2" "$APKSIGNER" "$ZIPALIGN" 2>/dev/null || true
+          echo "$AAPT2" > "$WORK/aapt2-path"; echo "$APKSIGNER" > "$WORK/apksigner-path"
+          "$AAPT2" version 2>&1 | head -1
+          git clone --filter=blob:none --no-checkout --depth 1 \
+            https://github.com/Sable/android-platforms.git "$UIDIR/ap" >/dev/null 2>&1
+          ( cd "$UIDIR/ap" && git sparse-checkout set android-30 >/dev/null 2>&1 \
+            && git checkout >/dev/null 2>&1 )
+          AJAR="$UIDIR/ap/android-30/android.jar"
+          test -s "$AJAR" || { echo "::error::android.jar (Sable android-30) pusty"; exit 1; }
+          keytool -genkeypair -keystore "$UIDIR/ks.jks" -alias mystical -keyalg RSA -keysize 2048 \
+            -validity 10000 -storepass mysticalos -keypass mysticalos \
+            -dname "CN=MysticalOS" >/dev/null 2>&1
+          echo "== narzedzia UI OK =="
+
+          # ---------- 1) MISANS x4 (HyperOS Typography) ----------
+          for WGT in Light Regular Medium Bold; do
+            curl -fsSL --retry 3 -o "$UIDIR/MiSans-$WGT.ttf" "$MISANS_BASE/MiSans-$WGT.ttf" \
+              || { echo "::error::MiSans-$WGT: pobranie padlo"; exit 1; }
+          done
+          python3 - "$UIDIR" <<'EOF'
+          import os, sys
+          from PIL import ImageFont
+          d = sys.argv[1]
+          for w in ('Light', 'Regular', 'Medium', 'Bold'):
+              p = f'{d}/MiSans-{w}.ttf'
+              sz = os.path.getsize(p)
+              assert sz > 1_000_000, f'{p}: {sz} B - podejrzanie maly!'
+          ImageFont.truetype(f'{d}/MiSans-Regular.ttf', 40)
+          print('MiSans: 4 wagi OK + TTF parse OK')
+          EOF
+
+          # ---------- 2) WALLPAPER + BOOTANIMATION v2 (HyperOS 4 look: aurora orb + gwiazdy) ----------
+          python3 "$KDIR/ui/gen_ui_assets.py" "$UIDIR" "$UIDIR/MiSans-Regular.ttf"
+          test -s "$UIDIR/wallpaper.png" || { echo "::error::wallpaper.png pusty"; exit 1; }
+          test -s "$UIDIR/bootanimation.zip" || { echo "::error::bootanimation.zip pusty"; exit 1; }
+          mkdir -p "$WORK/out/preview"
+          cp "$UIDIR/preview-boot.jpg" "$UIDIR/preview-wallpaper.jpg" "$WORK/out/preview/"
+
+          # ---------- 3) DZWIEKI UI (synteza ffmpeg, HyperOS-style) ----------
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq >/dev/null 2>&1 || true
+            sudo apt-get install -y -qq ffmpeg >/dev/null 2>&1 || true
+          fi
+          command -v ffmpeg >/dev/null 2>&1 || { echo "::error::ffmpeg niedostepny"; exit 1; }
+          SND="$UIDIR/snd"; mkdir -p "$SND"
+          ffmpeg -y -hide_banner -loglevel error \
+            -f lavfi -i "sine=frequency=659.25:duration=0.16:sample_rate=44100" \
+            -f lavfi -i "sine=frequency=880:duration=0.24:sample_rate=44100" \
+            -filter_complex "[0]volume=0.4,afade=t=in:d=0.012[a];[1]volume=0.4,afade=t=in:d=0.012,afade=t=out:st=0.10:d=0.13,adelay=110[b];[a][b]amix=inputs=2:normalize=0" \
+            -c:a libvorbis -q:a 4 "$SND/Unlock.ogg"
+          ffmpeg -y -hide_banner -loglevel error \
+            -f lavfi -i "sine=frequency=523.25:duration=0.20:sample_rate=44100" \
+            -af "volume=0.35,afade=t=in:d=0.015,afade=t=out:st=0.06:d=0.14" \
+            -c:a libvorbis -q:a 4 "$SND/Lock.ogg"
+          for N in effect_tick AudioEffect_Click AudioEffect_Tap effect_tick_mono; do
+            ffmpeg -y -hide_banner -loglevel error \
+              -f lavfi -i "anoisesrc=d=0.030:c=pink:a=0.5:sample_rate=44100" \
+              -af "highpass=f=900,lowpass=f=7000,volume=0.5,afade=t=out:st=0.006:d=0.024" \
+              -c:a libvorbis -q:a 4 "$SND/$N.ogg"
+          done
+          ffmpeg -y -hide_banner -loglevel error \
+            -f lavfi -i "sine=frequency=523.25:duration=0.14:sample_rate=44100" \
+            -f lavfi -i "sine=frequency=659.25:duration=0.14:sample_rate=44100" \
+            -f lavfi -i "sine=frequency=783.99:duration=0.28:sample_rate=44100" \
+            -filter_complex "[0]volume=0.35[a];[1]volume=0.35,adelay=120[b];[2]volume=0.35,afade=t=out:st=0.12:d=0.16,adelay=240[c];[a][b][c]amix=inputs=3:normalize=0" \
+            -c:a libvorbis -q:a 4 "$SND/ChargingStarted.ogg"
+          cp "$SND/ChargingStarted.ogg" "$SND/WirelessChargingStarted.ogg"
+
+          # ---------- 4) OVERLAY RRO #1: framework (corner 28dp + default_wallpaper) ----------
+          OV="$UIDIR/ov-framework"; rm -rf "$OV"; mkdir -p "$OV/res/values" "$OV/res/drawable-nodpi"
+          cat > "$OV/res/values/dimens.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <dimen name="dialogCornerRadius">28.0dp</dimen>
+              <dimen name="config_dialogCornerRadius">28.0dp</dimen>
+          </resources>
+          EOF
+          cp "$UIDIR/wallpaper.png" "$OV/res/drawable-nodpi/default_wallpaper.png"
+          cat > "$OV/AndroidManifest.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.mystical.theme.framework">
+              <overlay android:targetPackage="android" android:isStatic="false"
+                       android:priority="800" android:label="MysticalOS Framework Theme" />
+          </manifest>
+          EOF
+          build_overlay() {
+            "$AAPT2" compile --dir "$1/res" -o "$1/compiled.zip"
+            "$AAPT2" link -o "$1/unsigned.apk" -I "$AJAR" --manifest "$1/AndroidManifest.xml" \
+              --min-sdk-version 26 --target-sdk-version 33 --version-code 1 --version-name 0.5 \
+              --auto-add-overlay "$1/compiled.zip"
+            "$ZIPALIGN" -f 4 "$1/unsigned.apk" "$1/aligned.apk"
+            "$APKSIGNER" sign --ks "$UIDIR/ks.jks" --ks-pass pass:mysticalos --out "$2" "$1/aligned.apk"
+            "$APKSIGNER" verify "$2" && echo "overlay podpisany+zweryfikowany: $2"
+          }
+          build_overlay "$OV" "$UIDIR/Theme_Android17_Framework.apk" \
+            || { echo "::error::overlay framework: build padl"; exit 1; }
+
+          # ---------- 5) INSTALACJA do sysroota ----------
+          sudo mkdir -p "$SYS/media/wallpapers" "$SYS/media/audio/ui" "$SYS/overlay" \
+                       "$SYS/etc/mystical"
+          for WGT in Light Regular Medium Bold; do
+            sudo install -m 0644 "$UIDIR/MiSans-$WGT.ttf" "$SYS/fonts/MiSans-$WGT.ttf"
+          done
+          sudo python3 "$KDIR/ui/fonts_swap.py" "$SYS" "$WORK"
+          sudo install -m 0644 "$UIDIR/bootanimation.zip" "$SYS/media/bootanimation.zip"
+          sudo install -m 0644 "$UIDIR/wallpaper.png" \
+            "$SYS/media/wallpapers/MysticalOS_Default.png"
+          SND_N=0
+          for F in "$SND"/*.ogg; do
+            B=$(basename "$F")
+            sudo install -m 0644 "$F" "$SYS/media/audio/ui/$B" && SND_N=$((SND_N + 1))
+          done
+          sudo install -m 0644 "$UIDIR/Theme_Android17_Framework.apk" \
+            "$SYS/overlay/Theme_Android17_Framework.apk"
+          # konteksty SELinux: kopie od istniejacych sasiadow
+          sudo python3 - "$SYS" <<'EOF'
+          import glob
+          import os
+          import sys
+          S = sys.argv[1]
+          def ctx(p):
+              return os.getxattr(p, 'security.selinux')
+          fonts = sorted(f for f in os.listdir(os.path.join(S, 'fonts'))
+                         if f.endswith('.ttf') and not f.startswith('MiSans'))
+          ref_font = os.path.join(S, 'fonts', fonts[0])
+          ref_media = None
+          for root, _, files in os.walk(os.path.join(S, 'media')):
+              for f in sorted(files):
+                  try:
+                      os.getxattr(os.path.join(root, f), 'security.selinux')
+                      ref_media = os.path.join(root, f)
+                      break
+                  except OSError:
+                      continue
+              if ref_media:
+                  break
+          if ref_media is None:
+              ref_media = ref_font
+          def setctx(rel, ref):
+              p = os.path.join(S, rel)
+              os.setxattr(p, 'security.selinux', ctx(ref))
+              os.chmod(p, 0o644)
+              print('kontekst:', rel, '->', ctx(ref).decode().rstrip('\x00'))
+          for w in ('Light', 'Regular', 'Medium', 'Bold'):
+              setctx(f'fonts/MiSans-{w}.ttf', ref_font)
+          setctx('media/bootanimation.zip', ref_media)
+          setctx('media/wallpapers/MysticalOS_Default.png', ref_media)
+          for ogg in glob.glob(os.path.join(S, 'media/audio/ui/*.ogg')):
+              os.setxattr(ogg, 'security.selinux', ctx(ref_media))
+          setctx('overlay/Theme_Android17_Framework.apk', ref_font)
+          print('konteksty SELinux assetow UI OK')
+          EOF
+          {
+            echo "== UI v2 (port) =="
+            echo "fonts: MiSans Light/Regular/Medium/Bold"
+            echo "bootanimation: $(stat -c%s "$UIDIR/bootanimation.zip") B (80 klatek, orb)"
+            echo "wallpaper: $(stat -c%s "$UIDIR/wallpaper.png") B (aurora orb)"
+            echo "dzwieki UI: $SND_N"
+            echo "overlay framework: $(stat -c%s "$UIDIR/Theme_Android17_Framework.apk") B"
+          } > "$WORK/ui-report.txt"
+          cat "$WORK/ui-report.txt"
+          echo "== UI v2 OK =="; df -h /
+
+      - name: "4c. PORT: nabu.zip z cache (restore)"
+        id: nabucache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/m2/nabu.zip
+          key: nabu-OS1.0.6.0.TKXMIXM-4af37553d5
+
+      - name: "4c. PORT: pobierz nabu HyperOS 1.0.6.0 (aria2c 16x + 3 mirrory)"
+        if: steps.nabucache.outputs.cache-hit != 'true'
+        timeout-minutes: 290
+        run: |
+          set -euo pipefail
+          # ---------- 1) nabu HyperOS 1.0.6.0 Global (A13 = sdk 33) ----------
+          # CDN Xiaomi dlawi pojedyncze polaczenia (run 37516155801: curl x9
+          # prob = 90 min i FAIL; run 37531411028: aria2c zle opcje -> curl
+          # 20 KB/s przez 2:45 h; run 37550790970: DNS *.d.miui.com nierozwiazywany
+          # z runera -> exit 6). Fix: publiczne resolvery PRZED Azure DNS.
+          echo "== DNS: wstawiam publiczne resolvery (8.8.8.8, 1.1.1.1) =="
+          sudo cp /etc/resolv.conf "$WORK/resolv.conf.orig" 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\nnameserver 168.63.129.16\noptions timeout:2 attempts:3\n' \
+            | sudo tee /etc/resolv.conf >/dev/null
+          # przywroc oryginalny resolv.conf po zakonczeniu kroku (github/azure dalej
+          # przez DNS Azure); trap dziala tez na sciezkach exit 1
+          trap 'if [ -s "$WORK/resolv.conf.orig" ]; then sudo cp "$WORK/resolv.conf.orig" /etc/resolv.conf 2>/dev/null || true; fi' EXIT
+          for H in bigota.d.miui.com hugeparallel1.d.miui.com hugeparallel2.d.miui.com cdnorg.d.miui.com hugebackup.d.miui.com; do
+            echo "dns $H -> $(getent hosts "$H" | awk '{print $1}' | paste -sd, - || true)"
+          done
+          echo "== diagnostyka mirrorow (HEAD) =="
+          for NU in "$NABU_URL" "$NABU_URL2" "$NABU_URL3" "$NABU_URL4" "$NABU_URL5"; do
+            H=$(printf '%s' "$NU" | sed 's|https://||;s|/.*||')
+            LC=$(curl -sI --connect-timeout 10 --max-time 20 "$NU" 2>/dev/null \
+                 | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}' | head -1 || true)
+            echo "mirror $H: content-length=${LC:-BRAK}"
+          done
+          NABU_OK=""
+          # MD5 oficjalnego recovery ROM (zrodlo: xmfirmwareupdater/miuidownloader/
+          # hyperosupdate) - weryfikacja ZAPISU do cache (cache przechowuje tylko OK)
+          NABU_MD5="4af37553d549a89706b562558da81874"
+          if ! command -v aria2c >/dev/null 2>&1; then
+            sudo apt-get update -q >/dev/null 2>&1 || true
+            sudo apt-get install -y -q aria2 >/dev/null 2>&1 || true
+          fi
+          if command -v aria2c >/dev/null 2>&1; then
+            # run 37531411028: 'unrecognized option --directory-prefix' (to skladnia
+            # curl!) - aria2c padl x8 w 0.1 s i curl dlawil sie 20 KB/s przez 2:45 h.
+            # Teraz: --dir + lowest-speed-limit=5K (CDN dlawi ~20 KB/s/conn - prog
+            # 20K zabijalby wlasnie te polaczenia!) + split=32 na 5 mirrorach.
+            for A in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              if aria2c --continue=true --file-allocation=none \
+                   --max-connection-per-server=16 --split=32 --min-split-size=8M \
+                   --max-tries=5 --retry-wait=10 --timeout=60 --connect-timeout=30 \
+                   --lowest-speed-limit=5K --summary-interval=60 \
+                   --auto-file-renaming=false --allow-overwrite=true \
+                   --dir="$WORK" --out=nabu.zip \
+                   "$NABU_URL" "$NABU_URL2" "$NABU_URL3" "$NABU_URL4" "$NABU_URL5"; then
+                NABU_OK=1; break
+              fi
+              echo "aria2c proba $A nieudana - resume za 10 s"; sleep 10
+            done
+          else
+            echo "aria2c niedostepny (apt padl?) - od razu fallback curl"
+          fi
+          # fallback curl (czyscimy czesciowy plik aria2 - sparse dziury!)
+          if [ -z "$NABU_OK" ]; then
+            rm -f "$WORK/nabu.zip" "$WORK/nabu.zip.aria2"
+            for NU in "$NABU_URL" "$NABU_URL2" "$NABU_URL3"; do
+              for A in 1 2 3; do
+                if curl -fL --retry 3 --retry-delay 5 -C - --connect-timeout 30 -o "$WORK/nabu.zip" "$NU"; then
+                  NABU_OK=1; break
+                fi
+                echo "proba $A nieudana ($NU) - czekam 15 s"; sleep 15
+              done
+              [ -z "$NABU_OK" ] || break
+            done
+          fi
+          [ -n "$NABU_OK" ] || { echo "::error::nabu.zip nie pobrany (aria2c 12x + curl 9x, wszystkie mirrory)"; exit 1; }
+          SZ=$(stat -c%s "$WORK/nabu.zip")
+          [ "$SZ" -gt 3000000000 ] || { echo "::error::nabu.zip ${SZ} B < 3 GB?!"; exit 1; }
+          MD5=$(md5sum "$WORK/nabu.zip" | awk '{print $1}')
+          [ "$MD5" = "$NABU_MD5" ] \
+            || { echo "::error::nabu.zip md5=$MD5 != $NABU_MD5 (uszkodzone pobranie)"; exit 1; }
+          echo "nabu.zip: ${SZ} B, md5 OK ($MD5) - swieze pobranie"; df -h /
+
+      - name: "4c. PORT: nabu.zip do cache (save)"
+        if: steps.nabucache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/m2/nabu.zip
+          key: nabu-OS1.0.6.0.TKXMIXM-4af37553d5
+
+      - name: "4c2. PORT: donor yingtian HyperOS 4 - bits z cache (restore)"
+        id: donorcache
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/m2/donor-cache
+          key: yingtian-OS4.0.11.0-h4-port-v4
+
+      - name: "4c2. PORT: pobierz donor yingtian HyperOS 4 + wyluskaj launcher (10.3 GB)"
+        if: steps.donorcache.outputs.cache-hit != 'true'
+        timeout-minutes: 290
+        run: |
+          set -euo pipefail
+          # ---------- DONOR = Xiaomi Pad 9 Pro Max "yingtian" HyperOS 4.0.11.0 ----------
+          # User (Rozkaz 17, iteracja 2): launcher i apki z PRAWDZIWEGO HyperOS 4.
+          # Recovery ROM 10 313 202 368 B (sha256 7b8c7f00..., md5 a12ac31de7 -
+          # xmfirmwareupdater, oficjalny CDN Xiaomi). Wyciagamy product (MiuiHome,
+          # overlay, permissions) i system_ext (framework miui h4 + library XML).
+          # Cache = SAME BITSY (apk + nakladki + permy + jary ~200 MB), nie obrazy
+          # 7 GB (limit cache repo to 10 GB, nabu juz zajmuje 3.7 GB).
+          DCH="$WORK/donor-cache"; mkdir -p "$DCH"
+          echo "== DNS: publiczne resolvery (jak krok 4c) =="
+          sudo cp /etc/resolv.conf "$WORK/resolv.conf.orig" 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\nnameserver 168.63.129.16\noptions timeout:2 attempts:3\n' \
+            | sudo tee /etc/resolv.conf >/dev/null
+          trap 'if [ -s "$WORK/resolv.conf.orig" ]; then sudo cp "$WORK/resolv.conf.orig" /etc/resolv.conf 2>/dev/null || true; fi' EXIT
+          YFILE="yingtian-ota_full-OS4.0.11.0.XBMCNXM-user-17.0-a12ac31de7.zip"
+          YPATH="OS4.0.11.0.XBMCNXM/$YFILE"
+          YSHA="7b8c7f002abfeebae302961b73030984e5a065ec9f9e73976c0cc818349c8cce"
+          YURLS=""
+          for H in bn.d.miui.com cdnorg.d.miui.com hugeota.d.miui.com bigota.d.miui.com hugebackup.d.miui.com; do
+            YURLS="$YURLS https://$H/$YPATH"
+            LC=$(curl -sI --connect-timeout 10 --max-time 25 "https://$H/$YPATH" 2>/dev/null \
+                 | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}' | head -1 || true)
+            echo "mirror $H: content-length=${LC:-BRAK}"
+          done
+          if ! command -v aria2c >/dev/null 2>&1; then
+            sudo apt-get update -q >/dev/null 2>&1 || true
+            sudo apt-get install -y -q aria2 >/dev/null 2>&1 || true
+          fi
+          mkdir -p "$WORK/donor"; cd "$WORK/donor"
+          aria2c -x16 -s16 -k4M --lowest-speed-limit=5K --connect-timeout=15 \
+            --max-tries=8 --retry-wait=5 --summary-interval=60 \
+            -o "$YFILE" $YURLS || { echo "::error::donor: aria2c padl (mirrors wyzej)"; exit 1; }
+          SZ=$(stat -c%s "$YFILE"); echo "donor zip: $SZ B"
+          [ "$SZ" -eq 10313202368 ] || { echo "::error::donor: zly rozmiar ($SZ != 10313202368)"; exit 1; }
+          echo "$YSHA  $YFILE" | sha256sum -c - || { echo "::error::donor: sha256 NIE zgadza sie"; exit 1; }
+          # payload.bin + payload-dumper-go (pinned 2.1.0, jak 4d)
+          unzip -o -q "$YFILE" payload.bin -d "$WORK/donor"
+          curl -fsSL --retry 3 -o "$WORK/donor/pdg.tar.gz" \
+            "https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz"
+          tar -xzf "$WORK/donor/pdg.tar.gz" -C "$WORK/donor"
+          "$WORK/donor/payload-dumper-go" -p product,system_ext -o "$WORK/donor/out" "$WORK/donor/payload.bin" \
+            || { echo "::error::donor: pdg padl"; exit 1; }
+          DY=$(find "$WORK/donor/out" -name "product.img" | head -1)
+          DE=$(find "$WORK/donor/out" -name "system_ext.img" | head -1)
+          [ -n "$DY" ] || { echo "::error::donor: brak product.img"; exit 1; }
+          [ -n "$DE" ] || { echo "::error::donor: brak system_ext.img"; exit 1; }
+          sudo rm -f "$WORK/donor/payload.bin" "$WORK/donor/pdg.tar.gz"
+          # ---- product: MiuiHome + overlay + permissions ----
+          DM="$WORK/donor/mnt-p"; sudo mkdir -p "$DM"
+          sudo mount -o ro,loop "$DY" "$DM" || { echo "::error::donor: montaz product padl"; exit 1; }
+          MH=$(sudo find "$DM/priv-app" -maxdepth 1 -type d -iname "MiuiHome*" | head -1)
+          [ -n "$MH" ] || { echo "::error::donor: brak priv-app/MiuiHome w product"; sudo umount "$DM"; exit 1; }
+          sudo find "$MH" -name "*.apk" -exec cp {} "$DCH/MiuiHome-h4.apk" \;
+          test -s "$DCH/MiuiHome-h4.apk" || { echo "::error::donor: MiuiHome-h4.apk pusty"; sudo umount "$DM"; exit 1; }
+          sudo mkdir -p "$DCH/overlay"
+          sudo cp -a "$DM/overlay/." "$DCH/overlay/" 2>/dev/null || echo "donor: brak product/overlay (ok)"
+          # ---- media donora: ORYGINALNA bootanimation HyperOS 4 (+ bootaudio) ----
+          sudo mkdir -p "$DCH/media"
+          sudo cp -a "$DM/media/." "$DCH/media/" 2>/dev/null || echo "donor: brak product/media (ok)"
+          sudo mkdir -p "$DCH/perms"
+          sudo cp -a "$DM/etc/permissions/." "$DCH/perms/" 2>/dev/null || true
+          # ---- jary <library> z product/framework (nazwy plikow z XML-i perms) ----
+          sudo mkdir -p "$DCH/framework-h4"
+          LIBJAR=$(python3 - "$DCH" <<'PYEOF'
+          import glob, os, re, sys
+          DCH = sys.argv[1]
+          names = set()
+          for f in glob.glob(os.path.join(DCH, 'perms', '*.xml')):
+              txt = open(f, encoding='utf-8', errors='ignore').read()
+              for m in re.finditer(r'<library\b([^>]*?)/?>', txt):
+                  tag = m.group(1)
+                  nm = re.search(r'name="([^"]+)"', tag)
+                  fl = re.search(r'file="([^"]+)"', tag)
+                  if nm:
+                      names.add(os.path.basename(fl.group(1)) if fl else nm.group(1) + '.jar')
+          print(' '.join(sorted(names)))
+          PYEOF
+          )
+          for LJ in $LIBJAR; do
+            sudo find "$DM/framework" -maxdepth 1 -name "$LJ" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
+          done
+          sudo find "$DM/framework" -maxdepth 1 -name "hyperos*.jar" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
+          sudo umount "$DM"
+          # ---- system_ext: framework miui h4 + library XML ----
+          DM2="$WORK/donor/mnt-e"; sudo mkdir -p "$DM2"
+          if sudo mount -o ro,loop "$DE" "$DM2" 2>/dev/null; then
+            sudo cp -a "$DM2/etc/permissions/." "$DCH/perms/" 2>/dev/null || true
+            LIBJAR2=$(python3 - "$DCH" <<'PYEOF'
+          import glob, os, re, sys
+          DCH = sys.argv[1]
+          names = set()
+          for f in glob.glob(os.path.join(DCH, 'perms', '*.xml')):
+              txt = open(f, encoding='utf-8', errors='ignore').read()
+              for m in re.finditer(r'<library\b([^>]*?)/?>', txt):
+                  tag = m.group(1)
+                  nm = re.search(r'name="([^"]+)"', tag)
+                  fl = re.search(r'file="([^"]+)"', tag)
+                  if nm:
+                      names.add(os.path.basename(fl.group(1)) if fl else nm.group(1) + '.jar')
+          print(' '.join(sorted(names)))
+          PYEOF
+            )
+            for LJ in $LIBJAR2; do
+              sudo find "$DM2/framework" -maxdepth 1 -name "$LJ" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
+            done
+            sudo find "$DM2/framework" -maxdepth 1 -name "miui*.jar" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
+            sudo find "$DM2/framework" -maxdepth 1 -name "hyperos*.jar" -exec cp {} "$DCH/framework-h4/" \; 2>/dev/null || true
+            sudo umount "$DM2"
+          else
+            echo "UWAGA: montaz system_ext donora padl - vendoring h4 jarow pominietty"
+          fi
+          sudo chown -R "$(id -u):$(id -g)" "$DCH" 2>/dev/null || true
+          sudo rm -rf "$WORK/donor"
+          echo "== donor bits =="; ls -la "$DCH" | head -12
+          echo "== <library> z XML donora (diag):"
+          grep -h '<library' "$DCH"/perms/*.xml 2>/dev/null | head -40 || echo "(brak wpisow library w perms)"
+          echo "MiuiHome-h4.apk: $(stat -c%s "$DCH/MiuiHome-h4.apk") B"
+          echo "jary h4: $(ls "$DCH/framework-h4" 2>/dev/null | wc -l), nakladki: $(ls "$DCH/overlay" 2>/dev/null | wc -l)"
+          echo "DONOR BITS OK"
+
+      - name: "4c2. PORT: donor bits do cache (save)"
+        if: steps.donorcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/m2/donor-cache
+          key: yingtian-OS4.0.11.0-h4-port-v4
+
+      - name: "4d. PORT HyperOS z nabu (MiuiSystemUI + MiuiHome + framework + classpaths.pb)"
+        run: |
+          set -euo pipefail
+          SYS=$(cat "$WORK/sysroot-system")
+          # nabu.zip: cache-hit albo swieze pobranie (krok 4c); twardy check
+          if [ ! -s "$WORK/nabu.zip" ]; then
+            echo "::error::nabu.zip nie istnieje (ani cache, ani pobranie?)"; exit 1
+          fi
+          SZ=$(stat -c%s "$WORK/nabu.zip")
+          [ "$SZ" -gt 3000000000 ] || { echo "::error::nabu.zip ${SZ} B < 3 GB?!"; exit 1; }
+          MD5=$(md5sum "$WORK/nabu.zip" | awk '{print $1}')
+          [ "$MD5" = "4af37553d549a89706b562558da81874" ] \
+            || { echo "::error::nabu.zip (cache) md5=$MD5 != oficjalny - cache uszkodzony"; exit 1; }
+          echo "nabu.zip: ${SZ} B, md5 OK ($MD5) (cache-hit: ${{ steps.nabucache.outputs.cache-hit || 'false' }})"
+          # ---------- 2) payload.bin -> system.img + system_ext.img (nabu) ----------
+          unzip -o -q "$WORK/nabu.zip" "*payload.bin" -d "$WORK/nabu"
+          PB=$(find "$WORK/nabu" -name payload.bin | head -1)
+          [ -n "$PB" ] || { echo "::error::brak payload.bin w nabu.zip"; exit 1; }
+          rm -f "$WORK/nabu.zip"
+          curl -fL --retry 3 -o "$WORK/pdg.tgz" \
+            https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz
+          tar -xzf "$WORK/pdg.tgz" -C "$WORK"; rm -f "$WORK/pdg.tgz"
+          # apki miui moga mieszkac w system ALBO system_ext ALBO product (Xiaomi
+          # mieszkal priv-appi miedzy partycjami; run 37561052713: MiuiSystemUI
+          # w system_ext, MiuiHome w product) -> wyluskujemy WSZYSTKIE TRZY
+          "$WORK/payload-dumper-go" -p system,system_ext,product -o "$WORK/nabu-out" "$PB" \
+            || { echo "::error::payload-dumper-go (nabu) padl"; exit 1; }
+          rm -f "$PB" "$WORK/payload-dumper-go"
+          NSYS=$(find "$WORK/nabu-out" -type f -name "system.img" | head -1)
+          [ -n "$NSYS" ] || { echo "::error::nabu: brak system.img"; exit 1; }
+          NSEXT=$(find "$WORK/nabu-out" -type f -name "system_ext.img" | head -1)
+          NPROD=$(find "$WORK/nabu-out" -type f -name "product.img" | head -1)
+          # sparse? (payload daje raw, ale sprawdzamy)
+          for NI in $NSYS $NSEXT $NPROD; do
+            [ -n "$NI" ] || continue
+            if python3 -c "import struct,sys; sys.exit(0 if struct.unpack('<I', open(sys.argv[1],'rb').read(4))[0]==0xED26FF3A else 1)" "$NI"; then
+              python3 "$KDIR/tools/simg2img.py" "$NI" "$NI.raw" && mv "$NI.raw" "$NI"
+            fi
+          done
+          echo "nabu system.img: $(stat -c%s "$NSYS") B; system_ext.img: $(stat -c%s "$NSEXT" 2>/dev/null || echo brak); product.img: $(stat -c%s "$NPROD" 2>/dev/null || echo brak)"
+          # ---------- 3) montaze nabu (ro) ----------
+          M="$WORK/nabu-mnt"; sudo mkdir -p "$M"
+          sudo mount -o ro,loop "$NSYS" "$M" \
+            || { echo "::error::montaz nabu system.img padl"; exit 1; }
+          M2=""
+          if [ -n "$NSEXT" ]; then
+            M2="$WORK/nabu-mnt-ext"; sudo mkdir -p "$M2"
+            sudo mount -o ro,loop "$NSEXT" "$M2" 2>/dev/null || { echo "UWAGA: montaz system_ext padl"; M2=""; }
+          fi
+          M3=""
+          if [ -n "$NPROD" ]; then
+            M3="$WORK/nabu-mnt-prod"; sudo mkdir -p "$M3"
+            sudo mount -o ro,loop "$NPROD" "$M3" 2>/dev/null || { echo "UWAGA: montaz product padl"; M3=""; }
+          fi
+          # ---------- 4) INVENTORY multi-root (oba layouty: plaski i system/) ----------
+          ROOTS=""
+          for CAND in "$M" "$M/system" "$M2" "$M2/system" "$M3" "$M3/system"; do
+            [ -n "$CAND" ] || continue
+            if sudo test -d "$CAND"; then ROOTS="$ROOTS $CAND"; fi
+          done
+          echo "korzenie drzew nabu (system[,system_ext,product], oba layouty):$ROOTS"
+          find_in_roots() {
+            for R in $ROOTS; do
+              if sudo test -e "$R/$1"; then echo "$R/$1"; return; fi
+            done
+          }
+          SIU=$(find_in_roots "priv-app/MiuiSystemUI")
+          MHOME=$(find_in_roots "priv-app/MiuiHome")
+          if [ -z "$SIU" ] || [ -z "$MHOME" ]; then
+            echo "::error::nabu: MiuiSystemUI=${SIU:-BRAK} MiuiHome=${MHOME:-BRAK}! Diagnostyka:"
+            for R in $ROOTS; do echo "== $R =="; sudo ls "$R" 2>/dev/null | head -40; echo "-- priv-app:"; sudo ls "$R/priv-app" 2>/dev/null | head -60; done
+            for MU in "$M3" "$M2"; do [ -n "$MU" ] && sudo umount "$MU"; done; sudo umount "$M"; exit 1
+          fi
+          echo "MiuiSystemUI: $SIU"
+          echo "MiuiHome: $MHOME"
+          DFEAT=$(find_in_roots "etc/device_features")
+          [ -n "$DFEAT" ] || { echo "::error::nabu: brak etc/device_features (szukalem w:$ROOTS)"; for MU in "$M3" "$M2"; do [ -n "$MU" ] && sudo umount "$MU"; done; sudo umount "$M"; exit 1; }
+          JAR_LIST=""
+          for R in $ROOTS; do
+            for J in $(sudo find "$R/framework" -maxdepth 1 -type f -name "miui*.jar" -printf "%f\n" 2>/dev/null | sort); do
+              case " $JAR_LIST " in *" $J "*) ;; *) JAR_LIST="$JAR_LIST $J" ;; esac
+            done
+          done
+          JAR_LIST=$(echo "$JAR_LIST" | xargs)
+          echo "nabu miui jary:$JAR_LIST"
+          [ -n "$JAR_LIST" ] || { echo "::error::nabu: brak miui*.jar w framework/ (szukalem w:$ROOTS)"; for MU in "$M3" "$M2"; do [ -n "$MU" ] && sudo umount "$MU"; done; sudo umount "$M"; exit 1; }
+          sudo find "$SIU" "$MHOME" -type f > "$WORK/port-files.txt"
+          # ---------- 5) KOPIA do sysroota ----------
+          sudo cp -a "$SIU" "$SYS/priv-app/"
+          sudo cp -a "$MHOME" "$SYS/priv-app/"
+          for J in $JAR_LIST; do
+            JR=$(find_in_roots "framework/$J")
+            sudo install -m 0644 "$JR" "$SYS/framework/$J"
+          done
+          MIUIAPP=$(find_in_roots "app/miui")
+          if [ -n "$MIUIAPP" ]; then sudo cp -a "$MIUIAPP" "$SYS/app/"; fi
+          sudo cp -a "$DFEAT" "$SYS/etc/"
+          # privapp-permissions / sysconfig / <library> z nabu (bez kolizji nazw)
+          # ROOTS = wszystkie korzenie drzew nabu (system + system_ext, 2 layouty)
+          sudo python3 - "$SYS" "$WORK" $ROOTS <<'EOF'
+          import os
+          import re
+          import shutil
+          import sys
+          S, W = sys.argv[1], sys.argv[2]
+          ROOTS = sys.argv[3:]
+          ref_ctx = None
+          for cand in (os.path.join(S, 'etc/permissions'), os.path.join(S, 'etc/sysconfig')):
+              if os.path.isdir(cand):
+                  for f in sorted(os.listdir(cand)):
+                      try:
+                          ref_ctx = os.getxattr(os.path.join(cand, f), 'security.selinux')
+                          break
+                      except OSError:
+                          continue
+              if ref_ctx:
+                  break
+          if ref_ctx is None:
+              ref_ctx = os.getxattr(os.path.join(S, 'etc/fonts.xml'), 'security.selinux')
+          perm_n = lib_n = 0
+          copied = set()
+          for d in ('etc/permissions', 'etc/sysconfig'):
+              for R in ROOTS:
+                  src = os.path.join(R, d)
+                  if not os.path.isdir(src):
+                      continue
+                  for f in sorted(os.listdir(src)):
+                      if not f.endswith('.xml') or f in copied:
+                          continue
+                      p = os.path.join(src, f)
+                      txt = open(p, encoding='utf-8', errors='ignore').read()
+                      # biblioteki <library> ORAZ pliki powiazane z miui/systemui
+                      # (nazwa LUB tresc - np. privapp-permissions dla com.miui.home
+                      # moze miec neutralna nazwe typu privapp-permissions-product.xml)
+                      if not ('<library' in txt or re.search(r'systemui|miui', f, re.I)
+                              or re.search(r'com\.miui\.|com\.android\.systemui|miui', txt, re.I)):
+                          continue
+                      dst_dir = os.path.join(S, d)
+                      os.makedirs(dst_dir, exist_ok=True)
+                      dst = os.path.join(dst_dir, f)
+                      if os.path.exists(dst):
+                          print('pomijam (kolizja):', d + '/' + f)
+                          copied.add(f)
+                          continue
+                      shutil.copy2(p, dst)
+                      os.chmod(dst, 0o644)
+                      os.setxattr(dst, 'security.selinux', ref_ctx)
+                      copied.add(f)
+                      if '<library' in txt:
+                          lib_n += 1
+                      else:
+                          perm_n += 1
+                      print('kopiuje:', d + '/' + f, '(z', R + ')')
+          open(os.path.join(W, 'port-perms.txt'), 'w').write(
+              'privapp-permissions: %d\nlibrary-xml: %d\n' % (perm_n, lib_n))
+          print('permissions z nabu:', perm_n, '| library-xml:', lib_n)
+          EOF
+          # --- stan dla 4d2/4d3 (split kroku 4d: GH limit 21k znakow na run) ---
+          printf '%s\n' "$MHOME" > "$WORK/mhome-path"
+          printf '%s\n' "$JAR_LIST" > "$WORK/jarlist.txt"
+          printf '%s\n' "$M2" > "$WORK/m2-path"; printf '%s\n' "$M3" > "$WORK/m3-path"
+
+      - name: "4d2. PORT: LAUNCHER HYPEROS 4 z yingtian (minSdk 33 + rescue + guard + nakladki)"
+        run: |
+          # (odtworzenie zmiennych z 4d; split kroku - GH limit 21k znakow na run)
+          # --- DIAG: konsola -> plik; przy padnieciu tail w annotation ---
+          exec > >(tee "$WORK/4d2-console.log") 2>&1
+          set -E
+          trap 'RC=$?; echo "::error::4d2 padl (exit $RC); ostatnie linie:"; tail -n 18 "$WORK/4d2-console.log" 2>/dev/null' ERR
+          echo "== 4d2 diag: stan $WORK (poczatek) ==="
+          ls -la "$WORK" 2>/dev/null | head -30 || true
+          SYS=$(cat "$WORK/sysroot-system"); MHOME=$(cat "$WORK/mhome-path")
+          [ -n "$SYS" ] && [ -n "$MHOME" ] \
+            || { echo "::error::4d2: SYS='$SYS' MHOME='$MHOME' (sysroot-system/mhome-path z 4d?)"; ls -la "$WORK"; exit 1; }
+          echo "4d2: SYS=$SYS MHOME=$MHOME"
+          # ---------- 5b) LAUNCHER HYPEROS 4 (donor yingtian OS4.0.11.0) ----------
+          # User (Rozkaz 17 it.2): "miało byc HyperOS 4 + launcher HyperOS".
+          # MiuiSystemUI z A17 nie wystartuje na A13 (framework-locked) -> zostaje
+          # z nabu; LAUNCHER = com.miui.home z HyperOS 4.0.11.0 (Pad 9 Pro Max):
+          # minSdk przepatchowane 37->33 (tools/axmlminsdk.py, binary AXML),
+          # podpisane kluczem MysticalOS. Jary miui h4 = vendorowane jako
+          # <library> (tylko NOWE nazwy - zero kolizji z nabu na BOOTCLASSPATH,
+          # SystemUI nietkany). Nabu MiuiHome = RESCUE w app_backup (katalog nie
+          # skanowany przez PackageManager) + auto-rescue w home-guardzie.
+          DCH="$WORK/donor-cache"
+          test -s "$DCH/MiuiHome-h4.apk" || { echo "::error::5b: brak donor-cache/MiuiHome-h4.apk (krok 4c2?)"; exit 1; }
+          AAPT2=$(cat "$WORK/aapt2-path"); APKSIGNER=$(cat "$WORK/apksigner-path")
+          ZIPALIGN="$(dirname "$AAPT2")/zipalign"
+          H4RAW="$DCH/MiuiHome-h4.apk"
+          echo "== MiuiHome HyperOS 4 (donor yingtian): $(stat -c%s "$H4RAW") B =="
+          python3 "$KDIR/tools/axmlminsdk.py" "$H4RAW" 33 "$WORK/miuihome-h4-minsdk.apk" --if-needed
+          "$ZIPALIGN" -f 4 "$WORK/miuihome-h4-minsdk.apk" "$WORK/miuihome-h4-signed.apk"
+          "$APKSIGNER" sign --ks "$WORK/ui/ks.jks" --ks-key-alias mystical \
+            --ks-pass pass:mysticalos --key-pass pass:mysticalos \
+            --min-sdk-version 26 "$WORK/miuihome-h4-signed.apk"
+          "$APKSIGNER" verify "$WORK/miuihome-h4-signed.apk" \
+            || { echo "::error::5b: podpis h4 nie przechodzi"; exit 1; }
+          cp "$WORK/miuihome-h4-signed.apk" "$WORK/chk-MiuiHomeH4.apk"
+          "$AAPT2" dump badging "$WORK/chk-MiuiHomeH4.apk" > "$WORK/badging-MiuiHomeH4.txt" 2>/dev/null || true
+          H4P=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$WORK/badging-MiuiHomeH4.txt" | head -1)
+          H4SDK=$(sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p" "$WORK/badging-MiuiHomeH4.txt" | head -1)
+          H4VN=$(sed -n "s/^package: name='[^']*' versionCode='[0-9]*' versionName='\([^']*\)'.*/\1/p" "$WORK/badging-MiuiHomeH4.txt" | head -1)
+          echo "MiuiHome HyperOS 4: pkg=$H4P minSdk=$H4SDK versionName=$H4VN"
+          [ "$H4P" = "com.miui.home" ] \
+            || { echo "::error::5b: h4 pkg=$H4P != com.miui.home"; cat "$WORK/badging-MiuiHomeH4.txt"; exit 1; }
+          [ "${H4SDK:-99}" -le 33 ] 2>/dev/null \
+            || { echo "::error::5b: minSdk=$H4SDK > 33 (patch nie zaszedl?)"; exit 1; }
+          "$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-MiuiHomeH4.apk" \
+            > "$WORK/xmltree-MiuiHomeH4.txt" 2>/dev/null || true
+          H4ACT=$(python3 "$KDIR/tools/homeactivity.py" "$WORK/xmltree-MiuiHomeH4.txt" "$H4P" || true)
+          [ -n "$H4ACT" ] || H4ACT="com.miui.home.launcher.Launcher"
+          echo "HOME activity h4: $H4ACT"
+          # podmiana w sysrootu: h4 = JEDYNY com.miui.home w priv-app;
+          # nabu MiuiHome (dzialajacy native na A13) -> RESCUE w app_backup
+          sudo rm -rf "$SYS/priv-app/MiuiHome" "$SYS/app_backup/miuihome-rescue"
+          sudo mkdir -p "$SYS/priv-app/MiuiHome" "$SYS/app_backup/miuihome-rescue"
+          sudo install -m 0644 "$WORK/miuihome-h4-signed.apk" "$SYS/priv-app/MiuiHome/MiuiHome.apk"
+          NABU_MH_APK=$(sudo find "$MHOME" -name "*.apk" | head -1)
+          [ -n "$NABU_MH_APK" ] || { echo "::error::5b: nabu MiuiHome (rescue) znikl"; exit 1; }
+          sudo cp "$NABU_MH_APK" "$SYS/app_backup/miuihome-rescue/MiuiHome.apk"
+          sudo chmod 0644 "$SYS/app_backup/miuihome-rescue/MiuiHome.apk"
+          echo "rescue: nabu MiuiHome -> app_backup/miuihome-rescue ($(stat -c%s "$SYS/app_backup/miuihome-rescue/MiuiHome.apk" 2>/dev/null || sudo stat -c%s "$SYS/app_backup/miuihome-rescue/MiuiHome.apk") B)"
+          # privapp-permissions com.miui.home z donora (tylko bloki tego pakietu)
+          sudo python3 - "$DCH/perms" "$SYS" <<'EOF'
+          import glob, os, sys
+          import xml.etree.ElementTree as ET
+          src, S = sys.argv[1], sys.argv[2]
+          out = []
+          for f in sorted(glob.glob(os.path.join(src, '*.xml'))):
+              try:
+                  root = ET.parse(f).getroot()
+              except Exception:
+                  continue
+              for pem in root.findall('./privapp-permissions'):
+                  if pem.get('package') == 'com.miui.home':
+                      out.append(ET.tostring(pem, encoding='unicode').strip())
+          if out:
+              xml = '<?xml version="1.0" encoding="utf-8"?>\n<permissions>\n' \
+                    + '\n'.join(out) + '\n</permissions>\n'
+              open(os.path.join(S, 'etc/permissions/privapp-permissions-miuihome-h4.xml'),
+                   'w').write(xml)
+              print('privapp-permissions h4: %d blokow com.miui.home z donora' % len(out))
+          else:
+              print('UWAGA: donor bez privapp-permissions com.miui.home (zostaja pliki nabu)')
+          EOF
+          # jary miui h4 jako <library> (vendoring; tylko nazwy NIEREGESTROWANE przez nabu)
+          sudo python3 - "$DCH" "$SYS" <<'EOF'
+          import glob, os, re, shutil, sys, zipfile
+          DCH, S = sys.argv[1], sys.argv[2]
+          registered = set()
+          for d in ('etc/permissions', 'etc/sysconfig'):
+              dd = os.path.join(S, d)
+              if not os.path.isdir(dd):
+                  continue
+              for f in os.listdir(dd):
+                  if not f.endswith('.xml'):
+                      continue
+                  txt = open(os.path.join(dd, f), encoding='utf-8', errors='ignore').read()
+                  registered.update(m.group(1) for m in
+                                    re.finditer(r'<library\s+name="([^"]+)"', txt))
+          donor = {}
+          for f in glob.glob(os.path.join(DCH, 'perms', '*.xml')):
+              txt = open(f, encoding='utf-8', errors='ignore').read()
+              for m in re.finditer(r'<library\s+name="([^"]+)"\s+file="([^"]+)"', txt):
+                  donor[m.group(1)] = os.path.basename(m.group(2))
+          entries = []
+          stubbed = []
+          for name, base in sorted(donor.items()):
+              if name in registered:
+                  continue
+              src = os.path.join(DCH, 'framework-h4', base)
+              dst = os.path.join(S, 'framework', 'h4-' + base)
+              if os.path.isfile(src):
+                  shutil.copy2(src, dst)
+              else:
+                  # brak jara w donor bits -> STUB (pusty jar): uses-library
+                  # wymagane przez apki h4 nie zablokuje instalacji; jesli
+                  # klasy beda potrzebne w runtime, home-guard wstawi rescue
+                  with zipfile.ZipFile(dst, 'w') as z:
+                      z.writestr('META-INF/MANIFEST.MF',
+                                 'Manifest-Version: 1.0\nCreated-By: mysticalos\n')
+                  stubbed.append(name)
+              os.chmod(dst, 0o644)
+              entries.append((name, '/system/framework/h4-' + base))
+          if entries:
+              xml = '<?xml version="1.0" encoding="utf-8"?>\n<permissions>\n' \
+                    + '\n'.join('<library name="%s" file="%s"/>' % (n, p)
+                                for n, p in entries) + '\n</permissions>\n'
+              open(os.path.join(S, 'etc/permissions/h4-libraries.xml'), 'w').write(xml)
+          print('vendored h4 libs: %d (stuby: %s)' % (len(entries), ', '.join(stubbed) or '-'))
+          EOF
+          # nakladki RRO donora -> tylko celujace w nasze pakiety (wyglad HyperOS 4)
+          OV_N=0; OV_PKGS=""
+          for OV in "$DCH"/overlay/*.apk; do
+            [ -e "$OV" ] || continue
+            OVN=$(basename "$OV")
+            sudo cp "$OV" "$WORK/chk-ov.apk"; sudo chown "$(id -u):$(id -g)" "$WORK/chk-ov.apk"
+            TP=$("$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-ov.apk" 2>/dev/null \
+                 | grep -o 'android:targetPackage[^=]*="[^"]*"' | head -1 | sed 's/.*="\([^"]*\)"$/\1/')
+            case "$TP" in
+              com.miui.home|com.android.systemui)
+                OV_N=$((OV_N+1))
+                OVP=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" \
+                      <("$AAPT2" dump badging "$WORK/chk-ov.apk" 2>/dev/null) | head -1)
+                sudo install -m 0644 "$OV" "$SYS/overlay/h4-$OVN"
+                OV_PKGS="$OV_PKGS $OVP"
+                echo "overlay h4: $OVN -> target=$TP (pkg=$OVP)" ;;
+              *) echo "overlay h4 pomijam (target=${TP:-?}): $OVN" ;;
+            esac
+          done
+          echo "nakladki HyperOS 4 z donora: $OV_N"
+          # home-guard: wlacza nakladki h4 + AUTO-RESCUE launchera po 90 s
+          printf '%s\n' $OV_PKGS | sed '/^$/d' | sudo tee "$SYS/etc/mystical/h4-overlays.txt" >/dev/null
+          echo "com.miui.home/com.miui.home.launcher.Launcher" | sudo tee "$SYS/etc/mystical/home_rescue.txt" >/dev/null
+          sudo tee "$SYS/bin/mystical-home-guard.sh" >/dev/null <<'GUARD'
+          #!/system/bin/sh
+          # MysticalOS HomeGuard v1 (port HyperOS 4):
+          # 1) wlacza nakladki RRO z donora (wyglad HyperOS 4)
+          # 2) po 90 s: jesli com.miui.home (launcher HyperOS 4) nie zyje ->
+          #    RESCUE: wgrywa MiuiHome z nabu (A13-native) i ustawia jako HOME.
+          LOG="log -t MysticalOS-HomeGuard"
+          if [ -f /system/etc/mystical/h4-overlays.txt ]; then
+            while read -r O; do
+              [ -n "$O" ] || continue
+              cmd overlay enable "$O" >/dev/null 2>&1 && $LOG "overlay ON: $O"
+            done < /system/etc/mystical/h4-overlays.txt
+          fi
+          sleep 90
+          if pidof com.miui.home >/dev/null 2>&1; then
+            $LOG "com.miui.home zyje - launcher HyperOS 4 OK"
+            exit 0
+          fi
+          CR=$(logcat -d -b crash 2>/dev/null | grep -c com.miui.home || true)
+          $LOG "com.miui.home NIE zyje po 90 s (crashy=${CR:-0}) -> rescue MiuiHome nabu"
+          pm install -r -d /system/app_backup/miuihome-rescue/MiuiHome.apk >/dev/null 2>&1
+          RA=$(cat /system/etc/mystical/home_rescue.txt 2>/dev/null)
+          [ -n "$RA" ] || RA="com.miui.home/com.miui.home.launcher.Launcher"
+          cmd package set-home-activity "$RA" >/dev/null 2>&1
+          $LOG "rescue wykonany: $RA"
+          GUARD
+          sudo chmod 0755 "$SYS/bin/mystical-home-guard.sh"
+          sudo tee "$SYS/etc/init/mystical_home_guard.rc" >/dev/null <<'HGR'
+          # MysticalOS HomeGuard: nakladki HyperOS 4 + auto-rescue launchera (port h4)
+          on property:sys.boot_completed=1
+              exec_background u:r:init:s0 -- /system/bin/sh /system/bin/mystical-home-guard.sh
+          HGR
+          # ---------- bootanimation HYPEROS (oryginal, SKALOWANA do 2000x1200) ----------
+          # Android bootanimation NIE skaluje klatek (rysuje 1:1). Animacje
+          # donorow sa pod wyzsze panele (nabu 2560x1600, yingtian 3408x2272)
+          # -> bez skalowania tekst wychodzi na cala szerokosc ekranu 2000x1200.
+          # Zrodlo: donor yingtian HyperOS 4 - POZIOMY panel 3408x2272 (nabu
+          # 1600x2560 jest PORTRAIT: na ekranie 2000x1200 wychodzil pasek
+          # 750x1200 na srodku - zla baza). Tryb CROP: pelny ekran, bez
+          # znieksztalcen i bez czarnych pasow.
+          if [ -s "$DCH/media/bootanimation.zip" ]; then
+            sudo cp "$DCH/media/bootanimation.zip" "$WORK/anim-src.zip"
+            sudo chown "$(id -u):$(id -g)" "$WORK/anim-src.zip"
+            python3 "$KDIR/tools/scale_bootanim.py" "$WORK/anim-src.zip" 2000 1200 "$WORK/anim-scaled.zip" crop
+            sudo install -m 0644 "$WORK/anim-scaled.zip" "$SYS/media/bootanimation.zip"
+            echo "bootanimation: ORYGINAL HyperOS 4 (donor, crop->2000x1200): $(stat -c%s "$SYS/media/bootanimation.zip") B"
+          else
+            echo "UWAGA: donor bez product/media/bootanimation.zip -> zostaje wygenerowana 2000x1200"
+          fi
+          # ---------- bootdiag: zrzut logow do /data gdy system nie wstanie w 240 s ----------
+          sudo tee "$SYS/bin/mystical-bootdiag.sh" >/dev/null <<'BDIAG'
+          #!/system/bin/sh
+          # MysticalOS bootdiag v2: petla zrzutow co 45 s (max 8) dopoki boot
+          # nie ukonczony; logi w /data/mystical (przezywaja reboot i reflash).
+          # v2: krotkie petle crashy system_server (<240 s) tez zostana zalogowane.
+          LOGDIR=/data/mystical
+          mkdir -p "$LOGDIR" 2>/dev/null
+          TS=$(date +%Y%m%d-%H%M%S)
+          i=1
+          while [ $i -le 8 ]; do
+            sleep 45
+            [ "$(getprop sys.boot_completed)" = "1" ] && exit 0
+            logcat -b all -d > "$LOGDIR/bootfail-logcat-$TS-$i.txt" 2>&1
+            dmesg > "$LOGDIR/bootfail-dmesg-$TS-$i.txt" 2>/dev/null
+            getprop > "$LOGDIR/bootfail-props-$TS-$i.txt" 2>/dev/null
+            ps -A > "$LOGDIR/bootfail-ps-$TS-$i.txt" 2>/dev/null
+            echo "bootdiag $TS dump $i: boot_completed=$(getprop sys.boot_completed) uptime=$(cat /proc/uptime)" >> "$LOGDIR/bootfail-history.txt"
+            sync
+            i=$((i+1))
+          done
+          exit 0
+          BDIAG
+
+          sudo chmod 0755 "$SYS/bin/mystical-bootdiag.sh"
+          sudo tee "$SYS/etc/init/mystical_bootdiag.rc" >/dev/null <<'BDRC'
+          # MysticalOS bootdiag: start wczesnie (post-fs-data), sam sie wygasza przy boot_completed
+          service mystical_bootdiag /system/bin/mystical-bootdiag.sh
+              class late_start
+              user root
+              group root readproc logd
+              oneshot
+              disabled
+
+          on post-fs-data
+              start mystical_bootdiag
+
+          on property:sys.boot_completed=1
+              stop mystical_bootdiag
+          BDRC
+
+          # konteksty SELinux dla nowych plikow portu h4
+          sudo python3 - "$SYS" <<'EOF'
+          import os, sys
+          S = sys.argv[1]
+          def ctx(p):
+              return os.getxattr(p, 'security.selinux')
+          ref_apk = ctx(os.path.join(S, 'priv-app/MiuiSystemUI/MiuiSystemUI.apk')) \
+              if os.path.exists(os.path.join(S, 'priv-app/MiuiSystemUI/MiuiSystemUI.apk')) \
+              else None
+          ref_sys = ctx(os.path.join(S, 'bin/coreutils'))
+          ref_etc = ctx(os.path.join(S, 'etc/fonts.xml'))
+          ov_ref = None
+          ovdir = os.path.join(S, 'overlay')
+          if os.path.isdir(ovdir):
+              for f in sorted(os.listdir(ovdir)):
+                  if f.endswith('.apk') and not f.startswith('h4-'):
+                      ov_ref = ctx(os.path.join(ovdir, f))
+                      break
+          def setx(p, c, mode=None):
+              os.setxattr(p, 'security.selinux', c)
+              if mode is not None:
+                  os.chmod(p, mode)
+          if ref_apk:
+              setx(os.path.join(S, 'priv-app/MiuiHome/MiuiHome.apk'), ref_apk, 0o644)
+              setx(os.path.join(S, 'app_backup/miuihome-rescue/MiuiHome.apk'), ref_apk, 0o644)
+          setx(os.path.join(S, 'bin/mystical-home-guard.sh'), ref_sys, 0o755)
+          setx(os.path.join(S, 'etc/init/mystical_home_guard.rc'), ref_etc, 0o644)
+          setx(os.path.join(S, 'bin/mystical-bootdiag.sh'), ref_sys, 0o755)
+          setx(os.path.join(S, 'etc/init/mystical_bootdiag.rc'), ref_etc, 0o644)
+          # media donora nadpisane w 4d2 -> kontekst jak dla media/ (jak w 4b)
+          ref_media2 = None
+          for root, _, files in os.walk(os.path.join(S, 'media')):
+              for f in files:
+                  try:
+                      x = os.getxattr(os.path.join(root, f), 'security.selinux')
+                      if f != 'bootanimation.zip' and not f.startswith('bootaudio') \
+                         and not f.startswith('bootfail'):
+                          ref_media2 = os.path.join(root, f)
+                  except OSError:
+                      pass
+          if ref_media2:
+              for rel in ('media/bootanimation.zip',):
+                  p = os.path.join(S, rel)
+                  if os.path.exists(p):
+                      os.setxattr(p, 'security.selinux',
+                                  os.getxattr(ref_media2, 'security.selinux'))
+              for root, _, files in os.walk(os.path.join(S, 'media')):
+                  for f in files:
+                      if f.startswith('bootaudio') or f.startswith('bootanimation_audio'):
+                          os.setxattr(os.path.join(root, f), 'security.selinux',
+                                      os.getxattr(ref_media2, 'security.selinux'))
+          for rel in ('etc/permissions/privapp-permissions-miuihome-h4.xml',
+                      'etc/permissions/h4-libraries.xml',
+                      'etc/mystical/h4-overlays.txt',
+                      'etc/mystical/home_rescue.txt'):
+              p = os.path.join(S, rel)
+              if os.path.exists(p):
+                  setx(p, ref_etc, 0o644)
+          if os.path.isdir(ovdir):
+              for f in os.listdir(ovdir):
+                  if f.startswith('h4-') and f.endswith('.apk'):
+                      setx(os.path.join(ovdir, f), ov_ref or ref_apk, 0o644)
+          print('konteksty SELinux portu h4 OK (launcher/rescue/guard/overlays/libs)')
+          EOF
+          # room-maker: obraz byl w 94% -> h4 dodaje ~150-200 MB. app_backup =
+          # staging OTA Lenovo (NIE skanowany przez PackageManager) -> stuby;
+          # potem ewentualnie oat/ MiuiSystemUI (dexopt zrobi sie z apk).
+          # UWAGA: liczymy CALE tree-system (rootfs; build_ext4 pakuje calosc),
+          # a app_backup szukamy w obu layoutach (flat / nested system/).
+          PSYS=$(cat "$WORK/ps-system")
+          sudo python3 - "$WORK/tree-system" "$PSYS" <<'EOF'
+          import os, shutil, sys
+          ROOT, PS = sys.argv[1], int(sys.argv[2])
+          STUB = b'PK\x05\x06' + b'\x00' * 18
+          def tree_size():
+              t = 0
+              for root, _, files in os.walk(ROOT):
+                  for f in files:
+                      try:
+                          t += os.lstat(os.path.join(root, f)).st_size
+                      except OSError:
+                          pass
+              return t
+          # app_backup: flat (ROOT/app_backup) albo nested (ROOT/system/app_backup)
+          ab = None
+          for cand in (os.path.join(ROOT, 'app_backup'),
+                       os.path.join(ROOT, 'system', 'app_backup')):
+              if os.path.isdir(cand):
+                  ab = cand
+                  break
+          oat = None
+          for cand in (os.path.join(ROOT, 'priv-app', 'MiuiSystemUI', 'oat'),
+                       os.path.join(ROOT, 'system', 'priv-app', 'MiuiSystemUI', 'oat')):
+              if os.path.isdir(cand):
+                  oat = cand
+                  break
+          budget = PS - 64 * 1024 * 1024
+          sz = tree_size()
+          print('room-maker: drzewo %.1f MB / budzet %.1f MB'
+                % (sz / 1e6, budget / 1e6))
+          if sz >= budget and ab:
+              saved = 0
+              for root, _, files in os.walk(ab):
+                  for f in files:
+                      p = os.path.join(root, f)
+                      if not f.endswith('.apk') or 'miuihome-rescue' in root:
+                          continue
+                      if os.path.getsize(p) > 4096:
+                          try:
+                              x = os.getxattr(p, 'security.selinux')
+                          except OSError:
+                              x = None
+                          saved += os.path.getsize(p) - len(STUB)
+                          with open(p, 'wb') as fh:
+                              fh.write(STUB)
+                          os.chmod(p, 0o644)
+                          if x:
+                              os.setxattr(p, 'security.selinux', x)
+              print('room-maker: stub app_backup (%s) -> odzyskano %.1f MB'
+                    % (ab, saved / 1e6))
+              sz = tree_size()
+          if sz >= budget and oat:
+              shutil.rmtree(oat)
+              print('room-maker: usunieto %s (dexopt z apk)' % oat)
+              sz = tree_size()
+          print('room-maker: FINALNE drzewo %.1f MB (budzet %.1f MB, %s)'
+                % (sz / 1e6, budget / 1e6,
+                   'OK' if sz < budget else 'UWAGA: nadal nad budzetem - patrz build_ext4'))
+          EOF
+          echo "5b: launcher HyperOS 4 zainstalowany (rescue + guard + nakladki + room-maker)"
+
+          # --- stan dla kroku 4d3 ---
+          printf '%s\n' "$H4VN" > "$WORK/h4vn.txt"
+          printf '%s\n' "$H4ACT" > "$WORK/h4act.txt"
+          printf '%s\n' "$OV_N" > "$WORK/h4ovn.txt"
+          printf '%s\n' "$MIUI_JARS" > "$WORK/miuijars.txt"
+
+      - name: "4d3. PORT: bench wirtualny (badging + HOME + BOOTCLASSPATH) + umounty"
+        run: |
+          # (odtworzenie zmiennych z 4d/4d2; split kroku - GH limit 21k znakow na run)
+          # --- DIAG: konsola -> plik; przy padnieciu tail w annotation ---
+          exec > >(tee "$WORK/4d3-console.log") 2>&1
+          set -E
+          trap 'RC=$?; echo "::error::4d3 padl (exit $RC); ostatnie linie:"; tail -n 18 "$WORK/4d3-console.log" 2>/dev/null' ERR
+          SYS=$(cat "$WORK/sysroot-system"); MHOME=$(cat "$WORK/mhome-path")
+          JAR_LIST=$(cat "$WORK/jarlist.txt"); M2=$(cat "$WORK/m2-path"); M3=$(cat "$WORK/m3-path")
+          JAR_LIST=$(cat "$WORK/jarlist.txt"); M2=$(cat "$WORK/m2-path"); M3=$(cat "$WORK/m3-path")
+          H4VN=$(cat "$WORK/h4vn.txt"); H4ACT=$(cat "$WORK/h4act.txt"); OV_N=$(cat "$WORK/h4ovn.txt")
+          MIUI_JARS=$(cat "$WORK/miuijars.txt")
+          # ---------- 6) WIRTUALNY BENCH: badging aapt2 (minSdk! tozsamosc pakietow) ----------
+          # UWAGA: MiuiHome w priv-app to juz launcher HYPEROS 4 z donora (5b);
+          # bench sprawdza minSdk<=33 PO patchu (axmlminsdk) + HOME-activity.
+          AAPT2=$(cat "$WORK/aapt2-path")
+          for DIRNAME in MiuiSystemUI MiuiHome; do
+            APK=$(sudo find "$SYS/priv-app/$DIRNAME" -type f -name "*.apk" | head -1)
+            [ -n "$APK" ] || { echo "::error::$DIRNAME: brak apk"; exit 1; }
+            sudo cp "$APK" "$WORK/chk-$DIRNAME.apk"; sudo chown "$(id -u):$(id -g)" "$WORK/chk-$DIRNAME.apk"
+            "$AAPT2" dump badging "$WORK/chk-$DIRNAME.apk" > "$WORK/badging-$DIRNAME.txt" 2>/dev/null || true
+            P=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$WORK/badging-$DIRNAME.txt" | head -1)
+            SDKV=$(sed -n "s/^sdkVersion:'\([^']*\)'.*/\1/p" "$WORK/badging-$DIRNAME.txt" | head -1)
+            echo "$DIRNAME: pkg=$P minSdk=${SDKV:-?} ($(stat -c%s "$WORK/chk-$DIRNAME.apk") B)"
+            [ -n "$P" ] || { echo "::error::$DIRNAME badging: brak pakietu"; cat "$WORK/badging-$DIRNAME.txt"; exit 1; }
+            [ "${SDKV:-99}" -le 33 ] \
+              || { echo "::error::$DIRNAME minSdk=$SDKV > 33 (A13!) - port niemozliwy"; exit 1; }
+            if [ "$DIRNAME" = "MiuiHome" ]; then
+              # launcher NIE deklaruje LAUNCHER activity (uzywa android.intent.
+              # category.HOME + DEFAULT) -> aapt2 badging nie wypisuje jej.
+              # Parsujemy manifest (aapt2 dump xmltree) i szukamy aktywnosci HOME.
+              "$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-MiuiHome.apk" \
+                > "$WORK/xmltree-MiuiHome.txt" 2>/dev/null || true
+              ACT=$(python3 - "$WORK/xmltree-MiuiHome.txt" "$P" <<'PYEOF'
+          import re
+          import sys
+          txt = open(sys.argv[1], encoding='utf-8', errors='ignore').read()
+          pkg = sys.argv[2]
+          act_re = re.compile(r'E:\s*activity(-alias)?\b')
+          name_re = re.compile(r'android:name[^=]*="([^"]+)"')
+          cat_re = re.compile(r'android\.intent\.category\.HOME\b')
+          cur, in_act, found = None, False, []
+          for ln in txt.splitlines():
+              if act_re.search(ln) and 'intent-filter' not in ln:
+                  in_act = True
+                  m = name_re.search(ln)
+                  cur = m.group(1) if m else None
+                  continue
+              if not in_act:
+                  continue
+              if 'intent-filter' in ln:
+                  continue
+              if cat_re.search(ln) and cur:
+                  found.append(cur)
+                  in_act, cur = False, None
+                  continue
+              m = name_re.search(ln)
+              if m and cur is None:
+                  cur = m.group(1)
+          def expand(a):
+              if a.startswith('.'):
+                  return pkg + a
+              if '.' not in a:
+                  return pkg + '.' + a
+              return a
+          if found:
+              print(expand(found[0]))
+          PYEOF
+              )
+              if [ -z "$ACT" ]; then
+                ACT=$(sed -n "s/^launchable-activity: name='\([^']*\)'.*/\1/p" "$WORK/badging-MiuiHome.txt" | head -1)
+                [ -n "$ACT" ] || ACT="com.miui.home.launcher.Launcher"
+                echo "UWAGA: HOME-activity z fallbacku (xmltree nie dal): $ACT"
+              fi
+              echo "$P/$ACT" | sudo tee "$SYS/etc/mystical/home_activity.txt" >/dev/null
+              echo "domyslny HOME: $P/$ACT"
+            fi
+          done
+          if [ -n "$M3" ]; then sudo umount "$M3"; fi
+          if [ -n "$M2" ]; then sudo umount "$M2"; fi
+          M="$WORK/nabu-mnt"
+          sudo umount "$M" 2>/dev/null || sudo umount -l "$M" 2>/dev/null || true
+          # sprzatanie: surowe obrazy nabu (system + system_ext + product ~6.7 GB) zbedne
+          # (krok 5 buduje finalny ext4 - miejsca nie moze zabraknac)
+          sudo rm -rf "$WORK/nabu-out"
+          # ---------- 7) konteksty SELinux (kopie od sasiadow) ----------
+          sudo python3 - "$SYS" <<'EOF'
+          import os
+          import sys
+          S = sys.argv[1]
+          def ctx(p):
+              return os.getxattr(p, 'security.selinux')
+          ref_apk = None
+          for root, _, files in os.walk(os.path.join(S, 'priv-app')):
+              for f in sorted(files):
+                  if f.endswith('.apk') and 'Miui' not in root:
+                      try:
+                          os.getxattr(os.path.join(root, f), 'security.selinux')
+                          ref_apk = os.path.join(root, f)
+                          break
+                      except OSError:
+                          continue
+              if ref_apk:
+                  break
+          assert ref_apk, 'brak referencyjnego apk w priv-app'
+          jars = sorted(f for f in os.listdir(os.path.join(S, 'framework'))
+                        if f.endswith('.jar') and not f.startswith('miui'))
+          ref_jar = os.path.join(S, 'framework', jars[0])
+          ref_etc = os.path.join(S, 'etc', 'fonts.xml')
+          def walk_apks(base):
+              for root, _, files in os.walk(base):
+                  for f in sorted(files):
+                      yield os.path.join(root, f)
+          for apk in walk_apks(os.path.join(S, 'priv-app/MiuiSystemUI')):
+              os.setxattr(apk, 'security.selinux', ctx(ref_apk)); os.chmod(apk, 0o644)
+          for apk in walk_apks(os.path.join(S, 'priv-app/MiuiHome')):
+              os.setxattr(apk, 'security.selinux', ctx(ref_apk)); os.chmod(apk, 0o644)
+          for f in sorted(os.listdir(os.path.join(S, 'framework'))):
+              if f.startswith('miui') and f.endswith('.jar'):
+                  os.setxattr(os.path.join(S, 'framework', f), 'security.selinux',
+                              ctx(ref_jar)); os.chmod(os.path.join(S, 'framework', f), 0o644)
+          for root, _, files in os.walk(os.path.join(S, 'etc/device_features')):
+              for f in files:
+                  os.setxattr(os.path.join(root, f), 'security.selinux', ctx(ref_etc))
+                  os.chmod(os.path.join(root, f), 0o644)
+          print('konteksty SELinux portu OK (apk/jar/device_features)')
+          EOF
+          # ---------- 8) BOOTCLASSPATH bez boot.img: /system/etc/classpaths/bootclasspath.pb ----------
+          # derive_classpath (Android 12+, modul SdkExtensions) globuje w kolejnosci:
+          #   1. /apex/com.android.art/etc/classpaths/bootclasspath.pb
+          #   2. /system/etc/classpaths/bootclasspath.pb   <-- TEN PLIK (miui jary)
+          #   3. /apex/*/etc/classpaths/bootclasspath.pb
+          # i scala wszystko do export BOOTCLASSPATH (init: load_exports).
+          # Kernel/boot.img zostaja STOCK - wgrywamy TYLKO system!
+          MIUI_JARS=""
+          for J in $JAR_LIST; do MIUI_JARS="$MIUI_JARS /system/framework/$J"; done
+          pip3 install --quiet protobuf >/dev/null 2>&1 || true
+          python3 "$KDIR/port/mkclasspathpb.py" build "$WORK/bootclasspath.pb" $MIUI_JARS \
+            || { echo "::error::mkclasspathpb build padl"; exit 1; }
+          sudo mkdir -p "$SYS/etc/classpaths"
+          sudo install -m 0644 "$WORK/bootclasspath.pb" "$SYS/etc/classpaths/bootclasspath.pb"
+          sudo python3 - "$SYS" <<'EOF'
+          import os
+          import sys
+          S = sys.argv[1]
+          p = os.path.join(S, 'etc/classpaths/bootclasspath.pb')
+          ref = os.getxattr(os.path.join(S, 'etc/fonts.xml'), 'security.selinux')
+          os.setxattr(p, 'security.selinux', ref)
+          print('kontekst: etc/classpaths/bootclasspath.pb ->',
+                ref.decode().rstrip('\x00'))
+          EOF
+          # twarda weryfikacja binarnego proto prosto z drzewa sysroota
+          sudo python3 "$KDIR/port/mkclasspathpb.py" verify \
+            "$SYS/etc/classpaths/bootclasspath.pb" $MIUI_JARS \
+            || { echo "::error::verify classpaths.pb padl"; exit 1; }
+          # uses-library (belt & suspenders): wszystko co deklaruja MiuiSystemUI/MiuiHome
+          # musi byc zarejestrowane w etc/permissions|sysconfig (stock + kopie z nabu)
+          sudo python3 - "$SYS" "$WORK" <<'EOF'
+          import glob
+          import os
+          import re
+          import shutil
+          import sys
+          import zipfile
+          S, W = sys.argv[1], sys.argv[2]
+          registered = set()
+          for d in ('etc/permissions', 'etc/sysconfig'):
+              for f in glob.glob(os.path.join(S, d, '*.xml')):
+                  try:
+                      txt = open(f, encoding='utf-8', errors='ignore').read()
+                  except OSError:
+                      continue
+                  registered.update(re.findall(r'<library[^>]*name="([^"]+)"', txt))
+          needed = set()
+          optional = set()
+          for bf in ('badging-MiuiSystemUI.txt', 'badging-MiuiHome.txt'):
+              p = os.path.join(W, bf)
+              if not os.path.exists(p):
+                  continue
+              for ln in open(p, encoding='utf-8', errors='ignore'):
+                  t = ln.strip()
+                  # TYLKO wymagane (uses-library:'...') - opcjonalne
+                  # (uses-library-not-required:...) nie wywalaja buildu
+                  m = re.match(r"uses-library:'([^']+)'", t)
+                  if m:
+                      needed.add(m.group(1))
+                  m2 = re.match(r"uses-library-not-required:'([^']+)'", t)
+                  if m2:
+                      optional.add(m2.group(1))
+          missing = sorted(n for n in needed if n not in registered)
+          opt_missing = sorted(n for n in optional if n not in registered)
+          print('uses-library WYMAGANE przez apki miui:', sorted(needed))
+          print('uses-library opcjonalne:', sorted(optional))
+          print('biblioteki zarejestrowane w obrazie:', len(registered))
+          if opt_missing:
+              print('UWAGA: brakujace OPCJONALNE (nie blokuje):', opt_missing)
+          if missing:
+              # WYMAGANE uses-library brakujace w obrazie: ratunek instalacji.
+              # 1) prawdziwy jar z donor bits (framework-h4), 2) stub (pusty
+              # jar) - PackageManager znajdzie biblioteke; jesli klasy beda
+              # potrzebne w runtime, home-guard wstawi rescue (nabu MiuiHome).
+              DCH = os.path.join(W, 'donor-cache')
+              libxml = os.path.join(S, 'etc/permissions/h4-libraries.xml')
+              if os.path.exists(libxml):
+                  body = open(libxml, encoding='utf-8').read().rstrip()
+                  if body.endswith('</permissions>'):
+                      body = body[:-len('</permissions>')].rstrip()
+              else:
+                  body = '<?xml version="1.0" encoding="utf-8"?>\n<permissions>'
+              for n in missing:
+                  src_j = os.path.join(DCH, 'framework-h4', n + '.jar')
+                  dst_j = os.path.join(S, 'framework', 'h4-' + n + '.jar')
+                  if os.path.isfile(src_j):
+                      shutil.copy2(src_j, dst_j)
+                      print('late-vendor (prawdziwy jar z donor bits):', n)
+                  else:
+                      with zipfile.ZipFile(dst_j, 'w') as z:
+                          z.writestr('META-INF/MANIFEST.MF',
+                                     'Manifest-Version: 1.0\nCreated-By: mysticalos\n')
+                      print('STUB library (klasy niedostepne w runtime - patrz home-guard/rescue):', n)
+                  os.chmod(dst_j, 0o644)
+                  body += '\n<library name="%s" file="/system/framework/h4-%s.jar"/>' % (n, n)
+                  registered.add(n)
+              open(libxml, 'w', encoding='utf-8').write(body + '\n</permissions>\n')
+          missing = sorted(n for n in needed if n not in registered)
+          assert not missing, 'BRAKUJACE WYMAGANE biblioteki: %r' % missing
+          print('uses-library: komplet OK')
+          EOF
+          # ---------- 9) raport portu ----------
+          {
+            echo "== PORT HyperOS (nabu OS1.0.6.0.TKXMIXM Global, A13/sdk33) =="
+            echo "MiuiSystemUI: $(stat -c%s "$WORK/chk-MiuiSystemUI.apk") B ($(grep -m1 "^package:" "$WORK/badging-MiuiSystemUI.txt"))"
+            echo "MiuiHome: $(stat -c%s "$WORK/chk-MiuiHome.apk") B ($(grep -m1 "^package:" "$WORK/badging-MiuiHome.txt"))"
+            echo "MiuiHome HyperOS 4 (donor yingtian OS4.0.11.0, Pad 9 Pro Max): versionName=$H4VN, minSdk 37->33 (axmlminsdk), HOME=$H4ACT"
+            echo "rescue: app_backup/miuihome-rescue/MiuiHome.apk (nabu, A13-native) + mystical-home-guard.sh (auto-rescue 90 s po boocie)"
+            echo "nakladki RRO h4: $OV_N (target com.miui.home / com.android.systemui)"
+            echo "domyslny HOME: $(sudo cat "$SYS/etc/mystical/home_activity.txt")"
+            echo "jary na BOOTCLASSPATH (etc/classpaths/bootclasspath.pb):$JAR_LIST"
+            echo "device_features: OK; app/miui: $(sudo test -d "$SYS/app/miui" && echo OK || echo brak)"
+            echo "perms z nabu: $(tr '\n' ' ' < "$WORK/port-perms.txt" 2>/dev/null)"
+            echo "boot.img: NIETYKANY (kernel/init stock; classpath przez /system/etc/classpaths)"
+          } > "$WORK/port-report.txt"
+          cat "$WORK/port-report.txt"
+          echo "== PORT HyperOS OK =="; df -h /
+
+      - name: "5. Zbuduj ext4 (system + system_ext; fallback EROFS)"
+        run: |
+          set -euo pipefail
+          build_ext4() {
+            local T="$1" OUT="$2" FSZ="$3" PS="$4" N="$5" CAP MAX R USE
+            MAX=$(( PS - 33554432 ))
+            [ "$FSZ" -le "$MAX" ] || FSZ="$MAX"
+            CAP="$FSZ"
+            sudo mkdir -p "$WORK/mntbuild"
+            for R in 1 2 3 4 5 6 7 8; do
+              rm -f "$OUT"
+              mke2fs -q -F -t ext4 -b 4096 -I 256 -m 0 -O ^has_journal "$OUT" $((CAP/4096)) \
+                || { echo "::error::$N: mke2fs"; return 1; }
+              if ! sudo mount -o loop,rw "$OUT" "$WORK/mntbuild"; then
+                echo "::error::$N: montaz rw padl"; return 1
+              fi
+              if sudo tar -C "$T" --acls --xattrs --selinux -cf - . \
+                 | sudo tar -C "$WORK/mntbuild" --acls --xattrs --selinux -xf -; then
+                USE=$(df --output=pcent "$WORK/mntbuild" | tail -1 | tr -dc '0-9')
+                echo "$N: ext4 cap $CAP B, uzycie ${USE}%; $(df -h "$WORK/mntbuild" | tail -1); inody: $(df -i "$WORK/mntbuild" | tail -1)"
+                if [ "$USE" -lt 99 ]; then
+                  sudo umount "$WORK/mntbuild"
+                  e2fsck -f -y -D "$OUT" > "$WORK/fsck-$N.log" 2>&1 || true
+                  tail -3 "$WORK/fsck-$N.log"
+                  return 0
+                fi
+                sudo umount "$WORK/mntbuild"
+              else
+                sudo umount "$WORK/mntbuild" 2>/dev/null || true
+              fi
+              CAP=$((CAP + 67108864))
+              [ "$CAP" -le "$MAX" ] || { echo "::error::$N: nie miesci sie w partycji (max $MAX)"; return 1; }
+              echo "$N: retry z cap $CAP B"
+            done
+            return 1
+          }
+          build_erofs() {
+            local T="$1" OUT="$2" N="$3" FC
+            FC=$(sudo find "$T" -name plat_file_contexts -type f -print -quit 2>/dev/null || true)
+            [ -n "$FC" ] || { echo "::error::$N: brak plat_file_contexts (fallback EROFS)"; return 1; }
+            "$KDIR/bin/mkfs.erofs" -zlz4 -T 0 --file-contexts="$FC" "$OUT" "$T" \
+              || { echo "::error::$N: mkfs.erofs padl"; return 1; }
+            echo "$N: EROFS fallback OK"
+          }
+          echo "drzewo systemu: $(sudo du -sh "$WORK/tree-system" 2>/dev/null | cut -f1) (dedup e2fsdroid: tree > stock fs)"
+          if ! build_ext4 "$WORK/tree-system" "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" \
+                          "$(cat "$WORK/fsz-system")" "$(cat "$WORK/ps-system")" system; then
+            echo "== system: fallback EROFS (ext4 nie zmiescil sie w partycji) =="
+            build_erofs "$WORK/tree-system" "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" system
+          fi
+          if [ ! -e "$WORK/no-system_ext" ]; then
+            if ! build_ext4 "$WORK/tree-system-ext" "$WORK/out/MysticalOS_0.5_HyperOS_Port_ext.img" \
+                            "$(cat "$WORK/fsz-system_ext")" "$(cat "$WORK/ps-system_ext")" system_ext; then
+              echo "== system_ext: fallback EROFS =="
+              build_erofs "$WORK/tree-system-ext" "$WORK/out/MysticalOS_0.5_HyperOS_Port_ext.img" system_ext
+            fi
+          fi
+          sudo rm -rf "$WORK/tree-system" "$WORK/tree-system-ext"
+          df -h /
+          ls -la "$WORK/out/"
+
+      - name: "6. Stopka AVB (komenda ze spec usera: flags 2)"
+        run: |
+          set -euo pipefail
+          openssl genrsa -out /tmp/avb_key2.pem 2048 2>/dev/null
+          add_footer() {
+            local IMG
+            python3 "$KDIR/tools/avbtool.py" add_hashtree_footer \
+              --image "$1" --partition_name "$2" --partition_size "$3" \
+              --hash_algorithm sha256 --do_not_generate_fec --flags 2 \
+              --algorithm SHA256_RSA2048 --key /tmp/avb_key2.pem \
+              || { echo "::error::add_hashtree_footer $2 padl"; exit 1; }
+            IMG=$(stat -c%s "$1")
+            [ "$IMG" -le "$3" ] || { echo "::error::$2: obraz $IMG > PS $3"; exit 1; }
+            dd if="$1" bs=1 skip=$((IMG-64)) count=64 2>/dev/null | grep -aq "AVBf" \
+              || { echo "::error::$2: brak magic AVBf w stopce"; exit 1; }
+            echo "$2: stopka OK ($IMG B / PS $3 B, AVBf potwierdzone)"
+          }
+          # spec: avbtool add_hashtree_footer --image system.img --partition_name
+          # system --hash_algorithm sha256 --do_not_generate_fec --flags 2
+          add_footer "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" system "$(cat "$WORK/ps-system")"
+          if [ ! -e "$WORK/no-system_ext" ]; then
+            add_footer "$WORK/out/MysticalOS_0.5_HyperOS_Port_ext.img" system_ext "$(cat "$WORK/ps-system_ext")"
+          fi
+          rm -f /tmp/avb_key2.pem
+          # info + kryptograficzny dowod (verify_image potrzebuje nazwy pliku
+          # = partition_name w katalogu obrazu):
+          mkdir -p "$WORK/vfy"
+          cp "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" "$WORK/vfy/system.img"
+          ( cd "$WORK/vfy" && python3 "$KDIR/tools/avbtool.py" verify_image --image system.img ) \
+            | tee "$WORK/out/avb-verify-system.txt" \
+            || { echo "::error::verify_image system NIE przechodzi"; exit 1; }
+          grep -q "Successfully verified" "$WORK/out/avb-verify-system.txt" \
+            || { echo "::error::system: brak potwierdzenia weryfikacji"; exit 1; }
+          if [ ! -e "$WORK/no-system_ext" ]; then
+            cp "$WORK/out/MysticalOS_0.5_HyperOS_Port_ext.img" "$WORK/vfy/system_ext.img"
+            ( cd "$WORK/vfy" && python3 "$KDIR/tools/avbtool.py" verify_image --image system_ext.img ) \
+              | tee "$WORK/out/avb-verify-system-ext.txt" \
+              || { echo "::error::verify_image system_ext NIE przechodzi"; exit 1; }
+          fi
+          python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" \
+            | tee "$WORK/out/avb-info-system.txt"
+          grep -q "Flags: *2$" "$WORK/out/avb-info-system.txt" || { echo "::error::Flags != 2 (system)"; exit 1; }
+          grep -q "Hashtree descriptor" "$WORK/out/avb-info-system.txt" || { echo "::error::brak hashtree (system)"; exit 1; }
+          if [ ! -e "$WORK/no-system_ext" ]; then
+            python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_0.5_HyperOS_Port_ext.img" \
+              | tee "$WORK/out/avb-info-system-ext.txt"
+            grep -q "Flags: *2$" "$WORK/out/avb-info-system-ext.txt" || { echo "::error::Flags != 2 (system_ext)"; exit 1; }
+          fi
+          rm -rf "$WORK/vfy"
+          # ---------- wariant DSU: obraz BEZ stopki AVB (czysty ext4) ----------
+          # DSU owija obraz w wlasna partycje dynamiczna (system_gsi); stopka
+          # hashtree wewnatrz obrazu powoduje probe zbudowania verity ->
+          # "Hash device is too small" -> kernel panic (log z tabletu usera,
+          # 2026-10-07 22:15:40 SYSTEM_LAST_KMSG). Dla DSU dajemy czysty fs.
+          cp "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" "$WORK/out/MysticalOS_0.5_DSU_nofooter.img"
+          python3 "$KDIR/tools/avbtool.py" erase_footer --image "$WORK/out/MysticalOS_0.5_DSU_nofooter.img"
+          FSIZE=$(stat -c%s "$WORK/out/MysticalOS_0.5_DSU_nofooter.img")
+          echo "DSU no-footer: $FSIZE B (fs bez stopki)"
+          python3 - "$WORK/out/MysticalOS_0.5_DSU_nofooter.img" <<'CHKDSU'
+          import struct, sys
+          with open(sys.argv[1], 'rb') as f:
+              magic = f.read(4)
+          # czysty ext4: superblock magic 0xEF53 @ offset 1080 (1024+56)
+          with open(sys.argv[1], 'rb') as f:
+              f.seek(1080)
+              sb = f.read(2)
+          assert magic != b'AVB0', 'naglowek AVB nadal w obrazie DSU!'
+          assert struct.unpack('<H', sb)[0] == 0xEF53, 'magic superblocku ext4 nie zgadza sie'
+          print('DSU image: czysty ext4, bez AVB - OK')
+          CHKDSU
+
+      - name: "7. Weryfikacja finalna (propsy + debloat + Rust + qemu)"
+        run: |
+          set -euo pipefail
+          M="$WORK/mntv"; sudo mkdir -p "$M"
+          if ! sudo mount -o ro,loop "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" "$M" 2>/dev/null; then
+            sudo mount -t erofs -o ro,loop "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" "$M" \
+              || { echo "::error::montaz weryfikacyjny system"; exit 1; }
+          fi
+          # sysroot na finalnym obrazie (ta sama detekcja co w kroku 4)
+          if sudo test -d "$M/app"; then MSYS="$M"
+          elif sudo test -d "$M/system/app"; then MSYS="$M/system"
+          else MSYS=$(dirname "$(sudo find "$M" -maxdepth 3 -type d -name app -print -quit 2>/dev/null || true)")
+          fi
+          [ -n "$MSYS" ] || { echo "::error::finalny obraz bez app/!"; sudo ls -la "$M"; exit 1; }
+          echo "finalny sysroot: $MSYS"
+          BP="$MSYS/build.prop"
+          # 20 kluczowych propsow ze spec (identity + grafika) + sdk
+          for KV in \
+            "ro.build.version.release=17" \
+            "ro.build.version.release_or_codename=17" \
+            "ro.build.display.id=MysticalOS 0.5 (HyperOS 4 x A17 Experience)" \
+            "ro.build.version.incremental=MysticalOS-0.5-HyperOSPort" \
+            "ro.build.version.security_patch=2026-10-05" \
+            "ro.mysticalos.version=0.5" \
+            "ro.mysticalos.edition=HyperOS Port Edition" \
+            "ro.hyperos.version=4.0.0" \
+            "ro.miui.ui.version.name=V16" \
+            "ro.miui.ui.version.code=16" \
+            "ro.debuggable=1" \
+            "ro.secure=0" \
+            "ro.adb.secure=0" \
+            "persist.sys.usb.config=mtp,adb" \
+            "persist.service.adb.enable=1" \
+            "ro.surface_flinger.supports_background_blur=1" \
+            "persist.sys.sf.blur=1" \
+            "persist.sys.background_blur=1" \
+            "persist.sys.lenovo.refresh_rate=120" \
+            "ro.surface_flinger.set_idle_timer_ms=0" \
+            "ro.surface_flinger.set_touch_timer_ms=1000" \
+            "persist.sys.miui.anim.enabled=true" \
+            "persist.sys.miui_anim_duration_ratio=0.85" \
+            "debug.hwui.renderer=skiagl" \
+            "debug.renderengine.backend=skiaglthreaded" \
+            "ro.build.version.sdk=33"; do
+            sudo grep -q "^$KV$" "$BP" || { echo "::error::build.prop: brak $KV"; exit 1; }
+          done
+          echo "propsy 26/26 OK (sdk=33 nietkane; ADB live od logo)"
+          # v2.1 SAFE DEBLOAT: foldery MUSZA zostac (struktura + atrapy APK)
+          # v2.2: stock SystemUI zyje w system_ext/ (FOLDED) - wyjety z listy,
+          # obsluzony osobno nizej (po porcie MUSI byc atrapa: konflikt pakietow
+          # com.android.systemui z MiuiSystemUI z nabu)
+          sudo python3 - "$MSYS" <<'EOF'
+          import os, sys
+          M = sys.argv[1]
+          targets = ['app/EngineeringCode', 'app/HEC_agent', 'priv-app/LSF-Device-Phone',
+                     'priv-app/TabletCenter', 'priv-app/TabletUE', 'priv-app/UDCplatform',
+                     'priv-app/DesktopLauncher', 'priv-app/LenovoLauncher',
+                     'app/WpsOffice_Row', 'priv-app/LenovoWhatsNew',
+                     'app/LenovoPAI', 'priv-app/LenovoLoggerPannel', 'app/HQ_Opera',
+                     'app/HQ_PreinstallProvider']
+          for rel in targets:
+              d = os.path.join(M, rel)
+              assert os.path.isdir(d), rel + ': folderu brak (struktura musi zostac!)'
+              apks = [os.path.join(r, f) for r, _, fs in os.walk(d) for f in fs if f.endswith('.apk')]
+              assert apks, rel + ': brak plikow APK (atrapy!)'
+              for a in apks:
+                  assert os.path.getsize(a) <= 4096, a + ': APK nie jest atrapa?!'
+              print('ATRAPA OK:', rel, '(%d stub APK)' % len(apks))
+          # stock SystemUI: szukamy w obu mozliwych lokalizacjach (flat/folded)
+          su = None
+          for rel in ('system_ext/priv-app/SystemUI', 'priv-app/SystemUI'):
+              if os.path.isdir(os.path.join(M, rel)):
+                  su = rel
+                  break
+          if su:
+              apks = [os.path.join(r, f) for r, _, fs in os.walk(os.path.join(M, su))
+                      for f in fs if f.endswith('.apk')]
+              assert apks, su + ': brak APK'
+              for a in apks:
+                  assert os.path.getsize(a) <= 4096, \
+                      a + ': stock SystemUI NIE jest atrapa -> konflikt pakietow com.android.systemui z MiuiSystemUI!'
+              print('SystemUI stock (%s): ATRAPA OK (UI = MiuiSystemUI z portu)' % su)
+          else:
+              print('SystemUI stock: brak w obrazie (UI wylacznie z portu MiuiSystemUI)')
+          print('debloat-safe 14/14 OK (struktura zachowana, APK = atrapy; SystemUI Lenovo zastapione przez MiuiSystemUI)')
+          EOF
+          # nietykalne (ostrzezenie jesli ich nie widac - moga byc w product):
+          for KEEP in pen dolby audio; do
+            sudo find "$MSYS/app" "$MSYS/priv-app" -maxdepth 1 -iname "*${KEEP}*" > "$WORK/keep-hit.txt" 2>/dev/null || true
+            if [ -s "$WORK/keep-hit.txt" ]; then echo "zachowano: *${KEEP}*"; else echo "UWAGA: brak *${KEEP}* w /system (moze byc w product/vendor)"; fi
+          done
+          # Rust engine
+          [ -x "$MSYS/bin/coreutils" ] || { echo "::error::brak /system/bin/coreutils"; exit 1; }
+          [ -x "$MSYS/bin/mystical-rust-daemon" ] || { echo "::error::brak demona"; exit 1; }
+          [ -f "$MSYS/etc/init/mystical_rust.rc" ] || { echo "::error::brak mystical_rust.rc"; exit 1; }
+          sh -n "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: blad skladni sh"; exit 1; }
+          sudo grep -q "on property:sys.boot_completed=1" "$MSYS/etc/init/mystical_rust.rc" \
+            || { echo "::error::rc: brak wyzwalacza boot_completed"; exit 1; }
+          sudo grep -q "exec_background u:r:init:s0 -- /system/bin/mystical-rust-daemon" "$MSYS/etc/init/mystical_rust.rc" \
+            || { echo "::error::rc: brak exec_background demona (v2.1)"; exit 1; }
+          if sudo grep -Eq '^[[:space:]]*class[[:space:]]+main' "$MSYS/etc/init/mystical_rust.rc"; then
+            echo "::error::rc: serwis class main (v2.0, wczesny init!) nadal w rc"; exit 1
+          fi
+          sudo grep -q "4294967296" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak zram 4GB"; exit 1; }
+          sudo grep -q "lz4" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak lz4"; exit 1; }
+          sudo grep -q "pm disable-user" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak pm disable-user (safe debloat v2.1)"; exit 1; }
+          sudo grep -q "com.tblenovo.center" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak listy telemetrii Lenovo"; exit 1; }
+          sudo grep -q "com.lenovo.ota" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak com.lenovo.ota (petla Recovery/RescueParty!)"; exit 1; }
+          sudo grep -q "com.miui.analytics" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak debloat Xiaomi (port)"; exit 1; }
+          sudo grep -q "com.miui.msa.global" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak com.miui.msa.global"; exit 1; }
+          sudo grep -q "cmd overlay enable" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak wlaczania RRO (UI v0.5)"; exit 1; }
+          sudo grep -q "set-home-activity" "$MSYS/bin/mystical-rust-daemon" || { echo "::error::demon: brak set-home-activity (UI v0.5)"; exit 1; }
+          # ==== UI v0.5: launcher + czcionki + bootanim + wallpaper + nakladki + dzwieki ====
+          # ==== PORT HyperOS: MiuiSystemUI + MiuiHome + jary + device_features + boot ====
+          # twarde dowody: PRAWDZIWE APK z portu (MiuiSystemUI ~64 MB, MiuiHome ~25 MB),
+          # nie atrapy debloatu (stub = 22 B) - anty-konflikt z atrapą stock SystemUI
+          sudo test -n "$(sudo find "$MSYS/priv-app/MiuiSystemUI" -name "*.apk" -size +10M 2>/dev/null)" \
+            || { echo "::error::PORT: MiuiSystemUI.apk brak lub <10MB (prawdziwy port ma ~64 MB)"; exit 1; }
+          sudo test -n "$(sudo find "$MSYS/priv-app/MiuiHome" -name "*.apk" -size +5M 2>/dev/null)" \
+            || { echo "::error::PORT: MiuiHome.apk brak lub <5MB (prawdziwy port ma ~25 MB)"; exit 1; }
+          SIU_APKS=$(sudo find "$MSYS/priv-app/MiuiSystemUI" -name "*.apk" 2>/dev/null | wc -l)
+          MHOME_APKS=$(sudo find "$MSYS/priv-app/MiuiHome" -name "*.apk" 2>/dev/null | wc -l)
+          echo "PORT: MiuiSystemUI ($SIU_APKS APK, >10MB) + MiuiHome ($MHOME_APKS APK, >5MB) = prawdziwe apki nabu"
+          MIUI_JAR_N=$(sudo find "$MSYS/framework" -maxdepth 1 -name "miui*.jar" 2>/dev/null | wc -l)
+          [ "$MIUI_JAR_N" -ge 1 ] || { echo "::error::PORT: brak miui*.jar w framework"; exit 1; }
+          sudo test -d "$MSYS/etc/device_features" || { echo "::error::PORT: brak device_features"; exit 1; }
+          sudo grep -q "com.miui.home/" "$MSYS/etc/mystical/home_activity.txt" \
+            || { echo "::error::PORT: home_activity.txt bez MiuiHome"; exit 1; }
+          # ==== PORT HyperOS 4: launcher z donora (yingtian) + rescue + guard ====
+          AAPT2=$(cat "$WORK/aapt2-path")
+          sudo cp "$MSYS/priv-app/MiuiHome/MiuiHome.apk" "$WORK/chk-mh-img.apk"
+          sudo chown "$(id -u):$(id -g)" "$WORK/chk-mh-img.apk"
+          "$AAPT2" dump badging "$WORK/chk-mh-img.apk" > "$WORK/badging-mh-img.txt" 2>/dev/null || true
+          grep -q "^package: name='com.miui.home'" "$WORK/badging-mh-img.txt" \
+            || { echo "::error::PORT h4: MiuiHome w obrazie to nie com.miui.home"; cat "$WORK/badging-mh-img.txt"; exit 1; }
+          MHS=$(sed -n "s/^sdkVersion:'\([0-9]*\)'.*/\1/p" "$WORK/badging-mh-img.txt" | head -1)
+          [ "${MHS:-99}" -le 33 ] 2>/dev/null \
+            || { echo "::error::PORT h4: MiuiHome w obrazie minSdk=$MHS > 33 (patch?)"; cat "$WORK/badging-mh-img.txt"; exit 1; }
+          MHVN=$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" "$WORK/badging-mh-img.txt" | head -1)
+          echo "MiuiHome w obrazie: versionName=$MHVN (HyperOS 4 donor, minSdk=33)"
+          sudo test -s "$MSYS/app_backup/miuihome-rescue/MiuiHome.apk" \
+            || { echo "::error::PORT h4: brak rescue MiuiHome (nabu) w app_backup"; exit 1; }
+          sudo test -s "$MSYS/bin/mystical-home-guard.sh" \
+            || { echo "::error::PORT h4: brak mystical-home-guard.sh"; exit 1; }
+          sudo test -s "$MSYS/etc/init/mystical_home_guard.rc" \
+            || { echo "::error::PORT h4: brak mystical_home_guard.rc"; exit 1; }
+          sudo test -s "$MSYS/bin/mystical-bootdiag.sh" \
+            || { echo "::error::brak mystical-bootdiag.sh (diagnoza hangow)"; exit 1; }
+          sudo test -s "$MSYS/etc/init/mystical_bootdiag.rc" \
+            || { echo "::error::brak mystical_bootdiag.rc"; exit 1; }
+          sudo grep -q "on post-fs-data" "$MSYS/etc/init/mystical_bootdiag.rc" \
+            || { echo "::error::bootdiag: rc bez post-fs-data"; exit 1; }
+          sudo grep -q "sys.boot_completed" "$MSYS/bin/mystical-bootdiag.sh" \
+            || { echo "::error::bootdiag: skrypt bez check boot_completed"; exit 1; }
+          sudo grep -q "logcat -b all -d" "$MSYS/bin/mystical-bootdiag.sh" \
+            || { echo "::error::bootdiag: skrypt bez zrzutu logcat"; exit 1; }
+          sudo grep -q "persist.logd.logpersistd=true" "$MSYS/build.prop" \
+            || { echo "::error::brak persist.logd (persistentne logi)"; exit 1; }
+          sudo grep -q "pm install -r -d" "$MSYS/bin/mystical-home-guard.sh" \
+            || { echo "::error::PORT h4: guard bez pm install (rescue!)"; exit 1; }
+          sudo grep -q "cmd overlay enable" "$MSYS/bin/mystical-home-guard.sh" \
+            || { echo "::error::PORT h4: guard bez wlaczania nakladek h4"; exit 1; }
+          H4OV=$(sudo find "$MSYS/overlay" -name "h4-*.apk" 2>/dev/null | wc -l)
+          echo "nakladki h4 w obrazie: $H4OV"
+          sudo python3 - "$MSYS" <<'EOF'
+          import os, sys
+          M = sys.argv[1]
+          g = os.path.join(M, 'bin/mystical-home-guard.sh')
+          c = os.getxattr(g, 'security.selinux').rstrip(b'\x00')
+          assert c.startswith(b'u:object_r:'), 'guard: kontekst ' + str(c)
+          rc = os.path.join(M, 'etc/init/mystical_home_guard.rc')
+          c2 = os.getxattr(rc, 'security.selinux').rstrip(b'\x00')
+          assert c2.startswith(b'u:object_r:'), 'guard rc: kontekst ' + str(c2)
+          p = os.path.join(M, 'etc/permissions/privapp-permissions-miuihome-h4.xml')
+          if os.path.exists(p):
+              txt = open(p, encoding='utf-8', errors='ignore').read()
+              assert 'com.miui.home' in txt, 'perms h4 bez com.miui.home'
+              print('privapp-permissions h4: OK (com.miui.home)')
+          else:
+              print('privapp-permissions h4: pliku brak (donor ich nie mial - nabu wystarcza)')
+          print('guard: konteksty OK')
+          EOF
+          for F in Light Regular Medium Bold; do
+            sudo test -s "$MSYS/fonts/MiSans-$F.ttf" || { echo "::error::brak MiSans-$F.ttf"; exit 1; }
+          done
+          sudo python3 - "$MSYS" <<'EOF'
+          import os, sys, zipfile
+          import xml.etree.ElementTree as ET
+          M = sys.argv[1]
+          # fonts.xml: MiSans w sans-serif* + wszystkie wskazane pliki istnieja
+          root = ET.parse(f'{M}/etc/fonts.xml').getroot()
+          fams = {f.get('name') for f in root.findall('family')}
+          assert 'sans-serif' in fams, 'fonts.xml bez sans-serif?!'
+          misans = 0
+          for f in root.findall('family'):
+              nm = f.get('name') or ''
+              if nm.startswith('sans-serif') and 'condensed' not in nm:
+                  for font in f.findall('font'):
+                      if 'MiSans' in (font.text or ''):
+                          misans += 1
+          assert misans >= 6, f'MiSans w sans-serif*: tylko {misans} wpisow'
+          for f in root.findall('family'):
+              for font in f.findall('font'):
+                  fn = (font.text or '').strip()
+                  if fn and not fn.startswith('/') and not os.path.exists(f'{M}/fonts/{fn}'):
+                      raise AssertionError(f'fonts.xml -> brak pliku {fn}')
+          print(f'fonts.xml: MiSans domyslna rodzina sans-serif ({misans} wpisow), pliki OK')
+          # bootanimation: desc.txt pierwszy + czytelna struktura.
+          # Od v39: ORYGINAL z donora HyperOS 4 (wymiary/klatki wg donora,
+          # np. 3200x2000; SurfaceFlander skaluje z zachowaniem proporcji).
+          z = zipfile.ZipFile(f'{M}/media/bootanimation.zip')
+          names = z.namelist()
+          assert names[0] == 'desc.txt', f'desc.txt nie jest pierwszy: {names[0]}'
+          first = z.read('desc.txt').decode().splitlines()[0].split()
+          assert first[:2] == ['2000', '1200'], \
+              f'bootanimation nie jest 2000x1200: {first[:2]} (crop/scale padl?)'
+          frames = [n for n in names if n.endswith(('.png', '.webp'))]
+          assert len(frames) >= 1, f'klatek {len(frames)} < 1'
+          stored = all(ni.compress_type == zipfile.ZIP_STORED for ni in z.infolist())
+          print(f'bootanimation: {first[0]}x{first[1]}, {len(frames)} klatek, '
+                f'STORED={stored}, desc.txt pierwszy')
+          EOF
+          sudo test -s "$MSYS/media/wallpapers/MysticalOS_Default.png" \
+            || { echo "::error::brak wallpapera MysticalOS_Default.png"; exit 1; }
+          sudo test -s "$MSYS/etc/mystical/home_activity.txt" \
+            || { echo "::error::brak konfiguracji home_activity.txt"; exit 1; }
+          # nakladki RRO: podpis + zasoby + targetPackage
+          AAPT2=$(cat "$WORK/aapt2-path"); APKSIGNER=$(cat "$WORK/apksigner-path")
+          sudo cp "$MSYS/overlay/Theme_Android17_Framework.apk" "$WORK/chk-framework.apk"
+          sudo chown "$(id -u):$(id -g)" "$WORK/chk-framework.apk"
+          "$APKSIGNER" verify "$WORK/chk-framework.apk" \
+            || { echo "::error::overlay framework: podpis nie przechodzi"; exit 1; }
+          "$AAPT2" dump resources "$WORK/chk-framework.apk" > "$WORK/chk-fw-res.txt" 2>/dev/null
+          grep -q "dimen/dialogCornerRadius" "$WORK/chk-fw-res.txt" \
+            || { echo "::error::overlay framework: brak dialogCornerRadius"; exit 1; }
+          grep -q "drawable/default_wallpaper" "$WORK/chk-fw-res.txt" \
+            || { echo "::error::overlay framework: brak default_wallpaper"; exit 1; }
+          "$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-framework.apk" > "$WORK/chk-fw-man.txt" 2>/dev/null
+          grep -q 'targetPackage.*"android"' "$WORK/chk-fw-man.txt" \
+            || { echo "::error::overlay framework: targetPackage != android"; exit 1; }
+          if sudo test -s "$MSYS/overlay/Theme_HyperOS4_SystemUI.apk"; then
+            sudo cp "$MSYS/overlay/Theme_HyperOS4_SystemUI.apk" "$WORK/chk-sui.apk"
+            sudo chown "$(id -u):$(id -g)" "$WORK/chk-sui.apk"
+            "$APKSIGNER" verify "$WORK/chk-sui.apk" \
+              || { echo "::error::overlay SystemUI: podpis"; exit 1; }
+            "$AAPT2" dump xmltree --file AndroidManifest.xml "$WORK/chk-sui.apk" > "$WORK/chk-sui-man.txt" 2>/dev/null
+            grep -q 'targetPackage.*"com.android.systemui"' "$WORK/chk-sui-man.txt" \
+              || { echo "::error::overlay SystemUI: zly targetPackage"; exit 1; }
+            echo "overlay SystemUI: OK (podpis + target)"
+          else
+            echo "overlay SystemUI: pominieto juz w 4b (wiadomosc wyzej)"
+          fi
+          SND_C=$(sudo find "$MSYS/media/audio/ui" -name "*.ogg" 2>/dev/null | wc -l)
+          [ "$SND_C" -ge 3 ] || { echo "::error::dzwieki UI: $SND_C < 3"; exit 1; }
+          echo "UI v2 OK: MiSans + bootanim (orb) + wallpaper (aurora) + RRO + $SND_C dzwiekow; PORT: MiuiSystemUI + MiuiHome + $MIUI_JAR_N x miui.jar + device_features + boot OK"
+          # konteksty SELinux v2.1: binarki Rust = system_file (spec)
+          sudo python3 - "$MSYS" <<'EOF'
+          import os, sys
+          M = sys.argv[1]
+          sysf = b'u:object_r:system_file:s0'
+          def ctx(rel):
+              # ext4 + libselinux zapisuja kontekst z koncowym NUL - normalizujemy
+              return os.getxattr(f'{M}/{rel}', 'security.selinux').rstrip(b'\x00')
+          cu = ctx('bin/coreutils')
+          da = ctx('bin/mystical-rust-daemon')
+          assert cu == sysf, f'kontekst coreutils {cu} != system_file (spec v2.1)'
+          assert da == sysf, f'kontekst demona {da} != system_file (spec v2.1)'
+          rc = ctx('etc/init/mystical_rust.rc')
+          assert rc.startswith(b'u:object_r:'), 'kontekst rc?!'
+          print('konteksty SELinux v2.1 OK:', cu.decode(), '/', da.decode(), '/', rc.decode())
+          EOF
+          # QEMU: binarka Rust DZIALA (hard evidence, prosto z obrazu)
+          qemu-aarch64-static "$MSYS/bin/coreutils" --version > "$WORK/qemu-coreutils.txt" 2>&1 \
+            || { echo "::error::qemu: coreutils --version padl"; cat "$WORK/qemu-coreutils.txt"; exit 1; }
+          head -2 "$WORK/qemu-coreutils.txt"
+          grep -qi "coreutils" "$WORK/qemu-coreutils.txt" \
+            || { echo "::error::qemu: coreutils --version bez potwierdzenia"; exit 1; }
+          sudo qemu-aarch64-static "$MSYS/bin/coreutils" ls "$MSYS/bin" >/dev/null \
+            || { echo "::error::qemu: coreutils ls padl"; exit 1; }
+          echo "qemu-aarch64: coreutils --version + ls OK (multicall dziala)"
+          USE=$(df --output=pcent "$M" | tail -1 | tr -dc '0-9')
+          echo "system: uzycie ${USE}%"
+          [ "$USE" -lt 99 ] || { echo "::error::system ext4 zapchany"; exit 1; }
+          # system_ext FOLDED w obrazie systemu (zapisana sciezka z kroku 4)
+          SEBPREL=$(cat "$WORK/sebp-rel" 2>/dev/null || true)
+          if [ -n "$SEBPREL" ] && sudo test -f "$M/$SEBPREL"; then
+            for KV in "ro.build.version.release=17" "ro.mysticalos.version=0.5" "ro.hyperos.version=4.0.0" "ro.debuggable=1" "ro.secure=0"; do
+              sudo grep -q "^$KV$" "$M/$SEBPREL" || { echo "::error::system_ext(folded): brak $KV"; exit 1; }
+            done
+            echo "system_ext (folded, $SEBPREL): propsy OK"
+          else
+            echo "system_ext: brak w obrazie (propsy tylko /system/build.prop)"
+          fi
+          sudo umount "$M"
+          sudo rmdir "$M" 2>/dev/null || true
+          df -h /
+
+      - name: "8. INSTRUKCJA + SHA256SUMS"
+        run: |
+          set -euo pipefail
+          { cat "$WORK/debloat-report.txt"; echo; cat "$WORK/rust-manifest.txt"; echo
+            echo "fsck:"; tail -3 "$WORK/fsck-system.log" 2>/dev/null; } > "$WORK/out/mods-report.txt" 2>/dev/null || true
+          cat > "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" <<'EOF'
+          =====================================================================
+          MYSTICALOS 0.5 - PRAWDZIWY PORT HYPEROS (Pad Edition) - TB350FU
+          Baza: stock Lenovo S130714 A13 (sdk 33, MT6789) + fundament v2.1
+          UI: oficjalny Xiaomi Pad 5 (nabu) HyperOS 1.0.6.0 Global (A13!)
+          Tozsamosc: HyperOS 4 x A17 Experience (hyperos=4.0.0, V16, rel=17)
+          =====================================================================
+
+          CO TO JEST (prawdziwy port, nie kosmetyka):
+          - MiuiSystemUI z nabu = Control Center HyperOS (powiadomienia
+            oddzielnie od przełącznikow, Gaussian Blur) - zastapil Lenovo
+            SystemUI (ten jest atrapa w obrazie).
+          - MiuiHome z nabu = natywny tabletowy launcher HyperOS (dock,
+            gesty, Super-Ikony). Ustawiany jako domyslny HOME po boocie.
+          - framework/miui*.jar (miui-framework, miui-services, miuisdk...)
+            wstrzykniete na BOOTCLASSPATH przez /system/etc/classpaths/
+            bootclasspath.pb (mechanizm derive_classpath Androida 12+;
+            ZERO zmian w boot.img - kernel i init zostaja stock).
+          - app/miui + etc/device_features + privapp-permissions (z nabu).
+          - MiSans (HyperOS Typography) jako domyslna czcionka systemu.
+          - Debloat agresywny: Lenovo OTA/LSF/UE/DSA/TbEngine/center/... +
+            Xiaomi analytics/msa/discover/cloudservice/yellowpage/joyose
+            (stuby lub pm disable-user z demona Rust).
+          - Rust: coreutils + mystical-rust-daemon (zRAM 4 GB lz4, 120 Hz,
+            schedutil, RRO, home=MiuiHome, debloat).
+          - Bootanim HyperOS-look (orb + gwiazdy), tapeta aurora, dzwieki UI,
+            nakladka RRO (okna 28dp + domyslna tapeta).
+          UWAGA TECHNICZNA (uczciwie): apki pochodza z HyperOS 1.0 (nabu) -
+          ostatnia wersja HyperOS skompilowana pod Androida 13/sdk 33.
+          Nowsze binarki HyperOS (A14+) nie wystartuja na tej bazie; tozsamosc
+          systemowa + styling = HyperOS 4 x A17 wg spec.
+
+          ZAWARTOSC PACZKI:
+          - MysticalOS_0.5_HyperOS_Port.img (system; RAW ext4, stopka AVB
+            flags 2 sha256 no-FEC; dokladnie 3489660928 B = PS partycji)
+          - vbmeta-FLAGS3/ + STOCK-ORYGINAL/ + INSTRUKCJA + SHA256SUMS
+          - preview/ (podglad bootanim/tapety - zobacz zanim wgrasz)
+          - avb-info/avb-verify + mods-report + port-report + ui-report
+
+          WGRANIE (fastboot; bootloader odblokowany) - TYLKO SYSTEM:
+          KROK 0 (raz; jesli jeszcze nie wgrywano v2.1/0.5 z FLAGS3):
+            fastboot flash vbmeta        vbmeta-FLAGS3/vbmeta.img
+            fastboot flash vbmeta_system vbmeta-FLAGS3/vbmeta_system.img
+            fastboot flash vbmeta_vendor vbmeta-FLAGS3/vbmeta_vendor.img
+          KROK 1: adb reboot fastboot   (FastbootD)
+          KROK 2: fastboot flash system MysticalOS_0.5_HyperOS_Port.img
+          KROK 3: fastboot reboot
+          (boot.img/kernel NIETYKANE - jary miui laduja sie przez
+           /system/etc/classpaths/bootclasspath.pb; wgranie identycznie
+           proste jak v2.1/0.5)
+
+          PIERWSZY BOOT: dluzej niz zwykle (idmap2 + optymalizacja dex).
+          Jezeli pulpit zapyta o wybor HOME: MiuiHome -> zawsze.
+
+          LAUNCHER = HYPEROS 4 (z Xiaomi Pad 9 Pro Max, donor yingtian
+          OS4.0.11.0): com.miui.home z minSdk przepatchowanym na 33. Jezeli
+          launcher HyperOS 4 nie wystartuje na A13 (wymaga nowszych klas),
+          mystical-home-guard.sh po 90 s SAM wgrywa MiuiHome z nabu (A13)
+          jako rescue i ustawia HOME. Recznie:
+            adb shell pm install -r -d /system/app_backup/miuihome-rescue/MiuiHome.apk
+            adb shell cmd package set-home-activity com.miui.home/com.miui.home.launcher.Launcher
+          Nakladki wygladu HyperOS 4 (z donora) wlacza guard po boocie
+          (cmd overlay enable; lista: /system/etc/mystical/h4-overlays.txt).
+
+          WGROWANIE PRZEZ DSU (alternatywa; NIE uzywaj obrazu ze stopka!):
+            Uzyj pliku MysticalOS_0.5_DSU_nofooter.img (czysty ext4, BEZ
+            stopki AVB). Zwykly obraz HyperOS_Port.img w DSU powoduje
+            kernel panic (verity: Hash device is too small - potwierdzone
+            logiem z tabletu). DSU loader -> wybierz nofooter.img.
+
+          GDYBY COS NIE TAK (ADB zyje od logo - ro.debuggable=1):
+            adb devices
+            adb root && adb logcat -d > boot.log
+            adb logcat -b all -d | grep -iE "FATAL|AndroidRuntime|systemui|miui"
+            adb shell pm list packages -d
+            (odeslij log -> iteracja)
+
+          WISI NA ANIMACJI BOOT? (system startuje, ale UI nie wstaje):
+            1. Podlacz USB do PC (ADB dziala nawet w trakcie wieszania):
+               adb root && adb logcat -b all -d > hang.log   (odeslij)
+            2. Nie masz kabla? Po restarcie logi sa i tak zapisane przez
+               mystical-bootdiag w /data/mystical/bootfail-*.txt
+               (przezywaja reboot i reflash systemu). Wgraj stock, potem:
+               adb shell su 0 ls /data/mystical/   (albo przez recovery)
+            3. Logi sa rowniez persistentne (persist.logd) - pelny logcat
+               poprzedniego boota w /data/misc/logd/logcat.
+
+          ROLLBACK (do stock Lenovo):
+            fastboot flash vbmeta* STOCK-ORYGINAL/vbmeta*.img (x3)
+            + stock S130714 przez flashtool (lub nasz v2.1/v0.5).
+            (boot.img nigdy nie byl wgrywany - nie trzeba go przywracac)
+
+          PO BOOCIE (kontrola):
+            getprop ro.mysticalos.version   -> 0.5
+            getprop ro.hyperos.version      -> 4.0.0
+            getprop ro.build.version.sdk    -> 33
+            dumpsys activity activities | grep mResumedActivity  -> MiuiHome?
+            cat /sys/block/zram0/disksize   -> 4294967296
+            logcat -s MysticalOS-Rust       -> home/debloat/RRO/zRAM
+          EOF
+          sha256sum "$WORK/out"/MysticalOS_0.5_HyperOS_Port*.img \
+            "$WORK/out"/MysticalOS_0.5_DSU_nofooter.img \
+                    "$WORK/vbmeta/FLAGS3"/*.img "$WORK/vbmeta/STOCK-ORYGINAL"/*.img \
+                    "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" > "$WORK/out/SHA256SUMS.txt"
+          cat "$WORK/out/SHA256SUMS.txt"
+          ls -la "$WORK/out/"
+
+      - name: "9. Artifact (PERMANENT)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: MysticalOS_0.5_HyperOS_Port
+          path: |
+            /tmp/m2/out/MysticalOS_0.5_HyperOS_Port.img
+            /tmp/m2/out/preview/preview-boot.jpg
+            /tmp/m2/out/preview/preview-wallpaper.jpg
+            /tmp/m2/out/port-report.txt
+            /tmp/m2/out/ui-report.txt
+            /tmp/m2/vbmeta/FLAGS3/vbmeta.img
+            /tmp/m2/vbmeta/FLAGS3/vbmeta_system.img
+            /tmp/m2/vbmeta/FLAGS3/vbmeta_vendor.img
+            /tmp/m2/vbmeta/STOCK-ORYGINAL/vbmeta.img
+            /tmp/m2/vbmeta/STOCK-ORYGINAL/vbmeta_system.img
+            /tmp/m2/vbmeta/STOCK-ORYGINAL/vbmeta_vendor.img
+            /tmp/m2/out/INSTRUKCJA-FASTBOOTD.txt
+            /tmp/m2/out/SHA256SUMS.txt
+            /tmp/m2/out/avb-info-system.txt
+            /tmp/m2/out/avb-info-system-ext.txt
+            /tmp/m2/out/avb-verify-system.txt
+            /tmp/m2/out/avb-verify-system-ext.txt
+            /tmp/m2/out/mods-report.txt
+
+      - name: "10. Evidence (reports/)"
+        if: always()
+        run: |
+          set -uo pipefail
+          R="reports/mysticalos3-${GITHUB_RUN_ID}.md"
+          {
+            echo "# mysticalos3 (PORT HyperOS) run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## struktura paczki / partycje"; echo '```'
+            cat "$WORK/stream-manifest.txt" 2>/dev/null || true
+            for P in system system_ext; do
+              echo "ps-$P: $(cat "$WORK/ps-$P" 2>/dev/null)"; echo "fsz-$P: $(cat "$WORK/fsz-$P" 2>/dev/null)"
+              echo "fstype-$P: $(cat "$WORK/fstype-$P" 2>/dev/null)"
+            done
+            echo '```'
+            echo "## debloat"; echo '```'; cat "$WORK/debloat-report.txt" 2>/dev/null || true; echo '```'
+            echo "## rust"; echo '```'; cat "$WORK/rust-manifest.txt" 2>/dev/null || true; echo '```'
+            echo "## ui-v2"; echo '```'; cat "$WORK/ui-report.txt" 2>/dev/null || true; echo '```'
+            echo "## port-hyperos"; echo '```'; cat "$WORK/port-report.txt" 2>/dev/null || true; echo '```'
+            echo "## sha256sums"; echo '```'; cat "$WORK/out/SHA256SUMS.txt" 2>/dev/null || true; echo '```'
+            echo "## 4d2-console (diag)"; echo '```'; cat "$WORK/4d2-console.log" 2>/dev/null || true; echo '```'
+            echo "## 4d3-console (diag)"; echo '```'; cat "$WORK/4d3-console.log" 2>/dev/null || true; echo '```'
+            echo "## sysroot systemu"; echo '```'; cat "$WORK/sysroot-listing.txt" 2>/dev/null || true; echo '```'
+            echo "## app/priv-app/app_backup (listing)"; echo '```'; cat "$WORK/applist.txt" 2>/dev/null || true; echo '```'
+            echo "## qemu"; echo '```'; cat "$WORK/qemu-coreutils.txt" 2>/dev/null || true; echo '```'
+            echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
+          } > "$R"
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          git add "$R" || true
+          git commit -m "mysticalos3: evidence run ${GITHUB_RUN_ID}" \
+            || echo "nic do commitu"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done
+          echo "RAPORT: $R"
+
+      - name: "11. Release (PERMANENTNY download - bez UI Actions i bez TTL artefaktu)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # --- DIAG: konsola -> plik; przy padnieciu tail w annotation ---
+          exec > >(tee "$WORK/11-console.log") 2>&1
+          set -E
+          trap 'RC=$?; echo "::error::krok 11 padl (exit $RC); ostatnie linie:"; tail -n 20 "$WORK/11-console.log" 2>/dev/null' ERR
+          TAG="0.5-hyperos-port"
+          # zip ma sciezki WZGLEDNE (out/..., vbmeta/...) -> cwd = $WORK!
+          # a gh CLI traci wtedy kontekst repo (brak .git w /tmp/m2) -> GH_REPO
+          cd "$WORK"
+          export GH_REPO="$GITHUB_REPOSITORY"
+          # raporty portu/UI powstaja w $WORK (nie w out/) - kopiujemy dla
+          # kompletnosci zipa (run 37572665433: 'no matches found out/port-report.txt')
+          cp -f "$WORK/port-report.txt" "$WORK/out/" 2>/dev/null || true
+          cp -f "$WORK/ui-report.txt" "$WORK/out/" 2>/dev/null || true
+          # RAW img = 3 489 660 928 B (3.25 GiB) > limit 2 GiB na pojedynczy asset
+          # release -> pakujemy w zip (jak artefakt Actions, ~1.8 GB po deflacie)
+          zip -r -q "$WORK/port-release.zip" \
+            out/MysticalOS_0.5_HyperOS_Port.img \
+            out/INSTRUKCJA-FASTBOOTD.txt out/SHA256SUMS.txt \
+            out/port-report.txt out/ui-report.txt out/mods-report.txt \
+            out/avb-info-system.txt out/avb-verify-system.txt \
+            out/preview \
+            vbmeta/FLAGS3 vbmeta/STOCK-ORYGINAL
+          echo "zip release: $(stat -c%s "$WORK/port-release.zip") B"
+          # wariant DSU: obraz bez stopki AVB + ta sama dokumentacja
+          zip -r -q "$WORK/port-release-dsu.zip" \
+            out/MysticalOS_0.5_DSU_nofooter.img \
+            out/INSTRUKCJA-FASTBOOTD.txt out/SHA256SUMS.txt out/port-report.txt
+          echo "zip DSU: $(stat -c%s "$WORK/port-release-dsu.zip") B"
+          SHA_IMG=$(awk '/MysticalOS_0\.5_HyperOS_Port\.img/{print $1}' "$WORK/out/SHA256SUMS.txt")
+          {
+            echo "# MysticalOS 0.5 — PRAWDZIWY PORT HyperOS (nabu OS1.0.6.0 → Lenovo TB350FU)"
+            echo
+            echo "Run mysticalos3: ${GITHUB_RUN_ID} (SUCCESS) · evidence: reports/mysticalos3-${GITHUB_RUN_ID}.md"
+            echo
+            echo "## Co to jest"
+            echo "Natywne apki Xiaomi z oficjalnego ROM-u HyperOS tabletu nabu (Pad 6 Pro, A13/sdk 33)"
+            echo "wgrane w system stock Lenovo TB350FU (A13): **MiuiSystemUI** (64 MB, Control Center"
+            echo "HyperOS, rozdzielone powiadomienia/przelaczniki), **MiuiHome** (25 MB, RELEASE-4.40.0.6206,"
+            echo "tabletowy launcher), 14 jarow miui na BOOTCLASSPATH (przez /system/etc/classpaths/"
+            echo "bootclasspath.pb — boot.img NIETYKANY), device_features, app/miui, privapp-permissions"
+            echo "+ library XML (57 plikow). Tozsamosc: MysticalOS 0.5 (HyperOS 4 x A17 Experience),"
+            echo "sdk=33 NIETYKANE. Debloat v2.2: stock LenovoSystemUI (61.7 MB, system_ext) + reszta"
+            echo "Lenovo/Xiaomi jako atrapy; Rust coreutils + mystical-rust-daemon (zRAM 4 GB lz4)."
+            echo
+            echo "## Warianty"
+            echo "- **FastbootD**: port-release.zip (MysticalOS_0.5_HyperOS_Port.img, stopka AVB flags 2)"
+            echo "- **DSU**: port-release-dsu.zip (MysticalOS_0.5_DSU_nofooter.img — czysty ext4 BEZ stopki;"
+            echo "  zwykly obraz w DSU powoduje kernel panic — verity too small, potwierdzone logiem)"
+            echo
+            echo "## Zawartosc pelnego zipa (MysticalOS_0.5_HyperOS_Port-full.zip)"
+            echo "- out/MysticalOS_0.5_HyperOS_Port.img — RAW ext4, 3 489 660 928 B (= PS partycji), stopka AVB flags 2 sha256 no-FEC"
+            echo "- out/INSTRUKCJA-FASTBOOTD.txt + out/SHA256SUMS.txt"
+            echo "- vbmeta/FLAGS3/ + vbmeta/STOCK-ORYGINAL/ (po 3 pliki)"
+            echo "- out/preview/ (bootanim + tapeta) + raporty (port/mods/avb)"
+            echo
+            echo "SHA256 (img): \`${SHA_IMG}\`"
+            echo
+            echo "## Wgrywanie — TYLKO system (boot.img NIETYKANY)"
+            echo '```'
+            echo "fastboot flash vbmeta        vbmeta/FLAGS3/vbmeta.img        # raz, jesli nie wgrywano wczesniej"
+            echo "fastboot flash vbmeta_system vbmeta/FLAGS3/vbmeta_system.img"
+            echo "fastboot flash vbmeta_vendor vbmeta/FLAGS3/vbmeta_vendor.img"
+            echo "adb reboot fastboot                                               # FastbootD"
+            echo "fastboot flash system out/MysticalOS_0.5_HyperOS_Port.img"
+            echo "fastboot reboot"
+            echo '```'
+            echo
+            echo "Pierwszy boot dluzszy (idmap2 + dexopt). Jezeli pulpit zapyta o HOME: MiuiHome → zawsze."
+            echo "LAUNCHER = HyperOS 4 z Xiaomi Pad 9 Pro Max (donor yingtian OS4.0.11.0, minSdk 37→33);"
+            echo "auto-rescue po 90 s (mystical-home-guard.sh) wgrywa MiuiHome z nabu gdyby h4 nie wystartowal;"
+            echo "Pelna instrukcja (rollback, diagnostyka ADB, kontrola po boocie): INSTRUKCJA-FASTBOOTD.txt."
+          } > "$WORK/NOTES.md"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "MysticalOS 0.5 — PRAWDZIWY PORT HyperOS (Pad Edition)" \
+              --notes-file "$WORK/NOTES.md" --target "$GITHUB_SHA"
+          fi
+          echo "release $TAG: upload port-release.zip (clobber, retry x3)"
+          REL_ZIP_OK=0
+          for AT in 1 2 3; do
+            echo "== proba $AT =="
+            if gh release upload "$TAG" "$WORK/port-release.zip" --clobber; then REL_ZIP_OK=1; break; fi
+            echo "upload padl (proba $AT) - czekam 20 s"
+            sleep 20
+          done
+                    [ "$REL_ZIP_OK" = "1" ] || { echo "::error::upload port-release.zip padl po 3 probach"; exit 1; }
+          REL_DSU_OK=0
+          for AT in 1 2 3; do
+            if gh release upload "$TAG" "$WORK/port-release-dsu.zip" --clobber; then REL_DSU_OK=1; break; fi
+            echo "upload DSU padl (proba $AT)"; sleep 20
+          done
+          [ "$REL_DSU_OK" = "1" ] || { echo "::error::upload port-release-dsu.zip padl po 3 probach"; exit 1; }
+          # notatki ZAWSZE z aktualnego runu (SHA img + run id)
+          gh release edit "$TAG" --notes-file "$WORK/NOTES.md" \
+            || { echo "::error::gh release edit (notes) padl"; exit 1; }
+          gh release upload "$TAG" \
+            "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" "$WORK/out/SHA256SUMS.txt" \
+            "$WORK/out/port-report.txt" "$WORK/out/mods-report.txt" \
+            "$WORK/out/preview/preview-boot.jpg" "$WORK/out/preview/preview-wallpaper.jpg" --clobber
+          echo "== RELEASE $TAG =="
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name) \(.size) B"'

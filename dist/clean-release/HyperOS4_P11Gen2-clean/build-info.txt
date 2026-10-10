@@ -1,0 +1,12 @@
+wariant:    CLEAN (coherent minus diagnostyka/telemetria)
+data:       2026-09-25
+system_ext: donorski (Xiaomi Pad 9 Pro Max, HyperOS 4 CN, A17) minus:
+            app/EngineerMode app/DebugLoggerUI app/MiSightService app/VsimCore
+            app/CameraMind app/PowerInsight priv-app/RtMiCloudSDK
+            1910 -> 1867 wpisow; mkfs.erofs -T 0 -U a11ce5a1-0000-4000-8000-5c1e4b7e9a64
+            -zlz4hc,9 --force-uid=0 --force-gid=0; weryfikacja verify_image.sh 1:1
+system:     identyczny z lekkim (sha256 4836dcd4...) - receptura docs/08, ten sam builder
+product:    identyczny z lekkim (a961bec4...)
+vbmeta:     identyczny ze wszystkimi wariantami (9cf2e7e4..., Flags 3, testkey AOSP)
+budowa:     tools/build_clean_kit.sh (idempotentny; zrodlo system_ext: transfer-spool
+            bieg 36030150849, md5 donora f879747f... = suma serwera Google)
