@@ -109,3 +109,25 @@
   100 min na secilc - tablet-realistyczny (na tablecie tez kompiluje w locie
   po wymianie systemu: precompiled vendora Lenovo pasuje do plat Lenova).
 - NOP-patch usuniety z workflow (po co skoro property dziala 1:1).
+
+## v2.16 (run 38053021041) - WNIOSKI
+- FAZA 2 (naturalna, bez patchy): polityka SELinux skompilowana w ~9 s pod
+  TCG (nie 100 min!), ZALADOWANA, "init second stage started!" ->
+  "Failed to initialize property area" (PropertyInit+1968 w /system/bin/init)
+  -> InitFatalReboot -> petla. CZYSTY REPRO root cause 1:1 z super/dm-linear.
+- selinux=0 (faza 1) = ZLY pomysl: wisil load bez selinuxfs.
+- Odczyt v2.15 "PropertyInit przeszedl" byl ARTEFAKTEM tail-200 (FATAL lecial
+  w kazdej petli). Nalezy zawsze liczyc counts z PELNEJ konsoli.
+
+## v2.17 - FORENSYKA + FIX-TEST (hipoteza property_contexts)
+- Mechanizm (bionic): area_init tworzy plik dla kazdego kontekstu i robi
+  fsetxattr(security.selinux, u:object_r:TYP:s0); TYP nieobecny w polityce
+  -> EINVAL -> area_init -1 -> FATAL. Polityka w harness = nasz plat (nabu/
+  Lenovo) + vendor ranchu -> typy z transplantu moga byc nieznane.
+- Nowy tool tools/propctx.py (stdlib; check/fix): porownuje typy z
+  *_property_contexts z deklaracjami (type ...) w plat_sepolicy.cil +
+  vendor_sepolicy.cil; fix przepisuje nieznane na default_prop.
+- Workflow: forensyka check na zywych obrazach -> raport; faza 1 naturalna
+  (30 min, counts z pelnej konsoli); faza 2 = fix + przebudowa super +
+  naturalny boot (45 min, counts). Run_qemu/build_super jako funkcje
+  (limit 21k znakow kroku).
