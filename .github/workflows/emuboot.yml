@@ -1,5 +1,9 @@
 # ============================================================================
-# mysticalos-emuboot v2.11 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# mysticalos-emuboot v2.12 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# v2.12: androidboot.boot_devices=a003c00.virtio_mmio w cmdline qemu - bez tego
+#        first-stage init NIE tworzy /dev/block/by-name/super (symlink top-level
+#        powstaje tylko dla 'boot devices' - init/devices.cpp GetBlockDeviceSymlinks)
+#        i FirstStageMount pada na realpath -> InitFatalReboot; + fix bramki fazy 2
 # v2.11: SUPER z logiczna partycja 'system' (mksuper.py, format liblp) -
 #        uklad dyskow jak na prawdziwym urzadzeniu (by-name/super + dm-linear);
 #        faza 1 = BOOT 1:1 bez patchow; faza 2 (gdy padnie) = NOP-patch
@@ -382,7 +386,7 @@ jobs:
 
               nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
                 -kernel "$KERNEL" -initrd "$RAMDISK2" \
-                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555" \
+                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003c00.virtio_mmio" \
                 -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
                 -device virtio-blk-device,drive=meta \
                 -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
@@ -437,7 +441,7 @@ jobs:
           # Tylko gdy 1:1 (super, bez patchy) nie wstalo: omijamy FATAL-e
           # property (0x12337c/0x12339c cbz/tbnz -> b) i patrzymy jak daleko
           # system dojdzie z super (vold teraz ma logical system!).
-          if [ "${EMU_PATH:-}" = "qemu" ] && [ "$boot" = "0" ]; then
+          if [ "${EMU_PATH:-}" != "emulator" ] && [ "$boot" = "0" ] && [ -s "$WORK/qemu-console.log" ]; then
             pkill -f qemu-system-aarch64 2>/dev/null; sleep 3
             sudo mkdir -p /tmp/mnt-pat
             if sudo mount -o rw,loop "$IMG" /tmp/mnt-pat 2>/dev/null; then
@@ -462,7 +466,7 @@ jobs:
                 | sfdisk "$WORK/super-gpt.img" > "$WORK/gpt-super2.txt" 2>&1
               nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
                 -kernel "$KERNEL" -initrd "$RAMDISK2" \
-                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555" \
+                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003c00.virtio_mmio" \
                 -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
                 -device virtio-blk-device,drive=meta \
                 -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
@@ -544,6 +548,7 @@ jobs:
             echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'
+            echo '- v2.12: cmdline androidboot.boot_devices=a003c00.virtio_mmio -> first-stage tworzy /dev/block/by-name/super (init/devices.cpp: by-name tylko dla boot devices)'
             echo '- faza 1: BOOT 1:1 (bez patchy). faza 2 (jesli 1:1 padlo): NOP-patch property FATAL-i (0x12337c/0x12339c)'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
