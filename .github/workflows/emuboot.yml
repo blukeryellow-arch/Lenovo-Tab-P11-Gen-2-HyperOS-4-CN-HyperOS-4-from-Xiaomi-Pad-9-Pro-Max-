@@ -361,10 +361,15 @@ jobs:
               sudo mkdir -p /tmp/mnt-pat
               if sudo mount -o rw,loop "$IMG" /tmp/mnt-pat 2>/dev/null; then
                 PT="$GITHUB_WORKSPACE/kit-mysticalos3/tools/disasm_propertyinit.py"
-                sudo python3 "$PT" /tmp/mnt-pat/system/bin/init patch 0x12337c "05000014" \
+                # sudo python3 nie widzi pip-pakietow usera => kopia poza mount,
+                # patch jako runner, kopia z powrotem
+                sudo cp /tmp/mnt-pat/system/bin/init "$WORK/init-to-patch"
+                sudo chown "$(id -u):$(id -g)" "$WORK/init-to-patch"
+                python3 "$PT" "$WORK/init-to-patch" patch 0x12337c "05000014" \
                   2>&1 | tee -a "$WORK/emu-progress.log"
-                sudo python3 "$PT" /tmp/mnt-pat/system/bin/init patch 0x12339c "05000014" \
+                python3 "$PT" "$WORK/init-to-patch" patch 0x12339c "05000014" \
                   2>&1 | tee -a "$WORK/emu-progress.log"
+                sudo cp "$WORK/init-to-patch" /tmp/mnt-pat/system/bin/init
                 sudo umount /tmp/mnt-pat 2>/dev/null
                 echo "[B] DIAGNOSTYKA: init NOP-patched (property FATAL-i ominieta)" \
                   | tee -a "$WORK/emu-progress.log"
@@ -535,7 +540,10 @@ jobs:
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
             echo "## KONTROLA: ranchu system.img w tej samej maszynerii (rozroznik obraz-vs-srodowisko)"; echo '```'
-            tail -60 "$WORK/qemu-console-control.log" 2>/dev/null || echo "(brak)"
+            echo "--- komunikaty abortow (grep -B4 InitFatalReboot, cale pliki):"
+            grep -aB4 "InitFatalReboot" "$WORK/qemu-console-control.log" 2>/dev/null | head -50
+            echo "--- tail 40:"
+            tail -40 "$WORK/qemu-console-control.log" 2>/dev/null || echo "(brak)"
             echo '```'
             echo "## qemu/konsola szeregowa (kernel+init; tail 200)"; echo '```'
             tail -200 "$WORK/qemu-console.log" 2>/dev/null || echo "(brak)"
