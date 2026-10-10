@@ -1,11 +1,10 @@
 # ============================================================================
-# mysticalos-emuboot v2.20 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
-# v2.20: run 38075295558 (v2.19): system ZYWY 49 min bez rebootu (FATAL=0,
-#        BOOTLOOPS=1)! Pada brakiem ZYGOTE: obraz nie ma
-#        /system/etc/init/hw/init.zygote64.rc ('service zygote not found').
-#        FIX: kanoniczny AOSP init.zygote64.rc (tools/) + ro.zygote;
-#        + fix sciezki debugfs write fstab vendora (byl /fstab.ranchu
-#        zamiast /etc/fstab.ranchu - vold 'continuing anyways' bez konfiguracji)
+# mysticalos-emuboot v2.21 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# v2.21: run 38081844818 (v2.20): z fstabem vendora apexd-bootstrap pada
+#        ('Failed to collect APEX keys: Can't open /system_ext/apex:
+#        Permission denied' -> exit 1 -> reboot,bootstrap-apexd-failed).
+#        v2.19 (bez fstab vendora) mial apexd OK i system zywy 49 min.
+#        => wracamy do v2.19 + zostawiamy ZYGOTE FIX (rc + ro.zygote).
 
 on:
   workflow_dispatch:
@@ -268,16 +267,13 @@ jobs:
                   >> "$WORK/vendor-selinux-ls.txt"
                 debugfs -R "stat /etc/selinux/vendor_property_contexts" \
                   "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
-                # fstab.ranchu vendora = zrodlo volda -> nadpisujemy naszym
+                # fstab.ranchu vendora: USUWAMY (jak v2.19 - vold wtedy
+                # 'continuing anyways' i apexd przechodzi; z fstabem v2.20
+                # apexd padal na /system_ext/apex EACCES)
                 debugfs -R "cat /etc/fstab.ranchu" \
                   "$WORK/vendor-part.img" > "$WORK/vendor-fstab-orig.txt" 2>/dev/null || true
                 debugfs -w -R "rm /etc/fstab.ranchu" \
                   "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1 || true
-                debugfs -w -R "write $WORK/rd-all/first_stage_ramdisk/fstab.ranchu etc/fstab.ranchu" \
-                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
-                echo "--- fstab.ranchu po nadpisaniu:" >> "$WORK/vendor-selinux-ls.txt"
-                debugfs -R "cat /etc/fstab.ranchu" \
-                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
                 dd if="$WORK/vendor-part.img" of="$WORK/vendor-mod.img" \
                   bs=512 seek="$VNDSTART" count="$VNDSIZE" conv=notrunc status=none
               fi
@@ -542,7 +538,7 @@ jobs:
             echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'
-            echo '- v2.20: fix sciezki debugfs fstab (etc/), zygote fix (init.zygote64.rc + ro.zygote - obraz ich nie mial!), super 4-czesciowy + fix property bez zmian'
+            echo '- v2.21: POWROT do stanu v2.19 (vendor bez fstab.ranchu - vold continuing anyways, apexd OK) + zygote fix (init.zygote64.rc + ro.zygote); v2.20 z fstabem vendora -> apexd EACCES /system_ext/apex -> bootstrap-apexd-failed'
             echo '- faza 1: BOOT 1:1 (bez patchy). faza 2 (jesli 1:1 padlo): NOP-patch property FATAL-i (0x12337c/0x12339c)'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'

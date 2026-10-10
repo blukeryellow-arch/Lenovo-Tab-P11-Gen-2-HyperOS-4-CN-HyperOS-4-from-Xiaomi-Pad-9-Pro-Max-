@@ -151,3 +151,24 @@
 - ZYGOTE FIX: tools/init.zygote64.rc (kanoniczny AOSP A13) kopiowany do
   obrazu w fazie 2 + ro.zygote=zygote64 w build.prop (grep -q || append).
 - raport: grep zygot/apexd/Unable/class_start z PELNEJ konsoli fazy 2.
+
+## v2.20 (run 38081844818) - WNIOSKI
+- Property OK w OBU fazach (FATAL=0) - fix contexts dziala; nieznane dlaczego
+  F1 tez przeszlo (moze wiazac z fstab vendora; do wyjasnienia).
+- NOWY REBOOT REASON: 'reboot,bootloader,bootstrap-apexd-failed':
+  apexd --bootstrap exit 1 po 'Failed to collect APEX keys : Can't open
+  /system_ext/apex for reading : Permission denied' (+ pre-allocate loop
+  devices EACCES).
+- v2.19 (bez /etc/fstab.ranchu w vendorze): apexd przechodzil, system zywy
+  49 min. v2.20 (fstab vendora obecny, nasza treść): apexd pada.
+  => fstab vendora wycofany w v2.21 (rm bez write).
+- ciekawostka: first stage tworzy logical product (dm-2)/system_ext (dm-3)
+  z super w OBU runach (zrodlo: multi-cpio ramdisk emulatora ma 2. fstab z
+  logical product/system_ext - wylapany przy unpack; nasz fstab-mod to
+  pierwszy cpio).
+
+## v2.21 = v2.19 + ZYGOTE FIX
+- vendor: tylko rm fstab.ranchu (bez nadpisywania)
+- obraz: init.zygote64.rc (kanoniczny AOSP) + ro.zygote=zygote64 (faza 2)
+- oczekiwanie: apexd OK (jak v2.19) + zygote startuje -> app_process ->
+  system_server -> framework -> adb/boot_completed
