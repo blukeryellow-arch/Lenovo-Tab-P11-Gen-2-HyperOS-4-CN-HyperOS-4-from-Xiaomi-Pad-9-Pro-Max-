@@ -1,13 +1,11 @@
 # ============================================================================
-# mysticalos-emuboot v2.19 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
-# v2.19: run 38066339421 (v2.18): fix property_contexts DZIALA -
-#        PROPERTY_FATAL_F2=0! Init przeszedl PropertyInit, uslugi ruszaja;
-#        pada vold: 'could not find logical partition vendor' (PLOG FATAL
-#        w process_config na kazdy wpis 'logical' z ReadDefaultFstab =
-#        /vendor/etc/fstab.ranchu emulatora).
-#        FIX: nadpisujemy fstab.ranchu vendora naszym fstabem (spojny
-#        z ramdiskiem) + super 4-partycyjny (system, vendor, product,
-#        system_ext - jak na urzadzeniu; mksuper.py multi).
+# mysticalos-emuboot v2.20 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# v2.20: run 38075295558 (v2.19): system ZYWY 49 min bez rebootu (FATAL=0,
+#        BOOTLOOPS=1)! Pada brakiem ZYGOTE: obraz nie ma
+#        /system/etc/init/hw/init.zygote64.rc ('service zygote not found').
+#        FIX: kanoniczny AOSP init.zygote64.rc (tools/) + ro.zygote;
+#        + fix sciezki debugfs write fstab vendora (byl /fstab.ranchu
+#        zamiast /etc/fstab.ranchu - vold 'continuing anyways' bez konfiguracji)
 
 on:
   workflow_dispatch:
@@ -99,7 +97,6 @@ jobs:
           echo "sysimg: $SYSIMG (tag=$TAG)"; ls "$SYSIMG" 2>/dev/null
           : > "$WORK/emu-progress.log"
 
-          # funkcje (oszczednosc miejsca w kroku)
           run_qemu() {
             nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
               -kernel "$KERNEL" -initrd "$RAMDISK2" \
@@ -120,11 +117,10 @@ jobs:
           }
           CTXDIRS="/system/etc/selinux /system/system_ext/etc/selinux /system/product/etc/selinux"
           build_super() {
-            # puste ext4 dla product/system_ext (init 'update logical' + 1:1)
+            # puste ext4: product/system_ext
             for P in product system_ext; do
               [ -s "$WORK/empty-$P.img" ] && continue
-              truncate -s 16M "$WORK/empty-$P.img"
-              mkfs.ext4 -q -F "$WORK/empty-$P.img" >/dev/null 2>&1
+              truncate -s 16M "$WORK/empty-$P.img" && mkfs.ext4 -q -F "$WORK/empty-$P.img" >/dev/null 2>&1
             done
             python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/mksuper.py" \
               "$WORK/super-raw.img" \
@@ -272,15 +268,12 @@ jobs:
                   >> "$WORK/vendor-selinux-ls.txt"
                 debugfs -R "stat /etc/selinux/vendor_property_contexts" \
                   "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
-                # fstab.ranchu w vendorze = ZRODLO volda (ReadDefaultFstab):
-                # vold PLOG(FATAL) na kazdy wpis 'logical' nieobecny w super
-                # (stad aborty 'could not find logical partition vendor').
-                # Nadpisujemy go = nasz fstab (spojny z ramdiskiem).
+                # fstab.ranchu vendora = zrodlo volda -> nadpisujemy naszym
                 debugfs -R "cat /etc/fstab.ranchu" \
                   "$WORK/vendor-part.img" > "$WORK/vendor-fstab-orig.txt" 2>/dev/null || true
                 debugfs -w -R "rm /etc/fstab.ranchu" \
                   "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1 || true
-                debugfs -w -R "write $WORK/rd-all/first_stage_ramdisk/fstab.ranchu fstab.ranchu" \
+                debugfs -w -R "write $WORK/rd-all/first_stage_ramdisk/fstab.ranchu etc/fstab.ranchu" \
                   "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
                 echo "--- fstab.ranchu po nadpisaniu:" >> "$WORK/vendor-selinux-ls.txt"
                 debugfs -R "cat /etc/fstab.ranchu" \
@@ -328,7 +321,6 @@ jobs:
                 sudo umount /tmp/mnt-our 2>/dev/null
               fi
 
-              # ---- xattr-check: czy pliki selinux w obrazie maja etykiety? ----
               : > "$WORK/our-xattrs.txt"
               OURIMG="$IMG"
               for FSEL in \
@@ -385,7 +377,7 @@ jobs:
 
               cd "$WORK"
 
-              echo "[B] qemu: super(system,vendor,product,system_ext) + data(vdb) + metadata(vda) - BOOT 1:1" | tee -a "$WORK/emu-progress.log"
+              echo "[B] qemu: super 4-partycyjny + data + metadata - BOOT 1:1" | tee -a "$WORK/emu-progress.log"
               # permissive: qcow... w VM nie chcemy falszywych FAILow z rozjazdu
               # polityki lenovo-system vs ranchu-vendor; crashe frameworku
               # (FATAL EXCEPTION) sa lapano niezaleznie od SELinux
@@ -393,14 +385,10 @@ jobs:
               [ -s "$WORK/ramdisk-mod.img" ] && RAMDISK2="$WORK/ramdisk-mod.img"
               echo "[B] ramdisk: $RAMDISK2" | tee -a "$WORK/emu-progress.log"
 
-              # ---- FORENSYKA PROPERTY: typy z *_property_contexts vs
-              # deklaracje w CIL (fsetxattr z nieznanym typem -> EINVAL ->
-              # area_init -1 -> FATAL; polityka = nasz plat + vendor ranchu;
-              # vendor CIL przez debugfs cat bo vendor-mod to dysk GPT) ----
+              # ---- FORENSYKA PROPERTY: typy contexts vs CIL ----
               : > "$WORK/propctx-report.txt"
               debugfs -R "cat /etc/selinux/vendor_sepolicy.cil" \
                 "$WORK/vendor-part.img" > "$WORK/vendor_sepolicy.cil" 2>/dev/null
-              echo "vendor_sepolicy.cil: OK" | tee -a "$WORK/emu-progress.log"
               sudo mkdir -p /tmp/mnt-ctx
               if sudo mount -o ro,loop "$IMG" /tmp/mnt-ctx 2>/dev/null; then
                 for D in $CTXDIRS; do
@@ -415,8 +403,7 @@ jobs:
                   | tee -a "$WORK/emu-progress.log"
               fi
 
-              # ---- SUPER (mksuper.py, liblp): system+vendor+product+system_ext
-              # jako logiczne partycje; GPT name=super na vdd ----
+              # ---- SUPER: 4 logiczne partycje; GPT name=super na vdd ----
               build_super "$WORK/gpt-super.txt"
 
               run_qemu "$WORK/qemu-console.log" "$WORK/qemu.log"
@@ -472,6 +459,13 @@ jobs:
                   "/tmp/mnt-ctx$D" --extra-cil "$WORK/vendor_sepolicy.cil" \
                   2>&1 | tee -a "$WORK/propctx-fix.txt" | tee -a "$WORK/emu-progress.log"
               done
+              # ZYGOTE: obraz nie ma init.zygote64.rc -> kanoniczny AOSP rc + ro.zygote
+              sudo mkdir -p /tmp/mnt-ctx/system/etc/init/hw
+              sudo cp "$GITHUB_WORKSPACE/kit-mysticalos3/tools/init.zygote64.rc" \
+                /tmp/mnt-ctx/system/etc/init/hw/init.zygote64.rc
+              sudo grep -q "^ro.zygote=" /tmp/mnt-ctx/system/build.prop \
+                || echo "ro.zygote=zygote64" | sudo tee -a /tmp/mnt-ctx/system/build.prop
+              echo "[B2] zygote rc OK" | tee -a "$WORK/emu-progress.log"
               sudo umount /tmp/mnt-ctx 2>/dev/null || true
               FIXED=1
             else
@@ -548,7 +542,7 @@ jobs:
             echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'
-            echo '- v2.19: FIX vold = nadpisany /vendor/etc/fstab.ranchu (zrodlo ReadDefaultFstab volda) + super 4-partycyjny (system,vendor,product,system_ext); fix property_contexts bez zmian'
+            echo '- v2.20: fix sciezki debugfs fstab (etc/), zygote fix (init.zygote64.rc + ro.zygote - obraz ich nie mial!), super 4-czesciowy + fix property bez zmian'
             echo '- faza 1: BOOT 1:1 (bez patchy). faza 2 (jesli 1:1 padlo): NOP-patch property FATAL-i (0x12337c/0x12339c)'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
@@ -572,7 +566,7 @@ jobs:
             echo "--- counts (pelna konsola fazy 2):"
             echo "PROPERTY_FATAL_F2=$(grep -ac 'Failed to initialize property area' "$WORK/qemu-console2.log" 2>/dev/null)"
             echo "BOOTLOOPS_F2=$(grep -ac 'Run /init' "$WORK/qemu-console2.log" 2>/dev/null)"
-            grep -aiE "SELinux|secilc|zygote|servicemanager|surfaceflinger|boot_completed|vold|class_start|Cloning|property area" "$WORK/qemu-console2.log" 2>/dev/null | tail -30
+            grep -aiE "zygote|apexd|Unable to read|class_start|servicemanager|surfaceflinger|boot_completed|vold|received signal|updatable" "$WORK/qemu-console2.log" 2>/dev/null | head -45
             echo '```'
             echo "## qemu/konsola szeregowa (kernel+init; tail 200)"; echo '```'
             tail -200 "$WORK/qemu-console.log" 2>/dev/null || echo "(brak)"

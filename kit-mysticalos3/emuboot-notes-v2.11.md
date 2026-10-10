@@ -131,3 +131,23 @@
   (30 min, counts z pelnej konsoli); faza 2 = fix + przebudowa super +
   naturalny boot (45 min, counts). Run_qemu/build_super jako funkcje
   (limit 21k znakow kroku).
+
+## v2.19 (run 38075295558) - KOLEJNY PRZELOM
+- System ZYWY 49 min, BOOTLOOPS_F2=1, PROPERTY_FATAL_F2=0: vold OK, core OK,
+  surfaceflinger/audioserver/camera startuja (crash-loop updatable_crashing -
+  expected: nasz system + HAL ranchu). init czysto przechodzi caly boot.
+- BRAK ZYGOTE: obraz nie ma /system/etc/init/hw/init.zygote64.rc
+  (v2.15: 'Unable to read config file'; v2.19: 'service zygote not found' x N
+  + onrestart surfaceflingera). Bez zygote nie ma frameworku/SystemUI/
+  boot_completed. To brak W OBRZIE (port/DSU build), nie harness!
+- Bug debugfs: 'write ... fstab.ranchu' zapisal do /fstab.ranchu (root
+  partycji) zamiast /etc/fstab.ranchu; przy okazji vold bez fstab
+  'continuing anyways' (LineageOS main.cpp:122) - dlatego przezyl.
+- restorecon 'Could not read default fstab' = nieszkodliwy szum (init/
+  builtins.cpp) - zniknie z fstabem na miejscu.
+
+## v2.20
+- fix sciezki: debugfs write ... etc/fstab.ranchu (przetestowane lokalnie).
+- ZYGOTE FIX: tools/init.zygote64.rc (kanoniczny AOSP A13) kopiowany do
+  obrazu w fazie 2 + ro.zygote=zygote64 w build.prop (grep -q || append).
+- raport: grep zygot/apexd/Unable/class_start z PELNEJ konsoli fazy 2.
