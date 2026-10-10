@@ -1,36 +1,12 @@
 # ============================================================================
-# mysticalos-emuboot v2.13 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
-# v2.13: boot_devices = WSZYSTKIE 4 transporty virtio-mmio (comma-separated).
-#        qemu virt alokuje transporty TOP-DOWN: 1. urzadzenie=a003e00, 2.=a003c00
-#        (stad dzialajacy fstab vendor-platform!), 3.=a003a00, 4.=a003800 (super).
-#        v2.12 mial tylko a003c00 -> by-name/super nie powstal. Dowod: brak
-#        'partition(s) not found: super' + realpath fail = device znaleziony,
-#        ale is_boot_device=false (init/devices.cpp)
-# v2.12: androidboot.boot_devices=a003c00.virtio_mmio w cmdline qemu - bez tego
-#        first-stage init NIE tworzy /dev/block/by-name/super (symlink top-level
-#        powstaje tylko dla 'boot devices' - init/devices.cpp GetBlockDeviceSymlinks)
-#        i FirstStageMount pada na realpath -> InitFatalReboot; + fix bramki fazy 2
-# v2.11: SUPER z logiczna partycja 'system' (mksuper.py, format liblp) -
-#        uklad dyskow jak na prawdziwym urzadzeniu (by-name/super + dm-linear);
-#        faza 1 = BOOT 1:1 bez patchow; faza 2 (gdy padnie) = NOP-patch
-#        property FATAL-i, by zobaczyc lancuch ZA PropertyInit (vold z super).
-# ============================================================================
-# CEL: sprawdzic obraz MysticalOS w CI ZANIM trafi na tablet.
-#
-# Srodowisko = maksymalnie bliskie tabletu, na ile emulator pozwala:
-#   - guest ARM64 (jak TB350FU), Android 13 / API 33 (jak TB350FU)
-#   - TEN SAM obraz z release (sha256 weryfikowany)
-#   - vendor z emulatora (Treble); MTK nie da sie emulowac - test lapie
-#     crashe frameworku (system_server/SystemUI/launcher/jary).
-#
-# Sciezka A: emulator SDK (arm64 na x86_64) - wspierane tylko czesciowo.
-# Sciezka B (fallback): surowy qemu-system-aarch64 -M virt + kernel+ramdisk
-#   z sysimg + nasz system + vendor z sysimg + swiezy userdata; konsola
-#   szeregowa (console.log) pokazuje kernel+init+crashe frameworku.
-#
-# UWAGA techniczna: bash na runnerze dziala z -e (errexit) - kazdy skrypt
-# zaczyna od `set +e` i sam kontroluje bledy.
-name: mysticalos-emuboot
+# mysticalos-emuboot v2.14 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# v2.14: (1) mksuper.py wg PRAWDZIWEGO layoutu liblp: [0..4095]=reserved,
+#        geometry@4096+8192, metadata v10.0 @12288+16384, content@20480
+#        (v2.13: geometry@0, meta@8192, major=1 -> 'incompatible version'
+#        + 'invalid magic' z konsoli runu 38031846094 - bajt w bajt);
+#        (2) kolejnosc qemu: super,vendor,userdata,meta -> probe ASC daje
+#        litery vda=meta, vdb=data, vdc=vendor, vdd=super (dowod: v2.13
+#        czytal super z vda przy fstab metadata=/dev/block/vda)
 
 on:
   workflow_dispatch:
@@ -214,7 +190,7 @@ jobs:
                 'system   /system     ext4    ro,barrier=1     wait,logical,first_stage_mount' \
                 '/dev/block/platform/a003c00.virtio_mmio/by-name/vendor    /vendor    ext4    ro,barrier=1    wait,first_stage_mount' \
                 '/dev/block/vda   /metadata   ext4   noatime,nosuid,nodev   wait,formattable,first_stage_mount' \
-                '/dev/block/vdc   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,fileencryption=aes-256-xts:aes-256-cts,reservedsize=128M,fsverity,keydirectory=/metadata/vold/metadata_encryption,latemount' \
+                '/dev/block/vdb   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,fileencryption=aes-256-xts:aes-256-cts,reservedsize=128M,fsverity,keydirectory=/metadata/vold/metadata_encryption,latemount' \
                 '/dev/block/zram0 none swap  defaults zramsize=75%' \
                 > "$WORK/rd-all/first_stage_ramdisk/fstab.ranchu"
               cp "$WORK/rd-all/first_stage_ramdisk/fstab.ranchu" "$WORK/fstab-mod.txt"
@@ -393,14 +369,14 @@ jobs:
               nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
                 -kernel "$KERNEL" -initrd "$RAMDISK2" \
                 -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003e00.virtio_mmio,a003c00.virtio_mmio,a003a00.virtio_mmio,a003800.virtio_mmio" \
-                -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
-                -device virtio-blk-device,drive=meta \
+                -drive if=none,file="$WORK/super-gpt.img",format=raw,id=super \
+                -device virtio-blk-device,drive=super \
                 -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
                 -device virtio-blk-device,drive=vendor \
                 -drive if=none,file="$WORK/userdata.img",format=raw,id=userdata \
                 -device virtio-blk-device,drive=userdata \
-                -drive if=none,file="$WORK/super-gpt.img",format=raw,id=super \
-                -device virtio-blk-device,drive=super \
+                -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
+                -device virtio-blk-device,drive=meta \
                 -netdev user,id=n0,hostfwd=tcp::5555-:5555 \
                 -device virtio-net-device,netdev=n0 \
                 -display none -monitor none -serial file:"$WORK/qemu-console.log" \
@@ -473,14 +449,14 @@ jobs:
               nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
                 -kernel "$KERNEL" -initrd "$RAMDISK2" \
                 -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003e00.virtio_mmio,a003c00.virtio_mmio,a003a00.virtio_mmio,a003800.virtio_mmio" \
-                -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
-                -device virtio-blk-device,drive=meta \
+                -drive if=none,file="$WORK/super-gpt.img",format=raw,id=super \
+                -device virtio-blk-device,drive=super \
                 -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
                 -device virtio-blk-device,drive=vendor \
                 -drive if=none,file="$WORK/userdata.img",format=raw,id=userdata \
                 -device virtio-blk-device,drive=userdata \
-                -drive if=none,file="$WORK/super-gpt.img",format=raw,id=super \
-                -device virtio-blk-device,drive=super \
+                -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
+                -device virtio-blk-device,drive=meta \
                 -netdev user,id=n0,hostfwd=tcp::5555-:5555 \
                 -device virtio-net-device,netdev=n0 \
                 -display none -monitor none -serial file:"$WORK/qemu-console2.log" \
@@ -554,7 +530,7 @@ jobs:
             echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'
-            echo '- v2.13: androidboot.boot_devices=wszystkie 4 transporty virtio-mmio (qemu virt przydziela je top-down: a003e00,c00,a00,800; super=4. dysk=a003800) -> by-name/super powstanie'
+            echo '- v2.14: mksuper liblp-layout (reserved 4096 + geometry@4096 + metadata v10.0@12288; v2.13 mial geometry@0, v1 i stąd incompatible version/invalid magic) + kolejnosc dyskow: super,vendor,data,meta -> litery vda=meta,vdb=data,vdc=vendor,vdd=super'
             echo '- faza 1: BOOT 1:1 (bez patchy). faza 2 (jesli 1:1 padlo): NOP-patch property FATAL-i (0x12337c/0x12339c)'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
@@ -562,7 +538,7 @@ jobs:
             cat "$WORK/gpt-super.txt" 2>/dev/null || echo "(brak)"
             echo '```'
             echo "## wczesna konsola fazy 1: cmdline + by-name/mapper (DOWOD fixu boot_devices)"; echo '```'
-            grep -aiE "Kernel command line|by-name|mapper/|device-mapper: (create|reload)|super" "$WORK/qemu-console.log" 2>/dev/null | head -25
+            grep -aiE "Kernel command line|by-name|mapper|device-mapper: (create|reload)|liblp|libfs_mgr|super" "$WORK/qemu-console.log" 2>/dev/null | head -30
             echo '```'
             echo "## FAZA 2 (NOP-patch property FATAL): konsola (tail 150)"; echo '```'
             tail -150 "$WORK/qemu-console2.log" 2>/dev/null || echo "(brak - faza 2 nie ruszyla)"

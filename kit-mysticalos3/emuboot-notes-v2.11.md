@@ -42,3 +42,33 @@
   kolejnosci dyskow.
 - raport: sekcja "wczesna konsola" (Kernel command line + by-name/mapper)
   jako dowod dzialania fixu.
+
+## v2.13 (run 38031846094) - WNIOSKI
+- boot_devices (4 transporty) DZIALA: by-name/super powstal, realpath OK,
+  init przeszedl InitDevices (kolejny kamien milowy).
+- PADA PONIZEJ: "Invalid ext4 superblock on /dev/block/vda" + "[liblp]
+  incompatible version" + "invalid magic" + "Could not read logical
+  partition metadata from /dev/block/vda1".
+- ROZSZYFROWANE (liblp utility.cpp + reader.cpp):
+  1) LITERY DYSKOW: kernel probuje virtio-mmio ASC (a003800,c00,a00,e00) =
+     ODWROTNIE do kolejnosci qemu. Dowod: vda=super (4. dysk qemu) przy
+     fstab metadata=/dev/block/vda -> fs_mgr probowal ext4 na GPT super.
+     (To samo bylo zawsze: system=vdd=1. dysk qemu, meta=vda=4. dysk.)
+  2) MKSUPER MIAL 2 BUGI vs liblp: (a) major_version musi byc 10
+     (LP_METADATA_MAJOR_VERSION), nie 1 -> "incompatible version";
+     (b) layout: [0..4095]=RESERVED, geometry@4096 i @8192, metadata@12288
+     i backup@16384, content@20480 - mksuper pisal geometry@0, meta@8192,
+     content@16384. Stad dokladnie ta pare bledow: primary@12288 trafil w
+     moj backup blob (v1), backup@16384 trafil w POCZATEK system.img
+     (ext4 magic) -> "invalid magic value". Bajt w bajt.
+
+## v2.14
+- mksuper.py przepisany wg liblp (reserved+geometry@4096+meta v10.0@12288+
+  content@20480); lokalna walidacja per reader.cpp (offsety, checksumi,
+  wersja, deskryptory, zawartosc, backupy) - PASS.
+- kolejnosc qemu: super,vendor,userdata,meta -> litery: vda=meta, vdb=data,
+  vdc=vendor, vdd=super. fstab: data=/dev/block/vdb (bylo vdc), metadata
+  /dev/block/vda bez zmian, vendor by-name a003c00 bez zmian (nadal 2. dysk).
+- oczekiwanie: FirstStage czyta metadata v10 z super, zaklada dm-linear
+  system, montuje /system -> po raz pierwszy obraz z PRAWDZIWEGO super;
+  potem PropertyInit (spodziewamy sie FATAL property = punktu wyjscia v2.10).
