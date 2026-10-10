@@ -255,6 +255,51 @@ def main():
     except Exception:
         plt_map = {}
 
+    # pre-skan: adrp+add pary -> obliczone adresy; jesli wskazuja na sensowny
+    # string (ascii, 3..200 znakow), annotujemy go przy instrukcji add
+    f.seek(0)
+    raw = f.read()
+
+    def read_str_at(vaddr, maxlen=200):
+        o = vaddr_to_offset(elf, vaddr)
+        if o is None:
+            return None
+        chunk = raw[o:o + maxlen]
+        z = chunk.find(b"\x00")
+        if z < 3:
+            return None
+        s = chunk[:z]
+        if not all(32 <= b < 127 for b in s):
+            return None
+        try:
+            return s.decode("ascii")
+        except UnicodeDecodeError:
+            return None
+
+    adrps = {}
+
+    def note_adrp(i):
+        if i.mnemonic == "adrp":
+            try:
+                reg, imm = i.op_str.split(", ")
+                adrps[reg] = (i.address, int(imm.lstrip("#"), 16))
+            except ValueError:
+                pass
+        elif i.mnemonic == "add":
+            parts = [p.strip() for p in i.op_str.split(",")]
+            if len(parts) == 3 and parts[0] == parts[1] and parts[1] in adrps \
+                    and parts[2].startswith("#"):
+                try:
+                    imm2 = int(parts[2][1:], 16)
+                except ValueError:
+                    return None
+                _, page = adrps[parts[1]]
+                v = page + imm2
+                s = read_str_at(v)
+                if s:
+                    return '  ; "%s"' % s[:120]
+        return None
+
     lines = []
     lines.append("# %s [%s]; zakres 0x%x-0x%x; symboli: %d"
                  % (path, machine, start, end, len(syms)))
@@ -285,6 +330,8 @@ def main():
                 near = [v for v in syms if v <= tgt and tgt - v < 0x40]
                 if near:
                     note = "  ; ~ %s+0x%x" % (syms[max(near)], tgt - max(near))
+        if note == "":
+            note = note_adrp(i) or ""
         lines.append("0x%08x  %-8s %s%s" % (i.address, i.mnemonic, i.op_str, note))
 
     text = "\n".join(lines)
