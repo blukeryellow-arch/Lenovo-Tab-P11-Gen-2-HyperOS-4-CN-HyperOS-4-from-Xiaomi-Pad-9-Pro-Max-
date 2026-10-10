@@ -1,13 +1,13 @@
 # ============================================================================
-# mysticalos-emuboot v2.17 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
-# v2.17: run 38053021041 (v2.16) rozstrzygnal: polityka SELinux kompiluje
-#        sie w ~9 s pod TCG, LADOWANA, second stage startuje i pada na
-#        'Failed to initialize property area' (PropertyInit+1968) -> petla.
-#        (selinux=0 w fazie 1 zly - wisil load bez selinuxfs; odczyt v2.15
-#        'PropertyInit przeszedl' byl artefaktem tail-200.)
-#        v2.17 = forensyka: typy property_contexts vs deklaracje w CIL
-#        (fsetxattr z nieznanym typem -> EINVAL -> area_init -1),
-#        faza 2 = FIX-TEST: nieznane typy -> default_prop i boot ponownie.
+# mysticalos-emuboot v2.19 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# v2.19: run 38066339421 (v2.18): fix property_contexts DZIALA -
+#        PROPERTY_FATAL_F2=0! Init przeszedl PropertyInit, uslugi ruszaja;
+#        pada vold: 'could not find logical partition vendor' (PLOG FATAL
+#        w process_config na kazdy wpis 'logical' z ReadDefaultFstab =
+#        /vendor/etc/fstab.ranchu emulatora).
+#        FIX: nadpisujemy fstab.ranchu vendora naszym fstabem (spojny
+#        z ramdiskiem) + super 4-partycyjny (system, vendor, product,
+#        system_ext - jak na urzadzeniu; mksuper.py multi).
 
 on:
   workflow_dispatch:
@@ -120,8 +120,17 @@ jobs:
           }
           CTXDIRS="/system/etc/selinux /system/system_ext/etc/selinux /system/product/etc/selinux"
           build_super() {
+            # puste ext4 dla product/system_ext (init 'update logical' + 1:1)
+            for P in product system_ext; do
+              [ -s "$WORK/empty-$P.img" ] && continue
+              truncate -s 16M "$WORK/empty-$P.img"
+              mkfs.ext4 -q -F "$WORK/empty-$P.img" >/dev/null 2>&1
+            done
             python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/mksuper.py" \
-              "$IMG" "$WORK/super-raw.img" system >> "$WORK/emu-progress.log" 2>&1
+              "$WORK/super-raw.img" \
+              system="$IMG" vendor="$WORK/vendor-part.img" \
+              product="$WORK/empty-product.img" system_ext="$WORK/empty-system_ext.img" \
+              >> "$WORK/emu-progress.log" 2>&1
             truncate -s 1M "$WORK/super-gpt.img"
             cat "$WORK/super-raw.img" >> "$WORK/super-gpt.img"
             truncate -s +2M "$WORK/super-gpt.img"
@@ -236,15 +245,9 @@ jobs:
               truncate -s 128M "$WORK/meta.img"
               mkfs.ext4 -q -F "$WORK/meta.img" >/dev/null 2>&1
 
-              # ---- vendor-mod: puste vendor_property_contexts (miks Lenovo-system
-              # + ranchu-vendor => duplikaty kluczy => 'Failed to initialize
-              # property area' w 2. stadionie initu; SELinux permissive) ----
-              # vendor_property_contexts RANCHU zawiera typy SELinux nieobecne
-              # w polityce donorowej Xiaomi => fsetxattr EINVAL w bionic
-              # __system_property_area_init => 'Failed to initialize property
-              # area' (potwierdzone w zrodlach bionic: fsetxattr_fail => -1).
-              # RW mount vendor.img niemozliwy (shared_blocks) => debugfs rm
-              # na surowej partycji (unlink nie alokuje blokow).
+              # ---- vendor-mod: puste vendor_property_contexts (typy ranchu
+              # nieobecne w naszej polityce => EINVAL) + nadpisany fstab.ranchu;
+              # debugfs na surowej partycji (RW mount niemozliwy: shared_blocks) ----
               cp "$SYSIMG/vendor.img" "$WORK/vendor-mod.img"
               VNDSTART=$(sfdisk -d "$WORK/vendor-mod.img" 2>/dev/null \
                 | grep -o 'start= *[0-9]*' | head -1 | grep -o '[0-9]*')
@@ -268,6 +271,19 @@ jobs:
                 echo "--- po rm, stat (powinno byc 'not found'):" \
                   >> "$WORK/vendor-selinux-ls.txt"
                 debugfs -R "stat /etc/selinux/vendor_property_contexts" \
+                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+                # fstab.ranchu w vendorze = ZRODLO volda (ReadDefaultFstab):
+                # vold PLOG(FATAL) na kazdy wpis 'logical' nieobecny w super
+                # (stad aborty 'could not find logical partition vendor').
+                # Nadpisujemy go = nasz fstab (spojny z ramdiskiem).
+                debugfs -R "cat /etc/fstab.ranchu" \
+                  "$WORK/vendor-part.img" > "$WORK/vendor-fstab-orig.txt" 2>/dev/null || true
+                debugfs -w -R "rm /etc/fstab.ranchu" \
+                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1 || true
+                debugfs -w -R "write $WORK/rd-all/first_stage_ramdisk/fstab.ranchu fstab.ranchu" \
+                  "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
+                echo "--- fstab.ranchu po nadpisaniu:" >> "$WORK/vendor-selinux-ls.txt"
+                debugfs -R "cat /etc/fstab.ranchu" \
                   "$WORK/vendor-part.img" >> "$WORK/vendor-selinux-ls.txt" 2>&1
                 dd if="$WORK/vendor-part.img" of="$WORK/vendor-mod.img" \
                   bs=512 seek="$VNDSTART" count="$VNDSIZE" conv=notrunc status=none
@@ -312,11 +328,7 @@ jobs:
                 sudo umount /tmp/mnt-our 2>/dev/null
               fi
 
-              # ---- HIPOTEZA XATTR: czy pliki selinux w naszym obrazie maja
-              # w ogole etykiety security.selinux? Zly/brak xattr => init nie
-              # czyta plat_property_contexts (access R_OK fail) => cicha sciezka
-              # => brak /dev/__properties__/property_info => area_init FATAL.
-              # Na tablecie (enforcing) to by byl TWARDY deny = bootloop! ----
+              # ---- xattr-check: czy pliki selinux w obrazie maja etykiety? ----
               : > "$WORK/our-xattrs.txt"
               OURIMG="$IMG"
               for FSEL in \
@@ -373,8 +385,7 @@ jobs:
 
               cd "$WORK"
 
-              echo "[B] surowy qemu: kernel=$(basename $KERNEL) + super(system LOGICAL vdd1) + vendor-mod(vdb1) + data(vdc) + metadata(vda) - BOOT 1:1, BEZ PATCHY" \
-                | tee -a "$WORK/emu-progress.log"
+              echo "[B] qemu: super(system,vendor,product,system_ext) + data(vdb) + metadata(vda) - BOOT 1:1" | tee -a "$WORK/emu-progress.log"
               # permissive: qcow... w VM nie chcemy falszywych FAILow z rozjazdu
               # polityki lenovo-system vs ranchu-vendor; crashe frameworku
               # (FATAL EXCEPTION) sa lapano niezaleznie od SELinux
@@ -389,8 +400,7 @@ jobs:
               : > "$WORK/propctx-report.txt"
               debugfs -R "cat /etc/selinux/vendor_sepolicy.cil" \
                 "$WORK/vendor-part.img" > "$WORK/vendor_sepolicy.cil" 2>/dev/null
-              echo "vendor_sepolicy.cil: $(wc -l < "$WORK/vendor_sepolicy.cil" 2>/dev/null || echo 0) linii" \
-                | tee -a "$WORK/emu-progress.log"
+              echo "vendor_sepolicy.cil: OK" | tee -a "$WORK/emu-progress.log"
               sudo mkdir -p /tmp/mnt-ctx
               if sudo mount -o ro,loop "$IMG" /tmp/mnt-ctx 2>/dev/null; then
                 for D in $CTXDIRS; do
@@ -399,18 +409,14 @@ jobs:
                     >> "$WORK/propctx-report.txt" 2>&1 || true
                 done
                 sudo umount /tmp/mnt-ctx 2>/dev/null || true
-                echo "[B] forensyka property_contexts -> propctx-report.txt ($(grep -ac 'NIEZNANE TYPY' "$WORK/propctx-report.txt") sekcji)" \
-                  | tee -a "$WORK/emu-progress.log"
+                echo "[B] propctx-report.txt gotowy" | tee -a "$WORK/emu-progress.log"
               else
                 echo "[B] UWAGA: montowanie ro obrazu pod forensyke nie wyszlo" \
                   | tee -a "$WORK/emu-progress.log"
               fi
 
-              # ---- SUPER z logiczna partycja 'system' (mksuper.py - format
-              # liblp): init czyta by-name/super, zaklada dm-linear 'system',
-              # montuje jak na prawdziwym urzadzeniu; vold (checkpoint) tez ma
-              # co sprawdzac. GPT name=super na OSTATNIM dysku vdd (pozycja
-              # by-name empirycznie niezawodna jak vendor-vdc). ----
+              # ---- SUPER (mksuper.py, liblp): system+vendor+product+system_ext
+              # jako logiczne partycje; GPT name=super na vdd ----
               build_super "$WORK/gpt-super.txt"
 
               run_qemu "$WORK/qemu-console.log" "$WORK/qemu.log"
@@ -454,10 +460,7 @@ jobs:
             done
           fi
           # ---------- faza 2: FIX-TEST property_contexts + naturalny boot ----------
-          # Fix = nieznane typy w naszym property_contexts przepisane na
-          # default_prop (harness-only; dowod mechanizmu FATAL property).
-          # Potem naturalny boot: permissive, polityka kompilowana w locie
-          # (~9 s pod TCG - run 38053021041), czekamy do 45 min na adb/bc.
+          # (nieznane typy -> default_prop; polityka w locie ~9 s; 45 min na adb)
           if [ "${EMU_PATH:-}" != "emulator" ] && [ "$boot" = "0" ] && [ -s "$WORK/qemu-console.log" ]; then
             pkill -f qemu-system-aarch64 2>/dev/null; sleep 3
             sudo mkdir -p /tmp/mnt-ctx
@@ -476,8 +479,7 @@ jobs:
             fi
             if [ "$FIXED" = "1" ]; then
               build_super "$WORK/gpt-super2.txt"
-              echo "[B2] fix OK -> super przebudowany -> naturalny boot (45 min)" \
-                | tee -a "$WORK/emu-progress.log"
+              echo "[B2] fix OK -> super -> boot (45 min)" | tee -a "$WORK/emu-progress.log"
               run_qemu "$WORK/qemu-console2.log" "$WORK/qemu2.log"
               for i in $(seq 1 54); do
                 sleep 50
@@ -546,10 +548,13 @@ jobs:
             echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'
-            echo '- v2.17: forensyka propctx (contexts vs typy polityki) + FIX-TEST (nieznane typy -> default_prop); faza 1 naturalna (selinux=0 wyl. - wisil load); polityka kompiluje sie ~9 s'
+            echo '- v2.19: FIX vold = nadpisany /vendor/etc/fstab.ranchu (zrodlo ReadDefaultFstab volda) + super 4-partycyjny (system,vendor,product,system_ext); fix property_contexts bez zmian'
             echo '- faza 1: BOOT 1:1 (bez patchy). faza 2 (jesli 1:1 padlo): NOP-patch property FATAL-i (0x12337c/0x12339c)'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
+            echo "## vendor/etc/fstab.ranchu PRZED nadpisaniem (zrodlo volda!)"; echo '```'
+            cat "$WORK/vendor-fstab-orig.txt" 2>/dev/null || echo "(brak - vendor nie mial fstab.ranchu)"
+            echo '```'
             echo "## FORENSYKA PROPERTY: contexts vs typy polityki (propctx.py check - KLUCZOWE)"; echo '```'
             cat "$WORK/propctx-report.txt" 2>/dev/null || echo "(brak)"
             echo '```'

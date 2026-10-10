@@ -14,7 +14,9 @@ Layout zgodny z fs_mgr/liblp/utility.cpp:
 Wersja metadanych: major=10 (LP_METADATA_MAJOR_VERSION), minor=0,
 header v1.0 (header_size=128, minor < VERSION_FOR_EXPANDED_HEADER).
 
-Uzycie: mksuper.py <system.img> <super.img> [nazwa_partycji]
+Uzycie:
+  mksuper.py <super.img> <nazwa1>=<obraz1> [<nazwa2>=<obraz2> ...]   (multi)
+  mksuper.py <system.img> <super.img> [nazwa]                        (stary, 1 partycja)
 """
 import hashlib
 import struct
@@ -56,24 +58,31 @@ def build_geometry():
                        METADATA_MAX_SIZE, METADATA_SLOT_COUNT, LOGICAL_BLOCK_SIZE)
 
 
-def build_metadata(super_size, num_sectors, first_logical_sector, part_name):
-    # ---- tabele ----
-    partitions = struct.pack("<36sIIII", part_name.encode(), 0, 0, 1, 0)
-    extents = struct.pack("<QIQI", num_sectors, 0, first_logical_sector, 0)
+def build_metadata(super_size, first_logical_sector, parts):
+    """parts = [(name, num_sectors, extent_start_sector), ...] (po kolei)"""
+    # ---- tabele (partycje i extents po jednej na partycje) ----
+    part_tbl = b""
+    ext_tbl = b""
+    for i, (name, nsec, ext_start) in enumerate(parts):
+        part_tbl += struct.pack("<36sIIII", name.encode(), 0, i, 1, 0)
+        ext_tbl += struct.pack("<QIQI", nsec, 0, ext_start, 0)
     groups = struct.pack("<36sIQ", b"default", 0, 0)
     blockdev = struct.pack("<QIIQ36sI", first_logical_sector, ALIGNMENT, 0,
                            super_size, b"super", 0)
-    tables = partitions + extents + groups + blockdev
+    tables = part_tbl + ext_tbl + groups + blockdev
     tables_size = len(tables)
-    for blob, sz in ((partitions, SZ_PARTITION), (extents, SZ_EXTENT),
+    for blob, sz in ((part_tbl, SZ_PARTITION * len(parts)),
+                     (ext_tbl, SZ_EXTENT * len(parts)),
                      (groups, SZ_GROUP), (blockdev, SZ_BLOCKDEV)):
         assert len(blob) == sz
 
     # ---- deskryptory (offsety wzgledem KONCA headera) ----
-    d_part = struct.pack("<III", 0, 1, SZ_PARTITION)
-    d_ext = struct.pack("<III", SZ_PARTITION, 1, SZ_EXTENT)
-    d_grp = struct.pack("<III", SZ_PARTITION + SZ_EXTENT, 1, SZ_GROUP)
-    d_bdv = struct.pack("<III", SZ_PARTITION + SZ_EXTENT + SZ_GROUP, 1, SZ_BLOCKDEV)
+    n = len(parts)
+    d_part = struct.pack("<III", 0, n, SZ_PARTITION)
+    d_ext = struct.pack("<III", SZ_PARTITION * n, n, SZ_EXTENT)
+    d_grp = struct.pack("<III", SZ_PARTITION * n + SZ_EXTENT * n, 1, SZ_GROUP)
+    d_bdv = struct.pack("<III", SZ_PARTITION * n + SZ_EXTENT * n + SZ_GROUP,
+                        1, SZ_BLOCKDEV)
 
     # ---- header v1.0 ----
     # KOLEJNOSC WAZNA (reader.cpp ReadMetadataHeader):
@@ -93,30 +102,55 @@ def build_metadata(super_size, num_sectors, first_logical_sector, part_name):
 
 
 def main():
-    if len(sys.argv) < 3:
+    import os
+    args = sys.argv[1:]
+    if not args:
         print(__doc__)
         return 2
-    src, dst = sys.argv[1], sys.argv[2]
-    part_name = sys.argv[3] if len(sys.argv) > 3 else "system"
+    # format: mksuper.py <super.img> name=path [name=path ...]
+    # (stary: mksuper.py <system.img> <super.img> [name] - zostawiony)
+    if len(args) >= 2 and "=" in args[1]:
+        dst = args[0]
+        parts = []
+        for spec in args[1:]:
+            name, path = spec.split("=", 1)
+            parts.append((name, path))
+    else:
+        src, dst = args[0], args[1]
+        part_name = args[2] if len(args) > 2 else "system"
+        parts = [(part_name, src)]
 
-    import os
-    img_size = os.path.getsize(src)
-    assert img_size % SECTOR == 0, "obraz systemu musi byc wielokrotnoscia 512"
-    num_sectors = img_size // SECTOR
+    # rozmiary i walidacja
+    infos = []
+    for name, path in parts:
+        sz = os.path.getsize(path)
+        assert sz % SECTOR == 0, "%s nie jest wielokrotnoscia 512" % path
+        assert 0 < len(name) <= 36, "zla nazwa partycji: %s" % name
+        infos.append((name, path, sz, sz // SECTOR))
 
     # layout: reserved + geometry x2 + sloty (primary+backup)
     meta_start = RESERVED + GEOM_SIZE * 2                 # 12288
     content_off = meta_start + METADATA_MAX_SIZE * METADATA_SLOT_COUNT * 2  # 20480
     first_logical_sector = content_off // SECTOR          # 40
 
-    super_size = content_off + img_size
+    # extenty liniowo, wyrownane do 1 MiB (sektorowo)
+    ext_start = first_logical_sector
+    layout = []
+    for name, path, sz, nsec in infos:
+        layout.append((name, path, nsec, ext_start))
+        ext_start += nsec
+        if ext_start % (ALIGNMENT // SECTOR):
+            ext_start += (ALIGNMENT // SECTOR) - (ext_start % (ALIGNMENT // SECTOR))
+
+    super_size = ext_start * SECTOR
     if super_size % ALIGNMENT:
         super_size += ALIGNMENT - (super_size % ALIGNMENT)
 
     geom = build_geometry()
-    meta = build_metadata(super_size, num_sectors, first_logical_sector, part_name)
+    meta = build_metadata(super_size, first_logical_sector,
+                          [(n, ns, es) for (n, p, ns, es) in layout])
 
-    with open(src, "rb") as r, open(dst, "wb") as w:
+    with open(dst, "wb") as w:
         w.write(b"\x00" * RESERVED)                            # reserved
         w.write(geom + b"\x00" * (GEOM_SIZE - len(geom)))      # geometry primary
         w.write(geom + b"\x00" * (GEOM_SIZE - len(geom)))      # geometry backup
@@ -124,17 +158,19 @@ def main():
         w.write(blob)                                          # slot 0 primary
         w.write(blob)                                          # slot 0 backup
         assert w.tell() == content_off, w.tell()
-        while True:
-            chunk = r.read(1 << 20)
-            if not chunk:
-                break
-            w.write(chunk)
-        pad = super_size - w.tell()
-        if pad > 0:
-            w.write(b"\x00" * pad)
-    print("super: %s (system: %d sektorow, zawartosc @ %d, partycja '%s', "
-          "metadata v%d.%d)" % (dst, num_sectors, content_off, part_name,
-                                MAJOR_VERSION, MINOR_VERSION))
+        for name, path, nsec, es in layout:
+            w.seek(es * SECTOR)
+            with open(path, "rb") as r:
+                while True:
+                    chunk = r.read(1 << 20)
+                    if not chunk:
+                        break
+                    w.write(chunk)
+        w.seek(super_size - 1)
+        w.write(b"\x00")
+    print("super: %s (partycje: %s; zawartosc @ %d, metadata v%d.%d)"
+          % (dst, ", ".join("%s=%d s" % (n, ns) for (n, p, ns, e) in layout),
+             content_off, MAJOR_VERSION, MINOR_VERSION))
     return 0
 
 
