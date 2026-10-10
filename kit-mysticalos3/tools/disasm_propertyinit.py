@@ -176,6 +176,23 @@ def list_imports(elf):
 
 
 def main():
+    if len(sys.argv) >= 5 and sys.argv[2] == "patch":
+        # patch <elf> patch <vaddr_hex> <hexbytes> - zapis bajtow pod vaddr (in-place)
+        path, start_s, hexb = sys.argv[1], sys.argv[3], sys.argv[4]
+        vaddr = int(start_s, 16)
+        data = bytes.fromhex(hexb.replace(" ", ""))
+        f = open(path, "r+b")
+        elf = ELFFile(f)
+        off = vaddr_to_offset(elf, vaddr)
+        if off is None:
+            print("BLAD: vaddr poza PT_LOAD")
+            return 1
+        old = f.read(len(data))
+        f.seek(off)
+        f.write(data)
+        f.close()
+        print("patched 0x%x (offset 0x%x): %s -> %s" % (vaddr, off, old.hex(), data.hex()))
+        return 0
     if len(sys.argv) >= 3 and sys.argv[2] == "plt":
         path = sys.argv[1]
         out_path = sys.argv[3] if len(sys.argv) > 3 else None
