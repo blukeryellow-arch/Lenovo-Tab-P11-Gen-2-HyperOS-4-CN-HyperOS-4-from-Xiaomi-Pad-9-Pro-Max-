@@ -75,14 +75,19 @@ def build_metadata(super_size, num_sectors, first_logical_sector, part_name):
     d_grp = struct.pack("<III", SZ_PARTITION + SZ_EXTENT, 1, SZ_GROUP)
     d_bdv = struct.pack("<III", SZ_PARTITION + SZ_EXTENT + SZ_GROUP, 1, SZ_BLOCKDEV)
 
-    # ---- header v1.0 (checksumi = 0 do policzenia) ----
+    # ---- header v1.0 ----
+    # KOLEJNOSC WAZNA (reader.cpp ReadMetadataHeader):
+    #  - tables_checksum = SHA256(tables)
+    #  - header_checksum = SHA256(header z WYLOOROWYM TYLKO header_checksum;
+    #    tables_checksum musi byc JUZ wpisany!)
     hdr = struct.pack("<IHHI32sI32s", HEADER_MAGIC, MAJOR_VERSION, MINOR_VERSION,
                       SZ_HEADER_V1_0, b"\x00" * 32, tables_size, b"\x00" * 32)
     hdr += d_part + d_ext + d_grp + d_bdv
     assert len(hdr) == SZ_HEADER_V1_0, len(hdr)
-    hdr_chk = sha256(hdr)
     tbl_chk = sha256(tables)
-    hdr = hdr[:12] + hdr_chk + hdr[44:48] + tbl_chk + hdr[80:]
+    hdr = hdr[:48] + tbl_chk + hdr[80:]          # wpisz tables_checksum @48
+    hdr_chk = sha256(hdr)                        # header_checksum nadal = 0
+    hdr = hdr[:12] + hdr_chk + hdr[44:]          # wpisz header_checksum @12
     assert len(hdr) == SZ_HEADER_V1_0
     return hdr + tables
 

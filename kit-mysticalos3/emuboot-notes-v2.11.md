@@ -72,3 +72,19 @@
 - oczekiwanie: FirstStage czyta metadata v10 z super, zaklada dm-linear
   system, montuje /system -> po raz pierwszy obraz z PRAWDZIWEGO super;
   potem PropertyInit (spodziewamy sie FATAL property = punktu wyjscia v2.10).
+
+## v2.14 (run 38044076369) - WNIOSKI
+- KOLEJNY KAMIEN MILowy: /metadata zamontowany na vda (litery potwierdzone:
+  vda=meta, vdb=data, vdc=vendor, vdd=super), liblp czyta super, magic+wersja
+  OK -> pada na "Logical partition metadata has invalid checksum" (x2).
+- PRZYCZYNA (reader.cpp ReadMetadataHeader): header_checksum = SHA256(header
+  z wyzerowanym TYLKO header_checksum; tables_checksum zostaje WPISANY).
+  Mksuper liczyl z oboma wyzerowanymi -> zla checksuma. (Lokalny test mial
+  ten sam blad logiczny, wiec przechodzil - fix testu tez.)
+
+## v2.15
+- mksuper.py: poprawna kolejnosc - najpierw wpisz tables_checksum, potem
+  header_checksum = SHA256(header z header_checksum=0). Lokalna walidacja
+  w stylu readera (zero tylko header_checksum) - PASS.
+- Oczekiwanie: ParseMetadata przejdzie -> CreateLogicalPartitions (dm-linear
+  system) -> mount /system z PRAWDZIWEGO super -> PropertyInit.
