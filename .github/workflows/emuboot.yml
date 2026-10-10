@@ -1,5 +1,11 @@
 # ============================================================================
-# mysticalos-emuboot v2.12 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# mysticalos-emuboot v2.13 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# v2.13: boot_devices = WSZYSTKIE 4 transporty virtio-mmio (comma-separated).
+#        qemu virt alokuje transporty TOP-DOWN: 1. urzadzenie=a003e00, 2.=a003c00
+#        (stad dzialajacy fstab vendor-platform!), 3.=a003a00, 4.=a003800 (super).
+#        v2.12 mial tylko a003c00 -> by-name/super nie powstal. Dowod: brak
+#        'partition(s) not found: super' + realpath fail = device znaleziony,
+#        ale is_boot_device=false (init/devices.cpp)
 # v2.12: androidboot.boot_devices=a003c00.virtio_mmio w cmdline qemu - bez tego
 #        first-stage init NIE tworzy /dev/block/by-name/super (symlink top-level
 #        powstaje tylko dla 'boot devices' - init/devices.cpp GetBlockDeviceSymlinks)
@@ -386,7 +392,7 @@ jobs:
 
               nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
                 -kernel "$KERNEL" -initrd "$RAMDISK2" \
-                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003c00.virtio_mmio" \
+                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003e00.virtio_mmio,a003c00.virtio_mmio,a003a00.virtio_mmio,a003800.virtio_mmio" \
                 -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
                 -device virtio-blk-device,drive=meta \
                 -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
@@ -466,7 +472,7 @@ jobs:
                 | sfdisk "$WORK/super-gpt.img" > "$WORK/gpt-super2.txt" 2>&1
               nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
                 -kernel "$KERNEL" -initrd "$RAMDISK2" \
-                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003c00.virtio_mmio" \
+                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003e00.virtio_mmio,a003c00.virtio_mmio,a003a00.virtio_mmio,a003800.virtio_mmio" \
                 -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
                 -device virtio-blk-device,drive=meta \
                 -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
@@ -548,12 +554,15 @@ jobs:
             echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'
-            echo '- v2.12: cmdline androidboot.boot_devices=a003c00.virtio_mmio -> first-stage tworzy /dev/block/by-name/super (init/devices.cpp: by-name tylko dla boot devices)'
+            echo '- v2.13: androidboot.boot_devices=wszystkie 4 transporty virtio-mmio (qemu virt przydziela je top-down: a003e00,c00,a00,800; super=4. dysk=a003800) -> by-name/super powstanie'
             echo '- faza 1: BOOT 1:1 (bez patchy). faza 2 (jesli 1:1 padlo): NOP-patch property FATAL-i (0x12337c/0x12339c)'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
             echo "## GPT super (sfdisk dump - faza 1)"; echo '```'
             cat "$WORK/gpt-super.txt" 2>/dev/null || echo "(brak)"
+            echo '```'
+            echo "## wczesna konsola fazy 1: cmdline + by-name/mapper (DOWOD fixu boot_devices)"; echo '```'
+            grep -aiE "Kernel command line|by-name|mapper/|device-mapper: (create|reload)|super" "$WORK/qemu-console.log" 2>/dev/null | head -25
             echo '```'
             echo "## FAZA 2 (NOP-patch property FATAL): konsola (tail 150)"; echo '```'
             tail -150 "$WORK/qemu-console2.log" 2>/dev/null || echo "(brak - faza 2 nie ruszyla)"
