@@ -118,6 +118,7 @@ jobs:
               > "$2" 2>&1 &
             QPID=$!
           }
+          CTXDIRS="/system/etc/selinux /system/system_ext/etc/selinux /system/product/etc/selinux"
           build_super() {
             python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/mksuper.py" \
               "$IMG" "$WORK/super-raw.img" system >> "$WORK/emu-progress.log" 2>&1
@@ -381,26 +382,27 @@ jobs:
               [ -s "$WORK/ramdisk-mod.img" ] && RAMDISK2="$WORK/ramdisk-mod.img"
               echo "[B] ramdisk: $RAMDISK2" | tee -a "$WORK/emu-progress.log"
 
-              # ---- FORENSYKA PROPERTY: property_contexts vs typy polityki.
-              # Hipoteza (bionic area_init): fsetxattr(security.selinux,
-              # u:object_r:TYP:s0) na /dev/__properties__/* konczy sie EINVAL
-              # gdy TYP nie istnieje w ZALADOWANEJ polityce ->
-              # __system_property_area_init = -1 -> FATAL property -> bootloop.
-              # Sprawdzamy na ZYNYCH obrazach: typy w kontekstach vs
-              # deklaracje (type ...) w plat_sepolicy.cil + vendor_sepolicy.cil.
-              sudo mkdir -p /tmp/mnt-ctx /tmp/mnt-vnd
-              if sudo mount -o ro,loop "$IMG" /tmp/mnt-ctx 2>/dev/null && \
-                 sudo mount -o ro,loop "$VENDORIMG" /tmp/mnt-vnd 2>/dev/null; then
-                sudo python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/propctx.py" check \
-                  /tmp/mnt-ctx/system/etc/selinux \
-                  --extra-cil /tmp/mnt-vnd/vendor/etc/selinux/vendor_sepolicy.cil \
-                  > "$WORK/propctx-report.txt" 2>&1 || true
-                sudo umount /tmp/mnt-vnd 2>/dev/null || true
+              # ---- FORENSYKA PROPERTY: typy z *_property_contexts vs
+              # deklaracje w CIL (fsetxattr z nieznanym typem -> EINVAL ->
+              # area_init -1 -> FATAL; polityka = nasz plat + vendor ranchu;
+              # vendor CIL przez debugfs cat bo vendor-mod to dysk GPT) ----
+              : > "$WORK/propctx-report.txt"
+              debugfs -R "cat /etc/selinux/vendor_sepolicy.cil" \
+                "$WORK/vendor-part.img" > "$WORK/vendor_sepolicy.cil" 2>/dev/null
+              echo "vendor_sepolicy.cil: $(wc -l < "$WORK/vendor_sepolicy.cil" 2>/dev/null || echo 0) linii" \
+                | tee -a "$WORK/emu-progress.log"
+              sudo mkdir -p /tmp/mnt-ctx
+              if sudo mount -o ro,loop "$IMG" /tmp/mnt-ctx 2>/dev/null; then
+                for D in $CTXDIRS; do
+                  sudo python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/propctx.py" check \
+                    "/tmp/mnt-ctx$D" --extra-cil "$WORK/vendor_sepolicy.cil" \
+                    >> "$WORK/propctx-report.txt" 2>&1 || true
+                done
                 sudo umount /tmp/mnt-ctx 2>/dev/null || true
-                echo "[B] forensyka property_contexts -> propctx-report.txt" \
+                echo "[B] forensyka property_contexts -> propctx-report.txt ($(grep -ac 'NIEZNANE TYPY' "$WORK/propctx-report.txt") sekcji)" \
                   | tee -a "$WORK/emu-progress.log"
               else
-                echo "[B] UWAGA: montowanie pod forensyke nie wyszlo" \
+                echo "[B] UWAGA: montowanie ro obrazu pod forensyke nie wyszlo" \
                   | tee -a "$WORK/emu-progress.log"
               fi
 
@@ -458,15 +460,15 @@ jobs:
           # (~9 s pod TCG - run 38053021041), czekamy do 45 min na adb/bc.
           if [ "${EMU_PATH:-}" != "emulator" ] && [ "$boot" = "0" ] && [ -s "$WORK/qemu-console.log" ]; then
             pkill -f qemu-system-aarch64 2>/dev/null; sleep 3
-            sudo mkdir -p /tmp/mnt-ctx /tmp/mnt-vnd
+            sudo mkdir -p /tmp/mnt-ctx
             FIXED=0
-            if sudo mount -o rw,loop "$IMG" /tmp/mnt-ctx 2>/dev/null && \
-               sudo mount -o ro,loop "$VENDORIMG" /tmp/mnt-vnd 2>/dev/null; then
-              sudo python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/propctx.py" fix \
-                /tmp/mnt-ctx/system/etc/selinux \
-                --extra-cil /tmp/mnt-vnd/vendor/etc/selinux/vendor_sepolicy.cil \
-                2>&1 | tee "$WORK/propctx-fix.txt" | tee -a "$WORK/emu-progress.log"
-              sudo umount /tmp/mnt-vnd 2>/dev/null || true
+            if sudo mount -o rw,loop "$IMG" /tmp/mnt-ctx 2>/dev/null; then
+              : > "$WORK/propctx-fix.txt"
+              for D in $CTXDIRS; do
+                sudo python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/propctx.py" fix \
+                  "/tmp/mnt-ctx$D" --extra-cil "$WORK/vendor_sepolicy.cil" \
+                  2>&1 | tee -a "$WORK/propctx-fix.txt" | tee -a "$WORK/emu-progress.log"
+              done
               sudo umount /tmp/mnt-ctx 2>/dev/null || true
               FIXED=1
             else
