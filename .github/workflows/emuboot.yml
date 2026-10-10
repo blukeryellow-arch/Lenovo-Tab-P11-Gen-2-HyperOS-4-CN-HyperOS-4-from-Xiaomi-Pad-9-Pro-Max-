@@ -1,12 +1,12 @@
 # ============================================================================
-# mysticalos-emuboot v2.14 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
-# v2.14: (1) mksuper.py wg PRAWDZIWEGO layoutu liblp: [0..4095]=reserved,
-#        geometry@4096+8192, metadata v10.0 @12288+16384, content@20480
-#        (v2.13: geometry@0, meta@8192, major=1 -> 'incompatible version'
-#        + 'invalid magic' z konsoli runu 38031846094 - bajt w bajt);
-#        (2) kolejnosc qemu: super,vendor,userdata,meta -> probe ASC daje
-#        litery vda=meta, vdb=data, vdc=vendor, vdd=super (dowod: v2.13
-#        czytal super z vda przy fstab metadata=/dev/block/vda)
+# mysticalos-emuboot v2.16 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# v2.16: PRZELOM z v2.15 (run 38048370740): system zamontowany z PRAWDZIWEGO
+#        super (dm-linear, 1:1) i PropertyInit PRZESZED bez patchy (FATAL
+#        property byl artefaktem starego harnessu raw-vdd!). Init utkal
+#        tylko na kompilacji polityki SELinux (mismatch plat vs precompiled
+#        vendor emulatora) - pod TCG za wolno na 30 min.
+#        -> faza 1: selinux=0 (szybka droga do uslug/adb)
+#        -> faza 2: naturalny dlugi boot (100 min) - tablet-realistyczny
 
 on:
   workflow_dispatch:
@@ -368,7 +368,7 @@ jobs:
 
               nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
                 -kernel "$KERNEL" -initrd "$RAMDISK2" \
-                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003e00.virtio_mmio,a003c00.virtio_mmio,a003a00.virtio_mmio,a003800.virtio_mmio" \
+                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 selinux=0 androidboot.boot_devices=a003e00.virtio_mmio,a003c00.virtio_mmio,a003a00.virtio_mmio,a003800.virtio_mmio" \
                 -drive if=none,file="$WORK/super-gpt.img",format=raw,id=super \
                 -device virtio-blk-device,drive=super \
                 -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
@@ -419,63 +419,42 @@ jobs:
               if [ "$BC" = "1" ]; then boot=1; break; fi
             done
           fi
-          # ---------- faza 2: BOOT DIAGNOSTYCZNY z NOP-patchem ----------
-          # Tylko gdy 1:1 (super, bez patchy) nie wstalo: omijamy FATAL-e
-          # property (0x12337c/0x12339c cbz/tbnz -> b) i patrzymy jak daleko
-          # system dojdzie z super (vold teraz ma logical system!).
+          # ---------- faza 2: NATURALNY dlugi boot (bez patchy, bez selinux=0):
+          # tablet-realistyczny - polityka SELinux jest KOMPILOWANA w locie
+          # (plat_sepolicy nabu vs precompiled vendor emulatora -> mismatch,
+          # jak na tablecie z vendorem Lenovo). Secilc pod TCG moze trwac
+          # dziesiatki minut - czekamy do 100 min na adb/boot_completed. ----------
           if [ "${EMU_PATH:-}" != "emulator" ] && [ "$boot" = "0" ] && [ -s "$WORK/qemu-console.log" ]; then
             pkill -f qemu-system-aarch64 2>/dev/null; sleep 3
-            sudo mkdir -p /tmp/mnt-pat
-            if sudo mount -o rw,loop "$IMG" /tmp/mnt-pat 2>/dev/null; then
-              PT="$GITHUB_WORKSPACE/kit-mysticalos3/tools/disasm_propertyinit.py"
-              sudo cp /tmp/mnt-pat/system/bin/init "$WORK/init-to-patch"
-              sudo chown "$(id -u):$(id -g)" "$WORK/init-to-patch"
-              python3 "$PT" "$WORK/init-to-patch" patch 0x12337c "05000014" \
-                2>&1 | tee -a "$WORK/emu-progress.log"
-              python3 "$PT" "$WORK/init-to-patch" patch 0x12339c "05000014" \
-                2>&1 | tee -a "$WORK/emu-progress.log"
-              sudo cp "$WORK/init-to-patch" /tmp/mnt-pat/system/bin/init
-              sudo umount /tmp/mnt-pat 2>/dev/null
-              echo "[B2] NOP-patch OK -> przebudowa super z patched init i drugi boot" \
-                | tee -a "$WORK/emu-progress.log"
-              python3 "$GITHUB_WORKSPACE/kit-mysticalos3/tools/mksuper.py" \
-                "$IMG" "$WORK/super-raw.img" system >> "$WORK/emu-progress.log" 2>&1
-              truncate -s 1M "$WORK/super-gpt.img"
-              cat "$WORK/super-raw.img" >> "$WORK/super-gpt.img"
-              truncate -s +2M "$WORK/super-gpt.img"
-              SECT=$(( $(stat -c%s "$WORK/super-raw.img") / 512 ))
-              printf 'label: gpt\nstart=2048, size=%s, name=super\n' "$SECT" \
-                | sfdisk "$WORK/super-gpt.img" > "$WORK/gpt-super2.txt" 2>&1
-              nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
-                -kernel "$KERNEL" -initrd "$RAMDISK2" \
-                -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003e00.virtio_mmio,a003c00.virtio_mmio,a003a00.virtio_mmio,a003800.virtio_mmio" \
-                -drive if=none,file="$WORK/super-gpt.img",format=raw,id=super \
-                -device virtio-blk-device,drive=super \
-                -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
-                -device virtio-blk-device,drive=vendor \
-                -drive if=none,file="$WORK/userdata.img",format=raw,id=userdata \
-                -device virtio-blk-device,drive=userdata \
-                -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
-                -device virtio-blk-device,drive=meta \
-                -netdev user,id=n0,hostfwd=tcp::5555-:5555 \
-                -device virtio-net-device,netdev=n0 \
-                -display none -monitor none -serial file:"$WORK/qemu-console2.log" \
-                > "$WORK/qemu2.log" 2>&1 &
-              QPID=$!
-              for i in $(seq 1 90); do
-                sleep 20
-                timeout 10 adb connect localhost:5555 >/dev/null 2>&1
-                if timeout 10 adb -s localhost:5555 shell true >/dev/null 2>&1; then
-                  BC=$(timeout 10 adb -s localhost:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-                  echo "[B2] t=$((i*20))s bc='$BC'" >> "$WORK/emu-progress.log"
-                  if [ "$BC" = "1" ]; then boot=1; EMU_PHASE2=1; break; fi
-                fi
-                kill -0 $QPID 2>/dev/null || { echo "[B2] qemu padl po ~$((i*20))s" | tee -a "$WORK/emu-progress.log"; break; }
-              done
-              echo "[B2] BOOT_DIAGNOSTYCZNY=$boot" | tee -a "$WORK/emu-progress.log"
-            else
-              echo "[B2] montowanie rw nie wyszlo - brak fazy 2" | tee -a "$WORK/emu-progress.log"
-            fi
+            echo "[B2] naturalny boot (bez selinux=0): czekam do 100 min (secilc pod TCG)" \
+              | tee -a "$WORK/emu-progress.log"
+            nohup qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
+              -kernel "$KERNEL" -initrd "$RAMDISK2" \
+              -append "console=ttyAMA0,115200 rdinit=/init androidboot.console=ttyAMA0 androidboot.hardware=ranchu androidboot.selinux=permissive audit=0 printk.devkmsg=on androidboot.adb.tcp.port=5555 androidboot.boot_devices=a003e00.virtio_mmio,a003c00.virtio_mmio,a003a00.virtio_mmio,a003800.virtio_mmio" \
+              -drive if=none,file="$WORK/super-gpt.img",format=raw,id=super \
+              -device virtio-blk-device,drive=super \
+              -drive if=none,file="$VENDORIMG",format=raw,id=vendor \
+              -device virtio-blk-device,drive=vendor \
+              -drive if=none,file="$WORK/userdata.img",format=raw,id=userdata \
+              -device virtio-blk-device,drive=userdata \
+              -drive if=none,file="$WORK/meta.img",format=raw,id=meta \
+              -device virtio-blk-device,drive=meta \
+              -netdev user,id=n0,hostfwd=tcp::5555-:5555 \
+              -device virtio-net-device,netdev=n0 \
+              -display none -monitor none -serial file:"$WORK/qemu-console2.log" \
+              > "$WORK/qemu2.log" 2>&1 &
+            QPID=$!
+            for i in $(seq 1 120); do
+              sleep 50
+              timeout 10 adb connect localhost:5555 >/dev/null 2>&1
+              if timeout 10 adb -s localhost:5555 shell true >/dev/null 2>&1; then
+                BC=$(timeout 10 adb -s localhost:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
+                echo "[B2] t=$((i*50))s bc='$BC'" >> "$WORK/emu-progress.log"
+                if [ "$BC" = "1" ]; then boot=1; EMU_PHASE2=1; break; fi
+              fi
+              kill -0 $QPID 2>/dev/null || { echo "[B2] qemu padl po ~$((i*50))s" | tee -a "$WORK/emu-progress.log"; break; }
+            done
+            echo "[B2] BOOT_NATURALNY=$boot" | tee -a "$WORK/emu-progress.log"
           fi
 
           echo "BOOT_COMPLETED=$boot (path=$EMU_PATH)" | tee -a "$WORK/emu-progress.log"
@@ -530,7 +509,7 @@ jobs:
             echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'
-            echo '- v2.14: mksuper liblp-layout (reserved 4096 + geometry@4096 + metadata v10.0@12288; v2.13 mial geometry@0, v1 i stąd incompatible version/invalid magic) + kolejnosc dyskow: super,vendor,data,meta -> litery vda=meta,vdb=data,vdc=vendor,vdd=super'
+            echo '- v2.16: faza 1 = selinux=0 (pomija wolna kompilacje polityki pod TCG; PropertyInit JUZ PRZESZED w 1:1 - run 38048370740); faza 2 = naturalny dlugi boot (100 min, secilc w locie jak na tablecie)'
             echo '- faza 1: BOOT 1:1 (bez patchy). faza 2 (jesli 1:1 padlo): NOP-patch property FATAL-i (0x12337c/0x12339c)'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
@@ -540,8 +519,11 @@ jobs:
             echo "## wczesna konsola fazy 1: cmdline + by-name/mapper (DOWOD fixu boot_devices)"; echo '```'
             grep -aiE "Kernel command line|by-name|mapper|device-mapper: (create|reload)|liblp|libfs_mgr|super" "$WORK/qemu-console.log" 2>/dev/null | head -30
             echo '```'
-            echo "## FAZA 2 (NOP-patch property FATAL): konsola (tail 150)"; echo '```'
-            tail -150 "$WORK/qemu-console2.log" 2>/dev/null || echo "(brak - faza 2 nie ruszyla)"
+            echo "## FAZA 2 (naturalny boot, bez selinux=0 - jak na tablecie): konsola (tail 220)"; echo '```'
+            tail -220 "$WORK/qemu-console2.log" 2>/dev/null || echo "(brak - faza 2 nie ruszyla)"
+            echo '```'
+            echo "## FAZA 2: SELinux/zygote/uslugi (grep calej konsoli)"; echo '```'
+            grep -aiE "SELinux|secilc|zygote|servicemanager|surfaceflinger|boot_completed|vold|class_start|Cloning" "$WORK/qemu-console2.log" 2>/dev/null | tail -30
             echo '```'
             echo "## qemu/konsola szeregowa (kernel+init; tail 200)"; echo '```'
             tail -200 "$WORK/qemu-console.log" 2>/dev/null || echo "(brak)"

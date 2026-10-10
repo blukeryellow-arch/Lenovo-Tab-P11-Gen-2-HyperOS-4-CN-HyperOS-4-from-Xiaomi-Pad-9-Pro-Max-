@@ -88,3 +88,24 @@
   w stylu readera (zero tylko header_checksum) - PASS.
 - Oczekiwanie: ParseMetadata przejdzie -> CreateLogicalPartitions (dm-linear
   system) -> mount /system z PRAWDZIWEGO super -> PropertyInit.
+
+## v2.15 (run 38048370740) - PRZELOM
+- mksuper checksum OK: "Created logical partition system on device /dev/block/dm-0"
+  + "__mount(dm-0 -> /system) = 0: Success" - NASZ OBRAZ Z PRAWDZIWEGO SUPER!
+- FAZA 1 (1:1, BEZ PATCHY): PropertyInit PRZESZED (init.cpp:887 PropertyInit
+  przed SelabelInitialize/LoadPolicy; konsola pokazuje juz "Opening SELinux
+  policy" = property OK; zero "Failed to initialize property area").
+  Czyli FATAL property z v2.10 byl ARTEFAKTEM starego harnessu (raw vdd).
+- Init utkal na "Compiling SELinux policy" (plat_sepolicy nabu vs precompiled
+  vendor emulatora -> mismatch -> secilc w locie; pod TCG > 30 min; system
+  zywy - ext4lazyinit w tle).
+- FAZA 2 (NOP): petle rebootu (bez property area uslugi padaja) - zgodne z
+  teoria; NOP juz niepotrzebny.
+
+## v2.16
+- faza 1: selinux=0 w cmdline (kernel wylacza SELinux -> init pomija kompilacje
+  polityki; harness-only, obraz 1:1) -> szybka droga do uslug/zygote/adb.
+- faza 2: naturalny boot (androidboot.selinux=permissive, bez selinux=0),
+  100 min na secilc - tablet-realistyczny (na tablecie tez kompiluje w locie
+  po wymianie systemu: precompiled vendora Lenovo pasuje do plat Lenova).
+- NOP-patch usuniety z workflow (po co skoro property dziala 1:1).
