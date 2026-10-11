@@ -84,8 +84,11 @@ $help.Text = "loops=1 i nie rosnie = brak petli (OK)`nzyg=1  -> zygote wstal (kr
 $f.Controls.Add($help)
 
 function Refresh-Log {
-  $t = Wsl "tail -n 400 '$ConsoleLog'"
-  if (-not $t) { $script:status.Text = "brak console.log - kliknij START emulatora"; $script:status.ForeColor = "Gray"; return }
+  # console.log tworzy dopiero qemu; wczesniej pokazuj fazy z gui-run.log
+  $src = [string](Wsl "if [ -f '$ConsoleLog' ]; then echo '$ConsoleLog'; elif [ -f '$KitDir/gui/gui-run.log' ]; then echo '$KitDir/gui/gui-run.log'; fi")
+  if (-not $src) { $script:status.Text = "brak logow - kliknij START emulatora"; $script:status.ForeColor = "Gray"; return }
+  $t = Wsl "tail -n 400 '$src'"
+  if (-not $t) { $script:status.Text = "czekam na logi..."; $script:status.ForeColor = "Gray"; return }
   if ($t -is [string]) { $t = @($t) }
   $script:logBox.Lines = $t
   $script:logBox.SelectionStart = $script:logBox.Text.Length
@@ -117,8 +120,11 @@ function Do-Shot {
 }
 
 $btnShot.Add_Click({ Do-Shot })
+# wsl -e bash <sciezka> - bez zagniezdonych cudzyslowow (PowerShell 5.1 zjada
+# cudzyslowy w ArgumentList -> otwieral sie goły bash zamiast skryptu!)
+$script:KitStart = "$KitDir/gui/gui-start.sh"
 $btnStart.Add_Click({
-  Start-Process -FilePath "wsl.exe" -ArgumentList @("--","bash","-c","bash '$KitDir/gui/gui-start.sh'")
+  Start-Process -FilePath "wsl.exe" -ArgumentList @("-e","bash",$script:KitStart)
 })
 $btnStop.Add_Click({ [void](Wsl "pkill -f qemu-system-aarch64; pkill -f run-local-emu; pkill -f gui-start") })
 
