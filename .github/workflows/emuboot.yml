@@ -700,3 +700,4 @@ jobs:
             /tmp/emu/sdk-install.log
           if-no-files-found: ignore
           retention-days: 90
+# (rerun) v2.22 - run 38119780674 anulowany przez concurrency (push kitu); odpalamy od nowa
