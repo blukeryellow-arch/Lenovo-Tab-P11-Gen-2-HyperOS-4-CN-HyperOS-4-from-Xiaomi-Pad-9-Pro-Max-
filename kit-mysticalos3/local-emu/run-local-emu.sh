@@ -173,6 +173,8 @@ done
 python3 "$TOOLS/mksuper.py" "$WORK/super-raw.img" \
   system="$WORK/our.img" vendor="$WORK/vendor-part.img" \
   product="$WORK/empty-product.img" system_ext="$WORK/empty-system_ext.img"
+# oszczednosc miejsca: system siedzi juz w super-raw, our.img niepotrzebny (-3.4G)
+rm -f "$WORK/our.img"
 truncate -s 1M "$WORK/super-gpt.img"
 cat "$WORK/super-raw.img" >> "$WORK/super-gpt.img"
 truncate -s +2M "$WORK/super-gpt.img"
