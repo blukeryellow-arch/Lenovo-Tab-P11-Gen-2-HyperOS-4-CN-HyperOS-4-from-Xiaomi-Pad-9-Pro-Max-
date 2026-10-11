@@ -1,0 +1,10 @@
+# rozmiary obrazow EROFS - ten sam kontekst, zmierzone 2026-09-23 narzedziami z tools/build_erofs_local.sh
+# przypadk	drzewo	kompresja	bajty_obrazu	bajty_danych	nadwyzka_vs_dane
+product-fonty	63	brak	87973888	87944896	+28992
+product-fonty	63	lz4	77619200	87944896	-10325696
+product-fonty	63	lz4hc	75198464	87944896	-12746432
+product-full(fonty+RRO)	130	lz4	153391104	171528296	-18137192
+system(CI,bez Kompresji)	3895	brak	1376899072	1376006579	+892493
+system(moj build)	3895	lz4	967507968	1376006579	-408498611
+system(zrodlo HyperOS)	?	lz4 (HyperOS-owy)	937791488	?	n/a
+# ten sam obraz z tego samego drzewa i uuid = identyczne bajty (product 6x, system 3x powtorzenia)

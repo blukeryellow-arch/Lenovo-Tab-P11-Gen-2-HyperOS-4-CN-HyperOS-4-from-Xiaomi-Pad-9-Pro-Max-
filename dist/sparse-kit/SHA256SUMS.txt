@@ -1,0 +1,2 @@
+8b71ea568dfb6043cfb3234372b3b672c30f9dfb2e81d11ed1bbae89e98dc14f  system_hyperos4_p11g2.img
+9cf2e7e4e165687abe78fb0f084e2b07707c317376efd5d4ffbdea75537e6141  vbmeta_hyperos4_p11g2.img

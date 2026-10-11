@@ -1,0 +1,3610 @@
+
+===== CreateSerializedPropertyInfo (0x122bf0, lokalna; sciezki plikow + ciche powroty):
+# /tmp/emu/init-donor [EM_AARCH64]; zakres 0x122bf0-0x123330; symboli: 154
+0x00122bf0  sub      sp, sp, #0xc0
+0x00122bf4  stp      x29, x30, [sp, #0x90]
+0x00122bf8  add      x29, sp, #0x90
+0x00122bfc  stp      x22, x21, [sp, #0xa0]
+0x00122c00  stp      x20, x19, [sp, #0xb0]
+0x00122c04  adrp     x19, #0x1d000
+0x00122c08  mrs      x20, tpidr_el0
+0x00122c0c  add      x19, x19, #0xbcf  ; "/system/etc/selinux/plat_property_contexts"
+0x00122c10  ldr      x8, [x20, #0x28]
+0x00122c14  mov      x0, x19
+0x00122c18  mov      w1, #4
+0x00122c1c  stur     x8, [x29, #-8]
+0x00122c20  stp      xzr, xzr, [x29, #-0x20]
+0x00122c24  stur     xzr, [x29, #-0x10]
+0x00122c28  bl       #0x223950  ; -> PLT:access
+0x00122c2c  cmn      w0, #1
+0x00122c30  b.eq     #0x122e70
+0x00122c34  mov      w0, #0x30
+0x00122c38  bl       #0x223220  ; -> PLT:_Znwm
+0x00122c3c  ldp      q1, q2, [x19]
+0x00122c40  adrp     x8, #0x24000
+0x00122c44  stur     x0, [x29, #-0x30]
+0x00122c48  strb     wzr, [x0, #0x2a]
+0x00122c4c  sub      x1, x29, #0x20
+0x00122c50  ldr      q0, [x8, #0x360]
+0x00122c54  stp      q1, q2, [x0]
+0x00122c58  ldur     q3, [x19, #0x1a]
+0x00122c5c  stur     q0, [x29, #-0x40]
+0x00122c60  stur     q3, [x0, #0x1a]
+0x00122c64  sub      x0, x29, #0x40
+0x00122c68  bl       #0x1229b0
+0x00122c6c  ldurb    w8, [x29, #-0x40]
+0x00122c70  mov      w19, w0
+0x00122c74  tbz      w8, #0, #0x122c80
+0x00122c78  ldur     x0, [x29, #-0x30]
+0x00122c7c  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00122c80  tbz      w19, #0, #0x1231b8
+0x00122c84  adrp     x19, #0x19000
+0x00122c88  mov      w1, #4
+0x00122c8c  add      x19, x19, #0xb37  ; "/dev/selinux/apex_property_contexts"
+0x00122c90  mov      x0, x19
+0x00122c94  bl       #0x223950  ; -> PLT:access
+0x00122c98  cmn      w0, #1
+0x00122c9c  b.eq     #0x122cec
+0x00122ca0  mov      w0, #0x30
+0x00122ca4  bl       #0x223220  ; -> PLT:_Znwm
+0x00122ca8  ldp      q1, q2, [x19]
+0x00122cac  adrp     x8, #0x24000
+0x00122cb0  stur     x0, [x29, #-0x30]
+0x00122cb4  strb     wzr, [x0, #0x23]
+0x00122cb8  sub      x1, x29, #0x20
+0x00122cbc  ldr      q0, [x8, #0x240]
+0x00122cc0  mov      w8, #0x7865
+0x00122cc4  movk     w8, #0x7374, lsl #16
+0x00122cc8  stur     q0, [x29, #-0x40]
+0x00122ccc  stur     w8, [x0, #0x1f]
+0x00122cd0  stp      q1, q2, [x0]
+0x00122cd4  sub      x0, x29, #0x40
+0x00122cd8  bl       #0x1229b0
+0x00122cdc  ldurb    w8, [x29, #-0x40]
+0x00122ce0  tbz      w8, #0, #0x122cec
+0x00122ce4  ldur     x0, [x29, #-0x30]
+0x00122ce8  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00122cec  adrp     x19, #0x13000
+0x00122cf0  mov      w1, #4
+0x00122cf4  add      x19, x19, #0x6ae  ; "/system_ext/etc/selinux/system_ext_property_contexts"
+0x00122cf8  mov      x0, x19
+0x00122cfc  bl       #0x223950  ; -> PLT:access
+0x00122d00  cmn      w0, #1
+0x00122d04  b.eq     #0x122d5c
+0x00122d08  mov      w0, #0x40
+0x00122d0c  bl       #0x223220  ; -> PLT:_Znwm
+0x00122d10  adrp     x8, #0x24000
+0x00122d14  ldr      q0, [x8, #0xf0]
+0x00122d18  ldp      q1, q2, [x19]
+0x00122d1c  mov      w8, #0x7865
+0x00122d20  stur     x0, [x29, #-0x30]
+0x00122d24  movk     w8, #0x7374, lsl #16
+0x00122d28  stur     q0, [x29, #-0x40]
+0x00122d2c  strb     wzr, [x0, #0x34]
+0x00122d30  sub      x1, x29, #0x20
+0x00122d34  str      w8, [x0, #0x30]
+0x00122d38  ldr      q0, [x19, #0x20]
+0x00122d3c  stp      q1, q2, [x0]
+0x00122d40  str      q0, [x0, #0x20]
+0x00122d44  sub      x0, x29, #0x40
+0x00122d48  bl       #0x1229b0
+0x00122d4c  ldurb    w8, [x29, #-0x40]
+0x00122d50  tbz      w8, #0, #0x122d5c
+0x00122d54  ldur     x0, [x29, #-0x30]
+0x00122d58  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00122d5c  adrp     x19, #0x16000
+0x00122d60  mov      w1, #4
+0x00122d64  add      x19, x19, #0x3d7  ; "/vendor/etc/selinux/vendor_property_contexts"
+0x00122d68  mov      x0, x19
+0x00122d6c  bl       #0x223950  ; -> PLT:access
+0x00122d70  cmn      w0, #1
+0x00122d74  b.eq     #0x122dc0
+0x00122d78  mov      w0, #0x30
+0x00122d7c  bl       #0x223220  ; -> PLT:_Znwm
+0x00122d80  ldp      q1, q2, [x19]
+0x00122d84  adrp     x8, #0x24000
+0x00122d88  stur     x0, [x29, #-0x30]
+0x00122d8c  strb     wzr, [x0, #0x2c]
+0x00122d90  sub      x1, x29, #0x20
+0x00122d94  ldr      q0, [x8, #0xc0]
+0x00122d98  stp      q1, q2, [x0]
+0x00122d9c  ldur     q3, [x19, #0x1c]
+0x00122da0  stur     q0, [x29, #-0x40]
+0x00122da4  stur     q3, [x0, #0x1c]
+0x00122da8  sub      x0, x29, #0x40
+0x00122dac  bl       #0x1229b0
+0x00122db0  ldurb    w8, [x29, #-0x40]
+0x00122db4  tbz      w8, #0, #0x122dc0
+0x00122db8  ldur     x0, [x29, #-0x30]
+0x00122dbc  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00122dc0  adrp     x19, #0x1d000
+0x00122dc4  mov      w1, #4
+0x00122dc8  add      x19, x19, #0xbfa  ; "/product/etc/selinux/product_property_contexts"
+0x00122dcc  mov      x0, x19
+0x00122dd0  bl       #0x223950  ; -> PLT:access
+0x00122dd4  cmn      w0, #1
+0x00122dd8  b.eq     #0x122e24
+0x00122ddc  mov      w0, #0x30
+0x00122de0  bl       #0x223220  ; -> PLT:_Znwm
+0x00122de4  ldp      q1, q2, [x19]
+0x00122de8  adrp     x8, #0x24000
+0x00122dec  stur     x0, [x29, #-0x30]
+0x00122df0  strb     wzr, [x0, #0x2e]
+0x00122df4  sub      x1, x29, #0x20
+0x00122df8  ldr      q0, [x8, #0x40]
+0x00122dfc  stp      q1, q2, [x0]
+0x00122e00  ldur     q3, [x19, #0x1e]
+0x00122e04  stur     q0, [x29, #-0x40]
+0x00122e08  stur     q3, [x0, #0x1e]
+0x00122e0c  sub      x0, x29, #0x40
+0x00122e10  bl       #0x1229b0
+0x00122e14  ldurb    w8, [x29, #-0x40]
+0x00122e18  tbz      w8, #0, #0x122e24
+0x00122e1c  ldur     x0, [x29, #-0x30]
+0x00122e20  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00122e24  adrp     x19, #0x20000
+0x00122e28  mov      w1, #4
+0x00122e2c  add      x19, x19, #0x498  ; "/odm/etc/selinux/odm_property_contexts"
+0x00122e30  mov      x0, x19
+0x00122e34  bl       #0x223950  ; -> PLT:access
+0x00122e38  cmn      w0, #1
+0x00122e3c  b.eq     #0x12304c
+0x00122e40  mov      w0, #0x30
+0x00122e44  bl       #0x223220  ; -> PLT:_Znwm
+0x00122e48  ldp      q1, q2, [x19]
+0x00122e4c  adrp     x8, #0x24000
+0x00122e50  stur     x0, [x29, #-0x30]
+0x00122e54  strb     wzr, [x0, #0x26]
+0x00122e58  ldr      q0, [x8, #0x1d0]
+0x00122e5c  stp      q1, q2, [x0]
+0x00122e60  ldur     x8, [x19, #0x1e]
+0x00122e64  stur     q0, [x29, #-0x40]
+0x00122e68  stur     x8, [x0, #0x1e]
+0x00122e6c  b        #0x123030
+0x00122e70  mov      w0, #0x20
+0x00122e74  bl       #0x223220  ; -> PLT:_Znwm
+0x00122e78  adrp     x8, #0x24000
+0x00122e7c  ldr      q0, [x8, #0x3a0]
+0x00122e80  adrp     x8, #0x1a000
+0x00122e84  stur     x0, [x29, #-0x30]
+0x00122e88  add      x8, x8, #0x40d  ; "/plat_property_contexts"
+0x00122e8c  strb     wzr, [x0, #0x17]
+0x00122e90  sub      x1, x29, #0x20
+0x00122e94  stur     q0, [x29, #-0x40]
+0x00122e98  ldr      q1, [x8]
+0x00122e9c  ldur     x8, [x8, #0xf]
+0x00122ea0  str      q1, [x0]
+0x00122ea4  stur     x8, [x0, #0xf]
+0x00122ea8  sub      x0, x29, #0x40
+0x00122eac  bl       #0x1229b0
+0x00122eb0  ldurb    w8, [x29, #-0x40]
+0x00122eb4  mov      w19, w0
+0x00122eb8  tbz      w8, #0, #0x122ec4
+0x00122ebc  ldur     x0, [x29, #-0x30]
+0x00122ec0  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00122ec4  tbz      w19, #0, #0x1231b8
+0x00122ec8  mov      w0, #0x20
+0x00122ecc  bl       #0x223220  ; -> PLT:_Znwm
+0x00122ed0  adrp     x8, #0x24000
+0x00122ed4  ldr      q0, [x8, #0x460]
+0x00122ed8  adrp     x8, #0x19000
+0x00122edc  stur     x0, [x29, #-0x30]
+0x00122ee0  add      x8, x8, #0xb5b  ; "/system_ext_property_contexts"
+0x00122ee4  strb     wzr, [x0, #0x1d]
+0x00122ee8  sub      x1, x29, #0x20
+0x00122eec  stur     q0, [x29, #-0x40]
+0x00122ef0  ldr      q1, [x8]
+0x00122ef4  ldur     q2, [x8, #0xd]
+0x00122ef8  str      q1, [x0]
+0x00122efc  stur     q2, [x0, #0xd]
+0x00122f00  sub      x0, x29, #0x40
+0x00122f04  bl       #0x1229b0
+0x00122f08  ldurb    w8, [x29, #-0x40]
+0x00122f0c  tbz      w8, #0, #0x122f18
+0x00122f10  ldur     x0, [x29, #-0x30]
+0x00122f14  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00122f18  mov      w0, #0x20
+0x00122f1c  bl       #0x223220  ; -> PLT:_Znwm
+0x00122f20  adrp     x8, #0x24000
+0x00122f24  ldr      q0, [x8, #0x60]
+0x00122f28  adrp     x8, #0x14000
+0x00122f2c  stur     x0, [x29, #-0x30]
+0x00122f30  add      x8, x8, #0x7af  ; "/vendor_property_contexts"
+0x00122f34  strb     wzr, [x0, #0x19]
+0x00122f38  sub      x1, x29, #0x20
+0x00122f3c  stur     q0, [x29, #-0x40]
+0x00122f40  ldr      q1, [x8]
+0x00122f44  ldur     q2, [x8, #9]
+0x00122f48  str      q1, [x0]
+0x00122f4c  stur     q2, [x0, #9]
+0x00122f50  sub      x0, x29, #0x40
+0x00122f54  bl       #0x1229b0
+0x00122f58  ldurb    w8, [x29, #-0x40]
+0x00122f5c  tbz      w8, #0, #0x122f68
+0x00122f60  ldur     x0, [x29, #-0x30]
+0x00122f64  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00122f68  mov      w0, #0x20
+0x00122f6c  bl       #0x223220  ; -> PLT:_Znwm
+0x00122f70  adrp     x8, #0x24000
+0x00122f74  ldr      q0, [x8, #0x2d0]
+0x00122f78  adrp     x8, #0x1b000
+0x00122f7c  stur     x0, [x29, #-0x30]
+0x00122f80  add      x8, x8, #0x793  ; "/product_property_contexts"
+0x00122f84  strb     wzr, [x0, #0x1a]
+0x00122f88  sub      x1, x29, #0x20
+0x00122f8c  stur     q0, [x29, #-0x40]
+0x00122f90  ldr      q1, [x8]
+0x00122f94  ldur     q2, [x8, #0xa]
+0x00122f98  str      q1, [x0]
+0x00122f9c  stur     q2, [x0, #0xa]
+0x00122fa0  sub      x0, x29, #0x40
+0x00122fa4  bl       #0x1229b0
+0x00122fa8  ldurb    w8, [x29, #-0x40]
+0x00122fac  tbz      w8, #0, #0x122fb8
+0x00122fb0  ldur     x0, [x29, #-0x30]
+0x00122fb4  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00122fb8  adrp     x9, #0x1a000
+0x00122fbc  mov      w8, #0x2c
+0x00122fc0  add      x9, x9, #0x425  ; "/odm_property_contexts"
+0x00122fc4  sub      x0, x29, #0x40
+0x00122fc8  sub      x1, x29, #0x20
+0x00122fcc  sturb    wzr, [x29, #-0x29]
+0x00122fd0  sturb    w8, [x29, #-0x40]
+0x00122fd4  ldr      q0, [x9]
+0x00122fd8  ldur     x9, [x9, #0xe]
+0x00122fdc  stur     q0, [x29, #-0x3f]
+0x00122fe0  stur     x9, [x29, #-0x31]
+0x00122fe4  bl       #0x1229b0
+0x00122fe8  ldurb    w8, [x29, #-0x40]
+0x00122fec  tbz      w8, #0, #0x122ff8
+0x00122ff0  ldur     x0, [x29, #-0x30]
+0x00122ff4  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00122ff8  mov      w0, #0x30
+0x00122ffc  bl       #0x223220  ; -> PLT:_Znwm
+0x00123000  adrp     x9, #0x19000
+0x00123004  adrp     x8, #0x24000
+0x00123008  ldr      q0, [x8, #0x240]
+0x0012300c  add      x9, x9, #0xb37  ; "/dev/selinux/apex_property_contexts"
+0x00123010  mov      w8, #0x7865
+0x00123014  stur     x0, [x29, #-0x30]
+0x00123018  movk     w8, #0x7374, lsl #16
+0x0012301c  strb     wzr, [x0, #0x23]
+0x00123020  stur     q0, [x29, #-0x40]
+0x00123024  ldp      q1, q0, [x9]
+0x00123028  stur     w8, [x0, #0x1f]
+0x0012302c  stp      q1, q0, [x0]
+0x00123030  sub      x0, x29, #0x40
+0x00123034  sub      x1, x29, #0x20
+0x00123038  bl       #0x1229b0
+0x0012303c  ldurb    w8, [x29, #-0x40]
+0x00123040  tbz      w8, #0, #0x12304c
+0x00123044  ldur     x0, [x29, #-0x30]
+0x00123048  bl       #0x223210  ; -> PLT:_ZdlPv
+0x0012304c  mov      w0, #0x20
+0x00123050  stp      xzr, xzr, [x29, #-0x40]
+0x00123054  stur     xzr, [x29, #-0x30]
+0x00123058  stp      xzr, xzr, [sp, #0x38]
+0x0012305c  str      xzr, [sp, #0x48]
+0x00123060  bl       #0x223220  ; -> PLT:_Znwm
+0x00123064  adrp     x8, #0x24000
+0x00123068  ldr      q0, [x8, #0x2d0]
+0x0012306c  adrp     x8, #0x19000
+0x00123070  str      x0, [sp, #0x30]
+0x00123074  add      x8, x8, #0x17f  ; "u:object_r:default_prop:s0"
+0x00123078  strb     wzr, [x0, #0x1a]
+0x0012307c  str      q0, [sp, #0x20]
+0x00123080  mov      w9, #0x676e
+0x00123084  add      x1, sp, #0x20
+0x00123088  add      x2, sp, #8
+0x0012308c  ldr      q1, [x8]
+0x00123090  sub      x3, x29, #0x40
+0x00123094  ldur     q0, [x8, #0xa]
+0x00123098  mov      w8, #0xc
+0x0012309c  add      x4, sp, #0x38
+0x001230a0  stp      xzr, xzr, [sp, #0x10]
+0x001230a4  str      q1, [x0]
+0x001230a8  strb     w8, [sp, #8]
+0x001230ac  mov      w8, #0x7473
+0x001230b0  stur     q0, [x0, #0xa]
+0x001230b4  movk     w8, #0x6972, lsl #16
+0x001230b8  sub      x0, x29, #0x20
+0x001230bc  sturh    w9, [sp, #0xd]
+0x001230c0  strb     wzr, [sp, #0xf]
+0x001230c4  stur     w8, [sp, #9]
+0x001230c8  bl       #0x15b610
+0x001230cc  ldrb     w8, [sp, #8]
+0x001230d0  mov      w19, w0
+0x001230d4  tbnz     w8, #0, #0x123174
+0x001230d8  ldrb     w8, [sp, #0x20]
+0x001230dc  tbnz     w8, #0, #0x123184
+0x001230e0  tbz      w19, #0, #0x123190
+0x001230e4  mov      w0, #0x30
+0x001230e8  bl       #0x223220  ; -> PLT:_Znwm
+0x001230ec  adrp     x9, #0x24000
+0x001230f0  adrp     x8, #0x24000
+0x001230f4  ldr      q0, [x8, #0x3d0]
+0x001230f8  add      x9, x9, #0x93c  ; "/dev/__properties__/property_info"
+0x001230fc  mov      w8, #0x6f
+0x00123100  str      x0, [sp, #0x30]
+0x00123104  add      x1, sp, #0x20
+0x00123108  mov      w2, #0x124
+0x0012310c  str      q0, [sp, #0x20]
+0x00123110  mov      w3, wzr
+0x00123114  ldp      q1, q0, [x9]
+0x00123118  strh     w8, [x0, #0x20]
+0x0012311c  mov      w4, wzr
+0x00123120  mov      w5, wzr
+0x00123124  stp      q1, q0, [x0]
+0x00123128  sub      x0, x29, #0x40
+0x0012312c  bl       #0x2246d0  ; -> PLT:_ZN7android4base17WriteStringToFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_jjjb
+0x00123130  ldrb     w8, [sp, #0x20]
+0x00123134  mov      w19, w0
+0x00123138  tbz      w8, #0, #0x123144
+0x0012313c  ldr      x0, [sp, #0x30]
+0x00123140  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123144  tbnz     w19, #0, #0x123158
+0x00123148  mov      w0, #4
+0x0012314c  mov      x1, xzr
+0x00123150  bl       #0x223230  ; -> PLT:_ZN7android4base9ShouldLogENS0_11LogSeverityEPKc
+0x00123154  tbnz     w0, #0, #0x1232bc
+0x00123158  adrp     x0, #0x24000
+0x0012315c  mov      w1, wzr
+0x00123160  add      x0, x0, #0x93c  ; "/dev/__properties__/property_info"
+0x00123164  bl       #0x223b80  ; -> PLT:selinux_android_restorecon
+0x00123168  ldrb     w8, [sp, #0x38]
+0x0012316c  tbz      w8, #0, #0x1231a8
+0x00123170  b        #0x1232a8
+0x00123174  ldr      x0, [sp, #0x18]
+0x00123178  bl       #0x223210  ; -> PLT:_ZdlPv
+0x0012317c  ldrb     w8, [sp, #0x20]
+0x00123180  tbz      w8, #0, #0x1230e0
+0x00123184  ldr      x0, [sp, #0x30]
+0x00123188  bl       #0x223210  ; -> PLT:_ZdlPv
+0x0012318c  tbnz     w19, #0, #0x1230e4
+0x00123190  mov      w0, #4
+0x00123194  mov      x1, xzr
+0x00123198  bl       #0x223230  ; -> PLT:_ZN7android4base9ShouldLogENS0_11LogSeverityEPKc
+0x0012319c  tbnz     w0, #0, #0x123248
+0x001231a0  ldrb     w8, [sp, #0x38]
+0x001231a4  tbnz     w8, #0, #0x1232a8
+0x001231a8  ldurb    w8, [x29, #-0x40]
+0x001231ac  tbz      w8, #0, #0x1231b8
+0x001231b0  ldur     x0, [x29, #-0x30]
+0x001231b4  bl       #0x223210  ; -> PLT:_ZdlPv
+0x001231b8  ldur     x19, [x29, #-0x20]
+0x001231bc  cbz      x19, #0x123224
+0x001231c0  ldur     x21, [x29, #-0x18]
+0x001231c4  cmp      x21, x19
+0x001231c8  b.ne     #0x1231e0
+0x001231cc  mov      x0, x19
+0x001231d0  b        #0x12321c
+0x001231d4  mov      x21, x22
+0x001231d8  cmp      x22, x19
+0x001231dc  b.eq     #0x123218
+0x001231e0  ldurb    w8, [x21, #-0x20]
+0x001231e4  tbz      w8, #0, #0x1231f0
+0x001231e8  ldur     x0, [x21, #-0x10]
+0x001231ec  bl       #0x223210  ; -> PLT:_ZdlPv
+0x001231f0  ldurb    w8, [x21, #-0x38]
+0x001231f4  tbz      w8, #0, #0x123200
+0x001231f8  ldur     x0, [x21, #-0x28]
+0x001231fc  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123200  ldurb    w8, [x21, #-0x50]
+0x00123204  sub      x22, x21, #0x50
+0x00123208  tbz      w8, #0, #0x1231d4
+0x0012320c  ldur     x0, [x21, #-0x40]
+0x00123210  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123214  b        #0x1231d4
+0x00123218  ldur     x0, [x29, #-0x20]
+0x0012321c  stur     x19, [x29, #-0x18]
+0x00123220  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123224  ldr      x8, [x20, #0x28]
+0x00123228  ldur     x9, [x29, #-8]
+0x0012322c  cmp      x8, x9
+0x00123230  b.ne     #0x123318
+0x00123234  ldp      x20, x19, [sp, #0xb0]
+0x00123238  ldp      x22, x21, [sp, #0xa0]
+0x0012323c  ldp      x29, x30, [sp, #0x90]
+0x00123240  add      sp, sp, #0xc0
+0x00123244  ret      
+0x00123248  bl       #0x223290  ; -> PLT:__errno
+0x0012324c  adrp     x1, #0x1e000
+0x00123250  mov      x19, x0
+0x00123254  ldr      w21, [x0]
+0x00123258  add      x1, x1, #0x558  ; "system/core/init/property_service.cpp"
+0x0012325c  add      x0, sp, #0x20
+0x00123260  mov      w2, #0x647
+0x00123264  mov      w3, #4
+0x00123268  mov      x4, xzr
+0x0012326c  mov      w5, #-1
+0x00123270  bl       #0x2232c0  ; -> PLT:_ZN7android4base10LogMessageC1EPKcjNS0_11LogSeverityES3_i
+0x00123274  add      x0, sp, #0x20
+0x00123278  bl       #0x2232d0  ; -> PLT:_ZN7android4base10LogMessage6streamEv
+0x0012327c  adrp     x1, #0x23000
+0x00123280  mov      w2, #0x27
+0x00123284  add      x1, x1, #1  ; "Unable to serialize property contexts: "
+0x00123288  bl       #0xb42e0  ; -> _ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m
+0x0012328c  add      x1, sp, #0x38
+0x00123290  bl       #0xb0750  ; -> _ZNSt3__1lsIcNS_11char_traitsIcEENS_9allocatorIcEEEERNS_13basic_ostreamIT_T0_EES9_RKNS_12basic_stringIS6_S7_T1_EE
+0x00123294  add      x0, sp, #0x20
+0x00123298  bl       #0x2232f0  ; -> PLT:_ZN7android4base10LogMessageD1Ev
+0x0012329c  str      w21, [x19]
+0x001232a0  ldrb     w8, [sp, #0x38]
+0x001232a4  tbz      w8, #0, #0x1231a8
+0x001232a8  ldr      x0, [sp, #0x48]
+0x001232ac  bl       #0x223210  ; -> PLT:_ZdlPv
+0x001232b0  ldurb    w8, [x29, #-0x40]
+0x001232b4  tbnz     w8, #0, #0x1231b0
+0x001232b8  b        #0x1231b8
+0x001232bc  bl       #0x223290  ; -> PLT:__errno
+0x001232c0  mov      x21, x20
+0x001232c4  ldr      w20, [x0]
+0x001232c8  adrp     x1, #0x1e000
+0x001232cc  mov      x19, x0
+0x001232d0  add      x1, x1, #0x558  ; "system/core/init/property_service.cpp"
+0x001232d4  add      x0, sp, #0x20
+0x001232d8  mov      w2, #0x64d
+0x001232dc  mov      w3, #4
+0x001232e0  mov      x4, xzr
+0x001232e4  mov      w5, w20
+0x001232e8  bl       #0x2232c0  ; -> PLT:_ZN7android4base10LogMessageC1EPKcjNS0_11LogSeverityES3_i
+0x001232ec  add      x0, sp, #0x20
+0x001232f0  bl       #0x2232d0  ; -> PLT:_ZN7android4base10LogMessage6streamEv
+0x001232f4  adrp     x1, #0x17000
+0x001232f8  mov      w2, #0x31
+0x001232fc  add      x1, x1, #0xfa6  ; "Unable to write serialized property infos to file"
+0x00123300  bl       #0xb42e0  ; -> _ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m
+0x00123304  add      x0, sp, #0x20
+0x00123308  bl       #0x2232f0  ; -> PLT:_ZN7android4base10LogMessageD1Ev
+0x0012330c  str      w20, [x19]
+0x00123310  mov      x20, x21
+0x00123314  b        #0x123158
+0x00123318  bl       #0x223200  ; -> PLT:__stack_chk_fail
+0x0012331c  udf      #0
+0x00123320  sub      sp, sp, #0x180
+0x00123324  str      d8, [sp, #0x110]
+0x00123328  stp      x29, x30, [sp, #0x120]
+0x0012332c  add      x29, sp, #0x120
+
+===== FUNKCJA 0x2246f0 = PLT __system_property_area_init (kontekst):
+# /tmp/emu/init-donor [EM_AARCH64]; zakres 0x2246f0-0x224700; symboli: 154
+0x002246f0  adrp     x16, #0x22a000
+0x002246f4  ldr      x17, [x16, #0x6d8]
+0x002246f8  add      x16, x16, #0x6d8  ; "P1""
+0x002246fc  br       x17
+
+===== xref: 'Unable to serialize property contexts':
+string 'Unable to serialize property contexts' @ vaddr: 0x23001
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001231e4  tbz      w8, #0, #0x1231f0
+0x001231e8  ldur     x0, [x21, #-0x10]
+0x001231ec  bl       #0x223210
+0x001231f0  ldurb    w8, [x21, #-0x38]
+0x001231f4  tbz      w8, #0, #0x123200
+0x001231f8  ldur     x0, [x21, #-0x28]
+0x001231fc  bl       #0x223210
+0x00123200  ldurb    w8, [x21, #-0x50]
+0x00123204  sub      x22, x21, #0x50
+0x00123208  tbz      w8, #0, #0x1231d4
+0x0012320c  ldur     x0, [x21, #-0x40]
+0x00123210  bl       #0x223210
+0x00123214  b        #0x1231d4
+0x00123218  ldur     x0, [x29, #-0x20]
+0x0012321c  stur     x19, [x29, #-0x18]
+0x00123220  bl       #0x223210
+0x00123224  ldr      x8, [x20, #0x28]
+0x00123228  ldur     x9, [x29, #-8]
+0x0012322c  cmp      x8, x9
+0x00123230  b.ne     #0x123318
+0x00123234  ldp      x20, x19, [sp, #0xb0]
+0x00123238  ldp      x22, x21, [sp, #0xa0]
+0x0012323c  ldp      x29, x30, [sp, #0x90]
+0x00123240  add      sp, sp, #0xc0
+0x00123244  ret      
+0x00123248  bl       #0x223290
+0x0012324c  adrp     x1, #0x1e000
+0x00123250  mov      x19, x0
+0x00123254  ldr      w21, [x0]
+0x00123258  add      x1, x1, #0x558
+0x0012325c  add      x0, sp, #0x20
+0x00123260  mov      w2, #0x647
+0x00123264  mov      w3, #4
+0x00123268  mov      x4, xzr
+0x0012326c  mov      w5, #-1
+0x00123270  bl       #0x2232c0
+0x00123274  add      x0, sp, #0x20
+0x00123278  bl       #0x2232d0
+0x0012327c  adrp     x1, #0x23000
+0x00123280  mov      w2, #0x27
+0x00123284  add      x1, x1, #1
+0x00123288  bl       #0xb42e0
+0x0012328c  add      x1, sp, #0x38
+0x00123290  bl       #0xb0750
+0x00123294  add      x0, sp, #0x20
+0x00123298  bl       #0x2232f0
+0x0012329c  str      w21, [x19]
+0x001232a0  ldrb     w8, [sp, #0x38]
+0x001232a4  tbz      w8, #0, #0x1231a8
+0x001232a8  ldr      x0, [sp, #0x48]
+0x001232ac  bl       #0x223210
+0x001232b0  ldurb    w8, [x29, #-0x40]
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x0016b3bc  cmp      x20, x22
+0x0016b3c0  b.eq     #0x16b520
+0x0016b3c4  add      x23, x20, #0x1a8
+0x0016b3c8  cmp      x23, x22
+0x0016b3cc  b.eq     #0x16b474
+0x0016b3d0  add      x8, sp, #0xc0
+0x0016b3d4  mov      x24, x20
+0x0016b3d8  orr      x25, x8, #1
+0x0016b3dc  b        #0x16b424
+0x0016b3e0  ldr      x8, [x20, #0x1e8]
+0x0016b3e4  ldur     w9, [sp, #0xc1]
+0x0016b3e8  ldrb     w11, [sp, #0xc5]
+0x0016b3ec  ldr      w10, [x8]
+0x0016b3f0  ldrb     w8, [x8, #4]
+0x0016b3f4  eor      w9, w10, w9
+0x0016b3f8  eor      w8, w8, w11
+0x0016b3fc  orr      w8, w9, w8
+0x0016b400  cbz      w8, #0x16b414
+0x0016b404  mov      x0, x24
+0x0016b408  mov      x1, x23
+0x0016b40c  bl       #0xf7c10
+0x0016b410  add      x24, x24, #0x1a8
+0x0016b414  add      x23, x23, #0x1a8
+0x0016b418  add      x20, x20, #0x1a8
+0x0016b41c  cmp      x23, x22
+0x0016b420  b.eq     #0x16b46c
+0x0016b424  ldrb     w9, [x20, #0x1d8]
+0x0016b428  ldr      x10, [x20, #0x1e0]
+0x0016b42c  lsr      x8, x9, #1
+0x0016b430  tst      w9, #1
+0x0016b434  csel     x10, x8, x10, eq
+0x0016b438  cmp      x10, #5
+0x0016b43c  b.ne     #0x16b404
+0x0016b440  tbnz     w9, #0, #0x16b3e0
+0x0016b444  mov      x9, xzr
+0x0016b448  add      x10, x20, x9
+0x0016b44c  ldrb     w11, [x25, x9]
+0x0016b450  ldrb     w10, [x10, #0x1d9]
+0x0016b454  cmp      w10, w11
+0x0016b458  b.ne     #0x16b404
+0x0016b45c  add      x9, x9, #1
+0x0016b460  cmp      x8, x9
+0x0016b464  b.ne     #0x16b448
+0x0016b468  b        #0x16b414
+0x0016b46c  ldr      x22, [x19, #8]
+0x0016b470  mov      x20, x24
+0x0016b474  cmp      x20, x22
+0x0016b478  b.eq     #0x16b520
+0x0016b47c  mov      x9, #0x4d5
+0x0016b480  sub      x8, x22, x20
+0x0016b484  movk     x9, #0xade3, lsl #16
+0x0016b488  movk     x9, #0x73ec, lsl #32
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x0016b6d8  ldr      x8, [x22], #8
+0x0016b6dc  cmp      x22, x23
+0x0016b6e0  ldrh     w9, [x8, #0x1a0]
+0x0016b6e4  orr      w9, w9, #0x8000
+0x0016b6e8  strh     w9, [x8, #0x1a0]
+0x0016b6ec  b.ne     #0x16b6bc
+0x0016b6f0  ldp      x22, x24, [x19]
+0x0016b6f4  cmp      x22, x24
+0x0016b6f8  b.ne     #0x16b70c
+0x0016b6fc  b        #0x16b95c
+0x0016b700  add      x22, x22, #0x1a8
+0x0016b704  cmp      x22, x24
+0x0016b708  b.eq     #0x16b94c
+0x0016b70c  mov      x9, x22
+0x0016b710  ldrb     w11, [sp, #0x80]
+0x0016b714  ldr      x13, [sp, #0x88]
+0x0016b718  ldrb     w10, [x9, #0x30]!
+0x0016b71c  ldr      x12, [x9, #8]
+0x0016b720  lsr      x8, x10, #1
+0x0016b724  tst      w10, #1
+0x0016b728  csel     x2, x8, x12, eq
+0x0016b72c  lsr      x12, x11, #1
+0x0016b730  tst      w11, #1
+0x0016b734  csel     x12, x12, x13, eq
+0x0016b738  cmp      x2, x12
+0x0016b73c  b.ne     #0x16b700
+0x0016b740  ldr      x12, [x22, #0x40]
+0x0016b744  tst      w10, #1
+0x0016b748  ldr      x13, [sp, #0x90]
+0x0016b74c  csinc    x0, x12, x9, ne
+0x0016b750  tst      w11, #1
+0x0016b754  csel     x1, x21, x13, eq
+0x0016b758  tbnz     w10, #0, #0x16b788
+0x0016b75c  cbz      x2, #0x16b794
+0x0016b760  mov      x9, xzr
+0x0016b764  add      x10, x22, x9
+0x0016b768  ldrb     w11, [x1, x9]
+0x0016b76c  ldrb     w10, [x10, #0x31]
+0x0016b770  cmp      w10, w11
+0x0016b774  b.ne     #0x16b700
+0x0016b778  add      x9, x9, #1
+0x0016b77c  cmp      x8, x9
+0x0016b780  b.ne     #0x16b764
+0x0016b784  b        #0x16b794
+0x0016b788  cbz      x2, #0x16b794
+0x0016b78c  bl       #0x2234b0
+0x0016b790  cbnz     w0, #0x16b700
+0x0016b794  mov      x0, x22
+0x0016b798  ldrb     w8, [x0, #0x48]!
+0x0016b79c  ldr      x9, [x0, #8]
+0x0016b7a0  lsr      x10, x8, #1
+0x0016b7a4  tst      w8, #1
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x0016b96c  ldr      x25, [x19]
+0x0016b970  tst      w8, #1
+0x0016b974  lsr      x8, x8, #1
+0x0016b978  csel     x22, x8, x9, eq
+0x0016b97c  csel     x24, x21, x10, eq
+0x0016b980  stp      q0, q0, [x26, #0x180]
+0x0016b984  stp      q0, q0, [x26, #0x160]
+0x0016b988  stp      q0, q0, [x26, #0x140]
+0x0016b98c  stp      q0, q0, [x26, #0x120]
+0x0016b990  stp      q0, q0, [x26, #0x100]
+0x0016b994  stp      q0, q0, [x26, #0xe0]
+0x0016b998  stp      q0, q0, [x26, #0xc0]
+0x0016b99c  stp      q0, q0, [x26, #0xa0]
+0x0016b9a0  stp      q0, q0, [x26, #0x80]
+0x0016b9a4  stp      q0, q0, [x26, #0x60]
+0x0016b9a8  stp      q0, q0, [x26, #0x40]
+0x0016b9ac  str      q0, [x26, #0x30]
+0x0016b9b0  stp      q0, q0, [sp, #0xd0]
+0x0016b9b4  str      q0, [sp, #0xc0]
+0x0016b9b8  b        #0x16b9c0
+0x0016b9bc  add      x25, x25, #0x1a8
+0x0016b9c0  mov      x10, x25
+0x0016b9c4  ldrb     w9, [x10, #0x30]!
+0x0016b9c8  ldr      x11, [x10, #8]
+0x0016b9cc  lsr      x8, x9, #1
+0x0016b9d0  tst      w9, #1
+0x0016b9d4  csel     x11, x8, x11, eq
+0x0016b9d8  cmp      x11, x22
+0x0016b9dc  b.ne     #0x16b9bc
+0x0016b9e0  ldr      x11, [x25, #0x40]
+0x0016b9e4  tst      w9, #1
+0x0016b9e8  csinc    x0, x11, x10, ne
+0x0016b9ec  tbnz     w9, #0, #0x16ba1c
+0x0016b9f0  cbz      x22, #0x16ba30
+0x0016b9f4  mov      x9, xzr
+0x0016b9f8  add      x10, x25, x9
+0x0016b9fc  ldrb     w11, [x24, x9]
+0x0016ba00  ldrb     w10, [x10, #0x31]
+0x0016ba04  cmp      w10, w11
+0x0016ba08  b.ne     #0x16b9bc
+0x0016ba0c  add      x9, x9, #1
+0x0016ba10  cmp      x8, x9
+0x0016ba14  b.ne     #0x16b9f8
+0x0016ba18  b        #0x16ba30
+0x0016ba1c  cbz      x22, #0x16ba30
+0x0016ba20  mov      x1, x24
+0x0016ba24  mov      x2, x22
+0x0016ba28  bl       #0x2234b0
+0x0016ba2c  cbnz     w0, #0x16b9bc
+0x0016ba30  add      x0, sp, #0xc0
+0x0016ba34  mov      x1, x25
+0x0016ba38  bl       #0x13f340
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x0016ba38  bl       #0x13f340
+0x0016ba3c  adrp     x1, #0x22000
+0x0016ba40  ldr      x0, [sp, #0x60]
+0x0016ba44  add      x1, x1, #0x829
+0x0016ba48  bl       #0x223570
+0x0016ba4c  ldp      x23, x25, [x19]
+0x0016ba50  cmp      x25, x23
+0x0016ba54  b.eq     #0x16bb40
+0x0016ba58  ldp      x9, x10, [sp, #0x88]
+0x0016ba5c  ldrb     w8, [sp, #0x80]
+0x0016ba60  lsr      x11, x8, #1
+0x0016ba64  tst      w8, #1
+0x0016ba68  csel     x24, x11, x9, eq
+0x0016ba6c  csel     x22, x21, x10, eq
+0x0016ba70  b        #0x16ba80
+0x0016ba74  sub      x25, x25, #0x1a8
+0x0016ba78  cmp      x25, x23
+0x0016ba7c  b.eq     #0x16bb3c
+0x0016ba80  sub      x9, x25, #0x178
+0x0016ba84  sub      x8, x25, #0x170
+0x0016ba88  ldrb     w10, [x9]
+0x0016ba8c  ldr      x11, [x8]
+0x0016ba90  lsr      x8, x10, #1
+0x0016ba94  tst      w10, #1
+0x0016ba98  csel     x11, x8, x11, eq
+0x0016ba9c  cmp      x11, x24
+0x0016baa0  b.ne     #0x16ba74
+0x0016baa4  sub      x11, x25, #0x168
+0x0016baa8  tst      w10, #1
+0x0016baac  ldr      x11, [x11]
+0x0016bab0  csinc    x0, x11, x9, ne
+0x0016bab4  tbnz     w10, #0, #0x16bae8
+0x0016bab8  cbz      x24, #0x16bb40
+0x0016babc  mov      x9, xzr
+0x0016bac0  add      x10, x25, x9
+0x0016bac4  ldrb     w11, [x22, x9]
+0x0016bac8  sub      x10, x10, #0x177
+0x0016bacc  ldrb     w10, [x10]
+0x0016bad0  cmp      w10, w11
+0x0016bad4  b.ne     #0x16ba74
+0x0016bad8  add      x9, x9, #1
+0x0016badc  cmp      x8, x9
+0x0016bae0  b.ne     #0x16bac0
+0x0016bae4  b        #0x16bb40
+0x0016bae8  cbz      x24, #0x16bb40
+0x0016baec  mov      x1, x22
+0x0016baf0  mov      x2, x24
+0x0016baf4  bl       #0x2234b0
+0x0016baf8  cbnz     w0, #0x16ba74
+0x0016bafc  b        #0x16bb40
+0x0016bb00  mov      x0, x19
+0x0016bb04  bl       #0x171d30
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x0016bc5c  bl       #0x223450
+0x0016bc60  mov      w0, #0xc
+0x0016bc64  bl       #0x223450
+0x0016bc68  bl       #0x223200
+0x0016bc6c  udf      #0
+0x0016bc70  stp      x29, x30, [sp, #-0x30]!
+0x0016bc74  stp      x22, x21, [sp, #0x10]
+0x0016bc78  mov      x29, sp
+0x0016bc7c  stp      x20, x19, [sp, #0x20]
+0x0016bc80  cbz      x0, #0x16bd24
+0x0016bc84  ldp      x9, x10, [x1, #8]
+0x0016bc88  ldrb     w8, [x1]
+0x0016bc8c  ldp      x19, x22, [x0]
+0x0016bc90  lsr      x11, x8, #1
+0x0016bc94  tst      w8, #1
+0x0016bc98  csel     x20, x11, x9, eq
+0x0016bc9c  csinc    x21, x10, x1, ne
+0x0016bca0  b        #0x16bca8
+0x0016bca4  add      x19, x19, #0x1a8
+0x0016bca8  cmp      x19, x22
+0x0016bcac  b.eq     #0x16bd24
+0x0016bcb0  mov      x9, x19
+0x0016bcb4  ldrb     w10, [x9, #0x30]!
+0x0016bcb8  ldr      x11, [x9, #8]
+0x0016bcbc  lsr      x8, x10, #1
+0x0016bcc0  tst      w10, #1
+0x0016bcc4  csel     x11, x8, x11, eq
+0x0016bcc8  cmp      x11, x20
+0x0016bccc  b.ne     #0x16bca4
+0x0016bcd0  ldr      x11, [x19, #0x40]
+0x0016bcd4  tst      w10, #1
+0x0016bcd8  csinc    x0, x11, x9, ne
+0x0016bcdc  tbnz     w10, #0, #0x16bd0c
+0x0016bce0  cbz      x20, #0x16bd28
+0x0016bce4  mov      x9, xzr
+0x0016bce8  add      x10, x19, x9
+0x0016bcec  ldrb     w11, [x21, x9]
+0x0016bcf0  ldrb     w10, [x10, #0x31]
+0x0016bcf4  cmp      w10, w11
+0x0016bcf8  b.ne     #0x16bca4
+0x0016bcfc  add      x9, x9, #1
+0x0016bd00  cmp      x8, x9
+0x0016bd04  b.ne     #0x16bce8
+0x0016bd08  b        #0x16bd28
+0x0016bd0c  cbz      x20, #0x16bd28
+0x0016bd10  mov      x1, x21
+0x0016bd14  mov      x2, x20
+0x0016bd18  bl       #0x2234b0
+0x0016bd1c  cbnz     w0, #0x16bca4
+0x0016bd20  b        #0x16bd28
+0x0016bd24  mov      x19, xzr
+0x0016bd28  mov      x0, x19
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x0016be90  cbz      x0, #0x16bf70
+0x0016be94  ldp      x22, x23, [x0]
+0x0016be98  cmp      x22, x23
+0x0016be9c  b.eq     #0x16bf70
+0x0016bea0  mov      x19, x1
+0x0016bea4  add      x24, x1, #1
+0x0016bea8  b        #0x16bec4
+0x0016beac  mov      x1, sp
+0x0016beb0  mov      x0, x20
+0x0016beb4  bl       #0x173ec0
+0x0016beb8  add      x22, x22, #0x1a8
+0x0016bebc  cmp      x22, x23
+0x0016bec0  b.eq     #0x16bf70
+0x0016bec4  mov      x9, x22
+0x0016bec8  ldrb     w11, [x19]
+0x0016becc  ldr      x13, [x19, #8]
+0x0016bed0  ldrb     w10, [x9, #0x30]!
+0x0016bed4  ldr      x12, [x9, #8]
+0x0016bed8  lsr      x8, x10, #1
+0x0016bedc  tst      w10, #1
+0x0016bee0  csel     x2, x8, x12, eq
+0x0016bee4  lsr      x12, x11, #1
+0x0016bee8  tst      w11, #1
+0x0016beec  csel     x12, x12, x13, eq
+0x0016bef0  cmp      x2, x12
+0x0016bef4  b.ne     #0x16beb8
+0x0016bef8  ldr      x12, [x22, #0x40]
+0x0016befc  tst      w10, #1
+0x0016bf00  ldr      x13, [x19, #0x10]
+0x0016bf04  csinc    x0, x12, x9, ne
+0x0016bf08  tst      w11, #1
+0x0016bf0c  csel     x1, x24, x13, eq
+0x0016bf10  tbnz     w10, #0, #0x16bf40
+0x0016bf14  cbz      x2, #0x16bf4c
+0x0016bf18  mov      x9, xzr
+0x0016bf1c  add      x10, x22, x9
+0x0016bf20  ldrb     w11, [x1, x9]
+0x0016bf24  ldrb     w10, [x10, #0x31]
+0x0016bf28  cmp      w10, w11
+0x0016bf2c  b.ne     #0x16beb8
+0x0016bf30  add      x9, x9, #1
+0x0016bf34  cmp      x8, x9
+0x0016bf38  b.ne     #0x16bf1c
+0x0016bf3c  b        #0x16bf4c
+0x0016bf40  cbz      x2, #0x16bf4c
+0x0016bf44  bl       #0x2234b0
+0x0016bf48  cbnz     w0, #0x16beb8
+0x0016bf4c  ldp      x8, x9, [x20, #8]
+0x0016bf50  str      x22, [sp]
+0x0016bf54  cmp      x8, x9
+0x0016bf58  b.hs     #0x16beac
+0x0016bf5c  str      x22, [x8]
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x0017bec0  ldrb     w8, [sp, #0x10]
+0x0017bec4  orr      x10, x21, #1
+0x0017bec8  ldr      x9, [sp, #0x20]
+0x0017becc  mov      w1, #0x8000
+0x0017bed0  movk     w1, #8, lsl #16
+0x0017bed4  tst      w8, #1
+0x0017bed8  csel     x0, x10, x9, eq
+0x0017bedc  bl       #0x223810
+0x0017bee0  mov      w8, #-1
+0x0017bee4  mov      w1, w0
+0x0017bee8  add      x0, sp, #8
+0x0017beec  mov      x2, xzr
+0x0017bef0  str      w8, [sp, #8]
+0x0017bef4  bl       #0xb45d0
+0x0017bef8  ldr      w1, [sp, #8]
+0x0017befc  tbnz     w1, #0x1f, #0x17bf90
+0x0017bf00  mov      x0, x20
+0x0017bf04  bl       #0x21ee90
+0x0017bf08  tbz      w0, #0, #0x17bff0
+0x0017bf0c  ldr      x8, [x20, #0x10]
+0x0017bf10  ldrb     w11, [x19]
+0x0017bf14  ldr      x13, [x19, #8]
+0x0017bf18  ldrb     w10, [x8]
+0x0017bf1c  ldr      x12, [x8, #8]
+0x0017bf20  lsr      x9, x10, #1
+0x0017bf24  tst      w10, #1
+0x0017bf28  csel     x2, x9, x12, eq
+0x0017bf2c  lsr      x12, x11, #1
+0x0017bf30  tst      w11, #1
+0x0017bf34  csel     x12, x12, x13, eq
+0x0017bf38  cmp      x2, x12
+0x0017bf3c  b.ne     #0x17c014
+0x0017bf40  ldr      x12, [x8, #0x10]
+0x0017bf44  tst      w10, #1
+0x0017bf48  ldr      x13, [x19, #0x10]
+0x0017bf4c  csinc    x0, x12, x8, ne
+0x0017bf50  tst      w11, #1
+0x0017bf54  csinc    x1, x13, x19, ne
+0x0017bf58  tbnz     w10, #0, #0x17c008
+0x0017bf5c  cbz      x2, #0x17c050
+0x0017bf60  add      x8, x8, #1
+0x0017bf64  sub      x9, x9, #1
+0x0017bf68  ldrb     w10, [x8], #1
+0x0017bf6c  ldrb     w11, [x1], #1
+0x0017bf70  sub      x12, x9, #1
+0x0017bf74  cmp      w10, w11
+0x0017bf78  ccmp     x9, #0, #4, eq
+0x0017bf7c  mov      x9, x12
+0x0017bf80  b.ne     #0x17bf68
+0x0017bf84  cmp      w10, w11
+0x0017bf88  b.ne     #0x17c014
+0x0017bf8c  b        #0x17c050
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001bcddc  ldr      w11, [x8, x10]
+0x001bcde0  add      w11, w11, #1
+0x001bcde4  str      w11, [x8, x10]
+0x001bcde8  ldr      x9, [x8, #0xb00]
+0x001bcdec  add      x9, x9, #1
+0x001bcdf0  str      x9, [x8, #0xb00]
+0x001bcdf4  ldp      x9, x8, [sp, #0x118]
+0x001bcdf8  add      x8, x8, #1
+0x001bcdfc  cmp      x8, x9
+0x001bce00  str      x8, [sp, #0x120]
+0x001bce04  b.ne     #0x1bce14
+0x001bce08  add      x0, sp, #0xe0
+0x001bce0c  mov      w1, wzr
+0x001bce10  bl       #0x1bf950
+0x001bce14  cbnz     w25, #0x1bcea4
+0x001bce18  and      x25, x28, #0x1ffffff
+0x001bce1c  cbz      w25, #0x1bce78
+0x001bce20  cmp      w27, #0x80
+0x001bce24  b.lo     #0x1bce78
+0x001bce28  ldr      x8, [sp, #0x88]
+0x001bce2c  mov      w11, #0x890
+0x001bce30  ldr      x9, [sp, #0xa8]
+0x001bce34  and      x10, x23, #0x3ff
+0x001bce38  madd     x8, x9, x11, x8
+0x001bce3c  lsl      x9, x10, #2
+0x001bce40  ldr      w10, [x8, x9]
+0x001bce44  add      w10, w10, #1
+0x001bce48  str      w10, [x8, x9]
+0x001bce4c  ldr      x9, [x8, #0x880]
+0x001bce50  add      x9, x9, #1
+0x001bce54  str      x9, [x8, #0x880]
+0x001bce58  ldp      x9, x8, [sp, #0x98]
+0x001bce5c  add      x8, x8, #1
+0x001bce60  cmp      x8, x9
+0x001bce64  str      x8, [sp, #0xa0]
+0x001bce68  b.ne     #0x1bce78
+0x001bce6c  add      x0, sp, #0x60
+0x001bce70  mov      w1, wzr
+0x001bce74  bl       #0x1c01f0
+0x001bce78  ldr      x8, [sp, #0x48]
+0x001bce7c  add      x22, x22, #1
+0x001bce80  cmp      x22, x8
+0x001bce84  b.eq     #0x1bcefc
+0x001bce88  ldr      x23, [sp, #0x108]
+0x001bce8c  add      x20, x20, x25
+0x001bce90  ldr      x8, [sp, #0x128]
+0x001bce94  b        #0x1bcdbc
+0x001bce98  add      x20, x20, #1
+0x001bce9c  subs     x25, x25, #1
+0x001bcea0  b.eq     #0x1bce18
+0x001bcea4  and      x8, x20, x19
+0x001bcea8  ldr      x9, [sp, #0x188]
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001c3028  add      x14, x8, #8
+0x001c302c  orr      x8, x9, #8
+0x001c3030  mov      w28, #0x410
+0x001c3034  ldr      x9, [sp, #0xe0]
+0x001c3038  str      xzr, [sp, #0x148]
+0x001c303c  stp      x8, x10, [sp, #0x88]
+0x001c3040  mov      x8, x15
+0x001c3044  str      x9, [sp, #0xc0]
+0x001c3048  b        #0x1c3064
+0x001c304c  add      x19, x0, x19
+0x001c3050  add      x13, x13, #0x40
+0x001c3054  add      x14, x14, #0x100
+0x001c3058  ldr      x8, [sp, #0xc8]
+0x001c305c  cmp      x13, x15
+0x001c3060  b.hs     #0x1c3768
+0x001c3064  subs     x9, x8, #0x40
+0x001c3068  mov      w10, #0x40
+0x001c306c  csel     x8, x8, x10, lo
+0x001c3070  stp      x25, x16, [sp, #0x120]
+0x001c3074  add      x25, sp, #0xf60
+0x001c3078  stp      x14, x19, [sp, #0xd0]
+0x001c307c  str      x9, [sp, #0xc8]
+0x001c3080  sub      x9, x15, x13
+0x001c3084  cmp      x9, #0x40
+0x001c3088  stp      x8, x13, [sp, #0x138]
+0x001c308c  csel     x8, x9, x10, lo
+0x001c3090  str      x8, [sp, #0x118]
+0x001c3094  cbz      x8, #0x1c3158
+0x001c3098  mov      x22, xzr
+0x001c309c  b        #0x1c30dc
+0x001c30a0  mov      x0, x19
+0x001c30a4  add      x23, x19, #0x408
+0x001c30a8  bl       #0x1ca0b0
+0x001c30ac  lsl      x8, x22, #2
+0x001c30b0  add      x9, sp, #0xe60
+0x001c30b4  str      d0, [x23]
+0x001c30b8  str      w22, [x9, x8]
+0x001c30bc  add      x9, sp, #0xd60
+0x001c30c0  str      w22, [x9, x8]
+0x001c30c4  ldr      x9, [sp, #0x138]
+0x001c30c8  add      x22, x22, #1
+0x001c30cc  cmp      x22, x9
+0x001c30d0  mov      w9, #1
+0x001c30d4  str      w9, [x25, x8]
+0x001c30d8  b.eq     #0x1c3158
+0x001c30dc  madd     x19, x22, x28, x27
+0x001c30e0  mov      w1, wzr
+0x001c30e4  mov      w2, #0x400
+0x001c30e8  mov      x0, x19
+0x001c30ec  bl       #0x223430
+0x001c30f0  ldr      x8, [sp, #0x140]
+0x001c30f4  mov      x9, #0x7ff0000000000000
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001cfc0c  ldrb     w30, [x5, x22]
+0x001cfc10  ldr      x21, [x19, #0x400]
+0x001cfc14  lsl      x30, x30, #2
+0x001cfc18  add      x21, x21, #1
+0x001cfc1c  ldr      w11, [x19, x30]
+0x001cfc20  str      x21, [x19, #0x400]
+0x001cfc24  add      w11, w11, #1
+0x001cfc28  str      w11, [x19, x30]
+0x001cfc2c  ldrb     w30, [x5, x22]
+0x001cfc30  add      x22, x6, #1
+0x001cfc34  b.ne     #0x1cfc60
+0x001cfc38  mov      w19, w30
+0x001cfc3c  mov      x6, x22
+0x001cfc40  mov      w14, w30
+0x001cfc44  mov      w22, w4
+0x001cfc48  mov      x29, x23
+0x001cfc4c  b        #0x1cfd84
+0x001cfc50  mov      w30, w22
+0x001cfc54  b        #0x1cff88
+0x001cfc58  mov      w14, w4
+0x001cfc5c  b        #0x1cfd84
+0x001cfc60  cbz      x28, #0x1cffd0
+0x001cfc64  mov      x19, x26
+0x001cfc68  cbz      x16, #0x1cfc90
+0x001cfc6c  ldr      w11, [x16, x26, lsl #2]
+0x001cfc70  lsl      x19, x26, #6
+0x001cfc74  lsl      w11, w11, #9
+0x001cfc78  add      x11, x25, x11
+0x001cfc7c  add      x4, x11, w4, uxtb
+0x001cfc80  ldrb     w11, [x11, x30]
+0x001cfc84  ldrb     w4, [x4, #0x100]
+0x001cfc88  orr      w11, w4, w11
+0x001cfc8c  add      x19, x19, w11, uxtb
+0x001cfc90  and      x11, x22, x7
+0x001cfc94  madd     x19, x19, x24, x17
+0x001cfc98  sub      x28, x28, #1
+0x001cfc9c  cmp      x14, #2
+0x001cfca0  ldrb     w4, [x5, x11]
+0x001cfca4  ldr      x22, [x19, #0x400]
+0x001cfca8  lsl      x4, x4, #2
+0x001cfcac  add      x22, x22, #1
+0x001cfcb0  ldr      w21, [x19, x4]
+0x001cfcb4  str      x22, [x19, #0x400]
+0x001cfcb8  add      w21, w21, #1
+0x001cfcbc  str      w21, [x19, x4]
+0x001cfcc0  add      x4, x6, #2
+0x001cfcc4  ldrb     w22, [x5, x11]
+0x001cfcc8  b.ne     #0x1cfd04
+0x001cfccc  sub      x29, x29, #2
+0x001cfcd0  mov      w19, w22
+0x001cfcd4  mov      x6, x4
+0x001cfcd8  mov      w4, w30
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001d0114  stp      x24, x23, [sp, #0xb0]
+0x001d0118  stp      x22, x21, [sp, #0xc0]
+0x001d011c  stp      x20, x19, [sp, #0xd0]
+0x001d0120  mrs      x8, tpidr_el0
+0x001d0124  add      x9, sp, #0x38
+0x001d0128  stp      x0, x8, [sp, #0x28]
+0x001d012c  add      x12, x0, x1, lsl #2
+0x001d0130  movi     v0.2d, #0000000000000000
+0x001d0134  adrp     x21, #0x90000
+0x001d0138  movi     v1.2d, #0xffffffffffffffff
+0x001d013c  ldr      x11, [x8, #0x28]
+0x001d0140  add      x10, x9, #4
+0x001d0144  sub      x8, x1, #1
+0x001d0148  and      x28, x1, #3
+0x001d014c  and      x23, x1, #0xfffffffffffffffc
+0x001d0150  sub      x14, x12, #8
+0x001d0154  add      x15, x3, #8
+0x001d0158  add      x16, x3, #0x10
+0x001d015c  add      x17, x3, #0x18
+0x001d0160  add      x0, x3, #0x20
+0x001d0164  mov      w6, #1
+0x001d0168  mov      x7, #-1
+0x001d016c  mov      w30, #-1
+0x001d0170  mov      w20, #0xffff
+0x001d0174  add      x21, x21, #0x248
+0x001d0178  stur     x11, [x29, #-8]
+0x001d017c  stp      x23, x8, [sp, #0x10]
+0x001d0180  str      x14, [sp, #8]
+0x001d0184  cbz      x1, #0x1d0cd4
+0x001d0188  cmp      x8, #3
+0x001d018c  b.hs     #0x1d0328
+0x001d0190  mov      x22, xzr
+0x001d0194  mov      x13, x1
+0x001d0198  cbz      x28, #0x1d0230
+0x001d019c  sub      x11, x13, #1
+0x001d01a0  ldr      x8, [sp, #0x28]
+0x001d01a4  ldr      w12, [x8, x11, lsl #2]
+0x001d01a8  cbz      w12, #0x1d01c8
+0x001d01ac  cmp      w12, w6
+0x001d01b0  add      x14, x3, x22, lsl #3
+0x001d01b4  add      x22, x22, #1
+0x001d01b8  csel     w12, w12, w6, hi
+0x001d01bc  strh     w20, [x14, #4]
+0x001d01c0  str      w12, [x14]
+0x001d01c4  strh     w11, [x14, #6]
+0x001d01c8  cmp      x28, #1
+0x001d01cc  b.eq     #0x1d0230
+0x001d01d0  sub      x11, x13, #2
+0x001d01d4  ldr      x8, [sp, #0x28]
+0x001d01d8  ldr      w12, [x8, x11, lsl #2]
+0x001d01dc  cbz      w12, #0x1d01fc
+0x001d01e0  cmp      w12, w6
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001d0148  and      x28, x1, #3
+0x001d014c  and      x23, x1, #0xfffffffffffffffc
+0x001d0150  sub      x14, x12, #8
+0x001d0154  add      x15, x3, #8
+0x001d0158  add      x16, x3, #0x10
+0x001d015c  add      x17, x3, #0x18
+0x001d0160  add      x0, x3, #0x20
+0x001d0164  mov      w6, #1
+0x001d0168  mov      x7, #-1
+0x001d016c  mov      w30, #-1
+0x001d0170  mov      w20, #0xffff
+0x001d0174  add      x21, x21, #0x248
+0x001d0178  stur     x11, [x29, #-8]
+0x001d017c  stp      x23, x8, [sp, #0x10]
+0x001d0180  str      x14, [sp, #8]
+0x001d0184  cbz      x1, #0x1d0cd4
+0x001d0188  cmp      x8, #3
+0x001d018c  b.hs     #0x1d0328
+0x001d0190  mov      x22, xzr
+0x001d0194  mov      x13, x1
+0x001d0198  cbz      x28, #0x1d0230
+0x001d019c  sub      x11, x13, #1
+0x001d01a0  ldr      x8, [sp, #0x28]
+0x001d01a4  ldr      w12, [x8, x11, lsl #2]
+0x001d01a8  cbz      w12, #0x1d01c8
+0x001d01ac  cmp      w12, w6
+0x001d01b0  add      x14, x3, x22, lsl #3
+0x001d01b4  add      x22, x22, #1
+0x001d01b8  csel     w12, w12, w6, hi
+0x001d01bc  strh     w20, [x14, #4]
+0x001d01c0  str      w12, [x14]
+0x001d01c4  strh     w11, [x14, #6]
+0x001d01c8  cmp      x28, #1
+0x001d01cc  b.eq     #0x1d0230
+0x001d01d0  sub      x11, x13, #2
+0x001d01d4  ldr      x8, [sp, #0x28]
+0x001d01d8  ldr      w12, [x8, x11, lsl #2]
+0x001d01dc  cbz      w12, #0x1d01fc
+0x001d01e0  cmp      w12, w6
+0x001d01e4  add      x14, x3, x22, lsl #3
+0x001d01e8  add      x22, x22, #1
+0x001d01ec  csel     w12, w12, w6, hi
+0x001d01f0  strh     w20, [x14, #4]
+0x001d01f4  str      w12, [x14]
+0x001d01f8  strh     w11, [x14, #6]
+0x001d01fc  cmp      x28, #2
+0x001d0200  b.eq     #0x1d0230
+0x001d0204  sub      x11, x13, #3
+0x001d0208  ldr      x8, [sp, #0x28]
+0x001d020c  ldr      w12, [x8, x11, lsl #2]
+0x001d0210  cbz      w12, #0x1d0230
+0x001d0214  cmp      w12, w6
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001d017c  stp      x23, x8, [sp, #0x10]
+0x001d0180  str      x14, [sp, #8]
+0x001d0184  cbz      x1, #0x1d0cd4
+0x001d0188  cmp      x8, #3
+0x001d018c  b.hs     #0x1d0328
+0x001d0190  mov      x22, xzr
+0x001d0194  mov      x13, x1
+0x001d0198  cbz      x28, #0x1d0230
+0x001d019c  sub      x11, x13, #1
+0x001d01a0  ldr      x8, [sp, #0x28]
+0x001d01a4  ldr      w12, [x8, x11, lsl #2]
+0x001d01a8  cbz      w12, #0x1d01c8
+0x001d01ac  cmp      w12, w6
+0x001d01b0  add      x14, x3, x22, lsl #3
+0x001d01b4  add      x22, x22, #1
+0x001d01b8  csel     w12, w12, w6, hi
+0x001d01bc  strh     w20, [x14, #4]
+0x001d01c0  str      w12, [x14]
+0x001d01c4  strh     w11, [x14, #6]
+0x001d01c8  cmp      x28, #1
+0x001d01cc  b.eq     #0x1d0230
+0x001d01d0  sub      x11, x13, #2
+0x001d01d4  ldr      x8, [sp, #0x28]
+0x001d01d8  ldr      w12, [x8, x11, lsl #2]
+0x001d01dc  cbz      w12, #0x1d01fc
+0x001d01e0  cmp      w12, w6
+0x001d01e4  add      x14, x3, x22, lsl #3
+0x001d01e8  add      x22, x22, #1
+0x001d01ec  csel     w12, w12, w6, hi
+0x001d01f0  strh     w20, [x14, #4]
+0x001d01f4  str      w12, [x14]
+0x001d01f8  strh     w11, [x14, #6]
+0x001d01fc  cmp      x28, #2
+0x001d0200  b.eq     #0x1d0230
+0x001d0204  sub      x11, x13, #3
+0x001d0208  ldr      x8, [sp, #0x28]
+0x001d020c  ldr      w12, [x8, x11, lsl #2]
+0x001d0210  cbz      w12, #0x1d0230
+0x001d0214  cmp      w12, w6
+0x001d0218  add      x13, x3, x22, lsl #3
+0x001d021c  add      x22, x22, #1
+0x001d0220  csel     w12, w12, w6, hi
+0x001d0224  strh     w20, [x13, #4]
+0x001d0228  str      w12, [x13]
+0x001d022c  strh     w11, [x13, #6]
+0x001d0230  subs     x13, x22, #1
+0x001d0234  b.eq     #0x1d0cec
+0x001d0238  str      x0, [sp, #0x20]
+0x001d023c  mov      x0, x28
+0x001d0240  cmp      x22, #0xc
+0x001d0244  b.hi     #0x1d03e4
+0x001d0248  subs     x11, x22, #2
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001d02b0  b.eq     #0x1d0278
+0x001d02b4  b.hi     #0x1d0288
+0x001d02b8  cmp      x14, #1
+0x001d02bc  str      x11, [x3, x5, lsl #3]
+0x001d02c0  b.eq     #0x1d076c
+0x001d02c4  add      x5, x23, #1
+0x001d02c8  mov      x19, x13
+0x001d02cc  ldr      x11, [x3, x5, lsl #3]
+0x001d02d0  b        #0x1d0300
+0x001d02d4  add      x8, x3, x19
+0x001d02d8  lsr      x12, x11, #0x30
+0x001d02dc  ldrsh    w8, [x8, #6]
+0x001d02e0  cmp      w8, w12, sxth
+0x001d02e4  b.ge     #0x1d0310
+0x001d02e8  ldr      x8, [x3, x19]
+0x001d02ec  sub      x12, x5, #1
+0x001d02f0  sub      x19, x19, #8
+0x001d02f4  str      x8, [x3, x5, lsl #3]
+0x001d02f8  mov      x5, x12
+0x001d02fc  cbz      x12, #0x1d0310
+0x001d0300  ldr      w8, [x3, x19]
+0x001d0304  cmp      w8, w11
+0x001d0308  b.eq     #0x1d02d4
+0x001d030c  b.hi     #0x1d02e8
+0x001d0310  cmp      x14, #2
+0x001d0314  str      x11, [x3, x5, lsl #3]
+0x001d0318  b.eq     #0x1d076c
+0x001d031c  add      x14, x23, #2
+0x001d0320  ldr      x11, [x3, x14, lsl #3]
+0x001d0324  b        #0x1d0754
+0x001d0328  mov      x22, xzr
+0x001d032c  mov      x13, x1
+0x001d0330  b        #0x1d0340
+0x001d0334  sub      x23, x23, #4
+0x001d0338  sub      x14, x14, #0x10
+0x001d033c  cbz      x23, #0x1d0198
+0x001d0340  ldr      w11, [x14, #4]
+0x001d0344  cbz      w11, #0x1d0368
+0x001d0348  cmp      w11, w6
+0x001d034c  add      x12, x3, x22, lsl #3
+0x001d0350  add      x22, x22, #1
+0x001d0354  csel     w11, w11, w6, hi
+0x001d0358  sub      x5, x13, #1
+0x001d035c  strh     w20, [x12, #4]
+0x001d0360  str      w11, [x12]
+0x001d0364  strh     w5, [x12, #6]
+0x001d0368  ldr      w11, [x14]
+0x001d036c  cbz      w11, #0x1d0390
+0x001d0370  cmp      w11, w6
+0x001d0374  add      x12, x3, x22, lsl #3
+0x001d0378  add      x22, x22, #1
+0x001d037c  csel     w11, w11, w6, hi
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001d02d8  lsr      x12, x11, #0x30
+0x001d02dc  ldrsh    w8, [x8, #6]
+0x001d02e0  cmp      w8, w12, sxth
+0x001d02e4  b.ge     #0x1d0310
+0x001d02e8  ldr      x8, [x3, x19]
+0x001d02ec  sub      x12, x5, #1
+0x001d02f0  sub      x19, x19, #8
+0x001d02f4  str      x8, [x3, x5, lsl #3]
+0x001d02f8  mov      x5, x12
+0x001d02fc  cbz      x12, #0x1d0310
+0x001d0300  ldr      w8, [x3, x19]
+0x001d0304  cmp      w8, w11
+0x001d0308  b.eq     #0x1d02d4
+0x001d030c  b.hi     #0x1d02e8
+0x001d0310  cmp      x14, #2
+0x001d0314  str      x11, [x3, x5, lsl #3]
+0x001d0318  b.eq     #0x1d076c
+0x001d031c  add      x14, x23, #2
+0x001d0320  ldr      x11, [x3, x14, lsl #3]
+0x001d0324  b        #0x1d0754
+0x001d0328  mov      x22, xzr
+0x001d032c  mov      x13, x1
+0x001d0330  b        #0x1d0340
+0x001d0334  sub      x23, x23, #4
+0x001d0338  sub      x14, x14, #0x10
+0x001d033c  cbz      x23, #0x1d0198
+0x001d0340  ldr      w11, [x14, #4]
+0x001d0344  cbz      w11, #0x1d0368
+0x001d0348  cmp      w11, w6
+0x001d034c  add      x12, x3, x22, lsl #3
+0x001d0350  add      x22, x22, #1
+0x001d0354  csel     w11, w11, w6, hi
+0x001d0358  sub      x5, x13, #1
+0x001d035c  strh     w20, [x12, #4]
+0x001d0360  str      w11, [x12]
+0x001d0364  strh     w5, [x12, #6]
+0x001d0368  ldr      w11, [x14]
+0x001d036c  cbz      w11, #0x1d0390
+0x001d0370  cmp      w11, w6
+0x001d0374  add      x12, x3, x22, lsl #3
+0x001d0378  add      x22, x22, #1
+0x001d037c  csel     w11, w11, w6, hi
+0x001d0380  sub      x5, x13, #2
+0x001d0384  strh     w20, [x12, #4]
+0x001d0388  str      w11, [x12]
+0x001d038c  strh     w5, [x12, #6]
+0x001d0390  ldur     w11, [x14, #-4]
+0x001d0394  cbz      w11, #0x1d03b8
+0x001d0398  cmp      w11, w6
+0x001d039c  add      x12, x3, x22, lsl #3
+0x001d03a0  add      x22, x22, #1
+0x001d03a4  csel     w11, w11, w6, hi
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001d0300  ldr      w8, [x3, x19]
+0x001d0304  cmp      w8, w11
+0x001d0308  b.eq     #0x1d02d4
+0x001d030c  b.hi     #0x1d02e8
+0x001d0310  cmp      x14, #2
+0x001d0314  str      x11, [x3, x5, lsl #3]
+0x001d0318  b.eq     #0x1d076c
+0x001d031c  add      x14, x23, #2
+0x001d0320  ldr      x11, [x3, x14, lsl #3]
+0x001d0324  b        #0x1d0754
+0x001d0328  mov      x22, xzr
+0x001d032c  mov      x13, x1
+0x001d0330  b        #0x1d0340
+0x001d0334  sub      x23, x23, #4
+0x001d0338  sub      x14, x14, #0x10
+0x001d033c  cbz      x23, #0x1d0198
+0x001d0340  ldr      w11, [x14, #4]
+0x001d0344  cbz      w11, #0x1d0368
+0x001d0348  cmp      w11, w6
+0x001d034c  add      x12, x3, x22, lsl #3
+0x001d0350  add      x22, x22, #1
+0x001d0354  csel     w11, w11, w6, hi
+0x001d0358  sub      x5, x13, #1
+0x001d035c  strh     w20, [x12, #4]
+0x001d0360  str      w11, [x12]
+0x001d0364  strh     w5, [x12, #6]
+0x001d0368  ldr      w11, [x14]
+0x001d036c  cbz      w11, #0x1d0390
+0x001d0370  cmp      w11, w6
+0x001d0374  add      x12, x3, x22, lsl #3
+0x001d0378  add      x22, x22, #1
+0x001d037c  csel     w11, w11, w6, hi
+0x001d0380  sub      x5, x13, #2
+0x001d0384  strh     w20, [x12, #4]
+0x001d0388  str      w11, [x12]
+0x001d038c  strh     w5, [x12, #6]
+0x001d0390  ldur     w11, [x14, #-4]
+0x001d0394  cbz      w11, #0x1d03b8
+0x001d0398  cmp      w11, w6
+0x001d039c  add      x12, x3, x22, lsl #3
+0x001d03a0  add      x22, x22, #1
+0x001d03a4  csel     w11, w11, w6, hi
+0x001d03a8  sub      x5, x13, #3
+0x001d03ac  strh     w20, [x12, #4]
+0x001d03b0  str      w11, [x12]
+0x001d03b4  strh     w5, [x12, #6]
+0x001d03b8  ldur     w11, [x14, #-8]
+0x001d03bc  sub      x13, x13, #4
+0x001d03c0  cbz      w11, #0x1d0334
+0x001d03c4  cmp      w11, w6
+0x001d03c8  add      x12, x3, x22, lsl #3
+0x001d03cc  add      x22, x22, #1
+===== xref -> 0x23001 (kontekst -40..+12) =====
+0x001d032c  mov      x13, x1
+0x001d0330  b        #0x1d0340
+0x001d0334  sub      x23, x23, #4
+0x001d0338  sub      x14, x14, #0x10
+0x001d033c  cbz      x23, #0x1d0198
+0x001d0340  ldr      w11, [x14, #4]
+0x001d0344  cbz      w11, #0x1d0368
+0x001d0348  cmp      w11, w6
+0x001d034c  add      x12, x3, x22, lsl #3
+0x001d0350  add      x22, x22, #1
+0x001d0354  csel     w11, w11, w6, hi
+0x001d0358  sub      x5, x13, #1
+0x001d035c  strh     w20, [x12, #4]
+0x001d0360  str      w11, [x12]
+0x001d0364  strh     w5, [x12, #6]
+0x001d0368  ldr      w11, [x14]
+0x001d036c  cbz      w11, #0x1d0390
+0x001d0370  cmp      w11, w6
+0x001d0374  add      x12, x3, x22, lsl #3
+0x001d0378  add      x22, x22, #1
+0x001d037c  csel     w11, w11, w6, hi
+0x001d0380  sub      x5, x13, #2
+0x001d0384  strh     w20, [x12, #4]
+0x001d0388  str      w11, [x12]
+0x001d038c  strh     w5, [x12, #6]
+0x001d0390  ldur     w11, [x14, #-4]
+0x001d0394  cbz      w11, #0x1d03b8
+0x001d0398  cmp      w11, w6
+0x001d039c  add      x12, x3, x22, lsl #3
+0x001d03a0  add      x22, x22, #1
+0x001d03a4  csel     w11, w11, w6, hi
+0x001d03a8  sub      x5, x13, #3
+0x001d03ac  strh     w20, [x12, #4]
+0x001d03b0  str      w11, [x12]
+0x001d03b4  strh     w5, [x12, #6]
+0x001d03b8  ldur     w11, [x14, #-8]
+0x001d03bc  sub      x13, x13, #4
+0x001d03c0  cbz      w11, #0x1d0334
+0x001d03c4  cmp      w11, w6
+0x001d03c8  add      x12, x3, x22, lsl #3
+0x001d03cc  add      x22, x22, #1
+0x001d03d0  csel     w11, w11, w6, hi
+0x001d03d4  strh     w20, [x12, #4]
+0x001d03d8  str      w11, [x12]
+0x001d03dc  strh     w13, [x12, #6]
+0x001d03e0  b        #0x1d0334
+0x001d03e4  cmp      x22, #0x39
+0x001d03e8  cset     w11, lo
+0x001d03ec  lsl      x23, x11, #1
+0x001d03f0  b        #0x1d0400
+0x001d03f4  add      x23, x23, #1
+0x001d03f8  cmp      x23, #6
+
+===== xref: 'Unable to write serialized property infos to file':
+string 'Unable to write serialized property infos to file' @ vaddr: 0x17fa6
+===== xref -> 0x17fa6 (kontekst -40..+12) =====
+0x0012325c  add      x0, sp, #0x20
+0x00123260  mov      w2, #0x647
+0x00123264  mov      w3, #4
+0x00123268  mov      x4, xzr
+0x0012326c  mov      w5, #-1
+0x00123270  bl       #0x2232c0
+0x00123274  add      x0, sp, #0x20
+0x00123278  bl       #0x2232d0
+0x0012327c  adrp     x1, #0x23000
+0x00123280  mov      w2, #0x27
+0x00123284  add      x1, x1, #1
+0x00123288  bl       #0xb42e0
+0x0012328c  add      x1, sp, #0x38
+0x00123290  bl       #0xb0750
+0x00123294  add      x0, sp, #0x20
+0x00123298  bl       #0x2232f0
+0x0012329c  str      w21, [x19]
+0x001232a0  ldrb     w8, [sp, #0x38]
+0x001232a4  tbz      w8, #0, #0x1231a8
+0x001232a8  ldr      x0, [sp, #0x48]
+0x001232ac  bl       #0x223210
+0x001232b0  ldurb    w8, [x29, #-0x40]
+0x001232b4  tbnz     w8, #0, #0x1231b0
+0x001232b8  b        #0x1231b8
+0x001232bc  bl       #0x223290
+0x001232c0  mov      x21, x20
+0x001232c4  ldr      w20, [x0]
+0x001232c8  adrp     x1, #0x1e000
+0x001232cc  mov      x19, x0
+0x001232d0  add      x1, x1, #0x558
+0x001232d4  add      x0, sp, #0x20
+0x001232d8  mov      w2, #0x64d
+0x001232dc  mov      w3, #4
+0x001232e0  mov      x4, xzr
+0x001232e4  mov      w5, w20
+0x001232e8  bl       #0x2232c0
+0x001232ec  add      x0, sp, #0x20
+0x001232f0  bl       #0x2232d0
+0x001232f4  adrp     x1, #0x17000
+0x001232f8  mov      w2, #0x31
+0x001232fc  add      x1, x1, #0xfa6
+0x00123300  bl       #0xb42e0
+0x00123304  add      x0, sp, #0x20
+0x00123308  bl       #0x2232f0
+0x0012330c  str      w20, [x19]
+0x00123310  mov      x20, x21
+0x00123314  b        #0x123158
+0x00123318  bl       #0x223200
+0x0012331c  udf      #0
+0x00123320  sub      sp, sp, #0x180
+0x00123324  str      d8, [sp, #0x110]
+0x00123328  stp      x29, x30, [sp, #0x120]
+
+===== xref: 'setupOneLgsiProperty' (kod Lenovo lgsi):
+string 'setupOneLgsiProperty' @ vaddr: 0x12323
+===== xref -> 0x12323 (kontekst -40..+12) =====
+0x0012f258  tbz      w8, #0, #0x12f264
+0x0012f25c  ldur     x0, [x29, #-0x10]
+0x0012f260  bl       #0x223210
+0x0012f264  ldr      x8, [x25, #0x28]
+0x0012f268  ldur     x9, [x29, #-8]
+0x0012f26c  cmp      x8, x9
+0x0012f270  b.ne     #0x12f330
+0x0012f274  ldp      x20, x19, [sp, #0xd0]
+0x0012f278  ldp      x22, x21, [sp, #0xc0]
+0x0012f27c  ldp      x24, x23, [sp, #0xb0]
+0x0012f280  ldp      x26, x25, [sp, #0xa0]
+0x0012f284  ldp      x29, x30, [sp, #0x80]
+0x0012f288  ldr      x27, [sp, #0x90]
+0x0012f28c  add      sp, sp, #0xe0
+0x0012f290  ret      
+0x0012f294  ldr      x0, [sp, #0x40]
+0x0012f298  bl       #0x223210
+0x0012f29c  ldurb    w8, [x29, #-0x38]
+0x0012f2a0  tbz      w8, #0, #0x12f254
+0x0012f2a4  ldur     x0, [x29, #-0x28]
+0x0012f2a8  bl       #0x223210
+0x0012f2ac  ldurb    w8, [x29, #-0x20]
+0x0012f2b0  tbnz     w8, #0, #0x12f25c
+0x0012f2b4  b        #0x12f264
+0x0012f2b8  bl       #0x223290
+0x0012f2bc  adrp     x1, #0x16000
+0x0012f2c0  adrp     x4, #0x1d000
+0x0012f2c4  mov      x24, x0
+0x0012f2c8  ldr      w26, [x0]
+0x0012f2cc  add      x1, x1, #0x48e
+0x0012f2d0  add      x4, x4, #0x8d9
+0x0012f2d4  sub      x0, x29, #0x20
+0x0012f2d8  mov      w2, #0xfd
+0x0012f2dc  mov      w3, #2
+0x0012f2e0  mov      w5, #-1
+0x0012f2e4  bl       #0x2232c0
+0x0012f2e8  sub      x0, x29, #0x20
+0x0012f2ec  bl       #0x2232d0
+0x0012f2f0  adrp     x1, #0x12000
+0x0012f2f4  mov      w2, #0x15
+0x0012f2f8  add      x1, x1, #0x323
+0x0012f2fc  bl       #0xb42e0
+0x0012f300  mov      x1, x23
+0x0012f304  bl       #0xb0750
+0x0012f308  adrp     x1, #0x21000
+0x0012f30c  mov      w2, #1
+0x0012f310  add      x1, x1, #0xb9c
+0x0012f314  bl       #0xb42e0
+0x0012f318  sub      x0, x29, #0x20
+0x0012f31c  bl       #0x2232f0
+0x0012f320  str      w26, [x24]
+0x0012f324  b        #0x12f044
+===== xref -> 0x12323 (kontekst -40..+12) =====
+0x0012ff80  ldur     x0, [x29, #-0x58]
+0x0012ff84  bl       #0x223210
+0x0012ff88  ldurb    w8, [x29, #-0x50]
+0x0012ff8c  tbz      w8, #0, #0x12ff98
+0x0012ff90  ldur     x0, [x29, #-0x40]
+0x0012ff94  bl       #0x223210
+0x0012ff98  ldurb    w8, [x29, #-0x38]
+0x0012ff9c  tbz      w8, #0, #0x12ffa8
+0x0012ffa0  ldur     x0, [x29, #-0x28]
+0x0012ffa4  bl       #0x223210
+0x0012ffa8  ldr      x8, [x21, #0x28]
+0x0012ffac  ldur     x9, [x29, #-0x20]
+0x0012ffb0  cmp      x8, x9
+0x0012ffb4  b.ne     #0x130070
+0x0012ffb8  ldp      x20, x19, [sp, #0x180]
+0x0012ffbc  ldp      x22, x21, [sp, #0x170]
+0x0012ffc0  ldp      x24, x23, [sp, #0x160]
+0x0012ffc4  ldp      x26, x25, [sp, #0x150]
+0x0012ffc8  ldp      x28, x27, [sp, #0x140]
+0x0012ffcc  ldp      x29, x30, [sp, #0x130]
+0x0012ffd0  ldr      d8, [sp, #0x120]
+0x0012ffd4  add      sp, sp, #0x190
+0x0012ffd8  ret      
+0x0012ffdc  bl       #0x223290
+0x0012ffe0  adrp     x1, #0x16000
+0x0012ffe4  adrp     x4, #0x1d000
+0x0012ffe8  mov      w22, w25
+0x0012ffec  mov      x25, x0
+0x0012fff0  ldr      w19, [x0]
+0x0012fff4  add      x1, x1, #0x48e
+0x0012fff8  add      x4, x4, #0x8d9
+0x0012fffc  sub      x0, x29, #0x38
+0x00130000  mov      w2, #0xc0
+0x00130004  mov      w3, #2
+0x00130008  mov      w5, #-1
+0x0013000c  bl       #0x2232c0
+0x00130010  sub      x0, x29, #0x38
+0x00130014  bl       #0x2232d0
+0x00130018  adrp     x1, #0x12000
+0x0013001c  mov      w2, #0x15
+0x00130020  add      x1, x1, #0x323
+0x00130024  bl       #0xb42e0
+0x00130028  ldr      x1, [sp, #0x30]
+0x0013002c  bl       #0xb0750
+0x00130030  adrp     x1, #0x17000
+0x00130034  mov      w2, #1
+0x00130038  add      x1, x1, #0x237
+0x0013003c  bl       #0xb42e0
+0x00130040  mov      x1, x20
+0x00130044  bl       #0xb0750
+0x00130048  adrp     x1, #0x21000
+0x0013004c  mov      w2, #1
+
+===== xref: 'Failed to initialize property area':
+string 'Failed to initialize property area' @ vaddr: 0x1e59a
+===== xref -> 0x1e59a (kontekst -40..+12) =====
+0x00123a24  bl       #0x11e9c0
+0x00123a28  ldrb     w8, [sp, #0x30]
+0x00123a2c  tbz      w8, #0, #0x123a38
+0x00123a30  ldr      x0, [sp, #0x40]
+0x00123a34  bl       #0x223210
+0x00123a38  ldrb     w8, [sp, #0x48]
+0x00123a3c  tbz      w8, #0, #0x12384c
+0x00123a40  ldr      x0, [sp, #0x58]
+0x00123a44  bl       #0x223210
+0x00123a48  b        #0x12384c
+0x00123a4c  bl       #0x11eb50
+0x00123a50  ldr      x8, [sp, #0x10]
+0x00123a54  ldr      x8, [x8, #0x28]
+0x00123a58  ldur     x9, [x29, #-0x28]
+0x00123a5c  cmp      x8, x9
+0x00123a60  b.ne     #0x123b48
+0x00123a64  ldp      x20, x19, [sp, #0x170]
+0x00123a68  ldp      x22, x21, [sp, #0x160]
+0x00123a6c  ldp      x24, x23, [sp, #0x150]
+0x00123a70  ldp      x26, x25, [sp, #0x140]
+0x00123a74  ldp      x28, x27, [sp, #0x130]
+0x00123a78  ldp      x29, x30, [sp, #0x120]
+0x00123a7c  ldr      d8, [sp, #0x110]
+0x00123a80  add      sp, sp, #0x180
+0x00123a84  ret      
+0x00123a88  bl       #0x223290
+0x00123a8c  adrp     x1, #0x1e000
+0x00123a90  mov      x19, x0
+0x00123a94  ldr      w20, [x0]
+0x00123a98  add      x1, x1, #0x558
+0x00123a9c  add      x0, sp, #0x60
+0x00123aa0  mov      w2, #0x69c
+0x00123aa4  mov      w3, #6
+0x00123aa8  mov      x4, xzr
+0x00123aac  mov      w5, #-1
+0x00123ab0  bl       #0x2232c0
+0x00123ab4  add      x0, sp, #0x60
+0x00123ab8  bl       #0x2232d0
+0x00123abc  adrp     x1, #0x1e000
+0x00123ac0  mov      w2, #0x22
+0x00123ac4  add      x1, x1, #0x59a
+0x00123ac8  bl       #0xb42e0
+0x00123acc  add      x0, sp, #0x60
+0x00123ad0  bl       #0x2232f0
+0x00123ad4  str      w20, [x19]
+0x00123ad8  b        #0x123390
+0x00123adc  bl       #0x223290
+0x00123ae0  adrp     x1, #0x1e000
+0x00123ae4  mov      x19, x0
+0x00123ae8  ldr      w20, [x0]
+0x00123aec  add      x1, x1, #0x558
+0x00123af0  add      x0, sp, #0x60
+
+===== xref: 'Failed to load serialized property info file':
+string 'Failed to load serialized property info file' @ vaddr: 0x1dc29
+===== xref -> 0x1dc29 (kontekst -40..+12) =====
+0x00123a78  ldp      x29, x30, [sp, #0x120]
+0x00123a7c  ldr      d8, [sp, #0x110]
+0x00123a80  add      sp, sp, #0x180
+0x00123a84  ret      
+0x00123a88  bl       #0x223290
+0x00123a8c  adrp     x1, #0x1e000
+0x00123a90  mov      x19, x0
+0x00123a94  ldr      w20, [x0]
+0x00123a98  add      x1, x1, #0x558
+0x00123a9c  add      x0, sp, #0x60
+0x00123aa0  mov      w2, #0x69c
+0x00123aa4  mov      w3, #6
+0x00123aa8  mov      x4, xzr
+0x00123aac  mov      w5, #-1
+0x00123ab0  bl       #0x2232c0
+0x00123ab4  add      x0, sp, #0x60
+0x00123ab8  bl       #0x2232d0
+0x00123abc  adrp     x1, #0x1e000
+0x00123ac0  mov      w2, #0x22
+0x00123ac4  add      x1, x1, #0x59a
+0x00123ac8  bl       #0xb42e0
+0x00123acc  add      x0, sp, #0x60
+0x00123ad0  bl       #0x2232f0
+0x00123ad4  str      w20, [x19]
+0x00123ad8  b        #0x123390
+0x00123adc  bl       #0x223290
+0x00123ae0  adrp     x1, #0x1e000
+0x00123ae4  mov      x19, x0
+0x00123ae8  ldr      w20, [x0]
+0x00123aec  add      x1, x1, #0x558
+0x00123af0  add      x0, sp, #0x60
+0x00123af4  mov      w2, #0x69f
+0x00123af8  mov      w3, #6
+0x00123afc  mov      x4, xzr
+0x00123b00  mov      w5, #-1
+0x00123b04  bl       #0x2232c0
+0x00123b08  add      x0, sp, #0x60
+0x00123b0c  bl       #0x2232d0
+0x00123b10  adrp     x1, #0x1d000
+0x00123b14  mov      w2, #0x2c
+0x00123b18  add      x1, x1, #0xc29
+0x00123b1c  bl       #0xb42e0
+0x00123b20  add      x0, sp, #0x60
+0x00123b24  bl       #0x2232f0
+0x00123b28  str      w20, [x19]
+0x00123b2c  b        #0x1233b0
+0x00123b30  add      x0, sp, #0x30
+0x00123b34  bl       #0x223340
+0x00123b38  add      x0, sp, #0x18
+0x00123b3c  bl       #0x223340
+0x00123b40  add      x0, sp, #0x48
+0x00123b44  bl       #0x223340
+
+===== PropertyInit GLOWA (0x123330-0x123700):
+# /tmp/emu/init-donor [EM_AARCH64]; zakres 0x123330-0x123700; symboli: 154
+0x00123330  stp      x28, x27, [sp, #0x130]
+0x00123334  stp      x26, x25, [sp, #0x140]
+0x00123338  stp      x24, x23, [sp, #0x150]
+0x0012333c  stp      x22, x21, [sp, #0x160]
+0x00123340  stp      x20, x19, [sp, #0x170]
+0x00123344  mrs      x8, tpidr_el0
+0x00123348  adrp     x1, #0x123000
+0x0012334c  str      x8, [sp, #0x10]
+0x00123350  add      x1, x1, #0xb50
+0x00123354  ldr      x8, [x8, #0x28]
+0x00123358  mov      w0, #1
+0x0012335c  stur     x8, [x29, #-0x28]
+0x00123360  bl       #0x2246e0  ; -> PLT:selinux_set_callback
+0x00123364  adrp     x0, #0x1c000
+0x00123368  mov      w1, #0x1c9
+0x0012336c  add      x0, x0, #0x1f1  ; "/dev/__properties__"
+0x00123370  bl       #0x223890  ; -> PLT:mkdir
+0x00123374  bl       #0x122bf0
+0x00123378  bl       #0x2246f0  ; -> PLT:__system_property_area_init
+0x0012337c  cbz      w0, #0x123390
+0x00123380  mov      w0, #6
+0x00123384  mov      x1, xzr
+0x00123388  bl       #0x223230  ; -> PLT:_ZN7android4base9ShouldLogENS0_11LogSeverityEPKc
+0x0012338c  tbnz     w0, #0, #0x123a88
+0x00123390  adrp     x0, #0x22c000
+0x00123394  add      x0, x0, #0x710
+0x00123398  bl       #0x162ed0
+0x0012339c  tbnz     w0, #0, #0x1233b0
+0x001233a0  mov      w0, #6
+0x001233a4  mov      x1, xzr
+0x001233a8  bl       #0x223230  ; -> PLT:_ZN7android4base9ShouldLogENS0_11LogSeverityEPKc
+0x001233ac  tbnz     w0, #0, #0x123adc
+0x001233b0  mov      w9, #0x656c
+0x001233b4  adrp     x10, #0x1e000
+0x001233b8  mov      w8, #0x14
+0x001233bc  add      x10, x10, #0x653  ; "compatible"
+0x001233c0  stp      xzr, xzr, [sp, #0x68]
+0x001233c4  add      x0, sp, #0x60
+0x001233c8  sturh    w9, [sp, #0x69]
+0x001233cc  adrp     x9, #0x20000
+0x001233d0  strb     w8, [sp, #0x60]
+0x001233d4  ldr      x8, [x10]
+0x001233d8  add      x9, x9, #0x51a  ; "android,firmware"
+0x001233dc  add      x1, sp, #0x48
+0x001233e0  str      xzr, [sp, #0x58]
+0x001233e4  stur     x8, [sp, #0x61]
+0x001233e8  mov      w8, #0x20
+0x001233ec  ldr      q0, [x9]
+0x001233f0  strb     w8, [sp, #0x48]
+0x001233f4  stur     q0, [sp, #0x49]
+0x001233f8  bl       #0xc3f50
+0x001233fc  ldrb     w8, [sp, #0x48]
+0x00123400  mov      w19, w0
+0x00123404  tbnz     w8, #0, #0x123418
+0x00123408  ldrb     w8, [sp, #0x60]
+0x0012340c  tbnz     w8, #0, #0x123428
+0x00123410  tbnz     w19, #0, #0x123434
+0x00123414  b        #0x123768
+0x00123418  ldr      x0, [sp, #0x58]
+0x0012341c  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123420  ldrb     w8, [sp, #0x60]
+0x00123424  tbz      w8, #0, #0x123410
+0x00123428  ldr      x0, [sp, #0x70]
+0x0012342c  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123430  tbz      w19, #0, #0x123768
+0x00123434  bl       #0xc3aa0
+0x00123438  ldrb     w8, [x0]
+0x0012343c  ldr      x9, [x0, #0x10]
+0x00123440  tst      w8, #1
+0x00123444  csinc    x0, x9, x0, ne
+0x00123448  bl       #0x223a90  ; -> PLT:opendir
+0x0012344c  cbz      x0, #0x123768
+0x00123450  mov      x19, x0
+0x00123454  stp      xzr, xzr, [sp, #0x60]
+0x00123458  str      xzr, [sp, #0x70]
+0x0012345c  bl       #0x223aa0  ; -> PLT:readdir
+0x00123460  cbz      x0, #0x123760
+0x00123464  add      x8, sp, #0x48
+0x00123468  add      x9, sp, #0x60
+0x0012346c  add      x10, sp, #0x18
+0x00123470  movi     v8.8b, #0x2c
+0x00123474  adrp     x20, #0x1e000
+0x00123478  orr      x11, x8, #1
+0x0012347c  orr      x8, x9, #1
+0x00123480  add      x21, x10, #8
+0x00123484  mov      w28, #0x2e
+0x00123488  add      x20, x20, #0x653  ; "compatible"
+0x0012348c  stp      x11, x8, [sp]
+0x00123490  b        #0x1234a0
+0x00123494  mov      x0, x19
+0x00123498  bl       #0x223aa0  ; -> PLT:readdir
+0x0012349c  cbz      x0, #0x123750
+0x001234a0  ldrb     w8, [x0, #0x12]
+0x001234a4  cmp      w8, #8
+0x001234a8  b.ne     #0x123494
+0x001234ac  add      x22, x0, #0x13
+0x001234b0  mov      x1, x20
+0x001234b4  mov      x0, x22
+0x001234b8  bl       #0x2231c0  ; -> PLT:strcmp
+0x001234bc  cbz      w0, #0x123494
+0x001234c0  adrp     x1, #0x18000
+0x001234c4  mov      x0, x22
+0x001234c8  add      x1, x1, #0xe  ; "name"
+0x001234cc  bl       #0x2231c0  ; -> PLT:strcmp
+0x001234d0  cbz      w0, #0x123494
+0x001234d4  stp      xzr, xzr, [sp, #0x48]
+0x001234d8  str      xzr, [sp, #0x58]
+0x001234dc  bl       #0xc3aa0
+0x001234e0  stp      xzr, xzr, [sp, #0x50]
+0x001234e4  mov      x25, x0
+0x001234e8  str      xzr, [sp, #0x48]
+0x001234ec  ldr      x26, [x0, #8]
+0x001234f0  ldrb     w24, [x0]
+0x001234f4  mov      x0, x22
+0x001234f8  lsr      x27, x24, #1
+0x001234fc  bl       #0x223240  ; -> PLT:strlen
+0x00123500  ldr      x8, [x25, #0x10]
+0x00123504  tst      w24, #1
+0x00123508  csel     x24, x27, x26, eq
+0x0012350c  csinc    x25, x8, x25, ne
+0x00123510  add      x8, x24, x0
+0x00123514  cmn      x8, #0x10
+0x00123518  b.hs     #0x123b40
+0x0012351c  mov      x23, x0
+0x00123520  cmp      x8, #0x16
+0x00123524  b.hi     #0x12353c
+0x00123528  lsl      w8, w24, #1
+0x0012352c  ldr      x26, [sp]
+0x00123530  strb     w8, [sp, #0x48]
+0x00123534  cbnz     x24, #0x123560
+0x00123538  b        #0x123570
+0x0012353c  add      x8, x8, #0x10
+0x00123540  and      x27, x8, #0xfffffffffffffff0
+0x00123544  mov      x0, x27
+0x00123548  bl       #0x223220  ; -> PLT:_Znwm
+0x0012354c  mov      x26, x0
+0x00123550  orr      x8, x27, #1
+0x00123554  stp      x24, x0, [sp, #0x50]
+0x00123558  str      x8, [sp, #0x48]
+0x0012355c  cbz      x24, #0x123570
+0x00123560  mov      x0, x26
+0x00123564  mov      x1, x25
+0x00123568  mov      x2, x24
+0x0012356c  bl       #0x223250  ; -> PLT:memcpy
+0x00123570  add      x0, sp, #0x48
+0x00123574  mov      x1, x22
+0x00123578  mov      x2, x23
+0x0012357c  strb     wzr, [x26, x24]
+0x00123580  bl       #0x223490  ; -> PLT:_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKcm
+0x00123584  add      x0, sp, #0x48
+0x00123588  add      x1, sp, #0x60
+0x0012358c  mov      w2, wzr
+0x00123590  bl       #0x2238c0  ; -> PLT:_ZN7android4base16ReadFileToStringERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_b
+0x00123594  ldrb     w8, [sp, #0x60]
+0x00123598  ldp      x9, x10, [sp, #0x68]
+0x0012359c  tst      w8, #1
+0x001235a0  lsr      x8, x8, #1
+0x001235a4  csel     x9, x8, x9, eq
+0x001235a8  ldr      x8, [sp, #8]
+0x001235ac  csel     x10, x8, x10, eq
+0x001235b0  cbz      x9, #0x123690
+0x001235b4  mov      x8, x10
+0x001235b8  cmp      x9, #8
+0x001235bc  b.lo     #0x123728
+0x001235c0  and      x11, x9, #0xfffffffffffffff8
+0x001235c4  add      x12, x10, #3
+0x001235c8  add      x8, x10, x11
+0x001235cc  mov      x13, x11
+0x001235d0  b        #0x1235e0
+0x001235d4  subs     x13, x13, #8
+0x001235d8  add      x12, x12, #8
+0x001235dc  b.eq     #0x123688
+0x001235e0  ldur     d0, [x12, #-3]
+0x001235e4  cmeq     v0.8b, v0.8b, v8.8b
+0x001235e8  umov     w14, v0.b[0]
+0x001235ec  tbnz     w14, #0, #0x12362c
+0x001235f0  umov     w14, v0.b[1]
+0x001235f4  tbnz     w14, #0, #0x123638
+0x001235f8  umov     w14, v0.b[2]
+0x001235fc  tbnz     w14, #0, #0x123644
+0x00123600  umov     w14, v0.b[3]
+0x00123604  tbnz     w14, #0, #0x123650
+0x00123608  umov     w14, v0.b[4]
+0x0012360c  tbnz     w14, #0, #0x12365c
+0x00123610  umov     w14, v0.b[5]
+0x00123614  tbnz     w14, #0, #0x123668
+0x00123618  umov     w14, v0.b[6]
+0x0012361c  tbnz     w14, #0, #0x123674
+0x00123620  umov     w14, v0.b[7]
+0x00123624  tbz      w14, #0, #0x1235d4
+0x00123628  b        #0x123680
+0x0012362c  sturb    w28, [x12, #-3]
+0x00123630  umov     w14, v0.b[1]
+0x00123634  tbz      w14, #0, #0x1235f8
+0x00123638  sturb    w28, [x12, #-2]
+0x0012363c  umov     w14, v0.b[2]
+0x00123640  tbz      w14, #0, #0x123600
+0x00123644  sturb    w28, [x12, #-1]
+0x00123648  umov     w14, v0.b[3]
+0x0012364c  tbz      w14, #0, #0x123608
+0x00123650  strb     w28, [x12]
+0x00123654  umov     w14, v0.b[4]
+0x00123658  tbz      w14, #0, #0x123610
+0x0012365c  strb     w28, [x12, #1]
+0x00123660  umov     w14, v0.b[5]
+0x00123664  tbz      w14, #0, #0x123618
+0x00123668  strb     w28, [x12, #2]
+0x0012366c  umov     w14, v0.b[6]
+0x00123670  tbz      w14, #0, #0x123620
+0x00123674  strb     w28, [x12, #3]
+0x00123678  umov     w14, v0.b[7]
+0x0012367c  tbz      w14, #0, #0x1235d4
+0x00123680  strb     w28, [x12, #4]
+0x00123684  b        #0x1235d4
+0x00123688  cmp      x9, x11
+0x0012368c  b.ne     #0x123728
+0x00123690  mov      w8, #0x10
+0x00123694  add      x0, sp, #0x18
+0x00123698  mov      x1, x22
+0x0012369c  stp      xzr, xzr, [x21]
+0x001236a0  strb     w8, [sp, #0x18]
+0x001236a4  mov      x8, #0x6f72
+0x001236a8  movk     x8, #0x622e, lsl #16
+0x001236ac  movk     x8, #0x6f6f, lsl #32
+0x001236b0  movk     x8, #0x2e74, lsl #48
+0x001236b4  stur     x8, [sp, #0x19]
+0x001236b8  bl       #0x223480  ; -> PLT:_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKc
+0x001236bc  ldr      q0, [x0]
+0x001236c0  add      x1, sp, #0x60
+0x001236c4  ldr      x8, [x0, #0x10]
+0x001236c8  str      q0, [sp, #0x30]
+0x001236cc  str      x8, [sp, #0x40]
+0x001236d0  stp      xzr, xzr, [x0, #8]
+0x001236d4  str      xzr, [x0]
+0x001236d8  add      x0, sp, #0x30
+0x001236dc  bl       #0x11e9c0
+0x001236e0  ldrb     w8, [sp, #0x30]
+0x001236e4  tbnz     w8, #0, #0x1236fc
+0x001236e8  ldrb     w8, [sp, #0x18]
+0x001236ec  tbnz     w8, #0, #0x12370c
+0x001236f0  ldrb     w8, [sp, #0x48]
+0x001236f4  tbz      w8, #0, #0x123494
+0x001236f8  b        #0x12371c
+0x001236fc  ldr      x0, [sp, #0x40]
+
+===== PropertyInit OGON (0x123700-0x123ad8):
+# /tmp/emu/init-donor [EM_AARCH64]; zakres 0x123700-0x123ad8; symboli: 154
+0x00123700  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123704  ldrb     w8, [sp, #0x18]
+0x00123708  tbz      w8, #0, #0x1236f0
+0x0012370c  ldr      x0, [sp, #0x28]
+0x00123710  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123714  ldrb     w8, [sp, #0x48]
+0x00123718  tbz      w8, #0, #0x123494
+0x0012371c  ldr      x0, [sp, #0x58]
+0x00123720  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123724  b        #0x123494
+0x00123728  add      x9, x10, x9
+0x0012372c  b        #0x12373c
+0x00123730  add      x8, x8, #1
+0x00123734  cmp      x8, x9
+0x00123738  b.eq     #0x123690
+0x0012373c  ldrb     w10, [x8]
+0x00123740  cmp      w10, #0x2c
+0x00123744  b.ne     #0x123730
+0x00123748  strb     w28, [x8]
+0x0012374c  b        #0x123730
+0x00123750  ldrb     w8, [sp, #0x60]
+0x00123754  tbz      w8, #0, #0x123760
+0x00123758  ldr      x0, [sp, #0x70]
+0x0012375c  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123760  mov      x0, x19
+0x00123764  bl       #0x223ab0  ; -> PLT:closedir
+0x00123768  adrp     x8, #0x227000
+0x0012376c  add      x19, sp, #0x60
+0x00123770  add      x8, x8, #0x4e0
+0x00123774  add      x0, sp, #0x60
+0x00123778  str      x19, [sp, #0x80]
+0x0012377c  str      x8, [sp, #0x60]
+0x00123780  bl       #0xc2620
+0x00123784  ldr      x0, [sp, #0x80]
+0x00123788  cmp      x19, x0
+0x0012378c  b.eq     #0x12379c
+0x00123790  cbz      x0, #0x1237ac
+0x00123794  mov      w8, #5
+0x00123798  b        #0x1237a0
+0x0012379c  mov      w8, #4
+0x001237a0  ldr      x9, [x0]
+0x001237a4  ldr      x8, [x9, x8, lsl #3]
+0x001237a8  blr      x8
+0x001237ac  adrp     x8, #0x227000
+0x001237b0  add      x20, sp, #0x60
+0x001237b4  add      x8, x8, #0x4e0
+0x001237b8  add      x0, sp, #0x60
+0x001237bc  add      x19, sp, #0x60
+0x001237c0  str      x20, [sp, #0x80]
+0x001237c4  str      x8, [sp, #0x60]
+0x001237c8  bl       #0xc2850
+0x001237cc  ldr      x0, [sp, #0x80]
+0x001237d0  cmp      x20, x0
+0x001237d4  b.eq     #0x1237e4
+0x001237d8  cbz      x0, #0x1237f4
+0x001237dc  mov      w8, #5
+0x001237e0  b        #0x1237e8
+0x001237e4  mov      w8, #4
+0x001237e8  ldr      x9, [x0]
+0x001237ec  ldr      x8, [x9, x8, lsl #3]
+0x001237f0  blr      x8
+0x001237f4  adrp     x8, #0x227000
+0x001237f8  add      x9, sp, #0x60
+0x001237fc  add      x8, x8, #0x518
+0x00123800  add      x10, sp, #0x18
+0x00123804  add      x24, x9, #0x90
+0x00123808  orr      x26, x10, #1
+0x0012380c  orr      x27, x9, #8
+0x00123810  ldp      q0, q1, [x8, #0x60]
+0x00123814  ldr      q2, [x8, #0x80]
+0x00123818  stp      q0, q1, [x19, #0x60]
+0x0012381c  ldp      q3, q0, [x8, #0x20]
+0x00123820  str      q2, [x19, #0x80]
+0x00123824  ldp      q2, q1, [x8, #0x40]
+0x00123828  stp      q3, q0, [sp, #0x80]
+0x0012382c  stp      q2, q1, [x19, #0x40]
+0x00123830  adrp     x19, #0x21000
+0x00123834  ldp      q1, q0, [x8]
+0x00123838  add      x8, sp, #0x30
+0x0012383c  add      x19, x19, #0x305
+0x00123840  orr      x25, x8, #1
+0x00123844  stp      q1, q0, [sp, #0x60]
+0x00123848  b        #0x12385c
+0x0012384c  add      x27, x27, #0x18
+0x00123850  add      x8, x28, #0x18
+0x00123854  cmp      x8, x24
+0x00123858  b.eq     #0x123a4c
+0x0012385c  mov      x28, x27
+0x00123860  stp      xzr, xzr, [sp, #0x48]
+0x00123864  str      xzr, [sp, #0x58]
+0x00123868  stp      xzr, xzr, [sp, #0x38]
+0x0012386c  ldr      x21, [x28, #-8]!
+0x00123870  str      xzr, [sp, #0x30]
+0x00123874  mov      x0, x21
+0x00123878  bl       #0x223240  ; -> PLT:strlen
+0x0012387c  cmn      x0, #0x10
+0x00123880  b.hs     #0x123b30
+0x00123884  mov      x20, x0
+0x00123888  cmp      x0, #0x17
+0x0012388c  b.hs     #0x1238a4
+0x00123890  lsl      w8, w20, #1
+0x00123894  mov      x22, x25
+0x00123898  strb     w8, [sp, #0x30]
+0x0012389c  cbnz     x20, #0x1238c4
+0x001238a0  b        #0x1238d4
+0x001238a4  add      x8, x20, #0x10
+0x001238a8  and      x23, x8, #0xfffffffffffffff0
+0x001238ac  mov      x0, x23
+0x001238b0  bl       #0x223220  ; -> PLT:_Znwm
+0x001238b4  orr      x8, x23, #1
+0x001238b8  mov      x22, x0
+0x001238bc  stp      x20, x0, [sp, #0x38]
+0x001238c0  str      x8, [sp, #0x30]
+0x001238c4  mov      x0, x22
+0x001238c8  mov      x1, x21
+0x001238cc  mov      x2, x20
+0x001238d0  bl       #0x223250  ; -> PLT:memcpy
+0x001238d4  strb     wzr, [x22, x20]
+0x001238d8  ldr      x20, [x28, #0x10]
+0x001238dc  stp      xzr, xzr, [sp, #0x20]
+0x001238e0  str      xzr, [sp, #0x18]
+0x001238e4  mov      x0, x20
+0x001238e8  bl       #0x223240  ; -> PLT:strlen
+0x001238ec  cmn      x0, #0x10
+0x001238f0  b.hs     #0x123b38
+0x001238f4  mov      x21, x0
+0x001238f8  cmp      x0, #0x17
+0x001238fc  b.hs     #0x123914
+0x00123900  lsl      w8, w21, #1
+0x00123904  mov      x22, x26
+0x00123908  strb     w8, [sp, #0x18]
+0x0012390c  cbnz     x21, #0x123934
+0x00123910  b        #0x123944
+0x00123914  add      x8, x21, #0x10
+0x00123918  and      x23, x8, #0xfffffffffffffff0
+0x0012391c  mov      x0, x23
+0x00123920  bl       #0x223220  ; -> PLT:_Znwm
+0x00123924  orr      x8, x23, #1
+0x00123928  mov      x22, x0
+0x0012392c  stp      x21, x0, [sp, #0x20]
+0x00123930  str      x8, [sp, #0x18]
+0x00123934  mov      x0, x22
+0x00123938  mov      x1, x20
+0x0012393c  mov      x2, x21
+0x00123940  bl       #0x223250  ; -> PLT:memcpy
+0x00123944  add      x8, sp, #0x48
+0x00123948  add      x0, sp, #0x30
+0x0012394c  add      x1, sp, #0x18
+0x00123950  strb     wzr, [x22, x21]
+0x00123954  bl       #0x2235e0  ; -> PLT:_ZN7android4base11GetPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_
+0x00123958  ldrb     w8, [sp, #0x18]
+0x0012395c  tbz      w8, #0, #0x123968
+0x00123960  ldr      x0, [sp, #0x28]
+0x00123964  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123968  ldrb     w8, [sp, #0x30]
+0x0012396c  tbz      w8, #0, #0x123978
+0x00123970  ldr      x0, [sp, #0x40]
+0x00123974  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123978  ldrb     w8, [sp, #0x48]
+0x0012397c  ldr      x9, [sp, #0x50]
+0x00123980  lsr      x10, x8, #1
+0x00123984  tst      w8, #1
+0x00123988  csel     x8, x10, x9, eq
+0x0012398c  cbnz     x8, #0x1239ac
+0x00123990  add      x0, sp, #0x48
+0x00123994  mov      x1, xzr
+0x00123998  mov      x2, #-1
+0x0012399c  mov      x3, x19
+0x001239a0  mov      x4, xzr
+0x001239a4  bl       #0x2233b0  ; -> PLT:_ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7compareEmmPKcm
+0x001239a8  cbz      w0, #0x123a38
+0x001239ac  ldr      x20, [x27]
+0x001239b0  stp      xzr, xzr, [sp, #0x38]
+0x001239b4  str      xzr, [sp, #0x30]
+0x001239b8  mov      x0, x20
+0x001239bc  bl       #0x223240  ; -> PLT:strlen
+0x001239c0  cmn      x0, #0x10
+0x001239c4  b.hs     #0x123b30
+0x001239c8  mov      x21, x0
+0x001239cc  cmp      x0, #0x17
+0x001239d0  b.hs     #0x1239e8
+0x001239d4  lsl      w8, w21, #1
+0x001239d8  mov      x22, x25
+0x001239dc  strb     w8, [sp, #0x30]
+0x001239e0  cbnz     x21, #0x123a08
+0x001239e4  b        #0x123a18
+0x001239e8  add      x8, x21, #0x10
+0x001239ec  and      x23, x8, #0xfffffffffffffff0
+0x001239f0  mov      x0, x23
+0x001239f4  bl       #0x223220  ; -> PLT:_Znwm
+0x001239f8  orr      x8, x23, #1
+0x001239fc  mov      x22, x0
+0x00123a00  stp      x21, x0, [sp, #0x38]
+0x00123a04  str      x8, [sp, #0x30]
+0x00123a08  mov      x0, x22
+0x00123a0c  mov      x1, x20
+0x00123a10  mov      x2, x21
+0x00123a14  bl       #0x223250  ; -> PLT:memcpy
+0x00123a18  add      x0, sp, #0x30
+0x00123a1c  add      x1, sp, #0x48
+0x00123a20  strb     wzr, [x22, x21]
+0x00123a24  bl       #0x11e9c0
+0x00123a28  ldrb     w8, [sp, #0x30]
+0x00123a2c  tbz      w8, #0, #0x123a38
+0x00123a30  ldr      x0, [sp, #0x40]
+0x00123a34  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123a38  ldrb     w8, [sp, #0x48]
+0x00123a3c  tbz      w8, #0, #0x12384c
+0x00123a40  ldr      x0, [sp, #0x58]
+0x00123a44  bl       #0x223210  ; -> PLT:_ZdlPv
+0x00123a48  b        #0x12384c
+0x00123a4c  bl       #0x11eb50
+0x00123a50  ldr      x8, [sp, #0x10]
+0x00123a54  ldr      x8, [x8, #0x28]
+0x00123a58  ldur     x9, [x29, #-0x28]
+0x00123a5c  cmp      x8, x9
+0x00123a60  b.ne     #0x123b48
+0x00123a64  ldp      x20, x19, [sp, #0x170]
+0x00123a68  ldp      x22, x21, [sp, #0x160]
+0x00123a6c  ldp      x24, x23, [sp, #0x150]
+0x00123a70  ldp      x26, x25, [sp, #0x140]
+0x00123a74  ldp      x28, x27, [sp, #0x130]
+0x00123a78  ldp      x29, x30, [sp, #0x120]
+0x00123a7c  ldr      d8, [sp, #0x110]
+0x00123a80  add      sp, sp, #0x180
+0x00123a84  ret      
+0x00123a88  bl       #0x223290  ; -> PLT:__errno
+0x00123a8c  adrp     x1, #0x1e000
+0x00123a90  mov      x19, x0
+0x00123a94  ldr      w20, [x0]
+0x00123a98  add      x1, x1, #0x558  ; "system/core/init/property_service.cpp"
+0x00123a9c  add      x0, sp, #0x60
+0x00123aa0  mov      w2, #0x69c
+0x00123aa4  mov      w3, #6
+0x00123aa8  mov      x4, xzr
+0x00123aac  mov      w5, #-1
+0x00123ab0  bl       #0x2232c0  ; -> PLT:_ZN7android4base10LogMessageC1EPKcjNS0_11LogSeverityES3_i
+0x00123ab4  add      x0, sp, #0x60
+0x00123ab8  bl       #0x2232d0  ; -> PLT:_ZN7android4base10LogMessage6streamEv
+0x00123abc  adrp     x1, #0x1e000
+0x00123ac0  mov      w2, #0x22
+0x00123ac4  add      x1, x1, #0x59a  ; "Failed to initialize property area"
+0x00123ac8  bl       #0xb42e0  ; -> _ZNSt3__124__put_character_sequenceIcNS_11char_traitsIcEEEERNS_13basic_ostreamIT_T0_EES7_PKS4_m
+0x00123acc  add      x0, sp, #0x60
+0x00123ad0  bl       #0x2232f0  ; -> PLT:_ZN7android4base10LogMessageD1Ev
+0x00123ad4  str      w20, [x19]
+
+===== funkcja 0x11e9c0 (InitPropertySet? lgsi?):
+# /tmp/emu/init-donor [EM_AARCH64]; zakres 0x11e600-0x11ea80; symboli: 154
+0x0011e600  bl       #0x223600  ; -> PLT:_ZNSt3__15mutex4lockEv
+0x0011e604  adrp     x8, #0x22c000
+0x0011e608  ldrb     w8, [x8, #0x720]
+0x0011e60c  cmp      w8, #1
+0x0011e610  b.ne     #0x11e658
+0x0011e614  mov      w8, #6
+0x0011e618  mov      w9, #0x5053
+0x0011e61c  mov      w10, #0x43
+0x0011e620  add      x0, sp, #0x20
+0x0011e624  stp      xzr, xzr, [sp, #0x20]
+0x0011e628  str      xzr, [sp, #0x30]
+0x0011e62c  strb     w8, [sp, #0x20]
+0x0011e630  sturh    w9, [sp, #0x21]
+0x0011e634  strb     w10, [sp, #0x23]
+0x0011e638  bl       #0xc8df0
+0x0011e63c  ldrb     w8, [sp, #0x20]
+0x0011e640  tbz      w8, #0, #0x11e64c
+0x0011e644  ldr      x0, [sp, #0x30]
+0x0011e648  bl       #0x223210  ; -> PLT:_ZdlPv
+0x0011e64c  mov      x0, x19
+0x0011e650  mov      x1, x20
+0x0011e654  bl       #0x1008a0
+0x0011e658  bl       #0xc92f0
+0x0011e65c  cbz      w0, #0x11e904
+0x0011e660  ldp      x10, x9, [x19, #8]
+0x0011e664  adrp     x2, #0x15000
+0x0011e668  mov      w3, #0xf
+0x0011e66c  ldrb     w8, [x19]
+0x0011e670  add      x2, x2, #0x101  ; "persist.log.tag"
+0x0011e674  tst      w8, #1
+0x0011e678  lsr      x8, x8, #1
+0x0011e67c  csel     x0, x26, x9, eq
+0x0011e680  csel     x1, x8, x10, eq
+0x0011e684  bl       #0x223410  ; -> PLT:_ZN7android4base10StartsWithENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_
+0x0011e688  tbnz     w0, #0, #0x11e904
+0x0011e68c  ldp      x10, x9, [x19, #8]
+0x0011e690  adrp     x2, #0x1b000
+0x0011e694  mov      w3, #0xa
+0x0011e698  ldrb     w8, [x19]
+0x0011e69c  add      x2, x2, #0x7cb  ; "cache_key."
+0x0011e6a0  tst      w8, #1
+0x0011e6a4  lsr      x8, x8, #1
+0x0011e6a8  csel     x0, x26, x9, eq
+0x0011e6ac  csel     x1, x8, x10, eq
+0x0011e6b0  bl       #0x223410  ; -> PLT:_ZN7android4base10StartsWithENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_
+0x0011e6b4  tbnz     w0, #0, #0x11e904
+0x0011e6b8  ldrb     w8, [x20]
+0x0011e6bc  stp      xzr, xzr, [sp, #0x28]
+0x0011e6c0  ldr      x9, [x20, #0x10]
+0x0011e6c4  str      xzr, [sp, #0x20]
+0x0011e6c8  tst      w8, #1
+0x0011e6cc  csinc    x20, x9, x20, ne
+0x0011e6d0  mov      x0, x20
+0x0011e6d4  bl       #0x223240  ; -> PLT:strlen
+0x0011e6d8  cmn      x0, #0x10
+0x0011e6dc  b.hs     #0x11e9a8
+0x0011e6e0  mov      x21, x0
+0x0011e6e4  cmp      x0, #0x17
+0x0011e6e8  b.hs     #0x11e71c
+0x0011e6ec  add      x9, sp, #0x20
+0x0011e6f0  lsl      w8, w21, #1
+0x0011e6f4  orr      x22, x9, #1
+0x0011e6f8  strb     w8, [sp, #0x20]
+0x0011e6fc  cbnz     x21, #0x11e73c
+0x0011e700  b        #0x11e74c
+0x0011e704  adrp     x1, #0x1b000
+0x0011e708  mov      x0, x21
+0x0011e70c  add      x1, x1, #0x7ae  ; "__system_property_add failed"
+0x0011e710  bl       #0x223570  ; -> PLT:_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6assignEPKc
+0x0011e714  mov      w0, #0x24
+0x0011e718  b        #0x11e914
+0x0011e71c  add      x8, x21, #0x10
+0x0011e720  and      x23, x8, #0xfffffffffffffff0
+0x0011e724  mov      x0, x23
+0x0011e728  bl       #0x223220  ; -> PLT:_Znwm
+0x0011e72c  orr      x8, x23, #1
+0x0011e730  mov      x22, x0
+0x0011e734  stp      x21, x0, [sp, #0x28]
+0x0011e738  str      x8, [sp, #0x20]
+0x0011e73c  mov      x0, x22
+0x0011e740  mov      x1, x20
+0x0011e744  mov      x2, x21
+0x0011e748  bl       #0x223250  ; -> PLT:memcpy
+0x0011e74c  strb     wzr, [x22, x21]
+0x0011e750  add      x12, sp, #0x20
+0x0011e754  ldp      x10, x8, [sp, #0x28]
+0x0011e758  orr      x20, x12, #1
+0x0011e75c  ldrb     w9, [sp, #0x20]
+0x0011e760  lsr      x11, x9, #1
+0x0011e764  tst      w9, #1
+0x0011e768  csel     x11, x11, x10, eq
+0x0011e76c  csel     x12, x20, x8, eq
+0x0011e770  cbz      x11, #0x11e804
+0x0011e774  mov      x10, xzr
+0x0011e778  ldrb     w13, [x12, x10]
+0x0011e77c  cmp      w13, #0xa
+0x0011e780  b.eq     #0x11e794
+0x0011e784  add      x10, x10, #1
+0x0011e788  cmp      x11, x10
+0x0011e78c  b.ne     #0x11e778
+0x0011e790  b        #0x11e804
+0x0011e794  cmp      x11, x10
+0x0011e798  b.eq     #0x11e804
+0x0011e79c  cmn      x10, #1
+0x0011e7a0  b.eq     #0x11e804
+0x0011e7a4  mov      w11, #0x20
+0x0011e7a8  tst      w9, #1
+0x0011e7ac  csel     x8, x20, x8, eq
+0x0011e7b0  strb     w11, [x8, x10]
+0x0011e7b4  add      x10, x10, #1
+0x0011e7b8  ldp      x12, x8, [sp, #0x28]
+0x0011e7bc  ldrb     w9, [sp, #0x20]
+0x0011e7c0  tst      w9, #1
+0x0011e7c4  lsr      x14, x9, #1
+0x0011e7c8  csel     x13, x20, x8, eq
+0x0011e7cc  csel     x12, x14, x12, eq
+0x0011e7d0  cmp      x12, x10
+0x0011e7d4  b.ls     #0x11e804
+0x0011e7d8  ldrb     w14, [x13, x10]
+0x0011e7dc  cmp      w14, #0xa
+0x0011e7e0  b.eq     #0x11e7f4
+0x0011e7e4  add      x10, x10, #1
+0x0011e7e8  cmp      x12, x10
+0x0011e7ec  b.ne     #0x11e7d8
+0x0011e7f0  b        #0x11e804
+0x0011e7f4  cmp      x12, x10
+0x0011e7f8  b.eq     #0x11e804
+0x0011e7fc  cmn      x10, #1
+0x0011e800  b.ne     #0x11e7a8
+0x0011e804  ldp      x10, x9, [x19, #8]
+0x0011e808  adrp     x2, #0x12000
+0x0011e80c  mov      w3, #0x14
+0x0011e810  ldrb     w8, [x19]
+0x0011e814  add      x2, x2, #0xc62  ; "vendor.ril.iccid.sim"
+0x0011e818  tst      w8, #1
+0x0011e81c  lsr      x8, x8, #1
+0x0011e820  csel     x0, x26, x9, eq
+0x0011e824  csel     x1, x8, x10, eq
+0x0011e828  bl       #0x223410  ; -> PLT:_ZN7android4base10StartsWithENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_
+0x0011e82c  tbz      w0, #0, #0x11e864
+0x0011e830  ldrb     w8, [sp, #0x20]
+0x0011e834  ldr      x9, [sp, #0x28]
+0x0011e838  lsr      x10, x8, #1
+0x0011e83c  tst      w8, #1
+0x0011e840  csel     x8, x10, x9, eq
+0x0011e844  cmp      x8, #0xa
+0x0011e848  b.lo     #0x11e864
+0x0011e84c  sub      x2, x8, #9
+0x0011e850  add      x0, sp, #0x20
+0x0011e854  mov      w1, #9
+0x0011e858  mov      x3, x2
+0x0011e85c  mov      w4, #0x2a
+0x0011e860  bl       #0x2246a0  ; -> PLT:_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7replaceEmmmc
+0x0011e864  adrp     x1, #0x19000
+0x0011e868  add      x0, sp, #8
+0x0011e86c  add      x1, x1, #0x19a  ; "PropSet ["
+0x0011e870  stp      xzr, xzr, [sp, #8]
+0x0011e874  str      xzr, [sp, #0x18]
+0x0011e878  bl       #0x223480  ; -> PLT:_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKc
+0x0011e87c  ldp      x10, x9, [x19, #8]
+0x0011e880  add      x0, sp, #8
+0x0011e884  ldrb     w8, [x19]
+0x0011e888  tst      w8, #1
+0x0011e88c  lsr      x8, x8, #1
+0x0011e890  csel     x1, x26, x9, eq
+0x0011e894  csel     x2, x8, x10, eq
+0x0011e898  bl       #0x223490  ; -> PLT:_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKcm
+0x0011e89c  adrp     x1, #0x21000
+0x0011e8a0  add      x0, sp, #8
+0x0011e8a4  add      x1, x1, #0xf0a  ; "]=["
+0x0011e8a8  bl       #0x223480  ; -> PLT:_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKc
+0x0011e8ac  ldp      x10, x9, [sp, #0x28]
+0x0011e8b0  add      x0, sp, #8
+0x0011e8b4  ldrb     w8, [sp, #0x20]
+0x0011e8b8  tst      w8, #1
+0x0011e8bc  lsr      x8, x8, #1
+0x0011e8c0  csel     x1, x20, x9, eq
+0x0011e8c4  csel     x2, x8, x10, eq
+0x0011e8c8  bl       #0x223490  ; -> PLT:_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKcm
+0x0011e8cc  adrp     x1, #0x18000
+0x0011e8d0  add      x0, sp, #8
+0x0011e8d4  add      x1, x1, #0x8d9
+0x0011e8d8  bl       #0x223480  ; -> PLT:_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKc
+0x0011e8dc  mov      w0, #2
+0x0011e8e0  mov      x1, xzr
+0x0011e8e4  bl       #0x223230  ; -> PLT:_ZN7android4base9ShouldLogENS0_11LogSeverityEPKc
+0x0011e8e8  tbnz     w0, #0, #0x11e940
+0x0011e8ec  ldrb     w8, [sp, #8]
+0x0011e8f0  tbnz     w8, #0, #0x11e990
+0x0011e8f4  ldrb     w8, [sp, #0x20]
+0x0011e8f8  tbz      w8, #0, #0x11e904
+0x0011e8fc  ldr      x0, [sp, #0x30]
+0x0011e900  bl       #0x223210  ; -> PLT:_ZdlPv
+0x0011e904  adrp     x0, #0x22c000
+0x0011e908  add      x0, x0, #0x6e0
+0x0011e90c  bl       #0x223620  ; -> PLT:_ZNSt3__15mutex6unlockEv
+0x0011e910  mov      w0, wzr
+0x0011e914  ldr      x8, [x25, #0x28]
+0x0011e918  ldur     x9, [x29, #-8]
+0x0011e91c  cmp      x8, x9
+0x0011e920  b.ne     #0x11e9b0
+0x0011e924  ldp      x20, x19, [sp, #0x90]
+0x0011e928  ldp      x22, x21, [sp, #0x80]
+0x0011e92c  ldp      x24, x23, [sp, #0x70]
+0x0011e930  ldp      x26, x25, [sp, #0x60]
+0x0011e934  ldp      x29, x30, [sp, #0x50]
+0x0011e938  add      sp, sp, #0xa0
+0x0011e93c  ret      
+0x0011e940  bl       #0x223290  ; -> PLT:__errno
+0x0011e944  adrp     x1, #0x1e000
+0x0011e948  mov      x19, x0
+0x0011e94c  ldr      w20, [x0]
+0x0011e950  add      x1, x1, #0x558  ; "system/core/init/property_service.cpp"
+0x0011e954  mov      x0, sp
+0x0011e958  mov      w2, #0x197
+0x0011e95c  mov      w3, #2
+0x0011e960  mov      x4, xzr
+0x0011e964  mov      w5, #-1
+0x0011e968  bl       #0x2232c0  ; -> PLT:_ZN7android4base10LogMessageC1EPKcjNS0_11LogSeverityES3_i
+0x0011e96c  mov      x0, sp
+0x0011e970  bl       #0x2232d0  ; -> PLT:_ZN7android4base10LogMessage6streamEv
+0x0011e974  add      x1, sp, #8
+0x0011e978  bl       #0xb0750  ; -> _ZNSt3__1lsIcNS_11char_traitsIcEENS_9allocatorIcEEEERNS_13basic_ostreamIT_T0_EES9_RKNS_12basic_stringIS6_S7_T1_EE
+0x0011e97c  mov      x0, sp
+0x0011e980  bl       #0x2232f0  ; -> PLT:_ZN7android4base10LogMessageD1Ev
+0x0011e984  str      w20, [x19]
+0x0011e988  ldrb     w8, [sp, #8]
+0x0011e98c  tbz      w8, #0, #0x11e8f4
+0x0011e990  ldr      x0, [sp, #0x18]
+0x0011e994  bl       #0x223210  ; -> PLT:_ZdlPv
+0x0011e998  ldrb     w8, [sp, #0x20]
+0x0011e99c  tbnz     w8, #0, #0x11e8fc
+0x0011e9a0  b        #0x11e904
+0x0011e9a4  bl       #0xb3d80
+0x0011e9a8  add      x0, sp, #0x20
+0x0011e9ac  bl       #0x223340  ; -> PLT:_ZNKSt3__121__basic_string_commonILb1EE20__throw_length_errorEv
+0x0011e9b0  bl       #0x223200  ; -> PLT:__stack_chk_fail
+0x0011e9b4  udf      #0
+0x0011e9b8  udf      #0
+0x0011e9bc  udf      #0
+0x0011e9c0  sub      sp, sp, #0x90
+0x0011e9c4  stp      x29, x30, [sp, #0x50]
+0x0011e9c8  add      x29, sp, #0x50
+0x0011e9cc  stp      x24, x23, [sp, #0x60]
+0x0011e9d0  stp      x22, x21, [sp, #0x70]
+0x0011e9d4  stp      x20, x19, [sp, #0x80]
+0x0011e9d8  adrp     x9, #0x24000
+0x0011e9dc  mrs      x23, tpidr_el0
+0x0011e9e0  add      x9, x9, #0x974
+0x0011e9e4  ldr      x8, [x23, #0x28]
+0x0011e9e8  add      x2, sp, #8
+0x0011e9ec  sub      x3, x29, #0x18
+0x0011e9f0  add      x5, sp, #0x20
+0x0011e9f4  mov      x4, xzr
+0x0011e9f8  ldr      x10, [x9]
+0x0011e9fc  stur     x8, [x29, #-8]
+0x0011ea00  ldr      w9, [x9, #8]
+0x0011ea04  mov      w8, #0x16
+0x0011ea08  mov      x20, x1
+0x0011ea0c  mov      x21, x0
+0x0011ea10  stur     x10, [x29, #-0x18]
+0x0011ea14  stur     w9, [x29, #-0x10]
+0x0011ea18  adrp     x9, #0x24000
+0x0011ea1c  add      x9, x9, #0x912  ; "u:r:init:s0"
+0x0011ea20  strb     w8, [sp, #8]
+0x0011ea24  mov      w8, #0x3a74
+0x0011ea28  stp      xzr, xzr, [sp, #0x20]
+0x0011ea2c  movk     w8, #0x3073, lsl #16
+0x0011ea30  str      xzr, [sp, #0x30]
+0x0011ea34  ldr      x9, [x9]
+0x0011ea38  stp      xzr, xzr, [sp, #0x10]
+0x0011ea3c  str      w8, [sp, #0x10]
+0x0011ea40  stur     x9, [sp, #9]
+0x0011ea44  bl       #0x11da10
+0x0011ea48  ldrb     w8, [sp, #8]
+0x0011ea4c  mov      w19, w0
+0x0011ea50  tbz      w8, #0, #0x11ea5c
+0x0011ea54  ldr      x0, [sp, #0x18]
+0x0011ea58  bl       #0x223210  ; -> PLT:_ZdlPv
+0x0011ea5c  cbz      w19, #0x11ea70
+0x0011ea60  mov      w0, #4
+0x0011ea64  mov      x1, xzr
+0x0011ea68  bl       #0x223230  ; -> PLT:_ZN7android4base9ShouldLogENS0_11LogSeverityEPKc
+0x0011ea6c  tbnz     w0, #0, #0x11eaac
+0x0011ea70  ldrb     w8, [sp, #0x20]
+0x0011ea74  tbz      w8, #0, #0x11ea80
+0x0011ea78  ldr      x0, [sp, #0x30]
+0x0011ea7c  bl       #0x223210  ; -> PLT:_ZdlPv
+
+===== statyczna tabela 0x227400-0x227640 (data):
+0x00227400  e0 95 11 00 00 00 00 00 20 f2 0a 00 00 00 00 00   ........ .......
+0x00227410  30 f2 0a 00 00 00 00 00 00 96 11 00 00 00 00 00   0...............
+0x00227420  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+0x00227430  20 f2 0a 00 00 00 00 00 30 f2 0a 00 00 00 00 00    .......0.......
+0x00227440  10 96 11 00 00 00 00 00 50 96 11 00 00 00 00 00   ........P.......
+0x00227450  20 f2 0a 00 00 00 00 00 30 f2 0a 00 00 00 00 00    .......0.......
+0x00227460  70 96 11 00 00 00 00 00 00 00 00 00 00 00 00 00   p...............
+0x00227470  00 00 00 00 00 00 00 00 20 f2 0a 00 00 00 00 00   ........ .......
+0x00227480  30 f2 0a 00 00 00 00 00 f0 b2 11 00 00 00 00 00   0...............
+0x00227490  30 b3 11 00 00 00 00 00 20 f2 0a 00 00 00 00 00   0....... .......
+0x002274a0  30 f2 0a 00 00 00 00 00 50 b3 11 00 00 00 00 00   0.......P.......
+0x002274b0  37 76 01 00 00 00 00 00 1c 3f 01 00 00 00 00 00   7v.......?......
+0x002274c0  f3 47 01 00 00 00 00 00 c4 dc 01 00 00 00 00 00   .G..............
+0x002274d0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+0x002274e0  20 f2 0a 00 00 00 00 00 30 f2 0a 00 00 00 00 00    .......0.......
+0x002274f0  a0 50 12 00 00 00 00 00 d0 50 12 00 00 00 00 00   .P.......P......
+0x00227500  20 f2 0a 00 00 00 00 00 30 f2 0a 00 00 00 00 00    .......0.......
+0x00227510  e0 50 12 00 00 00 00 00 bd e5 01 00 00 00 00 00   .P..............
+0x00227520  bd 26 02 00 00 00 00 00 05 13 02 00 00 00 00 00   .&..............
+0x00227530  5e e6 01 00 00 00 00 00 4d 2b 01 00 00 00 00 00   ^.......M+......
+0x00227540  98 9b 01 00 00 00 00 00 66 89 01 00 00 00 00 00   ........f.......
+0x00227550  d0 ad 01 00 00 00 00 00 98 9b 01 00 00 00 00 00   ................
+0x00227560  13 80 01 00 00 00 00 00 9e 76 01 00 00 00 00 00   .........v......
+0x00227570  98 9b 01 00 00 00 00 00 f9 26 02 00 00 00 00 00   .........&......
+0x00227580  04 ab 01 00 00 00 00 00 98 9b 01 00 00 00 00 00   ................
+0x00227590  26 80 01 00 00 00 00 00 0a 27 02 00 00 00 00 00   &........'......
+0x002275a0  52 90 01 00 00 00 00 00 00 00 00 00 00 00 00 00   R...............
+0x002275b0  00 00 00 00 00 00 00 00 20 f2 0a 00 00 00 00 00   ........ .......
+0x002275c0  30 f2 0a 00 00 00 00 00 10 6b 12 00 00 00 00 00   0........k......
+0x002275d0  40 6b 12 00 00 00 00 00 20 f2 0a 00 00 00 00 00   @k...... .......
+0x002275e0  30 f2 0a 00 00 00 00 00 50 6b 12 00 00 00 00 00   0.......Pk......
+0x002275f0  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+0x00227600  20 f2 0a 00 00 00 00 00 30 f2 0a 00 00 00 00 00    .......0.......
+0x00227610  60 6b 12 00 00 00 00 00 90 6b 12 00 00 00 00 00   `k.......k......
+0x00227620  20 f2 0a 00 00 00 00 00 30 f2 0a 00 00 00 00 00    .......0.......
+0x00227630  a0 6b 12 00 00 00 00 00 50 97 12 00 00 00 00 00   .k......P.......
+
+===== imports (dynsym, pelne):
+BN_bin2bn
+BN_bn2bin
+BN_free
+BN_new
+BN_num_bytes
+BN_set_word
+CgroupGetControllerFromPath
+CgroupGetControllerPath
+EVP_PKEY_get0_RSA
+EVP_PKEY_id
+RSA_free
+RSA_get0_n
+RSA_new
+RSA_set0_key
+RSA_verify
+SHA256
+SetTaskProfiles
+X509_free
+X509_get_pubkey
+_Unwind_Resume
+_Z11CgroupSetupv
+_Z12CloseArchiveP10ZipArchive
+_Z13OpenArchiveFdiPKcPP10ZipArchiveb
+_Z15ErrorCodeStringi
+_Z16fs_mgr_mount_allPNSt3__16vectorIN7android6fs_mgr10FstabEntryENS_9allocatorIS3_EEEEi
+_Z17fs_mgr_swapon_allRKNSt3__16vectorIN7android6fs_mgr10FstabEntryENS_9allocatorIS3_EEEE
+_Z17fs_mgr_umount_allPNSt3__16vectorIN7android6fs_mgr10FstabEntryENS_9allocatorIS3_EEEE
+_Z17fscrypt_is_nativev
+_Z18ExtractEntryToFileP10ZipArchivePK8ZipEntryi
+_Z19fs_mgr_do_mount_oneRKN7android6fs_mgr10FstabEntryERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEE
+_Z19logwrap_fork_execvpiPKPKcPibibS0_
+_Z23read_bootloader_messageP18bootloader_messagePNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_Z23write_reboot_bootloaderPNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE
+_Z24fs_mgr_get_hashtree_infoRKN7android6fs_mgr10FstabEntryE
+_Z24fs_mgr_is_verity_enabledRKN7android6fs_mgr10FstabEntryE
+_Z24fs_mgr_load_verity_statePi
+_Z24write_bootloader_messageRK18bootloader_messagePNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+_Z24write_bootloader_messageRKNSt3__16vectorINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEENS4_IS6_EEEEPS6_
+_Z25fs_mgr_overlayfs_is_setupv
+_Z26fs_mgr_overlayfs_mount_allPNSt3__16vectorIN7android6fs_mgr10FstabEntryENS_9allocatorIS3_EEEE
+_Z31fs_mgr_get_super_partition_namei
+_Z31fs_mgr_update_logical_partitionPN7android6fs_mgr10FstabEntryE
+_Z31fs_mgr_vendor_overlay_mount_allv
+_Z34fs_mgr_mount_overlayfs_fstab_entryRKN7android6fs_mgr10FstabEntryE
+_Z35fs_mgr_create_canonical_mount_pointRKNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE
+_Z35fs_mgr_verity_is_check_at_most_onceRKN7android6fs_mgr10FstabEntryE
+_Z42fs_mgr_remount_userdata_into_checkpointingPNSt3__16vectorIN7android6fs_mgr10FstabEntryENS_9allocatorIS3_EEEE
+_Z9FindEntryP10ZipArchiveNSt3__117basic_string_viewIcNS1_11char_traitsIcEEEEP8ZipEntry
+_ZN3fmt2v76detail7vformatENS0_17basic_string_viewIcEENS0_11format_argsE
+_ZN7android10FqInstance5setToERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN7android2dm12DeviceMapper13GetTargetTypeERK14dm_target_spec
+_ZN7android2dm12DeviceMapper21GetDmDevicePathByNameERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEPS8_
+_ZN7android2dm12DeviceMapper26GetParentBlockDeviceByPathERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+_ZN7android2dm12DeviceMapper8InstanceEv
+_ZN7android2dm16DmTargetSnapshot12MergePercentERKNS1_6StatusEm
+_ZN7android2dm16DmTargetSnapshot15ParseStatusTextERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEPNS1_6StatusE
+_ZN7android2dm16DmTargetSnapshot20GetDevicesFromParamsERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEPS8_SB_
+_ZN7android2dm7DmTable9AddTargetEONSt3__110unique_ptrINS0_8DmTargetENS2_14default_deleteIS4_EEEE
+_ZN7android3gsi12IsGsiRunningEv
+_ZN7android3gsi14CanBootIntoGsiEPNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN7android3gsi14IsGsiInstalledEv
+_ZN7android3gsi15MarkSystemAsGsiEv
+_ZN7android4base10LogMessage6streamEv
+_ZN7android4base10LogMessageC1EPKcjNS0_11LogSeverityES3_i
+_ZN7android4base10LogMessageD1Ev
+_ZN7android4base10StartsWithENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_
+_ZN7android4base10StartsWithENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEEc
+_ZN7android4base10WriteFullyENS0_11borrowed_fdEPKvm
+_ZN7android4base10boot_clock3nowEv
+_ZN7android4base11GetPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_
+_ZN7android4base11InitLoggingEPPcONSt3__18functionIFvNS0_5LogIdENS0_11LogSeverityEPKcS8_jS8_EEEONS4_IFvS8_EEE
+_ZN7android4base11SetPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_
+_ZN7android4base12KernelLoggerENS0_5LogIdENS0_11LogSeverityEPKcS4_jS4_
+_ZN7android4base12StringPrintfEPKcz
+_ZN7android4base13StringReplaceENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_S5_b
+_ZN7android4base14DefaultAborterEPKc
+_ZN7android4base14GetIntPropertyIiEET_RKNSt3__112basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEES2_S2_S2_
+_ZN7android4base14ReadFdToStringENS0_11borrowed_fdEPNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+_ZN7android4base15GetBoolPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb
+_ZN7android4base15GetUintPropertyIjEET_RKNSt3__112basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEES2_S2_
+_ZN7android4base15GetUintPropertyImEET_RKNSt3__112basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEES2_S2_
+_ZN7android4base15WaitForPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_NS1_6chrono8durationIxNS1_5ratioILl1ELl1000EEEEE
+_ZN7android4base15WriteStringToFdERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEENS0_11borrowed_fdE
+_ZN7android4base16EqualsIgnoreCaseENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_
+_ZN7android4base16ReadFileToStringERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_b
+_ZN7android4base17GetExecutablePathEv
+_ZN7android4base17WriteStringToFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_b
+_ZN7android4base17WriteStringToFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_jjjb
+_ZN7android4base18RemoveFileIfExistsERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_
+_ZN7android4base21GetMinimumLogSeverityEv
+_ZN7android4base21SetMinimumLogSeverityENS0_11LogSeverityE
+_ZN7android4base4JoinINSt3__16vectorINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS7_IS9_EEEEcEES9_RKT_T0_
+_ZN7android4base4TrimERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN7android4base5SplitERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_
+_ZN7android4base7DirnameERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN7android4base8BasenameERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN7android4base8EndsWithENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_
+_ZN7android4base8ReadlinkERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_
+_ZN7android4base8RealpathERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_
+_ZN7android4base8TokenizeERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_
+_ZN7android4base9ReadFullyENS0_11borrowed_fdEPvm
+_ZN7android4base9ShouldLogENS0_11LogSeverityEPKc
+_ZN7android4baselsERNSt3__113basic_ostreamIcNS1_11char_traitsIcEEEERKNS0_5TimerE
+_ZN7android6FQName5parseERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS0_
+_ZN7android6FQNameC1Ev
+_ZN7android6fiemap12FiemapStatus13CastErrorCodeEi
+_ZN7android6fiemap12ImageManager4OpenERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEERKNS0_13IImageManager10DeviceInfoE
+_ZN7android6fiemap13IImageManager4OpenERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEERKNS2_6chrono8durationIxNS2_5ratioILl1ELl1000EEEEERKNS1_10DeviceInfoE
+_ZN7android6fs_mgr11WaitForFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEENS1_6chrono8durationIxNS1_5ratioILl1ELl1000EEEEE
+_ZN7android6fs_mgr12ReadMetadataERKNS0_16IPartitionOpenerERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEEj
+_ZN7android6fs_mgr13CreateDmTableENS0_28CreateLogicalPartitionParamsEPNS_2dm7DmTableE
+_ZN7android6fs_mgr13FindPartitionERKNS0_10LpMetadataERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEE
+_ZN7android6fs_mgr15GetEntryForPathEPNSt3__16vectorINS0_10FstabEntryENS1_9allocatorIS3_EEEERKNS1_12basic_stringIcNS1_11char_traitsIcEENS4_IcEEEE
+_ZN7android6fs_mgr15MetadataBuilder12AddPartitionENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEES6_j
+_ZN7android6fs_mgr15MetadataBuilder12NewForUpdateERKNS0_16IPartitionOpenerERKNSt3__112basic_stringIcNS5_11char_traitsIcEENS5_9allocatorIcEEEEjjb
+_ZN7android6fs_mgr15MetadataBuilder15ChangeGroupSizeERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEm
+_ZN7android6fs_mgr15MetadataBuilder15RemovePartitionENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE
+_ZN7android6fs_mgr15MetadataBuilder15ResizePartitionEPNS0_9PartitionEmRKNSt3__16vectorINS0_8IntervalENS4_9allocatorIS6_EEEE
+_ZN7android6fs_mgr15MetadataBuilder20ChangePartitionGroupEPNS0_9PartitionENSt3__117basic_string_viewIcNS4_11char_traitsIcEEEE
+_ZN7android6fs_mgr15MetadataBuilder21ListPartitionsInGroupENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE
+_ZN7android6fs_mgr15MetadataBuilder24RemoveGroupAndPartitionsENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE
+_ZN7android6fs_mgr15MetadataBuilder3NewERKNS0_16IPartitionOpenerERKNSt3__112basic_stringIcNS5_11char_traitsIcEENS5_9allocatorIcEEEEj
+_ZN7android6fs_mgr15MetadataBuilder6ExportEv
+_ZN7android6fs_mgr15MetadataBuilder8AddGroupENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEEm
+_ZN7android6fs_mgr16GetPartitionNameERK19LpMetadataPartition
+_ZN7android6fs_mgr16WriteToImageFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEERKNS0_10LpMetadataE
+_ZN7android6fs_mgr17EnsurePathMountedEPNSt3__16vectorINS0_10FstabEntryENS1_9allocatorIS3_EEEERKNS1_12basic_stringIcNS1_11char_traitsIcEENS4_IcEEEESE_
+_ZN7android6fs_mgr17ReadFromImageFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN7android6fs_mgr18WaitForFileDeletedERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEENS1_6chrono8durationIxNS1_5ratioILl1ELl1000EEEEE
+_ZN7android6fs_mgr19EnsurePathUnmountedEPNSt3__16vectorINS0_10FstabEntryENS1_9allocatorIS3_EEEERKNS1_12basic_stringIcNS1_11char_traitsIcEENS4_IcEEEE
+_ZN7android6fs_mgr19ReadCurrentMetadataERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN7android6fs_mgr20UpdatePartitionTableERKNS0_16IPartitionOpenerERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEERKNS0_10LpMetadataEj
+_ZN7android6fs_mgr21GetPartitionGroupNameERK24LpMetadataPartitionGroup
+_ZN7android6fs_mgr22CreateLogicalPartitionENS0_28CreateLogicalPartitionParamsEPNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+_ZN7android6fs_mgr22GetPartitionSlotSuffixERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN7android6fs_mgr23CreateLogicalPartitionsERKNS0_10LpMetadataERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEE
+_ZN7android6fs_mgr23SlotNumberForSlotSuffixERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+_ZN7android6fs_mgr23SlotSuffixForSlotNumberEj
+_ZN7android6fs_mgr27MapScratchPartitionIfNeededEPNSt3__16vectorINS0_10FstabEntryENS1_9allocatorIS3_EEEERKNS1_8functionIFbRKNS1_3setINS1_12basic_stringIcNS1_11char_traitsIcEENS4_IcEEEENS1_4lessISE_EENS4_ISE_EEEEEEE
+_ZN7android6fs_mgr28CreateLogicalPartitionParams12InitDefaultsEPNS1_9OwnedDataE
+_ZN7android6fs_mgr28GetBlockDevicePartitionNamesERKNS0_10LpMetadataE
+_ZN7android6fs_mgr8Interval9IntersectERKNSt3__16vectorIS1_NS2_9allocatorIS1_EEEES8_
+_ZN7android6fs_mgr9AvbHandle16IsDeviceUnlockedEv
+_ZN7android6fs_mgr9AvbHandle16SetUpAvbHashtreeEPNS0_10FstabEntryEb
+_ZN7android6fs_mgr9AvbHandle19LoadAndVerifyVbmetaERKNS0_10FstabEntryERKNSt3__16vectorINS5_12basic_stringIcNS5_11char_traitsIcEENS5_9allocatorIcEEEENSA_ISC_EEEE
+_ZN7android6fs_mgr9AvbHandle4OpenEv
+_ZN7android7fscrypt10BytesToHexERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_
+_ZN7android7fscrypt12EnsurePolicyERKNS0_16EncryptionPolicyERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEE
+_ZN7android7fscrypt12ParseOptionsERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPNS0_17EncryptionOptionsE
+_ZN9Backtrace6CreateEiiP12BacktraceMap
+_ZNK7android10FqInstance9getFqNameEv
+_ZNK7android2dm12DeviceMapper8GetStateERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+_ZNK7android2dm13IDeviceMapper10TargetInfo18IsOverflowSnapshotEv
+_ZNK7android6FQName16isFullyQualifiedEv
+_ZNK7android6FQName16isValidValueNameEv
+_ZNK7android6FQName6stringEv
+_ZNK7android6FQNameltERKS0_
+_ZNK7android6fs_mgr15MetadataBuilder10ListGroupsEv
+_ZNK7android6fs_mgr15MetadataBuilder13FindPartitionENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE
+_ZNK7android6fs_mgr15MetadataBuilder14GetFreeRegionsEv
+_ZNK7android6fs_mgr15MetadataBuilder18logical_block_sizeEv
+_ZNK7android6fs_mgr15MetadataBuilder27GetBlockDevicePartitionNameEm
+_ZNK7android6fs_mgr15MetadataBuilder9FindGroupENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE
+_ZNK7android6fs_mgr28CreateLogicalPartitionParams13GetDeviceNameEv
+_ZNK7android6fs_mgr28CreateLogicalPartitionParams16GetPartitionNameEv
+_ZNK7android6fs_mgr9AvbHandle21GetSecurityPatchLevelERKNS0_10FstabEntryE
+_ZNKSt13runtime_error4whatEv
+_ZNKSt3__110error_code7messageEv
+_ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE4findEcm
+_ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE5rfindEcm
+_ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7compareEPKc
+_ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7compareEmmPKcm
+_ZNKSt3__119__shared_weak_count13__get_deleterERKSt9type_info
+_ZNKSt3__120__vector_base_commonILb1EE20__throw_length_errorEv
+_ZNKSt3__121__basic_string_commonILb1EE20__throw_length_errorEv
+_ZNKSt3__121__basic_string_commonILb1EE20__throw_out_of_rangeEv
+_ZNKSt3__16locale9has_facetERNS0_2idE
+_ZNKSt3__16locale9use_facetERNS0_2idE
+_ZNKSt3__18ios_base6getlocEv
+_ZNSt3__111this_thread9sleep_forERKNS_6chrono8durationIxNS_5ratioILl1ELl1000000000EEEEE
+_ZNSt3__112__next_primeEm
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE2atEm
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE5eraseEmm
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKc
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKcm
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6assignEPKc
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6assignEPKcm
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6assignERKS5_mm
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6insertEmPKc
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6insertEmPKcm
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6insertEmmc
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6resizeEmc
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7replaceEmmPKc
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7replaceEmmmc
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7reserveEm
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE9__grow_byEmmmmmm
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE9push_backEc
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC1ERKS5_
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC1ERKS5_mmRKS4_
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEED2Ev
+_ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEaSERKS5_
+_ZNSt3__112system_errorC2ENS_10error_codeERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE
+_ZNSt3__112system_errorD2Ev
+_ZNSt3__113basic_istreamIcNS_11char_traitsIcEEE5seekgENS_4fposI9mbstate_tEE
+_ZNSt3__113basic_istreamIcNS_11char_traitsIcEEE6sentryC1ERS3_b
+_ZNSt3__113basic_istreamIcNS_11char_traitsIcEEED0Ev
+_ZNSt3__113basic_istreamIcNS_11char_traitsIcEEED1Ev
+_ZNSt3__113basic_istreamIcNS_11char_traitsIcEEED2Ev
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE3putEc
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE5flushEv
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE6sentryC1ERS3_
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE6sentryD1Ev
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEED0Ev
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEED1Ev
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEED2Ev
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEPKv
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEPNS_15basic_streambufIcS2_EE
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEb
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEd
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEf
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEi
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEj
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEl
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEm
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEt
+_ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEx
+_ZNSt3__114basic_iostreamIcNS_11char_traitsIcEEED0Ev
+_ZNSt3__114basic_iostreamIcNS_11char_traitsIcEEED1Ev
+_ZNSt3__114basic_iostreamIcNS_11char_traitsIcEEED2Ev
+_ZNSt3__115__thread_structC1Ev
+_ZNSt3__115__thread_structD1Ev
+_ZNSt3__115basic_streambufIcNS_11char_traitsIcEEE4syncEv
+_ZNSt3__115basic_streambufIcNS_11char_traitsIcEEE5imbueERKNS_6localeE
+_ZNSt3__115basic_streambufIcNS_11char_traitsIcEEE5uflowEv
+_ZNSt3__115basic_streambufIcNS_11char_traitsIcEEE6setbufEPcl
+_ZNSt3__115basic_streambufIcNS_11char_traitsIcEEE6xsgetnEPcl
+_ZNSt3__115basic_streambufIcNS_11char_traitsIcEEE6xsputnEPKcl
+_ZNSt3__115basic_streambufIcNS_11char_traitsIcEEE9showmanycEv
+_ZNSt3__115basic_streambufIcNS_11char_traitsIcEEEC2Ev
+_ZNSt3__115basic_streambufIcNS_11char_traitsIcEEED2Ev
+_ZNSt3__115system_categoryEv
+_ZNSt3__116generic_categoryEv
+_ZNSt3__118condition_variable10notify_oneEv
+_ZNSt3__118condition_variable15__do_timed_waitERNS_11unique_lockINS_5mutexEEENS_6chrono10time_pointINS5_12system_clockENS5_8durationIxNS_5ratioILl1ELl1000000000EEEEEEE
+_ZNSt3__118condition_variableD1Ev
+_ZNSt3__119__shared_weak_count14__release_weakEv
+_ZNSt3__119__shared_weak_count16__release_sharedEv
+_ZNSt3__119__shared_weak_countD2Ev
+_ZNSt3__119__thread_local_dataEv
+_ZNSt3__120__throw_system_errorEiPKc
+_ZNSt3__14stodERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEPm
+_ZNSt3__15ctypeIcE2idE
+_ZNSt3__15mutex4lockEv
+_ZNSt3__15mutex6unlockEv
+_ZNSt3__15mutexD1Ev
+_ZNSt3__16__sortIRNS_6__lessIiiEEPiEEvT0_S5_T_
+_ZNSt3__16chrono12steady_clock3nowEv
+_ZNSt3__16chrono12system_clock3nowEv
+_ZNSt3__16localeC1ERKS0_
+_ZNSt3__16localeD1Ev
+_ZNSt3__16thread20hardware_concurrencyEv
+_ZNSt3__16thread4joinEv
+_ZNSt3__16thread6detachEv
+_ZNSt3__16threadD1Ev
+_ZNSt3__17codecvtIcc9mbstate_tE2idE
+_ZNSt3__18ios_base4initEPv
+_ZNSt3__18ios_base5clearEj
+_ZNSt3__19basic_iosIcNS_11char_traitsIcEEED2Ev
+_ZNSt3__19to_stringEi
+_ZNSt3__19to_stringEl
+_ZNSt3__19to_stringEm
+_ZNSt3__19to_stringEx
+_ZNSt3__1plIcNS_11char_traitsIcEENS_9allocatorIcEEEENS_12basic_stringIT_T0_T1_EEPKS6_RKS9_
+_ZSt7nothrow
+_ZSt9terminatev
+_ZTINSt3__112system_errorE
+_ZTINSt3__119__shared_weak_countE
+_ZTVN10__cxxabiv120__si_class_type_infoE
+_ZTVN7android2dm12DmTargetUserE
+_ZTVN7android2dm14DmTargetLinearE
+_ZTVN7android2dm16DmTargetSnapshotE
+_ZTVN7android6fs_mgr15PartitionOpenerE
+_ZThn16_NSt3__114basic_iostreamIcNS_11char_traitsIcEEED0Ev
+_ZThn16_NSt3__114basic_iostreamIcNS_11char_traitsIcEEED1Ev
+_ZTv0_n24_NSt3__113basic_istreamIcNS_11char_traitsIcEEED0Ev
+_ZTv0_n24_NSt3__113basic_istreamIcNS_11char_traitsIcEEED1Ev
+_ZTv0_n24_NSt3__113basic_ostreamIcNS_11char_traitsIcEEED0Ev
+_ZTv0_n24_NSt3__113basic_ostreamIcNS_11char_traitsIcEEED1Ev
+_ZTv0_n24_NSt3__114basic_iostreamIcNS_11char_traitsIcEEED0Ev
+_ZTv0_n24_NSt3__114basic_iostreamIcNS_11char_traitsIcEEED1Ev
+_ZdaPv
+_ZdlPv
+_Znam
+_Znwm
+_ZnwmRKSt9nothrow_t
+__android_log_write
+__cxa_allocate_exception
+__cxa_atexit
+__cxa_begin_catch
+__cxa_free_exception
+__cxa_guard_acquire
+__cxa_guard_release
+__cxa_pure_virtual
+__cxa_throw
+__errno
+__gnu_basename
+__gxx_personality_v0
+__libc_init
+__memcpy_chk
+__memset_chk
+__open_2
+__openat_2
+__pread_chk
+__read_chk
+__register_atfork
+__stack_chk_fail
+__strchr_chk
+__strlcpy_chk
+__strlen_chk
+__system_property_add
+__system_property_area_init
+__system_property_find
+__system_property_foreach
+__system_property_read_callback
+__system_property_set
+__system_property_update
+__umask_chk
+__vsnprintf_chk
+__write_chk
+_ctype_
+_exit
+abort
+accept4
+access
+add_key
+android_fdsan_close_with_tag
+android_fdsan_create_owner_tag
+android_fdsan_exchange_owner_tag
+atoi
+bind
+calloc
+capget
+capset
+chdir
+chmod
+chown
+chroot
+clearenv
+clock_gettime
+clone
+close
+closedir
+connect
+createProcessGroup
+d2i_X509_fp
+dirfd
+dup
+dup2
+endmntent
+epoll_create1
+epoll_ctl
+epoll_wait
+eventfd
+execv
+exit
+fchmod
+fchmodat
+fclose
+fcntl
+fdopendir
+fflush
+fileno
+flock
+fnmatch
+fopen
+fork
+fprintf
+fputc
+fputs
+fread
+free
+freecon
+fseeko
+fsetxattr
+fstat
+fstatat
+fsync
+ftello
+ftruncate
+fts_close
+fts_open
+fts_read
+fwrite
+getauxval
+getcon
+getenv
+getfilecon
+getgrnam
+getline
+getmntent
+getpagesize
+getpeercon
+getpid
+getpwnam
+getsockopt
+gettid
+glob
+globfree
+hasmntopt
+inotify_add_watch
+inotify_init1
+ioctl
+keyctl_get_keyring_ID
+keyctl_search
+kill
+killProcessGroup
+killProcessGroupOnce
+lchown
+lgetfilecon
+link
+listen
+localtime
+log2
+longjmp
+lseek
+lseek64
+lsetfilecon
+lstat
+malloc
+mbstowcs
+memchr
+memcmp
+memcpy
+memmove
+memset
+mkdir
+mknod
+mkostemp
+mlock
+mlockall
+mmap
+mount
+munlockall
+munmap
+open
+opendir
+pipe
+poll
+posix_fadvise
+posix_memalign
+prctl
+printf
+pthread_create
+pthread_equal
+pthread_getspecific
+pthread_key_create
+pthread_once
+pthread_self
+pthread_setspecific
+puts
+read
+readahead
+readdir
+readlink
+reboot
+recvfrom
+recvmsg
+remove
+removeAllEmptyProcessGroups
+rename
+rewind
+rmdir
+security_compute_create
+security_getenforce
+security_load_policy
+security_setenforce
+selabel_lookup
+selabel_lookup_best_match
+selinux_android_file_context_handle
+selinux_android_restorecon
+selinux_android_set_sehandle
+selinux_check_access
+selinux_set_callback
+sem_init
+sem_post
+sem_timedwait_monotonic_np
+sem_wait
+sendfile
+sendto
+setProcessGroupLimit
+setProcessGroupSoftLimit
+setProcessGroupSwappiness
+set_selinuxmnt
+setegid
+setenv
+setexeccon
+setfscreatecon
+setgid
+setgroups
+setmntent
+setns
+setpgid
+setpriority
+setrlimit
+setsid
+setsockcreatecon
+setsockopt
+settimeofday
+setuid
+sigaction
+sigaddset
+sigemptyset
+signal
+signalfd
+sigprocmask
+sleep
+socket
+socketpair
+sscanf
+stat
+stderr
+strcasecmp
+strcat
+strchr
+strcmp
+strcpy
+strerror
+strftime
+string_to_security_class
+strlen
+strncmp
+strnlen
+strtod
+strtol
+strtoll
+strtoul
+strtoull
+swapoff
+symlink
+sync
+syscall
+sysconf
+time
+umount
+umount2
+uname
+unlink
+unlinkat
+unsetenv
+unshare
+vsnprintf
+wait
+waitid
+waitpid
+write
+
+===== PLT mapa (pelna; do grepa):
+PLT stubow: 517
+0x223170  __libc_init
+0x223180  __cxa_atexit
+0x223190  __register_atfork
+0x2231a0  setpriority
+0x2231b0  __gnu_basename
+0x2231c0  strcmp
+0x2231d0  _ZN7android4base12KernelLoggerENS0_5LogIdENS0_11LogSeverityEPKcS4_jS4_
+0x2231e0  _ZN7android4base14DefaultAborterEPKc
+0x2231f0  _ZN7android4base11InitLoggingEPPcONSt3__18functionIFvNS0_5LogIdENS0_11LogSeverityEPKcS8_jS8_EEEONS4_IFvS8_EEE
+0x223200  __stack_chk_fail
+0x223210  _ZdlPv
+0x223220  _Znwm
+0x223230  _ZN7android4base9ShouldLogENS0_11LogSeverityEPKc
+0x223240  strlen
+0x223250  memcpy
+0x223260  atoi
+0x223270  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC1ERKS5_
+0x223280  poll
+0x223290  __errno
+0x2232a0  _ZNSt3__18ios_base4initEPv
+0x2232b0  _ZNSt3__115basic_streambufIcNS_11char_traitsIcEEEC2Ev
+0x2232c0  _ZN7android4base10LogMessageC1EPKcjNS0_11LogSeverityES3_i
+0x2232d0  _ZN7android4base10LogMessage6streamEv
+0x2232e0  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEi
+0x2232f0  _ZN7android4base10LogMessageD1Ev
+0x223300  _ZNSt3__115basic_streambufIcNS_11char_traitsIcEEED2Ev
+0x223310  _ZNSt3__114basic_iostreamIcNS_11char_traitsIcEEED2Ev
+0x223320  _ZNSt3__19basic_iosIcNS_11char_traitsIcEEED2Ev
+0x223330  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEaSERKS5_
+0x223340  _ZNKSt3__121__basic_string_commonILb1EE20__throw_length_errorEv
+0x223350  socketpair
+0x223360  android_fdsan_close_with_tag
+0x223370  android_fdsan_create_owner_tag
+0x223380  fork
+0x223390  close
+0x2233a0  dup
+0x2233b0  _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7compareEmmPKcm
+0x2233c0  setexeccon
+0x2233d0  _ZN7android4base17GetExecutablePathEv
+0x2233e0  _ZNSt3__19to_stringEi
+0x2233f0  execv
+0x223400  kill
+0x223410  _ZN7android4base10StartsWithENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_
+0x223420  sendto
+0x223430  memset
+0x223440  recvfrom
+0x223450  abort
+0x223460  _ZNKSt3__120__vector_base_commonILb1EE20__throw_length_errorEv
+0x223470  _ZN3fmt2v76detail7vformatENS0_17basic_string_viewIcEENS0_11format_argsE
+0x223480  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKc
+0x223490  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6appendEPKcm
+0x2234a0  strerror
+0x2234b0  memcmp
+0x2234c0  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE9push_backEc
+0x2234d0  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6resizeEmc
+0x2234e0  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE6sentryC1ERS3_
+0x2234f0  _ZNKSt3__18ios_base6getlocEv
+0x223500  _ZNKSt3__16locale9use_facetERNS0_2idE
+0x223510  _ZNSt3__16localeD1Ev
+0x223520  _ZNSt3__18ios_base5clearEj
+0x223530  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE6sentryD1Ev
+0x223540  android_fdsan_exchange_owner_tag
+0x223550  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEED2Ev
+0x223560  memchr
+0x223570  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6assignEPKc
+0x223580  _ZN7android4base4JoinINSt3__16vectorINS2_12basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEENS7_IS9_EEEEcEES9_RKT_T0_
+0x223590  _ZN7android4base10boot_clock3nowEv
+0x2235a0  _ZN7android4base12StringPrintfEPKcz
+0x2235b0  _ZN7android4base21GetMinimumLogSeverityEv
+0x2235c0  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEx
+0x2235d0  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6insertEmPKc
+0x2235e0  _ZN7android4base11GetPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_
+0x2235f0  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEED2Ev
+0x223600  _ZNSt3__15mutex4lockEv
+0x223610  write
+0x223620  _ZNSt3__15mutex6unlockEv
+0x223630  __cxa_guard_acquire
+0x223640  __cxa_guard_release
+0x223650  _ZNSt3__15mutexD1Ev
+0x223660  _ZNSt3__115__thread_structC1Ev
+0x223670  pthread_create
+0x223680  _ZNSt3__16threadD1Ev
+0x223690  _ZNSt3__120__throw_system_errorEiPKc
+0x2236a0  eventfd
+0x2236b0  memmove
+0x2236c0  read
+0x2236d0  _ZNSt3__119__shared_weak_count14__release_weakEv
+0x2236e0  _ZNSt3__119__thread_local_dataEv
+0x2236f0  pthread_setspecific
+0x223700  _ZNSt3__115__thread_structD1Ev
+0x223710  epoll_create1
+0x223720  epoll_ctl
+0x223730  epoll_wait
+0x223740  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEj
+0x223750  _ZNSt3__119__shared_weak_countD2Ev
+0x223760  strtoul
+0x223770  getpwnam
+0x223780  setsockcreatecon
+0x223790  socket
+0x2237a0  unlink
+0x2237b0  setfscreatecon
+0x2237c0  setsockopt
+0x2237d0  bind
+0x2237e0  lchown
+0x2237f0  fchmodat
+0x223800  __vsnprintf_chk
+0x223810  __open_2
+0x223820  fstat
+0x223830  _ZN7android4base14ReadFdToStringENS0_11borrowed_fdEPNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+0x223840  open
+0x223850  _ZN7android4base15WriteStringToFdERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEENS0_11borrowed_fdE
+0x223860  _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE4findEcm
+0x223870  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEC1ERKS5_mmRKS4_
+0x223880  stat
+0x223890  mkdir
+0x2238a0  _ZNSt3__111this_thread9sleep_forERKNS_6chrono8durationIxNS_5ratioILl1ELl1000000000EEEEE
+0x2238b0  _ZN7android4baselsERNSt3__113basic_ostreamIcNS1_11char_traitsIcEEEERKNS0_5TimerE
+0x2238c0  _ZN7android4base16ReadFileToStringERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_b
+0x2238d0  _ZN7android4base4TrimERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+0x2238e0  _ZN7android4base5SplitERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_
+0x2238f0  _ZN7android4base13StringReplaceENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_S5_b
+0x223900  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE5eraseEmm
+0x223910  strchr
+0x223920  mbstowcs
+0x223930  dup2
+0x223950  access
+0x223960  gettid
+0x223970  __write_chk
+0x223980  getenv
+0x223990  strtoll
+0x2239a0  fcntl
+0x2239b0  __strlen_chk
+0x2239c0  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE9__grow_byEmmmmmm
+0x2239d0  _ZNSt3__1plIcNS_11char_traitsIcEENS_9allocatorIcEEEENS_12basic_stringIT_T0_T1_EEPKS6_RKS9_
+0x2239e0  _ZN7android4base15GetBoolPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEb
+0x2239f0  setenv
+0x223a00  __strlcpy_chk
+0x223a10  ioctl
+0x223a20  _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7compareEPKc
+0x223a30  syscall
+0x223a40  _ZN7android4base21SetMinimumLogSeverityENS0_11LogSeverityE
+0x223a50  _Z16fs_mgr_mount_allPNSt3__16vectorIN7android6fs_mgr10FstabEntryENS_9allocatorIS3_EEEEi
+0x223a60  _ZNSt3__19to_stringEx
+0x223a70  _ZN7android4base11SetPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_
+0x223a80  mount
+0x223a90  opendir
+0x223aa0  readdir
+0x223ab0  closedir
+0x223ac0  glob
+0x223ad0  globfree
+0x223ae0  _ZN7android4base14GetIntPropertyIiEET_RKNSt3__112basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEES2_S2_S2_
+0x223af0  umount
+0x223b00  _Z17fs_mgr_umount_allPNSt3__16vectorIN7android6fs_mgr10FstabEntryENS_9allocatorIS3_EEEE
+0x223b10  _Z19logwrap_fork_execvpiPKPKcPibibS0_
+0x223b20  fts_open
+0x223b30  _exit
+0x223b40  fts_read
+0x223b50  fts_close
+0x223b60  _Z42fs_mgr_remount_userdata_into_checkpointingPNSt3__16vectorIN7android6fs_mgr10FstabEntryENS_9allocatorIS3_EEEE
+0x223b70  _ZN7android4base17WriteStringToFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_b
+0x223b80  selinux_android_restorecon
+0x223b90  rmdir
+0x223ba0  setrlimit
+0x223bb0  _Z17fs_mgr_swapon_allRKNSt3__16vectorIN7android6fs_mgr10FstabEntryENS_9allocatorIS3_EEEE
+0x223bc0  symlink
+0x223bd0  settimeofday
+0x223be0  _Z24fs_mgr_load_verity_statePi
+0x223bf0  _Z24fs_mgr_is_verity_enabledRKN7android6fs_mgr10FstabEntryE
+0x223c00  _ZN7android4base8BasenameERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+0x223c10  _Z24fs_mgr_get_hashtree_infoRKN7android6fs_mgr10FstabEntryE
+0x223c20  strtod
+0x223c30  _Z17fscrypt_is_nativev
+0x223c40  _ZN7android3gsi12IsGsiRunningEv
+0x223c50  _Z24write_bootloader_messageRKNSt3__16vectorINS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEENS4_IS6_EEEEPS6_
+0x223c60  lstat
+0x223c70  posix_fadvise
+0x223c80  readahead
+0x223c90  _ZNSt3__118condition_variable10notify_oneEv
+0x223ca0  _ZNSt3__16thread4joinEv
+0x223cb0  unshare
+0x223cc0  time
+0x223cd0  localtime
+0x223ce0  strftime
+0x223cf0  uname
+0x223d00  fwrite
+0x223d10  fprintf
+0x223d20  _ZNKSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE5rfindEcm
+0x223d30  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7replaceEmmPKc
+0x223d40  fputs
+0x223d50  fputc
+0x223d60  fopen
+0x223d70  fclose
+0x223d80  _ZNSt3__16chrono12steady_clock3nowEv
+0x223d90  _ZNSt3__16chrono12system_clock3nowEv
+0x223da0  _ZNSt3__118condition_variable15__do_timed_waitERNS_11unique_lockINS_5mutexEEENS_6chrono10time_pointINS5_12system_clockENS5_8durationIxNS_5ratioILl1ELl1000000000EEEEEEE
+0x223db0  _ZNSt3__19to_stringEm
+0x223dc0  killProcessGroupOnce
+0x223dd0  killProcessGroup
+0x223de0  prctl
+0x223df0  removeAllEmptyProcessGroups
+0x223e00  _ZNSt3__19to_stringEl
+0x223e10  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEm
+0x223e20  pipe
+0x223e30  getcon
+0x223e40  getfilecon
+0x223e50  string_to_security_class
+0x223e60  security_compute_create
+0x223e70  clone
+0x223e80  createProcessGroup
+0x223e90  free
+0x223ea0  freecon
+0x223eb0  __umask_chk
+0x223ec0  setProcessGroupSwappiness
+0x223ed0  setProcessGroupSoftLimit
+0x223ee0  sysconf
+0x223ef0  _ZN7android4base15GetUintPropertyImEET_RKNSt3__112basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEES2_S2_
+0x223f00  setProcessGroupLimit
+0x223f10  SetTaskProfiles
+0x223f20  setns
+0x223f30  umount2
+0x223f40  signal
+0x223f50  wait
+0x223f60  setsid
+0x223f70  setpgid
+0x223f80  setgid
+0x223f90  setgroups
+0x223fa0  setuid
+0x223fb0  CgroupGetControllerPath
+0x223fc0  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6insertEmmc
+0x223fd0  CgroupGetControllerFromPath
+0x223fe0  capget
+0x223ff0  capset
+0x224000  waitpid
+0x224010  exit
+0x224020  chroot
+0x224030  calloc
+0x224040  malloc
+0x224050  strcpy
+0x224060  __system_property_find
+0x224070  __system_property_read_callback
+0x224080  strcasecmp
+0x224090  strtoull
+0x2240a0  __strchr_chk
+0x2240b0  sscanf
+0x2240c0  _ZN7android4base16EqualsIgnoreCaseENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_
+0x2240d0  __system_property_set
+0x2240e0  _ZNSt3__16thread20hardware_concurrencyEv
+0x2240f0  clearenv
+0x224100  chmod
+0x224110  mknod
+0x224120  _ZN7android4base7DirnameERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+0x224130  _ZNSt3__115system_categoryEv
+0x224140  link
+0x224150  _ZNKSt3__110error_code7messageEv
+0x224160  dirfd
+0x224170  unlinkat
+0x224180  fstatat
+0x224190  __openat_2
+0x2241a0  fdopendir
+0x2241b0  _Z31fs_mgr_get_super_partition_namei
+0x2241c0  _ZN7android4base8RealpathERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_
+0x2241d0  _Z35fs_mgr_create_canonical_mount_pointRKNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE
+0x2241e0  _Z19fs_mgr_do_mount_oneRKN7android6fs_mgr10FstabEntryERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEE
+0x2241f0  _Z31fs_mgr_update_logical_partitionPN7android6fs_mgr10FstabEntryE
+0x224200  _ZN7android6fs_mgr19ReadCurrentMetadataERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+0x224210  _ZN7android6fs_mgr23CreateLogicalPartitionsERKNS0_10LpMetadataERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEE
+0x224220  _Z34fs_mgr_mount_overlayfs_fstab_entryRKN7android6fs_mgr10FstabEntryE
+0x224230  _ZN7android2dm12DeviceMapper8InstanceEv
+0x224240  _ZNK7android2dm12DeviceMapper8GetStateERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+0x224250  _ZN7android6fs_mgr27MapScratchPartitionIfNeededEPNSt3__16vectorINS0_10FstabEntryENS1_9allocatorIS3_EEEERKNS1_8functionIFbRKNS1_3setINS1_12basic_stringIcNS1_11char_traitsIcEENS4_IcEEEENS1_4lessISE_EENS4_ISE_EEEEEEE
+0x224260  _Z26fs_mgr_overlayfs_mount_allPNSt3__16vectorIN7android6fs_mgr10FstabEntryENS_9allocatorIS3_EEEE
+0x224270  _ZN7android6fs_mgr28GetBlockDevicePartitionNamesERKNS0_10LpMetadataE
+0x224280  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEPKv
+0x224290  _Z35fs_mgr_verity_is_check_at_most_onceRKN7android6fs_mgr10FstabEntryE
+0x2242a0  _ZN7android3gsi14CanBootIntoGsiEPNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+0x2242b0  _ZN7android6fiemap13IImageManager4OpenERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEERKNS2_6chrono8durationIxNS2_5ratioILl1ELl1000EEEEERKNS1_10DeviceInfoE
+0x2242c0  _ZN7android3gsi15MarkSystemAsGsiEv
+0x2242d0  _ZN7android6fs_mgr9AvbHandle16SetUpAvbHashtreeEPNS0_10FstabEntryEb
+0x2242e0  _ZN7android6fs_mgr9AvbHandle19LoadAndVerifyVbmetaERKNS0_10FstabEntryERKNSt3__16vectorINS5_12basic_stringIcNS5_11char_traitsIcEENS5_9allocatorIcEEEENSA_ISC_EEEE
+0x2242f0  _ZNK7android6fs_mgr9AvbHandle21GetSecurityPatchLevelERKNS0_10FstabEntryE
+0x224300  _ZN7android6fs_mgr9AvbHandle16IsDeviceUnlockedEv
+0x224310  _ZN7android6fs_mgr9AvbHandle4OpenEv
+0x224320  _ZdaPv
+0x224330  fnmatch
+0x224340  chown
+0x224350  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6insertEmPKcm
+0x224360  setegid
+0x224370  lgetfilecon
+0x224380  lsetfilecon
+0x224390  _ZN7android4base8ReadlinkERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_
+0x2243a0  keyctl_search
+0x2243b0  add_key
+0x2243c0  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEt
+0x2243d0  _ZN7android7fscrypt12ParseOptionsERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPNS0_17EncryptionOptionsE
+0x2243e0  _ZN7android7fscrypt12EnsurePolicyERKNS0_16EncryptionPolicyERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEE
+0x2243f0  _ZN7android7fscrypt10BytesToHexERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_
+0x224400  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEb
+0x224410  _ZN9Backtrace6CreateEiiP12BacktraceMap
+0x224420  _ZNSt3__16thread6detachEv
+0x224430  sigaction
+0x224440  keyctl_get_keyring_ID
+0x224450  unsetenv
+0x224460  sigemptyset
+0x224470  sigaddset
+0x224480  sigprocmask
+0x224490  signalfd
+0x2244a0  _Z31fs_mgr_vendor_overlay_mount_allv
+0x2244b0  _ZN7android3gsi14IsGsiInstalledEv
+0x2244c0  _ZNSt3__113basic_istreamIcNS_11char_traitsIcEEED2Ev
+0x2244d0  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEd
+0x2244e0  _Z11CgroupSetupv
+0x2244f0  _ZNSt3__16localeC1ERKS0_
+0x224500  _ZNKSt3__16locale9has_facetERNS0_2idE
+0x224510  _Znam
+0x224520  fseeko
+0x224530  ftello
+0x224540  fflush
+0x224550  fread
+0x224560  _ZNSt3__113basic_istreamIcNS_11char_traitsIcEEE6sentryC1ERS3_b
+0x224570  _ZN7android6FQNameC1Ev
+0x224580  _ZN7android6FQName5parseERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS0_
+0x224590  _ZNK7android6FQName16isFullyQualifiedEv
+0x2245a0  _ZNK7android6FQName16isValidValueNameEv
+0x2245b0  strtol
+0x2245c0  _ZN7android10FqInstance5setToERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+0x2245d0  _ZNK7android10FqInstance9getFqNameEv
+0x2245e0  _ZNK7android6FQName6stringEv
+0x2245f0  _ZNK7android6FQNameltERKS0_
+0x224600  inotify_init1
+0x224610  inotify_add_watch
+0x224620  fileno
+0x224630  rewind
+0x224640  getline
+0x224650  _ZN7android2dm12DeviceMapper21GetDmDevicePathByNameERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEPS8_
+0x224660  _ZN7android2dm12DeviceMapper26GetParentBlockDeviceByPathERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+0x224670  selinux_check_access
+0x224680  __system_property_update
+0x224690  __system_property_add
+0x2246a0  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7replaceEmmmc
+0x2246b0  __memcpy_chk
+0x2246c0  strncmp
+0x2246d0  _ZN7android4base17WriteStringToFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_jjjb
+0x2246e0  selinux_set_callback
+0x2246f0  __system_property_area_init
+0x224700  listen
+0x224710  accept4
+0x224720  getsockopt
+0x224730  getpeercon
+0x224740  fsync
+0x224750  rename
+0x224760  __system_property_foreach
+0x224770  __read_chk
+0x224780  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6assignERKS5_mm
+0x224790  _ZN7android4base15GetUintPropertyIjEET_RKNSt3__112basic_stringIcNS3_11char_traitsIcEENS3_9allocatorIcEEEES2_S2_
+0x2247a0  sem_wait
+0x2247b0  clock_gettime
+0x2247c0  sem_timedwait_monotonic_np
+0x2247d0  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEl
+0x2247e0  _Z23write_reboot_bootloaderPNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE
+0x2247f0  _Z23read_bootloader_messageP18bootloader_messagePNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+0x224800  _Z24write_bootloader_messageRK18bootloader_messagePNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+0x224810  _ZN7android4base15WaitForPropertyERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_NS1_6chrono8durationIxNS1_5ratioILl1ELl1000EEEEE
+0x224820  sync
+0x224830  swapoff
+0x224840  sem_init
+0x224850  sem_post
+0x224860  waitid
+0x224870  setmntent
+0x224880  getmntent
+0x224890  endmntent
+0x2248a0  hasmntopt
+0x2248b0  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE2atEm
+0x2248c0  reboot
+0x2248d0  sleep
+0x2248e0  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE3putEc
+0x2248f0  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEE5flushEv
+0x224900  _ZNSt3__113basic_istreamIcNS_11char_traitsIcEEE5seekgENS_4fposI9mbstate_tEE
+0x224910  selinux_android_file_context_handle
+0x224920  selinux_android_set_sehandle
+0x224930  selabel_lookup
+0x224940  selabel_lookup_best_match
+0x224950  vsnprintf
+0x224960  strnlen
+0x224970  _Z13OpenArchiveFdiPKcPP10ZipArchiveb
+0x224980  _Z15ErrorCodeStringi
+0x224990  _Z12CloseArchiveP10ZipArchive
+0x2249a0  set_selinuxmnt
+0x2249b0  security_load_policy
+0x2249c0  security_getenforce
+0x2249d0  security_setenforce
+0x2249e0  _Z9FindEntryP10ZipArchiveNSt3__117basic_string_viewIcNS1_11char_traitsIcEEEEP8ZipEntry
+0x2249f0  _Z18ExtractEntryToFileP10ZipArchivePK8ZipEntryi
+0x224a00  mkostemp
+0x224a10  fsetxattr
+0x224a20  mlockall
+0x224a30  munlockall
+0x224a40  getpagesize
+0x224a50  posix_memalign
+0x224a60  __pread_chk
+0x224a70  mlock
+0x224a80  chdir
+0x224a90  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEf
+0x224aa0  _ZN7android4base10WriteFullyENS0_11borrowed_fdEPKvm
+0x224ab0  sendfile
+0x224ac0  getgrnam
+0x224ad0  _ZN7android4base8EndsWithENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEES5_
+0x224ae0  _ZNSt3__112__next_primeEm
+0x224af0  mmap
+0x224b00  munmap
+0x224b10  SHA256
+0x224b20  RSA_verify
+0x224b30  BN_new
+0x224b40  RSA_new
+0x224b50  BN_bin2bn
+0x224b60  BN_set_word
+0x224b70  RSA_set0_key
+0x224b80  RSA_free
+0x224b90  BN_free
+0x224ba0  X509_free
+0x224bb0  EVP_PKEY_id
+0x224bc0  EVP_PKEY_get0_RSA
+0x224bd0  RSA_get0_n
+0x224be0  BN_num_bytes
+0x224bf0  BN_bn2bin
+0x224c00  X509_get_pubkey
+0x224c10  d2i_X509_fp
+0x224c20  _ZNSt3__119__shared_weak_count16__release_sharedEv
+0x224c30  _Unwind_Resume
+0x224c40  _ZNSt3__116generic_categoryEv
+0x224c50  __cxa_allocate_exception
+0x224c60  __cxa_throw
+0x224c70  __cxa_free_exception
+0x224c80  _ZNSt3__112system_errorC2ENS_10error_codeERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEE
+0x224c90  _ZNSt3__112system_errorD2Ev
+0x224ca0  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE6assignEPKcm
+0x224cb0  __cxa_begin_catch
+0x224cc0  _ZSt9terminatev
+0x224cd0  _ZNKSt13runtime_error4whatEv
+0x224ce0  fchmod
+0x224cf0  ftruncate
+0x224d00  readlink
+0x224d10  remove
+0x224d20  _ZNSt3__112basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE7reserveEm
+0x224d30  strcat
+0x224d40  connect
+0x224d50  recvmsg
+0x224d60  _ZN7android4base8TokenizeERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEES9_
+0x224d70  _ZN7android4base10StartsWithENSt3__117basic_string_viewIcNS1_11char_traitsIcEEEEc
+0x224d80  _ZnwmRKSt9nothrow_t
+0x224d90  _ZNSt3__14stodERKNS_12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEEEPm
+0x224da0  _ZN7android4base9ReadFullyENS0_11borrowed_fdEPvm
+0x224db0  _ZN7android4base18RemoveFileIfExistsERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEEPS7_
+0x224dc0  _ZNK7android2dm13IDeviceMapper10TargetInfo18IsOverflowSnapshotEv
+0x224dd0  _ZN7android2dm7DmTable9AddTargetEONSt3__110unique_ptrINS0_8DmTargetENS2_14default_deleteIS4_EEEE
+0x224de0  _ZN7android6fs_mgr11WaitForFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEENS1_6chrono8durationIxNS1_5ratioILl1ELl1000EEEEE
+0x224df0  _ZN7android6fs_mgr23SlotNumberForSlotSuffixERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+0x224e00  _ZN7android6fs_mgr22CreateLogicalPartitionENS0_28CreateLogicalPartitionParamsEPNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEE
+0x224e10  _ZN7android6fs_mgr17ReadFromImageFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+0x224e20  _ZN7android6fs_mgr18WaitForFileDeletedERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEENS1_6chrono8durationIxNS1_5ratioILl1ELl1000EEEEE
+0x224e30  _ZN7android6fs_mgr13FindPartitionERKNS0_10LpMetadataERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEE
+0x224e40  _ZN7android6fs_mgr12ReadMetadataERKNS0_16IPartitionOpenerERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEEj
+0x224e50  _ZN7android2dm16DmTargetSnapshot15ParseStatusTextERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEPNS1_6StatusE
+0x224e60  _ZN7android2dm12DeviceMapper13GetTargetTypeERK14dm_target_spec
+0x224e70  _ZN7android2dm16DmTargetSnapshot20GetDevicesFromParamsERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEPS8_SB_
+0x224e80  _ZN7android6fs_mgr13CreateDmTableENS0_28CreateLogicalPartitionParamsEPNS_2dm7DmTableE
+0x224e90  _ZN7android2dm16DmTargetSnapshot12MergePercentERKNS1_6StatusEm
+0x224ea0  _ZN7android6fs_mgr21GetPartitionGroupNameERK24LpMetadataPartitionGroup
+0x224eb0  _ZN7android6fs_mgr16GetPartitionNameERK19LpMetadataPartition
+0x224ec0  _ZNK7android6fs_mgr28CreateLogicalPartitionParams16GetPartitionNameEv
+0x224ed0  _ZNK7android6fs_mgr28CreateLogicalPartitionParams13GetDeviceNameEv
+0x224ee0  _ZN7android6fs_mgr28CreateLogicalPartitionParams12InitDefaultsEPNS1_9OwnedDataE
+0x224ef0  flock
+0x224f00  _ZN7android6fs_mgr15MetadataBuilder21ListPartitionsInGroupENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE
+0x224f10  _ZN7android6fs_mgr15MetadataBuilder15RemovePartitionENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE
+0x224f20  _ZN7android6fs_mgr15MetadataBuilder3NewERKNS0_16IPartitionOpenerERKNSt3__112basic_stringIcNS5_11char_traitsIcEENS5_9allocatorIcEEEEj
+0x224f30  _ZN7android6fs_mgr15MetadataBuilder12NewForUpdateERKNS0_16IPartitionOpenerERKNSt3__112basic_stringIcNS5_11char_traitsIcEENS5_9allocatorIcEEEEjjb
+0x224f40  _ZNK7android6fs_mgr15MetadataBuilder10ListGroupsEv
+0x224f50  _ZN7android6fs_mgr15MetadataBuilder24RemoveGroupAndPartitionsENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE
+0x224f60  _ZNK7android6fs_mgr15MetadataBuilder27GetBlockDevicePartitionNameEm
+0x224f70  _ZN7android6fs_mgr15MetadataBuilder6ExportEv
+0x224f80  _ZN7android6fs_mgr20UpdatePartitionTableERKNS0_16IPartitionOpenerERKNSt3__112basic_stringIcNS4_11char_traitsIcEENS4_9allocatorIcEEEERKNS0_10LpMetadataEj
+0x224f90  _ZN7android6fs_mgr16WriteToImageFileERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEERKNS0_10LpMetadataE
+0x224fa0  _ZN7android6fs_mgr15MetadataBuilder8AddGroupENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEEm
+0x224fb0  _ZNK7android6fs_mgr15MetadataBuilder13FindPartitionENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE
+0x224fc0  _ZN7android6fs_mgr15MetadataBuilder12AddPartitionENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEES6_j
+0x224fd0  _ZN7android6fs_mgr15MetadataBuilder15ResizePartitionEPNS0_9PartitionEmRKNSt3__16vectorINS0_8IntervalENS4_9allocatorIS6_EEEE
+0x224fe0  _ZNSt3__113basic_ostreamIcNS_11char_traitsIcEEElsEPNS_15basic_streambufIcS2_EE
+0x224ff0  _Z25fs_mgr_overlayfs_is_setupv
+0x225000  _ZN7android6fiemap12ImageManager4OpenERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEERKNS0_13IImageManager10DeviceInfoE
+0x225010  lseek
+0x225020  _ZNSt3__16__sortIRNS_6__lessIiiEEPiEEvT0_S5_T_
+0x225030  pthread_once
+0x225040  getauxval
+0x225050  lseek64
+0x225060  longjmp
+0x225070  puts
+0x225080  printf
+0x225090  _ZNKSt3__121__basic_string_commonILb1EE20__throw_out_of_rangeEv
+0x2250a0  log2
+0x2250b0  __memset_chk
+0x2250c0  _ZN7android6fs_mgr23SlotSuffixForSlotNumberEj
+0x2250d0  _ZN7android6fs_mgr15MetadataBuilder20ChangePartitionGroupEPNS0_9PartitionENSt3__117basic_string_viewIcNS4_11char_traitsIcEEEE
+0x2250e0  _ZNK7android6fs_mgr15MetadataBuilder9FindGroupENSt3__117basic_string_viewIcNS2_11char_traitsIcEEEE
+0x2250f0  _ZN7android6fs_mgr15MetadataBuilder15ChangeGroupSizeERKNSt3__112basic_stringIcNS2_11char_traitsIcEENS2_9allocatorIcEEEEm
+0x225100  _ZNK7android6fs_mgr15MetadataBuilder18logical_block_sizeEv
+0x225110  _ZNK7android6fs_mgr15MetadataBuilder14GetFreeRegionsEv
+0x225120  _ZN7android6fs_mgr8Interval9IntersectERKNSt3__16vectorIS1_NS2_9allocatorIS1_EEEES8_
+0x225130  _ZN7android6fiemap12FiemapStatus13CastErrorCodeEi
+0x225140  _ZN7android6fs_mgr15GetEntryForPathEPNSt3__16vectorINS0_10FstabEntryENS1_9allocatorIS3_EEEERKNS1_12basic_stringIcNS1_11char_traitsIcEENS4_IcEEEE
+0x225150  _ZN7android6fs_mgr17EnsurePathMountedEPNSt3__16vectorINS0_10FstabEntryENS1_9allocatorIS3_EEEERKNS1_12basic_stringIcNS1_11char_traitsIcEENS4_IcEEEESE_
+0x225160  _ZN7android6fs_mgr19EnsurePathUnmountedEPNSt3__16vectorINS0_10FstabEntryENS1_9allocatorIS3_EEEERKNS1_12basic_stringIcNS1_11char_traitsIcEENS4_IcEEEE
+0x225170  _ZN7android6fs_mgr22GetPartitionSlotSuffixERKNSt3__112basic_stringIcNS1_11char_traitsIcEENS1_9allocatorIcEEEE
+0x225180  pthread_getspecific
+0x225190  pthread_key_create
+0x2251a0  pthread_self
+0x2251b0  pthread_equal
+0x2251c0  __android_log_write

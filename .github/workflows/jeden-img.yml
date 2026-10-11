@@ -1,0 +1,128 @@
+name: jeden-img
+# Skleja 32 czesci z release mysticalos-3-super w JEDEN super_mystical3.img,
+# weryfikuje sumy (SHA256SUMS.txt czesci + super.manifest calosci) i wgrywa
+# JEDEN plik na hosting publiczny z bezposrednim linkiem.
+#
+# CZEMU nie na GitHubie: twardy limit 2 GiB na asset release (LFS tez 2 GiB,
+# Pages 1 GiB) - super_mystical3.img ~6,3 GB fizycznie nie wejdzie. Jeden plik
+# zyje wiec na hostingu, a link wkracam do not release'a mysticalos-3-super.
+#
+# receipt 37058971097 (m3 krok 8): tools/public_links.sh zniknal z drzewa
+# ("No such file or directory", mirrory padaly milczaco) - ten workflow
+# przywraca skrypt (v2: HOSTS/UP_MAX_TIME/STOP_AFTER z env).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/jeden-img.yml', 'tools/public_links.sh']
+
+concurrency:
+  group: jeden-img
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  join:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}   # receipt 37044228897: gh z nie-git cwd pada bez GH_REPO
+      WORK: /tmp/join
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "1. Pobierz caly release mysticalos-3-super (GitHub CDN)"
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK"
+          df -h / | tail -1
+          gh release download mysticalos-3-super --clobber --dir "$WORK"
+          echo "assetow: $(ls "$WORK" | wc -l), razem $(du -sm "$WORK" | cut -f1) MB"
+          df -h / | tail -1
+
+      - name: "2. Weryfikacja czesci (sha256sum -c SHA256SUMS.txt)"
+        run: |
+          set -euo pipefail
+          cd "$WORK"
+          sha256sum -c SHA256SUMS.txt
+
+      - name: "3. Sklej JEDEN super_mystical3.img + weryfikacja z super.manifest"
+        run: |
+          set -euo pipefail
+          cd "$WORK"
+          NP=$(ls super_mystical3.part.* | wc -l)
+          echo "czesci: $NP"
+          cat super_mystical3.part.* > super_mystical3.img
+          SZ=$(stat -c%s super_mystical3.img)
+          WANT=$(sed -n 's/^size_sparse=//p' super.manifest | head -1)
+          SHA=$(sha256sum super_mystical3.img | cut -d' ' -f1)
+          WANTSHA=$(sed -n 's/^sha256_sparse_zlozony=//p' super.manifest | head -1)
+          echo "size=$SZ (manifest: $WANT)"
+          echo "sha256=$SHA"
+          [ -n "$WANT" ] && [ "$SZ" = "$WANT" ] || { echo "::error::rozmiar niezgodny z manifestem"; exit 1; }
+          [ -n "$WANTSHA" ] && [ "$SHA" = "$WANTSHA" ] || { echo "::error::sha256 niezgodny z manifestem"; exit 1; }
+          echo "JEDEN IMG OK: super_mystical3.img $SZ B (sha256 = manifest builda)"
+
+      - name: "4. Upload JEDNEGO pliku (transfer.archivete.am -> gofile -> bashupload)"
+        run: |
+          set -uo pipefail
+          cd "$WORK"
+          df -h / | tail -1
+          HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
+            bash "$GITHUB_WORKSPACE/tools/public_links.sh" "$WORK/super_mystical3.img" /tmp/links.md
+          echo "== links.md =="; cat /tmp/links.md
+
+      - name: "4b. Artifact: JEDEN plik NA GITHUBIE (do pobrania ze strony runa)"
+        # Assety release: limit 2 GiB. ARTIFAKT runu: limit 10 GB, a publiczne
+        # repo ma storage artifactow za darmo -> super_mystical3.img 6,3 GB
+        # MOZE zyc na GitHubie jako jeden plik. Pobieranie: strona runa ->
+        # sekcja Artifacts -> super_mystical3-img.zip -> unzip -> jeden img.
+        # (retencja 90 dni; pobierz zanim repo wroci na private)
+        uses: actions/upload-artifact@v4
+        with:
+          name: super_mystical3-img
+          path: /tmp/join/super_mystical3.img
+          retention-days: 90
+          compression-level: 0   # binarny img i tak sie nie spakuje; 0 = szybki upload
+
+      - name: "5. Link do not release'a + evidence (reports/)"
+        run: |
+          set -uo pipefail
+          cd "$GITHUB_WORKSPACE"
+          BEST=$(awk '/^- link: /{u=$3} /PLIK OD RAZU/{if(!b){print u; b=1}}' /tmp/links.md)
+          echo "BEST=$BEST"
+          if [ -n "$BEST" ]; then
+            gh release view mysticalos-3-super --json body -q .body > /tmp/old-notes.md
+            { cat /tmp/old-notes.md
+              echo
+              echo "## JEDEN PLIK (bez sklejania): super_mystical3.img"
+              echo "Pobierz jednym kliknieciem: $BEST"
+              echo "(sklejony automatycznie z czesci, sha256 zweryfikowany z manifestem builda)"
+            } > /tmp/new-notes.md
+            gh release edit mysticalos-3-super --notes-file /tmp/new-notes.md \
+              && echo "noty release zaktualizowane o link do JEDNEGO pliku"
+          else
+            echo "::warning::zaden hosting nie oddal zweryfikowanego linku - patrz reports/jeden-img-${GITHUB_RUN_ID}.md"
+          fi
+          R="reports/jeden-img-${GITHUB_RUN_ID}.md"
+          {
+            echo "# jeden-img run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## manifest"; echo '```'; cat "$WORK/super.manifest" 2>/dev/null; echo '```'
+            echo "## linki"; echo '```'; cat /tmp/links.md 2>/dev/null; echo '```'
+            echo "## dysk"; echo '```'; df -h /; echo '```'
+          } > "$R"
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          git add "$R" || true
+          git commit -m "jeden-img: evidence run ${GITHUB_RUN_ID} (sklejony super_mystical3.img, link: ${BEST:-BRAK})" \
+            || echo "nic do commitu"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done

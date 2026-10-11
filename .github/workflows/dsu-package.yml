@@ -1,0 +1,269 @@
+name: dsu-package
+# v1.0 - PRAWdziwa wielopartycyjna paczka DSU (4. polecenie usera, 4 X):
+# source.android.com/docs/core/ota/dynamic-system-updates:
+#   "Multiple-partition DSU in ZIP file - Starting in Android 11, DSU can
+#    have more than one partition. When the device boots, the first stage
+#    init detects the installed DSU partitions and replaces the on-device
+#    partition temporarily."
+# Format paczki (AOSP): zip z obrazami partycji:
+#   MysticalOS_V16_DSU_ForcedCPU.zip { system.img, product.img, system_ext.img }
+# (vbmeta/boot/userdata/super_empty NIE MOGA byc w paczce - DSUInstaller docs)
+#
+# To spelnia CEL usera ("trik na gsid parser" = wielopartycyjny package, nie
+# przebrany super): gość DSU dostaje PELNE MysticalOS 3 - system z propsami
+# 5/5 + product BEZ Google (purge GMS z m3!) + system_ext bez Google.
+# Wcześniejsze zastrzezenie "w DSU apki Google wracaja" PRZEZ TO UPADA -
+# product goscia = nasz product. Vendor zostaje hosta (nasz jest identyczny).
+#
+# Zrodlo: release mysticalos-3-super (iteracja 2: miui-framework w system).
+# Pipeline: parts -> super (sha) -> stream {system,system_ext,product}
+# -> system: propsy 5/5 (build.prop + prop.default) + mkfs EROFS
+# -> zip STORED (system.img + system_ext.img + product.img + README).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/dsu-package.yml']
+
+concurrency:
+  group: dsu-package
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      WORK: /tmp/dsupkg
+      KDIR: ${{ github.workspace }}/kit-mysticalos3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "0. Zaleznosci + dysk"
+        run: |
+          set -e
+          command -v python3 >/dev/null
+          for B in mkfs.erofs fsck.erofs; do
+            [ -x "$KDIR/bin/$B" ] || { echo "::error::brak $KDIR/bin/$B"; exit 1; }
+          done
+          df -h /
+          AV=$(df --output=avail -B1G / | tail -1 | tr -dc '0-9')
+          [ "$AV" -ge 18 ] || { echo "::error::dysk ${AV}G < 18G"; exit 1; }
+          mkdir -p "$WORK/parts" "$WORK/img" "$WORK/out" reports
+
+      - name: "1. Czesci super z release mysticalos-3-super (retry)"
+        run: |
+          set -euo pipefail
+          OK=0
+          for A in 1 2 3; do
+            if gh release download mysticalos-3-super --clobber \
+                 -p 'super_mystical3.part.*' -p 'SHA256SUMS.txt' \
+                 --dir "$WORK/parts"; then OK=1; break; fi
+            echo "::warning::download super: proba $A/3 - pauza 30s"; sleep 30
+          done
+          [ "$OK" = 1 ] || { echo "::error::nie pobraly sie czesci super"; exit 1; }
+          N=$(ls "$WORK/parts"/super_mystical3.part.* | wc -l)
+          echo "czesci: $N"
+          [ "$N" -ge 30 ] || { echo "::error::czesci $N < 30"; exit 1; }
+          df -h /
+
+      - name: "2. Sklejenie super + weryfikacja (sha z SHA256SUMS.txt)"
+        run: |
+          set -euo pipefail
+          exec > >(tee "$WORK/assemble.log") 2>&1
+          cat "$WORK/parts"/super_mystical3.part.* > "$WORK/super.img"
+          SZ=$(stat -c%s "$WORK/super.img")
+          [ "$SZ" -gt 5000000000 ] || { echo "::error::super.img ${SZ}B < 5G"; exit 1; }
+          SHA=$(sha256sum "$WORK/super.img" | cut -d' ' -f1)
+          EXP=$(grep -E 'super_mystical3\.img' "$WORK/parts/SHA256SUMS.txt" 2>/dev/null | awk '{print $1}' | head -1 || true)
+          echo "sha256: $SHA | wpis w SHA256SUMS.txt: ${EXP:-brak}"
+          if [ -n "$EXP" ]; then
+            [ "$SHA" = "$EXP" ] || { echo "::error::sha256 niezgodne z release"; exit 1; }
+          else
+            echo "::warning::brak wpisu w SHA256SUMS.txt - weryfikacja strukturalna"
+          fi
+          python3 - "$WORK/super.img" <<'EOF'
+          import struct, sys
+          with open(sys.argv[1], "rb") as f:
+              magic = struct.unpack("<I", f.read(4))[0]
+          assert magic == 0xED26FF3A, "zly sparse magic: %#x" % magic
+          print("sparse magic OK")
+          EOF
+          rm -rf "$WORK/parts"
+          df -h /
+
+      - name: "3. Stream: system, system_ext, product (simg2img | lpunpack)"
+        run: |
+          set -euo pipefail
+          python3 tools/simg2img_stream.py < "$WORK/super.img" \
+            | python3 tools/stream_lpunpack.py --stdin --out "$WORK/img" \
+              --only system,system_ext,product \
+            | tee "$WORK/stream-manifest.txt"
+          for P in system system_ext product; do
+            awk -F'\t' -v p="$P" '$1=="P"&&$2==p{f=1} END{exit f?0:1}' "$WORK/stream-manifest.txt" \
+              || { echo "::error::brak $P w stream-manifest"; exit 1; }
+            awk -F'\t' -v p="$P" '$1=="W"&&$2==p&&$5!="OK"&&$5!="SKIP"{bad=1} END{exit bad?1:0}' \
+              "$WORK/stream-manifest.txt" || { echo "::error::$P NIEPELNY"; exit 1; }
+          done
+          rm -f "$WORK/super.img"
+          df -h /
+          ls -la "$WORK/img"
+
+      - name: "4. Propsy 5/5 do systemu (extract -> oba pliki -> mkfs)"
+        run: |
+          set -euo pipefail
+          T="$WORK/tree"
+          "$KDIR/bin/fsck.erofs" --extract="$T" "$WORK/img/system.img" >/dev/null 2>&1 \
+            || { echo "::error::fsck.erofs extract padl"; exit 1; }
+          if [ ! -d "$T/app" ] && [ ! -d "$T/priv-app" ]; then
+            INNER=$(find "$T" -maxdepth 2 -type d -name app | head -1)
+            [ -n "$INNER" ] || { echo "::error::extract bez /app"; exit 1; }
+            INNER=$(dirname "$INNER")
+            mv "$INNER" "$WORK/tree_i"; rm -rf "$T"; mv "$WORK/tree_i" "$T"
+          fi
+          # FULL SPEC usera: 5/5 propsow w OBU plikach
+          for TARGET in "$T/build.prop" "$T/etc/prop.default"; do
+            mkdir -p "$(dirname "$TARGET")"
+            [ -f "$TARGET" ] || : > "$TARGET"
+            { echo ""
+              echo "# === DSU FORCED-CPU (user spec 5/5) ==="
+              echo "debug.sf.hw=0"
+              echo "debug.egl.hw=0"
+              echo "persist.sys.composition.type=cpu"
+              echo "ro.hardware.egl=android"
+              echo "debug.sf.disable_hwc=1"; } >> "$TARGET"
+            echo "propsy 5/5 -> $TARGET"
+          done
+          FC="$T/etc/selinux/plat_file_contexts"
+          [ -f "$FC" ] || FC=$(find "$T" -name plat_file_contexts -type f | head -1)
+          [ -f "$FC" ] || { echo "::error::brak plat_file_contexts"; exit 1; }
+          TM_AV=$(( $(df --output=avail -B1M /dev/shm | tail -1) ))
+          [ "$TM_AV" -ge 3500 ] || { echo "::error::tmpfs ${TM_AV}M < 3500M"; exit 1; }
+          "$KDIR/bin/mkfs.erofs" -zlz4 -T 0 -U 6d797374-6963-4000-8000-616c0000000e \
+            --file-contexts="$FC" /dev/shm/system_pkg.img "$T" \
+            || { echo "::error::mkfs padl"; exit 1; }
+          rm -rf "$T"
+          mv /dev/shm/system_pkg.img "$WORK/img/system.img"
+          # weryfikacja propsow w gotowym obrazie
+          MNT="$WORK/vmnt"; mkdir -p "$MNT"
+          sudo mount -t erofs -o ro,loop "$WORK/img/system.img" "$MNT" \
+            || { echo "::error::montaz weryfikacyjny padl"; exit 1; }
+          P="$MNT"; [ -d "$MNT/system" ] && P="$MNT/system"
+          for KV in "debug.sf.hw=0" "debug.egl.hw=0" "persist.sys.composition.type=cpu" \
+                    "ro.hardware.egl=android" "debug.sf.disable_hwc=1"; do
+            for F in build.prop etc/prop.default; do
+              grep -q "$KV" "$P/$F" || { echo "::error::brak $KV w $F"; exit 1; }
+            done
+          done
+          NA=$(ls "$P/app" 2>/dev/null | grep -ci miui || true)
+          sudo umount "$MNT"
+          echo "propsy 5/5 x 2 pliki: OK | apki MIUI w /app: $NA"
+          [ "$NA" -ge 1 ] || { echo "::error::0 apek MIUI"; exit 1; }
+          ls "$P/etc/permissions" >/dev/null 2>&1 || true
+          df -h /
+
+      - name: "5. Paczka DSU: zip STORED (system + system_ext + product)"
+        # Format AOSP (Android 11+): zip z obrazami partycji; first stage init
+        # podmienia je tymczasowo na gosciu. vbmeta/boot/userdata/super_empty
+        # NIE MOGA byc w paczce (dokumentacja DSU).
+        run: |
+          set -euo pipefail
+          cd "$WORK/img"
+          ls -la
+          for P in system system_ext product; do
+            [ -s "$P.img" ] || { echo "::error::brak $P.img"; exit 1; }
+          done
+          cat > README-DSU-PACKAGE.txt <<'XEOF'
+          ====================================================================
+          MysticalOS V16 DSU FORCED-CPU - WIELOPARTYCJNA PACZKA DSU (Android 11+)
+          ====================================================================
+          ZAWARTOSC (format AOSP "Multiple-partition DSU in ZIP file"):
+            - system.img      - MysticalOS 3 + propsy 5/5 (build.prop i
+                                prop.default) + apki MIUI + miui-framework
+            - product.img     - MysticalOS 3 product: BEZ Google (purge GMS),
+                                czyli gość DSU = PELNE M3 (microG/Aurora dzialaja,
+                                apki Google NIE wracaja!)
+            - system_ext.img  - MysticalOS 3 system_ext (bez Google)
+          PROPSY (5/5): debug.sf.hw=0 | debug.egl.hw=0 |
+            persist.sys.composition.type=cpu | ro.hardware.egl=android
+            (SwiftShader) | debug.sf.disable_hwc=1
+          Vendor/boot = hosta (nasz identyczny z Lenovo base) - DSU ich nie
+          rusza; to zgodne z architektura M3 (vendor Lenovo nietkniety).
+
+          INSTALACJA (DSU Sideloader):
+          1. Rozpakuj zip - w srodku system.img, product.img, system_ext.img.
+          2. DSU Sideloader -> wybierz TEN PLIK ZIP (format "DSU package")
+             LUB wskaz system.img (wtedy tylko system - bez product!).
+             Dla pelnego efektu wybierz ZIP.
+          3. Tryb ADB (komenda z apki na PC) -> potwierdz ekran DSU.
+          4. Restart do goscia. Pierwszy boot 5-15 min.
+          5. Wyjscie: DSU Sideloader -> Discard (albo ustawienia -> DSU).
+
+          CZEKAJ: UI wolniejszy (CPU composition + SwiftShader) - cel testu.
+
+          AWARYJNIE: gosc nie wstanie -> Power ~30 s / restarty; gsid po
+          crashach odrzuci DSU i wrocisz do hosta. Sloty A/B nietkniete.
+          XEOF
+          python3 - <<'EOF'
+          import os, zipfile
+          dst = "MysticalOS_V16_DSU_ForcedCPU.zip"
+          with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as z:
+              for f in ["system.img", "system_ext.img", "product.img", "README-DSU-PACKAGE.txt"]:
+                  z.write(f)
+          with zipfile.ZipFile(dst) as z:
+              bad = z.testzip()
+              assert bad is None, "testzip: %s" % bad
+              for i in z.infolist():
+                  print("zip: %s %d B" % (i.filename, i.file_size))
+          print("zip OK: %s (%d B)" % (dst, os.path.getsize(dst)))
+          EOF
+          mv MysticalOS_V16_DSU_ForcedCPU.zip "$WORK/out/"
+          df -h /
+
+      - name: "6. Artifact (paczka DSU do pobrania ze strony runu)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: MysticalOS_V16_DSU_ForcedCPU-PACKAGE
+          path: /tmp/dsupkg/out/MysticalOS_V16_DSU_ForcedCPU.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: "7. Publiczne mirrory (best-effort)"
+        run: |
+          set -uo pipefail
+          HOSTS="transferarch gofile bashupload" UP_MAX_TIME=7200 STOP_AFTER=1 \
+            bash "$GITHUB_WORKSPACE/tools/public_links.sh" \
+            "$WORK/out/MysticalOS_V16_DSU_ForcedCPU.zip" \
+            "$WORK/out/dsu-package-links.md" || true
+          cat "$WORK/out/dsu-package-links.md" || true
+
+      - name: "8. Evidence (reports/)"
+        if: always()
+        run: |
+          set -uo pipefail
+          R="reports/dsu-package-${GITHUB_RUN_ID}.md"
+          {
+            echo "# dsu-package run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## assemble"; echo '```'; cat "$WORK/assemble.log" 2>/dev/null || true; echo '```'
+            echo "## stream-manifest"; echo '```'; cat "$WORK/stream-manifest.txt" 2>/dev/null || true; echo '```'
+            echo "## linki publiczne"; echo '```'; cat "$WORK/out/dsu-package-links.md" 2>/dev/null || true; echo '```'
+            echo "## dysk"; echo '```'; df -h / 2>/dev/null || true; echo '```'
+          } > "$R"
+          git config user.name "arena-agent"
+          git config user.email "arena-agent@users.noreply.github.com"
+          git add "$R" || true
+          git commit -m "dsu-package: evidence run ${GITHUB_RUN_ID}" \
+            || echo "nic do commitu"
+          for A in 1 2 3; do
+            if git push; then echo "evidence: push OK"; break; fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 10
+          done
+          echo "RAPORT: $R"

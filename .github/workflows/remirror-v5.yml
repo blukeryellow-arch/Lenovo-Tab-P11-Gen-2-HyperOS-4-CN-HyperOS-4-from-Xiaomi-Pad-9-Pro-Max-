@@ -1,0 +1,137 @@
+name: remirror-v5
+
+# Odswiezenie PUBLICZNYCH linkow v5. Poranne mirrory padly (sandbox agenta stracil
+# egress poza GitHub), a release GH wymaga zalogowania. Runner ma pelny internet:
+# pobiera GOTOWY asset zip z release hyperos4-p11g2-v5 (zero przebudowy), bramkuje
+# rozmiar bajt w bajt i wgrywa na hosty z BEZPOSREDNIM auto-downloadem.
+# Kryterium sukcesu = probe content-length rowny rozmiarowi pliku (nie sam HTTP 200,
+# ktory strona posrednia tez zwroci). Hosty: transfer.archivete.am (wzorzec
+# auto-download, bramka twarda) + gofile (fallback, strona z przyciskiem).
+# Uwaga shell: GH Actions domyslnie -e => w krokach uploadu set +e (porazki grep
+# w assignments nie moga ubijac kroku). Pixeldrain odpada: API wymaga teraz klucza.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/remirror-v5.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: remirror-v5
+  cancel-in-progress: true
+
+jobs:
+  remirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RELTAG: hyperos4-p11g2-v5
+      ASSET: HyperOS4_P11Gen2_v5.zip
+      EXPECTED_ZIP_SIZE: "752221814"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pobierz asset zip z release GH
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$RELTAG" -R "$GITHUB_REPOSITORY" -p "$ASSET" -O "/tmp/$ASSET"
+          sz=$(stat -c%s "/tmp/$ASSET")
+          echo "pobrano: $sz B (oczekiwane: $EXPECTED_ZIP_SIZE B)"
+          if [ "$sz" != "$EXPECTED_ZIP_SIZE" ]; then
+            echo "::error::Rozmiar assetu $sz != $EXPECTED_ZIP_SIZE - pobieranie niekompletne"
+            exit 1
+          fi
+          sha256sum "/tmp/$ASSET" | tee /tmp/zip.sha256
+
+      - name: transfer.archivete.am (auto-download)
+        id: arch
+        run: |
+          set -uo pipefail
+          Z="/tmp/$ASSET"
+          out=$(curl -sS --max-time 1800 -T "$Z" "https://transfer.archivete.am/HyperOS4_P11Gen2_v5.zip" 2>&1 || true)
+          printf '%s\n' "$out" > /tmp/arch.out
+          url=$(printf '%s' "$out" | grep -oE 'https://[^"[:space:]]+' | head -1)
+          if [ -z "$url" ]; then
+            echo "archivete: brak url w odpowiedzi: $(head -c 200 /tmp/arch.out)"
+            exit 0
+          fi
+          hdr=$(curl -sIL --max-time 120 "$url" 2>&1 || true)
+          code=$(printf '%s' "$hdr" | grep -iE '^HTTP' | tail -1 | tr -d '\r')
+          clen=$(printf '%s' "$hdr" | grep -i '^content-length' | tail -1 | tr -dc 0-9)
+          echo "archivete probe: ${code:-?} clen=${clen:-?} (oczekiwane $EXPECTED_ZIP_SIZE)"
+          if [ "$clen" = "$EXPECTED_ZIP_SIZE" ]; then
+            printf 'url=%s\nok=1\n' "$url" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: gofile (fallback - strona z przyciskiem)
+        id: gf
+        run: |
+          set -uo pipefail
+          set +e  # jw.: porazki grep/sed w assignments nie moga ubijac kroku
+          Z="/tmp/$ASSET"
+          SRV=$(curl -sS --max-time 30 https://api.gofile.io/servers 2>/dev/null \
+                | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | head -1)
+          if [ -z "${SRV:-}" ]; then
+            echo "gofile: brak serwera z API"
+            exit 0
+          fi
+          out=$(curl -sS --max-time 1800 -F "file=@$Z" "https://${SRV}.gofile.io/contents/uploadfile" 2>&1 || true)
+          printf '%s\n' "$out" > /tmp/gf.out
+          url=$(printf '%s' "$out" | grep -oE 'https://gofile[^"[:space:]]+' | head -1)
+          if [ -n "$url" ]; then
+            printf 'url=%s\nok=1\n' "$url" >> "$GITHUB_OUTPUT"
+            echo "gofile: $url"
+          else
+            echo "gofile: brak url: $(head -c 200 /tmp/gf.out)"
+          fi
+
+      - name: Bramka - zweryfikowany auto-download na archivete
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.arch.outputs.ok }}" != "1" ]; then
+            echo "::error::archivete nie przeszlo probe'a content-length=$EXPECTED_ZIP_SIZE"
+            exit 1
+          fi
+          echo "OK: link auto-download zweryfikowany content-length na archivete"
+
+      - name: Raport linkow na galaz
+        if: always()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports
+          F="reports/remirror-v5-links-${{ github.run_id }}.md"
+          {
+            echo "### remirror v5 (run ${{ github.run_id }})"
+            echo "- zip sha256: $(awk '{print $1}' /tmp/zip.sha256 2>/dev/null || echo brak)"
+            echo "- GH release zip (wymaga loginu): https://github.com/$GITHUB_REPOSITORY/releases/download/$RELTAG/$ASSET"
+            echo "- GH release tar.gz (wymaga loginu): https://github.com/$GITHUB_REPOSITORY/releases/download/$RELTAG/HyperOS4_P11Gen2_v5.tar.gz"
+            if [ -n "${{ steps.arch.outputs.url }}" ]; then
+              echo "- transfer.archivete.am (AUTO-POBIERANIE, probe ok): ${{ steps.arch.outputs.url }}"
+            else
+              echo "- transfer.archivete.am: NIEUDANY - $(head -c 200 /tmp/arch.out 2>/dev/null)"
+            fi
+            if [ -n "${{ steps.pd.outputs.url }}" ]; then
+              echo "- pixeldrain (AUTO-POBIERANIE, probe ok): ${{ steps.pd.outputs.url }}"
+            else
+              echo "- pixeldrain: NIEUDANY - $(head -c 200 /tmp/pd.out 2>/dev/null)"
+            fi
+            if [ -n "${{ steps.gf.outputs.url }}" ]; then
+              echo "- gofile (strona z przyciskiem): ${{ steps.gf.outputs.url }}"
+            else
+              echo "- gofile: NIEUDANY - $(head -c 200 /tmp/gf.out 2>/dev/null)"
+            fi
+          } > "$F"
+          cat "$F"
+          git add -f "$F"
+          git diff --cached --quiet || {
+            git commit -q -m "remirror-v5: swieze linki auto-download, run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo "raport wypchniety na galaz"
+          }

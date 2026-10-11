@@ -1,0 +1,6 @@
+id=hyperos_look_p11g2
+name=HyperOS Look for Lenovo Tab P11 Gen 2
+version=v0.1-dev
+versionCode=1
+author=blukeryellow-arch
+description=Wyglad HyperOS (nakladka RRO + zasoby) na stockowym firmware Lenovo. Nie rusza vendor, kernela ani partycji - calkowicie odwracalne.

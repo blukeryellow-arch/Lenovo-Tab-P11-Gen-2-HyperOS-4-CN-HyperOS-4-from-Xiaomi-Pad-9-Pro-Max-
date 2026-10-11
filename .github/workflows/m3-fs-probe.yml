@@ -1,0 +1,115 @@
+name: m3 fs probe
+# Sonda: JAKIM systemem plikow sa partycje bazowe super TB350FU_S230982?
+# Receipt 36642400344: krok 4 padl na montazu system.img (ani -t erofs, ani
+# auto-detect), mimo EROFS_OK=1 z smoke (kernel MONTUJE erofs z mkfs fixture).
+# Tu: strumieniowo (httpzip range, bez zapisu zipa) wycinamy naglowki fs
+# partycji z super.img i identyfikujemy magic + feature flags.
+on: workflow_dispatch
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Naglowki fs partycji bazowych (range, zero pobierania zipa)"
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import sys, struct
+          sys.path.insert(0, 'tools')
+          from httpzip import HTTPRangeFile
+
+          URL = "https://download.lolinet.com/file/lenovo/tb350fu/TB350FU_S230982_251013_ROW.zip"
+          ENTRY = "TB350FU_S230982_251013_ROW/image/super.img"
+          # offsety startu obrazow partycji w super (trace 36617353135 / 36642400344)
+          PARTS = [
+              ("product",      2097152),
+              ("system",    2795503616),
+              ("system_ext",6659506176),
+              ("vendor",    7416578048),
+              ("vendor_dlkm",8334082048),
+          ]
+          HDR = 4096 + 1024 + 1024  # bajty obrazu partycji do analizy (sb @1024)
+
+          import zipfile
+          f = HTTPRangeFile(URL)
+          z = zipfile.ZipFile(f)
+          name = None
+          for n in z.namelist():
+              if n.endswith("image/super.img"):
+                  name = n; break
+          print("entry:", name)
+          info = z.getinfo(name)
+          print("rozmiar RAW:", info.file_size)
+
+          # strumien: bajt pliku super = pozycja sekwencyjna (deflate, tylko forward)
+          strm = z.open(name)
+          want = {}   # part -> (start, dane)
+          for p, off in PARTS:
+              want[p] = [off, b""]
+          pos = 0
+          CH = 32 * 1024 * 1024
+          while any(w[1] is not None and len(w[1]) < HDR for w in want.values()):
+              chunk = strm.read(CH)
+              if not chunk:
+                  print("EOF super @", pos); break
+              cend = pos + len(chunk)
+              for p, w in want.items():
+                  if w[1] is None or len(w[1]) >= HDR:
+                      continue
+                  s0, e0 = w[0], w[0] + HDR
+                  if cend <= s0 or pos >= e0:
+                      continue
+                  a = max(s0, pos); b = min(e0, cend)
+                  w[1] += chunk[a - pos:b - pos]
+              pos = cend
+              print(f"  strumien @ {pos} B", file=sys.stderr)
+
+          def ident(hd):
+              out = []
+              if len(hd) < 1024 + 128:
+                  return "ZA KROTKO", {}
+              sb = hd[1024:]
+              magic4 = struct.unpack("<I", sb[0:4])[0]
+              if magic4 == 0xE0F5E1E2:
+                  # erofs_super_block
+                  feat_compat = struct.unpack("<I", sb[4:8])[0]
+                  blkszbits = sb[8]
+                  incompat = struct.unpack("<I", sb[64:68])[0] if len(sb) >= 68 else -1
+                  extra_devices = struct.unpack("<H", sb[72:74])[0] if len(sb) >= 74 else -1
+                  devt_slotoff = struct.unpack("<H", sb[74:76])[0] if len(sb) >= 76 else -1
+                  return "EROFS", {"blkszbits": blkszbits, "feature_compat": hex(feat_compat),
+                                   "incompat": hex(incompat), "extra_devices": extra_devices,
+                                   "devt_slotoff": devt_slotoff}
+              if struct.unpack("<H", sb[56:58])[0] == 0xEF53:
+                  compat, incompat, ro = (struct.unpack("<I", sb[92:96])[0],
+                                          struct.unpack("<I", sb[96:100])[0],
+                                          struct.unpack("<I", sb[100:104])[0])
+                  return "EXT4", {"feature_compat": hex(compat), "incompat": hex(incompat),
+                                  "ro_compat": hex(ro)}
+              if sb[0:4] == b"\x10\x25\xf2\xf5":
+                  return "F2FS", {}
+              if hd[0:4] == b"hsqs":
+                  return "SQUASHFS(@0)", {}
+              return f"UNKNOWN(magic@1024={hex(magic4)})", {}
+
+          print("\n== WERDYKT ==")
+          for p, off in PARTS:
+              hd = want[p][1]
+              if not hd:
+                  print(f"{p}: BRAK (strumien nie doszedl do offsetu {off})")
+                  continue
+              fs, feats = ident(hd)
+              print(f"{p} @{off}: {fs} {feats}")
+              print(f"  hex[0:32]:  {hd[0:32].hex()}")
+              print(f"  hex[1024:1104]: {hd[1024:1104].hex()}")
+          PY
+      - name: "Kernelspace info (dla kontekstu)"
+        run: |
+          uname -a
+          grep -iE "erofs|overlay" /proc/filesystems || true
+          modinfo erofs 2>/dev/null | head -3 || true

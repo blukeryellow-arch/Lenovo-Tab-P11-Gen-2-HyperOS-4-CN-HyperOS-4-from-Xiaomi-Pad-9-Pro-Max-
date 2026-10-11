@@ -1,0 +1,52 @@
+name: short-dl-link
+
+# Krotki link do bezposredniego pobierania (is.gd -> transfer.archivete.am).
+# Klik = przekierowanie = pobieranie pliku, jak linki "Download" na stronach programow.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/short-dl-link.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  short:
+    name: is.gd krotki link
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Utworz krotki link
+        run: |
+          set -uo pipefail
+          TARGET="https://transfer.archivete.am/IoyzF/HyperOS4_P11Gen2.zip"
+          ENC=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$TARGET")
+          : > /tmp/short.md
+          echo "### Krotki link ($TARGET)" >> /tmp/short.md
+          for pair in "is.gd HyperOS4P11G2" "v.gd HyperOS4P11"; do
+            set -- $pair
+            r=$(curl -sS --max-time 30 "https://$1/create.php?format=simple&url=$ENC&shorturl=$2" 2>&1 || true)
+            echo "- $1/$2: $r" >> /tmp/short.md
+            echo "$1/$2 -> $r"
+          done
+          t=$(curl -sS --max-time 30 "https://tinyurl.com/api-create.php?url=$ENC" 2>&1 || true)
+          echo "- tinyurl: $t" >> /tmp/short.md
+          cat /tmp/short.md
+
+      - name: Raport do repo
+        if: always()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports
+          cp /tmp/short.md "reports/short-link-${{ github.run_id }}.md"
+          git add -f reports
+          git diff --cached --quiet || {
+            git commit -q -m "short-link: run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo ok
+          }

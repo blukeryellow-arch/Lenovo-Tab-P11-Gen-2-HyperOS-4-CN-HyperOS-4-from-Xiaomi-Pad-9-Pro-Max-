@@ -1,0 +1,65 @@
+name: gz-asset
+
+# Literalny wymog zlecenia: "system.img najlepiej skompresowany do formatu .lz4hc lub .gz".
+# EROFS w srodku jest juz lz4hc,9; tu dokladam plik system_hyperos4_p11g2.img.gz
+# (gzip -9) jako asset release'a hyperos4-p11g2-v3 + publiczny link bezposredni.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/gz-asset.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gz-asset
+  cancel-in-progress: true
+
+jobs:
+  gz:
+    name: system.img.gz -> release v3 + link publiczny
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SPARSE_V3: 4d80cd8866f975bd2295c9db639ce98b67b19a8de39f1bb82bc7b7b166e7f896
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: v3 ZIP -> system_hyperos4_p11g2.img.gz
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/z && cd /tmp/z
+          gh release download hyperos4-p11g2-v3 --pattern 'HyperOS4_P11Gen2_v3.zip' --dir .
+          unzip -q HyperOS4_P11Gen2_v3.zip system_hyperos4_p11g2.img vbmeta_hyperos4_p11g2.img
+          GOT=$(sha256sum system_hyperos4_p11g2.img | awk '{print $1}')
+          echo "sparse v3: $GOT (oczekiwane $SPARSE_V3)"
+          test "$GOT" = "$SPARSE_V3" || { echo "::error::obraz w ZIP-ie niezgodny z v3"; exit 1; }
+          gzip -9 -k system_hyperos4_p11g2.img
+          ls -l system_hyperos4_p11g2.img.gz
+          # kontrola odwrotna: gunzip == oryginal
+          gunzip -t system_hyperos4_p11g2.img.gz
+          gh release upload hyperos4-p11g2-v3 system_hyperos4_p11g2.img.gz --clobber
+          echo "asset .gz dolaczony do release"
+
+      - name: Publiczny link na .gz
+        run: |
+          set -uo pipefail
+          bash tools/public_links.sh /tmp/z/system_hyperos4_p11g2.img.gz /tmp/gz-links.md || true
+
+      - name: Raport do repo
+        if: always()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports
+          cp /tmp/gz-links.md "reports/gz-links-${{ github.run_id }}.md"
+          git add -f reports
+          git diff --cached --quiet || {
+            git commit -q -m "gz-links: run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo ok
+          }

@@ -1,0 +1,81 @@
+[0927/142232.311816] [INFO:main.cc(59)] A/B Update Engine starting
+[0927/142232.321802] [INFO:BootControlClient.cpp(341)] AIDL IBootControl not available, falling back to HIDL.
+[0927/142232.346471] [INFO:BootControlClient.cpp(354)] Using HIDL version 1.2 of IBootControl
+[0927/142232.350752] [INFO:boot_control_android.cc(64)] Loaded boot control hal.
+[0927/142232.354563] [ERROR:update_attempter_android.cc(944)] prefs_->GetInt64(kPrefsPreviousSlot, &previous_slot) failed.
+[0927/142232.355860] [INFO:update_attempter_android.cc(200)] OTAResult::NOT_ATTEMPTED
+[0927/142232.368615] [INFO:update_attempter_android.cc(836)] Clearing update complete marker.
+[0927/142232.397020] [INFO:update_attempter_android.cc(1287)] Scheduling CleanupPreviousUpdateAction.
+[0927/142232.398133] [INFO:action_processor.cc(51)] ActionProcessor: starting CleanupPreviousUpdateAction
+[0927/142232.399156] [INFO:cleanup_previous_update_action.cc(149)] Starting/resuming CleanupPreviousUpdateAction
+[0927/142232.400364] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 1 for WaitBootCompleted
+[0927/162234.411736] [INFO:cleanup_previous_update_action.cc(112)] Executing task 1
+[0927/162234.476303] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 3 for WaitBootCompleted
+[0927/162236.485167] [INFO:cleanup_previous_update_action.cc(112)] Executing task 3
+[0927/162236.493109] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 4 for WaitBootCompleted
+[0927/162238.503407] [INFO:cleanup_previous_update_action.cc(112)] Executing task 4
+[0927/162238.524206] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 5 for WaitBootCompleted
+[0927/162240.534659] [INFO:cleanup_previous_update_action.cc(112)] Executing task 5
+[0927/162240.537033] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 6 for WaitBootCompleted
+[0927/162242.548134] [INFO:cleanup_previous_update_action.cc(112)] Executing task 6
+[0927/162242.550140] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 7 for WaitBootCompleted
+[0927/162244.557033] [INFO:cleanup_previous_update_action.cc(112)] Executing task 7
+[0927/162244.559555] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 8 for WaitBootCompleted
+[0927/162246.569495] [INFO:cleanup_previous_update_action.cc(112)] Executing task 8
+[0927/162246.576027] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 9 for WaitBootCompleted
+[0927/162248.585168] [INFO:cleanup_previous_update_action.cc(112)] Executing task 9
+[0927/162248.590324] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 10 for WaitBootCompleted
+[0927/162250.597087] [INFO:cleanup_previous_update_action.cc(112)] Executing task 10
+[0927/162250.600099] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 11 for WaitBootCompleted
+[0927/162252.605229] [INFO:cleanup_previous_update_action.cc(112)] Executing task 11
+[0927/162252.607673] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 12 for WaitBootCompleted
+[0927/162254.617192] [INFO:cleanup_previous_update_action.cc(112)] Executing task 12
+[0927/162254.619962] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 13 for WaitBootCompleted
+[0927/162256.629198] [INFO:cleanup_previous_update_action.cc(112)] Executing task 13
+[0927/162256.632155] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 14 for WaitBootCompleted
+[0927/162258.637730] [INFO:cleanup_previous_update_action.cc(112)] Executing task 14
+[0927/162258.639373] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 15 for WaitBootCompleted
+[0927/162300.649129] [INFO:cleanup_previous_update_action.cc(112)] Executing task 15
+[0927/162300.651458] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 16 for WaitBootCompleted
+[0927/162302.661245] [INFO:cleanup_previous_update_action.cc(112)] Executing task 16
+[0927/162302.663885] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 17 for WaitBootCompleted
+[0927/162304.674634] [INFO:cleanup_previous_update_action.cc(112)] Executing task 17
+[0927/162304.677287] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 18 for WaitBootCompleted
+[0927/162306.685130] [INFO:cleanup_previous_update_action.cc(112)] Executing task 18
+[0927/162306.688120] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 19 for WaitBootCompleted
+[0927/162308.697185] [INFO:cleanup_previous_update_action.cc(112)] Executing task 19
+[0927/162308.707851] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 20 for WaitBootCompleted
+[0927/162310.717180] [INFO:cleanup_previous_update_action.cc(112)] Executing task 20
+[0927/162310.720079] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 21 for WaitBootCompleted
+[0927/162312.729094] [INFO:cleanup_previous_update_action.cc(112)] Executing task 21
+[0927/162312.732113] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 22 for WaitBootCompleted
+[0927/162314.742303] [INFO:cleanup_previous_update_action.cc(112)] Executing task 22
+[0927/162314.743866] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 23 for WaitBootCompleted
+[0927/162316.751236] [INFO:cleanup_previous_update_action.cc(112)] Executing task 23
+[0927/162316.752524] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 24 for WaitBootCompleted
+[0927/162318.763414] [INFO:cleanup_previous_update_action.cc(112)] Executing task 24
+[0927/162318.766047] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 25 for WaitBootCompleted
+[0927/162320.777220] [INFO:cleanup_previous_update_action.cc(112)] Executing task 25
+[0927/162320.849858] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 26 for WaitBootCompleted
+[0927/162322.854123] [INFO:cleanup_previous_update_action.cc(112)] Executing task 26
+[0927/162322.857014] [INFO:cleanup_previous_update_action.cc(124)] CleanupPreviousUpdateAction scheduled task ID 27 for WaitBootCompleted
+[0927/162324.867051] [INFO:cleanup_previous_update_action.cc(112)] Executing task 27
+[0927/162325.270315] [INFO:cleanup_previous_update_action.cc(189)] Boot completed, waiting on markBootSuccessful()
+[0927/162325.350832] [INFO:snapshot.cpp(3835)] EnsureMetadataMounted does nothing in Android mode.
+[0927/162325.467725] [INFO:snapshot_stats.cpp(37)] Read merge statistics file failed: No such file or directory
+[0927/162325.671567] [INFO:cleanup_previous_update_action.cc(261)] Waiting for any previous merge request to complete. This can take up to several minutes.
+[0927/162325.713172] [ERROR:snapshot.cpp(2929)] Read state file failed: No such file or directory
+[0927/162325.864985] [ERROR:snapshot.cpp(2929)] Read state file failed: No such file or directory
+[0927/162325.944724] [ERROR:snapshot.cpp(2929)] Read state file failed: No such file or directory
+[0927/162325.982528] [INFO:snapshot.cpp(1076)] CheckMergeState for snapshots returned: None
+[0927/162325.986922] [INFO:snapshot.cpp(1048)] ProcessUpdateState handling state: None
+[0927/162326.011045] [INFO:cleanup_previous_update_action.cc(297)] Can't find any snapshot to merge.
+[0927/162326.015454] [ERROR:snapshot.cpp(2929)] Read state file failed: No such file or directory
+[0927/162326.061821] [INFO:cleanup_previous_update_action.cc(130)] Stopping/suspending/completing CleanupPreviousUpdateAction
+[0927/162326.207765] [INFO:cleanup_previous_update_action.cc(477)] Not reporting merge stats because state is None
+[0927/162326.244028] [INFO:cleanup_previous_update_action.cc(130)] Stopping/suspending/completing CleanupPreviousUpdateAction
+[0927/162326.251461] [INFO:action_processor.cc(116)] ActionProcessor: finished last action CleanupPreviousUpdateAction with code ErrorCode::kSuccess
+[0927/162326.258590] [INFO:update_attempter_android.cc(583)] Processing Done.
+[0927/162326.273090] [INFO:update_attempter_android.cc(836)] Clearing update complete marker.
+[0927/162326.280131] [INFO:update_attempter_android.cc(731)] Terminating cleanup previous update.
+[0927/173419.536815] [INFO:main.cc(76)] A/B Update Engine terminating with exit code 0

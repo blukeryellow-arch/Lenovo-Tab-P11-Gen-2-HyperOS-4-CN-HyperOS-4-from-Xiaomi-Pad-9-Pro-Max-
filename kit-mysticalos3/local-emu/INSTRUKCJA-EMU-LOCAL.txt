@@ -1,0 +1,46 @@
+================================================================
+  MYSTICALOS - LOKALNY TEST BOOTA (WSL2) - 3 KROKI
+  (ten sam harness co CI: super 4-partycyjny + fixy obrazu + qemu)
+================================================================
+
+CZEGO POTRZEBUJESZ
+  - WSL2 (Ubuntu) z internetem
+  - obraz MysticalOS_0.6_DSU_nofooter.img pobrany z Release
+  ( https://github.com/blukeryellow-arch/...releases/tag/0.6-hyperos-port
+    -> port-release-dsu.zip -> rozpakuj )
+  - Android Studio LUB wgranym system-image android-33 arm64
+    (skrypt sam znajdzie/sprobuje pobrac przez sdkmanager)
+
+KROK 1 - zaleznosci (jednorazowo, w WSL2):
+  sudo apt-get update && sudo apt-get install -y \
+    qemu-system-arm cpio fdisk e2fsprogs adb unzip lz4
+
+KROK 2 - wejdz do folderu kitu i odpal:
+  cd .../kit-mysticalos3/local-emu
+  bash run-local-emu.sh ~/sciezka/do/MysticalOS_0.6_DSU_nofooter.img
+
+KROK 3 - obserwuj LIVE status co 15 s:
+  t=90s  fatal=0 loops=1 zyg=0 data=0 apexd=0
+  ...
+  fatal - bledy property (ma byc 0)
+  loops - petle bootu (1 = dobrze, rosnace = cos pada)
+  zyg   - 1 gdy zygote wystartowal (KAMIEN MILOWY)
+  data  - 1 gdy /data zamontowane
+  bc='1' = BOOT UKONCZONY -> adb -s localhost:5554.. nie: localhost:5555 shell
+
+CTRL-C przerywa; konsola pelna w emu-work/console.log
+(ponowny start = bash run-local-emu.sh ... jeszcze raz; obraz oryginalny
+jest nietykany - skrypt pracuje na kopii emu-work/our.img)
+
+CZESTE PYTANIA
+  - "Nie moge zdobyc system-image": Android Studio -> SDK Manager ->
+    SDK Platforms -> Android 13 "Tiramisu (33)" -> zalacz "Google APIs
+    ARM 64 v8a System Image" -> Apply. Albo wklej recznie zip i:
+    SYSIMG_ZIP=zip.zip bash run-local-emu.sh obraz.img
+  - Wolno?: to emulacja arm64 na x86 (TCG) - na Ryzen 7600X ~3x szybciej
+    niz na CI. Pierwszy boot do zygotego to zwykle 1-5 minut.
+  - Nie martw sie crashami HAL (kamera/sensory/grafika) - to HAL-e
+    emulatora, na tablecie sa HAL-e Lenova. Patrzymy na: zyg=1, potem
+    system_server.
+  - adb po 5555: adb connect localhost:5555; adb -s localhost:5555 shell
+    (jesli Windows-adb Windowsa zajmuje port - uzyj adb z WSL).

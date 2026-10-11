@@ -1,0 +1,347 @@
+name: release-selftest
+
+# Po co ten workflow (i czemu NIE buduje tu wydania):
+#
+#   Caly lancuch budowy - zlib+lz4 ze zrodel, erofs-utils bez autoconfu, mkfs deterministyczny,
+#   weryfikator 1:1, bramka rozmiaru w instalatorze - zostal zbudowany i sprawdzony w sandboksie
+#   agenta. To dwoje problemow, ktore ten bieg rozwiaza:
+#
+#   1. POWTARZALNOŚĆ NA CZYSTEJ MASZYNIE. 'tools/test_release.sh' w sandboksie mogl przechodzic
+#      dlatego, ze w /tmp lezaly artefakty po poprzednich biegach (erofs-build, drzewa, atrapy).
+#      Na swiezym runnerze nie ma nic - jesli ktorys skrypt po cichu zaklada, ze cos juz jest,
+#      to sie tu dowiem, a nie po wyslaniu komus wydania.
+#
+#   2. NIEZALEŻNOŚĆ WERYFIKACJI. Moje obrazy sprawdzalem MOIM fsck.erofs, zbudowanym tymi samymi
+#      rekami co mkfs. To jest kolo: jesli moja rekonstrukcja config.h przekreca jakas flaga,
+#      mkfs i fsck moga sie co do tej flagi ZGADZAC, a kernel i tak nie zamontuje. Dlatego tu
+#      dokladam erofs-utils z pakietu dystrybucji (nowszy, budowany przez kogos innego) i
+#      sprawdzam NIM obraz zbudowany przeze mnie. To jest jedyna kontrola w tym projekcie,
+#      ktora nie jest samoobługą.
+#
+#   Swiadomie NIE buduje tu wydania (product/system 1,4 GB) ani nie dotyka Google Drive:
+#   sciezka 'wydajacy' wymaga plikow z Dyska i kanalu transfer-spool, a ten workflow ma byc
+#   tani i odpalany przy kazdej zmianie w tools/ (patrz 'paths' ponizej).
+
+on:
+  push:
+    paths:
+      - 'tools/**'
+      - 'dist/release/**'
+      - '.github/workflows/release-selftest.yml'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: narzedzia budowy + weryfikacja niezależna
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      EROFS_DIR: ${{ github.workspace }}/.erofs-mine
+      COMP_DIR: ${{ github.workspace }}/.comp
+    steps:
+      - uses: actions/checkout@v4
+
+      # Kazdy ponizszy krok ma WLASNA powloke: zmienna zdefiniowana w kroku N widzi sie w kroku
+      # N+1 tylko przez $GITHUB_ENV. Pierwsza wersja tego pliku uzywala $MK z kroku 'sonda'
+      # w kroku 'weryfikacja' -> 'unbound variable' pod set -u i pad na runnerze, podczas gdy
+      # lokalnie wszystko bylo zielone (u mnie zmienna zyla w tej samej powłoce). Regula:
+      # MK/FSCK/RUNLOG sa definiowane w kazdym kroku, ktory ich uzywa, a nie 'gdos.
+      - name: ustaw sredowisko krokow
+        run: |
+          echo "MK=$EROFS_DIR/mkfs.erofs" >> "$GITHUB_ENV"
+          echo "FSCK=$EROFS_DIR/fsck.erofs" >> "$GITHUB_ENV"
+          echo "RUNLOG=$RUNNER_TEMP/weryfikacja.log" >> "$GITHUB_ENV"
+          echo "UUID=11111111-2222-3333-4444-555555555555" >> "$GITHUB_ENV"
+
+      - name: wersje narzedzi (zeby log mowil, CO sie sprawdzilo)
+        run: |
+          : > "$RUNLOG"
+          { echo "== gcc/make/python =="
+            gcc --version | head -1
+            make --version | head -1
+            python3 --version
+            echo "== erofs-utils z pakietu (niezalezny punkt odniesienia) =="
+            # 'command -v' ZANIM ktokolwiek to pipe'nie: '| head -1' kradlo kod wyjscia
+            # i nastepny krok konczyl sie 127 zamiast tu dostac jasna sygnature.
+            for t in mkfs.erofs fsck.erofs dump.erofs; do
+              if command -v "$t" >/dev/null 2>&1; then echo "   $t -> $(command -v "$t")"
+              else echo "   $t -> BRAK (pakiet nie zostal zainstalowany lub nie ma tego binary)"; fi
+            done
+            dpkg -l erofs-utils 2>/dev/null | tail -1
+            echo "== moja budowa =="
+            $MK --version 2>&1 | head -1
+            $FSCK --version 2>&1 | head -1
+          } 2>&1 | tee -a "$RUNLOG"
+          # Czy pakiet umiela lz4 - bez tej sondy ponizszy krok bylby niesprawiedliwy:
+          # Ubuntu mogloby dawac erofs-utils bez HAVE_LZ4 i 'FAIL' nie wskazywalby na wydanie.
+          mkdir -p /tmp/zerodir; rm -rf /tmp/zerodir-x
+          if mkfs.erofs -T 0 -zlz4 /tmp/probe-distro.img /tmp/zerodir >/dev/null 2>&1 \
+             && fsck.erofs --extract=/tmp/zerodir-x /tmp/probe-distro.img >/dev/null 2>&1; then
+            echo "   pakiet: lz4 TAK" | tee -a "$RUNLOG"; echo "DISTRO_LZ4=1" >> "$GITHUB_ENV"
+          else
+            echo "   pakiet: lz4 NIE (krok niezalezny sprawdzi tylko obraz bez kompresji)" | tee -a "$RUNLOG"
+            echo "DISTRO_LZ4=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: erofs-utils z pakietu - instalacja z pelnym wypisem
+        # Osobny krok, bo wczesniejsza wersja probowala dwoch komend z '>/dev/null 2>&1' i
+        # '|| true', wiec runner melmol 'success' w kroku, a pakietu NIE BYLO - i dopier
+        # dwa kroki pozniej wyszlo 127 / 'nie jest czytany przez fsck z pakietu'.
+        # Teraz: apt mowi wszystko, a wynik trafia do DISTRO_OK, ktore pozniejsze kroki SZANUJA.
+        run: |
+          { echo "== apt-cache policy =="
+            apt-cache policy erofs-utils 2>&1 | head -12
+            echo "== proba 1: install (universe moze byc potrzebne) =="
+            sudo add-apt-repository -y universe 2>&1 | tail -2 || true
+            sudo apt-get update -qq 2>&1 | tail -3 || true
+            if sudo apt-get install -y erofs-utils 2>&1 | tail -6; then ok1=1; else ok1=0; fi
+            echo "== co wyszlo =="
+            for t in mkfs.erofs fsck.erofs dump.erofs; do
+              if command -v "$t" >/dev/null 2>&1; then echo "   $t -> $(command -v "$t")  [$($t --version 2>&1 | head -1)]"
+              else echo "   $t -> BRAK"; fi
+            done
+            dpkg -l erofs-utils 2>/dev/null | tail -1 || echo "   dpkg: pakiet niezainstalowany (rc instalacji=$ok1)"
+          } 2>&1 | tee -a "$RUNLOG"
+          if command -v fsck.erofs >/dev/null 2>&1 && command -v mkfs.erofs >/dev/null 2>&1; then
+            echo "DISTRO_OK=1" >> "$GITHUB_ENV"
+          else
+            echo "DISTRO_OK=0" >> "$GITHUB_ENV"
+            echo "::notice::erofs-utils z pakietu niedostepny (apt rc instalacji=$ok1) - kroki niezalezne sie pomina, NIE jest to FAIL wydania"
+          fi
+
+      - name: biblioteki kompresji ze zrodel (bez -dev pakietow)
+        run: |
+          bash tools/build_comp_libs.sh "$COMP_DIR" 2>&1 | tee -a "$RUNLOG"
+          # bez pipefail rura zwraca status tee = 0, wiec porazka budowy byla niemy; rc z PIPESTATUS
+          rc=${PIPESTATUS[0]}
+          [ "$rc" -eq 0 ] || { echo "::error::build_comp_libs.sh rc=$rc - bez bibliotek kompresji mkfs.erofs nie zna -z, obrazy wyrosna ~1,5x wieksze (docs/06 §6.10)"; exit 1; }
+
+      - name: erofs-utils bez autoconfu (mini-configure + gcc)
+        run: |
+          COMP_PREFIX="$COMP_DIR" bash tools/build_erofs_local.sh "$EROFS_DIR" 2>&1 | tee -a "$RUNLOG"
+          # bez pipefail rura zwraca status tee = 0, wiec porazka budowy byla niemy; rc z PIPESTATUS
+          rc=${PIPESTATUS[0]}
+          [ "$rc" -eq 0 ] || { echo "::error::build_erofs_local.sh rc=$rc - brak mkfs.erofs/fsck.erofs - pozniejsze kroki padlyby rc=127 bez wskazania, ze to nie wina wydania"; exit 1; }
+
+      - name: sprawdz, ze MOJ mkfs zna -z (bez tego obrazy sa ~1,5x wieksze)
+        run: |
+          mkdir -p /tmp/zero; rm -f /tmp/probe.img
+          if $MK -T 0 -zlz4 /tmp/probe.img /tmp/zero >/dev/null 2>&1; then
+            echo "OK: -zlz4 dziala w mojej budowie" | tee -a "$RUNLOG"
+          else
+            echo "FAIL: moj mkfs.erofs nie umie -zlz4 - dokladnie ta nieobecnosc dawala"
+            echo "      system 1 376 899 072 B zamiast 967 503 872 B (docs/06 §6.10)" | tee -a "$RUNLOG"
+            echo "::error::moj mkfs nie obsluguje -zlz4 (biblioteki kompresji nie dolaczone)"
+            exit 1
+          fi
+
+      - name: suite wydania (selftest, determinizm, testy negatywne, bramka rozmiaru)
+        run: |
+          # 'if bash ... | tee' bierze status OSTATNIEGO elementu rury, czyli tee = zawsze 0.
+          # Domyslny shell kroku to 'bash -e {0}' bez pipefail, wiec przez wszystkie biegi (13/13
+          # na 41f1ebf, 15/15 na a179ed6) suita mogla failowac do woli a CI bylo zielone. Rc wyciągam
+          # z PIPESTATUS, a NIE przez 'set -o pipefail' na calym kroku: te same kroki celowo lykaja
+          # 'dpkg -l ... | tail -1' (rc=1, pakietu moze nie byc) i '--version | head -1' (SIGPIPE=141),
+          # a pipefail na gorze wywrocilby bieg rzecza, ktora nie jest blokerem wydania (23 IX 2026).
+          bash tools/test_release.sh --erofs-dir "$EROFS_DIR" 2>&1 | tee -a "$RUNLOG"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::tools/test_release.sh wyszedl z rc=$rc - patrz artefakt 'weryfikacja-log'"
+            exit 1
+          fi
+
+      - name: WERYFIKACJA NIEZALEZNA - obraz moim mkfs, fsck z pakietu dystrybucji
+        run: |
+          set -uo pipefail
+          # trap po to, zeby adnotacja w UI (i tylko ona jest tu czytelna - endpoint logow
+          # Actions jest w tym srodowisku nieosiagalny) mowila ktora linia i jaka komenda.
+          # rc=127 bez takiego trapu znaczy 'czegos braklo' i nic wiecej - na tym sie
+          # wlasnie raz utknem (2026-09-23, bieg 35917392222).
+          trap 'echo "::error::krok padl w linii $LINENO: $BASH_COMMAND (rc=$?)"' ERR
+          brak=0
+          for t in "$MK" "$FSCK" "$EROFS_DIR/dump.erofs"; do
+            command -v "$t" >/dev/null 2>&1 || { echo "::error::brak narzedzia $t - build_erofs_local.sh nie wyplul tej binarki"; brak=1; }
+          done
+          [ $brak = 0 ] || exit 1
+          # Narzedzia z PAKIETU to polowa tej kontroli - bez nich nie ma 'niezaleznosci'.
+          # Pierwszy pad (rc=127) byl wlasnie 'fsck.erofs: command not found', a kroki
+          # 'wersje' i 'sonda' tego nie wykryly, bo konczyly sie na '| head -1' (rc=0 pipeline'u).
+          HD=1
+          for t in mkfs.erofs fsck.erofs; do
+            if command -v "$t" >/dev/null 2>&1; then echo "   z pakietu: $t -> $(command -v "$t")"
+            else echo "::warning::brak $t z pakietu - 'weryfikacja niezalezna' nie bedzie niezalezna"; HD=0; fi
+          done
+          if [ "${DISTRO_OK:-0}" = 1 ] && [ $HD = 0 ]; then
+            echo "::error::DISTRO_OK=1, ale $t nie jest w PATH - kroki sluchaja zmiennej wbrew faktom"
+            exit 1
+          fi
+          if [ "${DISTRO_OK:-0}" = 0 ] && [ $HD = 1 ]; then
+            echo "::error::DISTRO_OK=0, a narzedzia z pakietu SĄ w PATH - sonda instalacji kłamie"
+            exit 1
+          fi
+          if [ $HD = 0 ]; then
+            echo "   WOAA: bez narzedzia z pakietu ten krok nie ma sensu - loguje i wychodze 0,"
+            echo "         zamiast udawac, ze sprawdzilem format czyims narzedziem." | tee -a "$RUNLOG"
+            echo "::notice::pakiet erofs-utils niedostepny na runnerze - krok niezalezny pominiety (nie mylic z FAIL wydania)"
+            exit 0
+          fi
+          T=$(mktemp -d); mkdir -p "$T/tree/dane" "$T/tree/etc"
+          # Dane PODATNE na kompresje + jedno losowe (zeby 'nic sie nie zbilo' nie moglo
+          # udawac sukcesu). Uczenie sie na wlasnym bledzie: docs/06 §6.17.
+          head -c 300000 /dev/urandom > "$T/tree/dane/losowe.bin"
+          for i in $(seq 1 20000); do printf 'system:x:1000:1000:system:/none:/bin/false %s\n' "$i"; done > "$T/tree/etc/powtarzalny.txt"
+          ln -s ../dane/losowe.bin "$T/tree/etc/link.bin"
+          chmod 755 "$T/tree/etc/powtarzalny.txt"
+          { echo "== niezalezna weryfikacja (katalog: $T)"
+            echo "   DISTRO_LZ4=${DISTRO_LZ4:-?}"
+          } | tee -a "$RUNLOG"
+          for z in "" "-zlz4"; do
+            o="$T/img${z:-bez}.img"; BLK="${z:-bez}"
+            # shellcheck disable=SC2086
+            $MK -T 0 -U "$UUID" $z "$o" "$T/tree" >/dev/null 2>&1
+            raw=$(stat -c%s "$T/tree/etc/powtarzalny.txt"); got=$(stat -c%s "$o")
+            { echo "-- budowa '${z:-bez kompresji}': drzewo $(find "$T/tree" -type f -printf '%s+' | head -c12)… -> obraz $got B"
+              echo "   fsck MOJ:";        $FSCK "$o" 2>&1 | tail -2 | sed 's/^/     /'
+              echo "   fsck Z PAKIETU:";  fsck.erofs "$o" 2>&1 | tail -2 | sed 's/^/     /'
+            } 2>&1 | tee -a "$RUNLOG"
+            # Ekstrakcja = wlasciwa kontrola. 'fsck' bez --extract patrzy tylko w metadane
+            # i zwraca 0 nawet na obrazie, ktorego nie umie rozpakowac (docs/06 §6.17).
+            ex=1
+            if [ -n "$z" ] && [ "${DISTRO_LZ4:-0}" = 0 ]; then
+              { echo "   (pomijam ekstrakcje lz4 - pakiet nie ma HAVE_LZ4, to nie wina wydania)"; } | tee -a "$RUNLOG"
+              ex=0
+            fi
+            if [ $ex = 1 ]; then
+              rm -rf "$T/x"; mkdir -p "$T/x"
+              if ! fsck.erofs --extract="$T/x" "$o" >"$T/ex.log" 2>&1; then
+                echo "   FAIL: pakiet nie wyjal obrazu zbudowanego moim mkfs:" | tee -a "$RUNLOG"
+                tail -3 "$T/ex.log" | tee -a "$RUNLOG" | sed 's/^/     /'
+                echo "::error::niezalezna ekstrakcja nie udala sie dla '${z:-bez kompresji}'; $(tail -1 "$T/ex.log" | head -c90)"
+                exit 1
+              fi
+              base="$T/x"; [ -d "$T/x/tree" ] && base="$T/x/tree"
+              n=0; bad=0
+              while IFS= read -r f; do
+                rel=${f#"$T/tree/"}; n=$((n+1))
+                if [ -L "$f" ]; then
+                  [ "$(readlink "$f")" = "$(readlink "$base/$rel")" ] || { echo "     LINK INNY: $rel" | tee -a "$RUNLOG"; bad=$((bad+1)); }
+                else
+                  a=$(sha256sum "$f" | cut -d" " -f1); b=$(sha256sum "$base/$rel" 2>/dev/null | cut -d" " -f1)
+                  [ "$a" = "$b" ] || { echo "     PLIK INNY: $rel" | tee -a "$RUNLOG"; bad=$((bad+1)); }
+                fi
+              done < <(find "$T/tree" -mindepth 1 ! -type d)
+              echo "   niezalezne porownanie: $n wpisow, rozbieznosci: $bad" | tee -a "$RUNLOG"
+              if [ "$bad" != 0 ]; then
+                echo "::error::obraz zbudowany moim mkfs nie jest odczytywany 1:1 przez fsck z pakietu ($bad rozbieznosci na $n)"
+                exit 1
+              fi
+            fi
+          done
+          # Rozmiar mowi, czy kompresja w ogole weszla - to asercja, nie ciekawostka.
+          if [ -f "$T/img-zlz4.img" ] && [ -f "$T/imgbez.img" ]; then
+            u=$(stat -c%s "$T/imgbez.img"); c=$(stat -c%s "$T/img-zlz4.img")
+            if [ -z "$u" ]; then
+              echo "::error::brak obrazu bez kompresji do porownania - asercja ponizej nie miala by sensu"
+              exit 1
+            fi
+            { echo "== efekt kompresji na tym drzewie: bez $u B -> lz4 $c B"
+              DUMP="$EROFS_DIR/dump.erofs"; [ -x "$DUMP" ] || DUMP=dump.erofs
+              $DUMP -s "$T/img-zlz4.img" 2>/dev/null | grep -iE 'incompatible|kernel version|lz4_max' \
+                || echo "   (dump.erofs nie mogl wypisac superblocku - to krok informacyjny, nie kontrolny)"
+            } | tee -a "$RUNLOG"
+            if [ "$c" -ge "$u" ] || [ "$c" = 0 ]; then
+              echo "::error::-zlz4 nie zmniejszylo obrazu ($c >= $u) - kompresja nie weszla"
+              exit 1
+            fi
+          fi
+          echo "OK: to, co buduje moj mkfs, narzedzie z pakietu odczytuje identycznie." | tee -a "$RUNLOG"
+
+      - name: krzyzowa czytelnosc + porownanie rozmiarow z pakietem
+        run: |
+          set -uo pipefail
+          trap 'echo "::error::krok padl w linii $LINENO: $BASH_COMMAND (rc=$?)"' ERR
+          T=$(mktemp -d); mkdir -p "$T/tree/etc"
+          printf 'system:x:1000:1000:system:/none:/bin/false\n' > "$T/tree/etc/passwd"
+          head -c 2000000 /dev/zero | tr '\0' 'A' > "$T/tree/etc/dlugi.bin"
+          { echo "== ten sam drzewo, dwa mkfs (inne wersje -> NIE wymagam tozsamosci bajtow)"
+            echo "   sens tej kontroli: format musi byc wymienny. Jesli moj obraz czyta fsck"
+            echo "   zbudowany przez kogos innego, to nie jest 'samoobsluga'."
+          } | tee -a "$RUNLOG"
+          # Buduje kazdym narzedziem i PILNUJE, ktore w ogole zbudowalo (rc=0). Pierwsza
+          # wersja tego kroku probowala 'distro.mkfs -zlz4' nawet gdy pakiet nie umial lz4,
+          # dostawala 4 KB smiecia i obwiniala wydanie o blade podejscie testu (2026-09-23).
+          build() { # $1=etykieta $2=mkfs $3=flagi $4=wyjscie
+            if $2 -T 0 -U "$UUID" $3 "$4" "$T/tree" >"$T/$1.log" 2>&1; then return 0; fi
+            echo "   $1: mkfs odmowil ($3) - $(tail -1 "$T/$1.log" | head -c70)" | tee -a "$RUNLOG"
+            return 1
+          }
+          MINE=0; DISTRO=0; MINEZ=0; DISTROZ=0
+          build "moj-bez"      "$MK"        ""       "$T/moj-bez.img"    && MINE=1
+          build "moj-lz4"      "$MK"        "-zlz4"  "$T/moj-lz4.img"    && MINEZ=1
+          build "pakiet-bez"   "mkfs.erofs" ""       "$T/pakiet-bez.img" && DISTRO=1
+          build "pakiet-lz4"   "mkfs.erofs" "-zlz4"  "$T/pakiet-lz4.img" && DISTROZ=1
+          # rozmiar drukujemy TYLKO dla obrazow, ktore faktycznie powstaly - wczesniej
+          # 'pakiet-lz4 4096 B' wygladalo jak wynik, a byl to plik zostaly po odmowie mkfs
+          sz() { if [ -f "$1" ]; then printf '%s %s B ' "$2" "$(stat -c%s "$1")"; fi; }
+          echo "   rozmiary: $(sz "$T/moj-bez.img" moj-bez)$(sz "$T/moj-lz4.img" moj-lz4)$(sz "$T/pakiet-bez.img" pakiet-bez)$(sz "$T/pakiet-lz4.img" pakiet-lz4)" | tee -a "$RUNLOG"
+          # Lista narzedzi do czytania = TYLKO te, ktore sa. Wczesniej 'pakiet:fsck.erofs'
+          # bylo wpiete na sztylno: bez pakietu dostawalem 'command not found' i krok
+          # obwinial WYDANIE o 'format nie jest wymienny' - a to byla usterka testu.
+          Tools="moj:$FSCK"
+          if command -v fsck.erofs >/dev/null 2>&1; then Tools="$Tools pakiet:fsck.erofs"
+          else echo "   (pakietowego fsck.erofs nie ma - sprawdzam tylko moim; to NIE jest dowod niezaleznosci)" | tee -a "$RUNLOG"; fi
+          rc=0
+          for img in "moj-bez:$MINE" "moj-lz4:$MINEZ" "pakiet-bez:$DISTRO" "pakiet-lz4:$DISTROZ"; do
+            name=$(echo "$img" | cut -d: -f1); have=$(echo "$img" | cut -d: -f2)
+            [ "$have" = 1 ] || { echo "   $name.img: nie zbudowany - pomijam" | tee -a "$RUNLOG"; continue; }
+            for ck in $Tools; do
+              lbl=${ck%%:*}; tool=${ck#*:}
+              # Obraz lz4 badamy tylko narzedziem, ktory potrafi lz4 - inaczej testuje
+              # nie format, a to, czy pakiet ma biblioteke.
+              case "$name$lbl" in
+                *lz4*pakiet) if [ "${DISTRO_LZ4:-0}" = 0 ]; then
+                               echo "   $name.img przez $lbl: pomijam (pakiet bez lz4)" | tee -a "$RUNLOG"; continue
+                             fi;;
+              esac
+              if $tool "$T/$name.img" >/dev/null 2>&1; then
+                echo "   $name.img przez $lbl: OK" | tee -a "$RUNLOG"
+              else
+                echo "   $name.img przez $lbl: BLAD" | tee -a "$RUNLOG"
+                # moj obraz + fsck z pakietu = to jest JEDYNY powazny fail w tym kroku
+                if [ "$lbl" = pakiet ] && [ "${name#moj}" != "$name" ]; then rc=1; fi
+              fi
+            done
+          done
+          if [ $rc != 0 ]; then
+            echo "::error::obraz zbudowany moim mkfs nie jest czytany przez fsck z pakietu - format rojni sie od tego, co zakladam"
+            exit 1
+          fi
+          echo "OK: wymiennosc formatu potwierdzona w zakresach, ktore dal sie zmierzyc." | tee -a "$RUNLOG"
+
+      - name: podsumowanie dla czytajacego bieg
+        if: always()
+        run: |
+          { echo "## Wynik niezaleznej weryfikacji"
+            echo ""
+            echo "| kontrola | rezultat |"
+            echo "|---|---|"
+            echo "| budowa narzedzi na czystym runnerze | $( [ -s "$RUNLOG" ] && echo 'patrz ponizej' || echo 'brak logu' ) |"
+            grep -E '^OK:|^FAIL:|^   niezalezne porownanie|^- budowa|effect|efekt' "$RUNLOG" 2>/dev/null | sed 's/^/| /;s/$/ |/'
+            echo ""
+            echo '```'
+            tail -25 "$RUNLOG" 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: artefakt z pelnym logiem (dla ludzi i dla piaskownicy bez dostepu do logow Actions)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weryfikacja-log
+          path: ${{ runner.temp }}/weryfikacja.log
+          if-no-files-found: warn
+          retention-days: 30

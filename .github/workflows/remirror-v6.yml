@@ -1,0 +1,135 @@
+name: remirror-v6
+
+# Garnerancja delivery v6-diag: probe linkow archivete ZYWA/DEAD; jesli padly -
+# natychmiastowy re-upload zipa z release hyperos4-p11g2-v6 + probe content-length.
+# (Egress sandboxa agenta = tylko GitHub, wiec probe robi runner.)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4']
+    paths: ['.github/workflows/remirror-v6.yml']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: remirror-v6
+  cancel-in-progress: true
+
+jobs:
+  remirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RELTAG: hyperos4-p11g2-v6
+      ASSET: HyperOS4_P11Gen2_v6.zip
+      EXPECTED_ZIP_SIZE: "752225309"
+      EXPECTED_TGZ_SIZE: "752245649"
+      OLD_ZIP_URL: 'https://transfer.archivete.am/11ihnx/HyperOS4_P11Gen2.zip'
+      OLD_TGZ_URL: 'https://transfer.archivete.am/TFkMy/HyperOS4_P11Gen2.zip'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe dostarczonych linkow (zywe?)
+        id: probe
+        run: |
+          set -uo pipefail
+          set +e
+          echo "=== probe zip: $OLD_ZIP_URL ==="
+          zhdr=$(curl -sIL --max-time 90 "$OLD_ZIP_URL" 2>&1)
+          zcode=$(printf '%s' "$zhdr" | grep -iE '^HTTP' | tail -1 | tr -d '\r')
+          zc=$(printf '%s' "$zhdr" | grep -i '^content-length' | tail -1 | tr -dc 0-9)
+          echo "zip: ${zcode:-?} clen=${zc:-?} (oczekiwane $EXPECTED_ZIP_SIZE)"
+          echo "=== probe tgz: $OLD_TGZ_URL ==="
+          thdr=$(curl -sIL --max-time 90 "$OLD_TGZ_URL" 2>&1)
+          tcode=$(printf '%s' "$thdr" | grep -iE '^HTTP' | tail -1 | tr -d '\r')
+          tc=$(printf '%s' "$thdr" | grep -i '^content-length' | tail -1 | tr -dc 0-9)
+          echo "tgz: ${tcode:-?} clen=${tc:-?} (oczekiwane $EXPECTED_TGZ_SIZE)"
+          if [ "$zc" = "$EXPECTED_ZIP_SIZE" ]; then
+            echo "zip_ok=1" >> "$GITHUB_OUTPUT"; echo "ZIP ZYWY - nie trzeba odswiezac"
+          fi
+          if [ "$tc" = "$EXPECTED_TGZ_SIZE" ]; then
+            echo "tgz_ok=1" >> "$GITHUB_OUTPUT"; echo "TGZ ZYWY - nie trzeba odswiezac"
+          fi
+
+      - name: Pobierz asset zip z release (tylko jesli zip padl)
+        if: steps.probe.outputs.zip_ok != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$RELTAG" -R "$GITHUB_REPOSITORY" -p "$ASSET" -O "/tmp/$ASSET"
+          sz=$(stat -c%s "/tmp/$ASSET")
+          echo "pobrano: $sz B (oczekiwane $EXPECTED_ZIP_SIZE)"
+          [ "$sz" = "$EXPECTED_ZIP_SIZE" ] || { echo "::error::rozmiar $sz != $EXPECTED_ZIP_SIZE"; exit 1; }
+          sha256sum "/tmp/$ASSET"
+
+      - name: Re-upload transfer.archivete.am (tylko jesli zip padl)
+        id: arch
+        if: steps.probe.outputs.zip_ok != '1'
+        run: |
+          set -uo pipefail
+          set +e
+          out=$(curl -sS --max-time 1800 -T "/tmp/$ASSET" "https://transfer.archivete.am/HyperOS4_P11Gen2_v6.zip" 2>&1 || true)
+          printf '%s\n' "$out" > /tmp/arch.out
+          url=$(printf '%s' "$out" | grep -oE 'https://[^"[:space:]]+' | head -1)
+          if [ -z "$url" ]; then echo "archivete: brak url: $(head -c 200 /tmp/arch.out)"; exit 0; fi
+          hdr=$(curl -sIL --max-time 120 "$url" 2>&1)
+          clen=$(printf '%s' "$hdr" | grep -i '^content-length' | tail -1 | tr -dc 0-9)
+          echo "probe nowego: clen=${clen:-?} (oczekiwane $EXPECTED_ZIP_SIZE)"
+          if [ "$clen" = "$EXPECTED_ZIP_SIZE" ]; then
+            printf 'url=%s\nok=1\n' "$url" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: gofile fallback (tylko jesli zip padl)
+        id: gf
+        if: steps.probe.outputs.zip_ok != '1'
+        run: |
+          set -uo pipefail
+          set +e
+          SRV=$(curl -sS --max-time 30 https://api.gofile.io/servers 2>/dev/null | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | head -1)
+          [ -z "${SRV:-}" ] && { echo "gofile: brak serwera API"; exit 0; }
+          out=$(curl -sS --max-time 1800 -F "file=@/tmp/$ASSET" "https://${SRV}.gofile.io/contents/uploadfile" 2>&1 || true)
+          url=$(printf '%s' "$out" | grep -oE 'https://gofile[^"[:space:]]+' | head -1)
+          [ -n "$url" ] && { printf 'url=%s\n' "$url" >> "$GITHUB_OUTPUT"; echo "gofile: $url"; } || echo "gofile: brak url: $(head -c 200 <<<"$out")"
+
+      - name: Bramka
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.probe.outputs.zip_ok }}" = "1" ] || [ "${{ steps.arch.outputs.ok }}" = "1" ]; then
+            echo "OK: zywy link auto-download potwierdzony"
+          else
+            echo "::error::stary zip padl i re-upload sie nie udal - patrz raport/logi"
+            exit 1
+          fi
+
+      - name: Raport na galaz
+        if: always()
+        run: |
+          set -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p reports
+          F="reports/remirror-v6-links-${{ github.run_id }}.md"
+          {
+            echo "### remirror-v6 probe (run ${{ github.run_id }})"
+            if [ "${{ steps.probe.outputs.zip_ok }}" = "1" ]; then
+              echo "- STARY ZIP ZYWY (probe OK): $OLD_ZIP_URL"
+            else
+              echo "- STARY ZIP PADL; nowy: ${{ steps.arch.outputs.url || 'RE-UPLOAD NIEUDANY' }}"
+            fi
+            if [ "${{ steps.probe.outputs.tgz_ok }}" = "1" ]; then
+              echo "- STARY TGZ ZYWY (probe OK): $OLD_TGZ_URL"
+            else
+              echo "- STARY TGZ PADL (nie odswiezano - zip wystarcza; asset w release GH)"
+            fi
+            echo "- gofile fallback: ${{ steps.gf.outputs.url || '(nie dotyczy)' }}"
+            echo "- release GH (login): https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELTAG"
+          } > "$F"
+          cat "$F"
+          git add -f "$F"
+          git diff --cached --quiet || {
+            git commit -q -m "remirror-v6 probe: run ${{ github.run_id }}"
+            git push -q origin "HEAD:${{ github.ref_name }}" && echo ok
+          }

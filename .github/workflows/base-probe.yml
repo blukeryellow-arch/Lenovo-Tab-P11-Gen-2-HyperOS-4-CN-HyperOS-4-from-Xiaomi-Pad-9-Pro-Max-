@@ -1,0 +1,105 @@
+name: base-probe
+
+# Probe struktury bazowego zipa lolinet TB350FU_S230982_251013_ROW.
+# v3: heredoc na poziomie bazowego indentu (v2 padal: wciecie terminatora
+# PYEOF => heredoc pozeral skrypt + IndentationError); caly output tee do
+# pliku commitowanego do repo (logi CI nieodbiieralne z sandboxa).
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena/01a0ca42-lenovo-tab-p11-gen-2-hyperos-4]
+    paths: ['.github/workflows/base-probe.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LOLINET_ZIP: https://mirrors.lolinet.com/firmware/lenowow/2022/Tab_P11_2nd_Gen/TB350FU/TB350FU_S230982_251013_ROW.zip
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "Range + listing (tee do reports/base-probe-v2.log)"
+        run: |
+          set -uo pipefail
+          mkdir -p reports tools
+          exec > >(tee -a reports/base-probe-v2.log) 2>&1
+          cat > /tmp/tailparse.py <<'PYEOF'
+          import sys, struct
+          try:
+              data = open('/tmp/tail1m.bin','rb').read()
+              eocd = data.rfind(b'PK\x05\x06')
+              print("EOCD w tailu:", eocd, "rozmiar tailu:", len(data))
+              if eocd >= 0:
+                  cd_size, cd_off = struct.unpack('<II', data[eocd+12:eocd+20])
+                  print(f"central dir: size={cd_size} off={cd_off} (plik {sys.argv[1]} B)")
+          except Exception as e:
+              print("tail parse:", e)
+          PYEOF
+          cat > /tmp/zipinspect.py <<'PYEOF'
+          import zipfile, struct
+          z = zipfile.ZipFile('/tmp/base.zip')
+          names = [n for n in z.namelist() if n.endswith('.img')]
+          print("pliki .img:", len(names))
+          for n in sorted(names):
+              i = z.getinfo(n)
+              print(f"  {n.split('/')[-1]}: comp={i.compress_size} uncomp={i.file_size} method={i.compress_type}")
+          sup = [n for n in names if n.endswith('super.img')]
+          for n in sup:
+              with z.open(n) as f:
+                  h = f.read(28)
+                  m = struct.unpack('<I', h[:4])[0]
+                  print(f"super.img glowa: magic={m:#x} bytes={h[:4].hex()}")
+                  if m == 0xED26FF3A:
+                      print("  -> SPARSE (simg2img przed lpunpack)")
+                  elif h[:4] == b'gDla':
+                      print("  -> liblp geometry RAW super (lpunpack wprost)")
+                  else:
+                      print("  -> nieznany format?!")
+          print("metody kompresji:", sorted(set(z.getinfo(n).compress_type for n in z.namelist() if not n.endswith('/'))))
+          PYEOF
+          cp /tmp/tailparse.py /tmp/zipinspect.py tools/
+          echo "### base-probe v3 $(date -u +%FT%TZ)"
+          echo "== HEAD =="; curl -sI --max-time 60 "$LOLINET_ZIP" | head -15 || echo "HEAD exit=$?"
+          echo "== GET pierwsze 64 KB (206?) =="
+          curl -s --max-time 90 -r 0-65535 -o /tmp/head64k.bin -w "http=%{http_code} size=%{size_download}\n" "$LOLINET_ZIP" || echo "range64k exit=$?"
+          echo "== range z ogona (central directory) =="
+          SZ=$(curl -sI --max-time 60 "$LOLINET_ZIP" | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}' | tail -1)
+          echo "content-length=[$SZ]"
+          if [ -n "$SZ" ] && [ "$SZ" -gt 1000000 ] 2>/dev/null; then
+            FROM=$(( SZ - 1000000 ))
+            curl -s --max-time 120 -r "$FROM-$((SZ-1))" -o /tmp/tail1m.bin -w "http=%{http_code} size=%{size_download}\n" "$LOLINET_ZIP" || echo "rangetail exit=$?"
+            python3 /tmp/tailparse.py "$SZ" || echo "tailparse exit=$?"
+          else
+            echo "brak content-length - range streaming odpada"
+          fi
+          echo "== pobranie zipa =="
+          df -h / | tail -1
+          curl -fL --retry 3 --max-time 900 -o /tmp/base.zip "$LOLINET_ZIP" || { echo "download padl exit=$?"; exit 0; }
+          stat -c%s /tmp/base.zip
+          echo "== unzip -lv posortowane po uncompressed (top 40) =="
+          unzip -lv /tmp/base.zip | sort -k1 -n -r | head -40 || true
+          echo "== katalog image/ =="
+          unzip -l /tmp/base.zip '*image/*' 2>/dev/null | awk '{print $4}' | grep -v '^$' | head -50 || true
+          echo "== flash.xml =="
+          unzip -p /tmp/base.zip '*ROW/flash.xml' 2>/dev/null | head -50 || true
+          echo "== python zipfile: super.img + metody kompresji =="
+          python3 /tmp/zipinspect.py || echo "zipinspect exit=$?"
+          rm -f /tmp/base.zip /tmp/head64k.bin /tmp/tail1m.bin
+          exit 0
+
+      - name: "Raport do repo"
+        if: always()
+        run: |
+          set -u
+          git config user.name "github-actions[bot]" || true
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com" || true
+          git add -f reports tools/tailparse.py tools/zipinspect.py || true
+          git commit -q -m "base-probe-v3: $(date -u +%H%M)Z" || true
+          git push -q origin "HEAD:${{ github.ref_name }}" || true
+          exit 0

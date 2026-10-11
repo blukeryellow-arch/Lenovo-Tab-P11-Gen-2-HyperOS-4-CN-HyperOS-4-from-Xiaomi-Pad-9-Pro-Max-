@@ -1,0 +1,26 @@
+================================================================
+  MYSTICALOS 3 - BUILD NA TWOIM KOMPUTERZE - 3 KROKI (Windows)
+================================================================
+
+1. Pobierz z tego folderu plik: MYSTICALOS3-START.zip
+   i rozpakuj go (prawy klik -> "Wyodrębnij wszystko").
+
+2. Kliknij DWUKROTNIE: START-MYSTICALOS3.bat
+   - Windows moze pokazac niebieskie ostrzezenie (SmartScreen):
+     kliknij "Więcej informacji" -> "Uruchom mimo to"
+   - jesli przy instalacji WSL2 poprosi o RESTART komputera:
+     zrestartuj i kliknij .bat jeszcze raz (da radę, zapamiętało).
+
+3. NIE ZAMYKAJ czarnego okna przez 30-60 minut (to normalne, ze nic
+   nie robi - pobiera 4,7 GB i buduje). Na koncu samo otworzy sie
+   folder WYNIKI-mysticalos3 z:
+     - super_mystical3.img   <- obraz do wgrania w tablet
+     - FLASH-M3.md           <- instrukcja wgrania krok po kroku
+     - vbmeta x3 + boot awaryjny (rollback)
+
+Masz Linuksa zamiast Windowsa?
+  -> pobierz mysticalos3-local-kit.tar.gz z tego folderu, rozpakuj,
+     uruchom:  ./build-mystical3.sh
+
+Nic nie wyszlo? Napisz mi KTORY krokiem sie zatrzymal i co dokladnie
+pisze w oknie - naprawie instrukcje.
