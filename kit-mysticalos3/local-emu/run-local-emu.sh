@@ -142,7 +142,7 @@ say "ramdisk-mod OK (fstab 1:1 z CI + /lib/modules z modulami virtio zweryfikowa
 
 # ---- 4. fix obrazu (kopia robocza!) -----------------------------------------
 say "Kopiuje obraz do emu-work/our.img (oryginal nietkniety)"
-cp -f "$IMG" "$WORK/our.img"
+cp -f "$IMG" "$WORK/our.img" || die "kopia obrazu nie wyszla (miejsce na dysku? uprawnienia?)"
 sudo mkdir -p /tmp/myst-emu-mnt
 sudo mount -o rw,loop "$WORK/our.img" /tmp/myst-emu-mnt || die "montowanie rw nie wyszlo"
 for D in /system/etc/selinux /system/system_ext/etc/selinux /system/product/etc/selinux; do
@@ -165,14 +165,16 @@ for P in product system_ext; do
 done
 python3 "$TOOLS/mksuper.py" "$WORK/super-raw.img" \
   system="$WORK/our.img" vendor="$WORK/vendor-part.img" \
-  product="$WORK/empty-product.img" system_ext="$WORK/empty-system_ext.img"
+  product="$WORK/empty-product.img" system_ext="$WORK/empty-system_ext.img" \
+  || die "mksuper.py padl - super-raw niepowstaly, nie idziemy dalej"
 # oszczednosc miejsca: system siedzi juz w super-raw, our.img niepotrzebny (-3.4G)
 rm -f "$WORK/our.img"
 truncate -s 1M "$WORK/super-gpt.img"
-cat "$WORK/super-raw.img" >> "$WORK/super-gpt.img"
+cat "$WORK/super-raw.img" >> "$WORK/super-gpt.img" || die "sklejanie super-gpt padlo"
 truncate -s +2M "$WORK/super-gpt.img"
 SECT=$(( $(stat -c%s "$WORK/super-raw.img") / 512 ))
 printf 'label: gpt\nstart=2048, size=%s, name=super\n' "$SECT" | sfdisk "$WORK/super-gpt.img" >/dev/null 2>&1
+sfdisk -d "$WORK/super-gpt.img" 2>/dev/null | grep -q "name= super" || die "GPT super nie zapisany"
 # oszczednosc miejsca: super-raw skopiowany do super-gpt, wiecej niepotrzebny (-3.2G)
 rm -f "$WORK/super-raw.img"
 say "super.img OK ($(numfmt --to=iec $(stat -c%s "$WORK/super-gpt.img")))"
@@ -198,7 +200,10 @@ qemu-system-aarch64 -M virt -cpu cortex-a76 -smp 4 -m 4096 \
   -device virtio-net-device,netdev=n0 \
   -display none -monitor none -serial file:"$WORK/console.log" &
 QPID=$!
-trap 'kill $QPID 2>/dev/null; echo; echo "== stop (console: $WORK/console.log)"' INT TERM
+# AUDYT: qemu musi umierac ze skryptem - inaczej sierota blokuje port 5555
+# i kazdy nastepny run pada od razu (widziane jako "nic sie nie dzieje")
+trap 'kill $QPID 2>/dev/null' EXIT
+trap 'echo; echo "== stop (console: $WORK/console.log)"; exit 0' INT TERM
 say "LIVE status co 15 s: fatal/loops/zyg/data/bc (bc=1 = UKONCZONY BOOT)"
 i=0
 while kill -0 $QPID 2>/dev/null; do
@@ -207,7 +212,7 @@ while kill -0 $QPID 2>/dev/null; do
   ST="fatal=$(grep -ac 'Failed to initialize property area' "$C" 2>/dev/null) \
 loops=$(grep -ac 'Run /init' "$C" 2>/dev/null) \
 zyg=$(grep -ac "starting service 'zygote'" "$C" 2>/dev/null) \
-data=$(grep -ac '__mount.*target=/data' "$C" 2>/dev/null) \
+data=$(grep -acE '__mount.*target=/data|EXT4-fs \(vdb\): mounted' "$C" 2>/dev/null) \
 apexd=$(grep -ac 'apexd: Activated' "$C" 2>/dev/null)"
   BC=""
   timeout 5 adb connect localhost:$PORT >/dev/null 2>&1
