@@ -34,16 +34,20 @@ IMG="$(readlink -f "$IMG")"
 
 # ---- 0. zaleznosci ----------------------------------------------------------
 MISSING=""
-for c in qemu-system-aarch64 cpio sfdisk debugfs mkfs.ext4 python3 adb gzip; do
+for c in qemu-system-aarch64 cpio sfdisk debugfs mkfs.ext4 python3 adb gzip lz4; do
   command -v "$c" >/dev/null 2>&1 || MISSING="$MISSING $c"
 done
 if [ -n "$MISSING" ]; then
   say "Brakuje:$MISSING"
   echo "Zainstaluj i uruchom ponownie:"
-  echo "  sudo apt-get update && sudo apt-get install -y qemu-system-arm cpio fdisk e2fsprogs adb"
+  echo "  sudo apt-get update && sudo apt-get install -y qemu-system-arm cpio fdisk e2fsprogs adb lz4"
   exit 1
 fi
-command -v lz4 >/dev/null 2>&1 || echo "(info: apt install lz4 - tylko gdyby ramdisk byl lz4)"
+# miejsce: pelny dysk = cicha czesciowa ekstrakcja ramdisku / ENOSPC przy super
+AVAIL_KB=$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2{print $4}')
+if [ -n "$AVAIL_KB" ] && [ "$AVAIL_KB" -lt 10000000 ]; then
+  die "Za malo miejsca na dysku WSL (potrzeba ~10 GB wolnego, jest $((AVAIL_KB/1024/1024)) GB). Sprzatnij i sprobuj ponownie."
+fi
 
 mkdir -p "$WORK"
 cd "$WORK"
@@ -174,6 +178,8 @@ cat "$WORK/super-raw.img" >> "$WORK/super-gpt.img"
 truncate -s +2M "$WORK/super-gpt.img"
 SECT=$(( $(stat -c%s "$WORK/super-raw.img") / 512 ))
 printf 'label: gpt\nstart=2048, size=%s, name=super\n' "$SECT" | sfdisk "$WORK/super-gpt.img" >/dev/null 2>&1
+# oszczednosc miejsca: super-raw skopiowany do super-gpt, wiecej niepotrzebny (-3.2G)
+rm -f "$WORK/super-raw.img"
 say "super.img OK ($(numfmt --to=iec $(stat -c%s "$WORK/super-gpt.img")))"
 
 # ---- 6. metadata + userdata --------------------------------------------------
