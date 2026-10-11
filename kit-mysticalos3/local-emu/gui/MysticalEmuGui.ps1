@@ -6,7 +6,7 @@
 $ErrorActionPreference = "SilentlyContinue"
 
 # ------------------ KONFIGURACJA (edytuj jesli trzeba) ------------------
-$ImgWin    = "$env:USERPROFILE\Downloads\port-release-dsu (1)\out\MysticalOS_0.5_DSU_nofooter.img"
+$ImgWin    = "$env:USERPROFILE\Downloads\port-release-dsu (1)\out\MysticalOS_0.6_DSU_nofooter.img"
 $GuiDir    = "$env:USERPROFILE\Downloads\emu-gui"      # tu zapisuja sie screenshoty
 $AdbTarget = "localhost:5555"
 $KitDir    = ""   # puste = auto: /home/<user-wsl>/kit/local-emu ; wpisz wlasna sciezke WSL jesli inna

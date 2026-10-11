@@ -1,7 +1,7 @@
 #!/bin/bash
 # start emulatora MysticalOS - wrapper dla GUI (Start-GUI.bat)
 # jesli zmienisz miejsce obrazu, edytuj linie IMG= ponizej
-IMG="${IMG:-/mnt/c/Users/Brajan/Downloads/port-release-dsu (1)/out/MysticalOS_0.5_DSU_nofooter.img}"
+IMG="${IMG:-/mnt/c/Users/Brajan/Downloads/port-release-dsu (1)/out/MysticalOS_0.6_DSU_nofooter.img}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # AUDYT-fix: sudo musi dostac haslo TERAZ, w tym oknie (ma TTY). Bez tego

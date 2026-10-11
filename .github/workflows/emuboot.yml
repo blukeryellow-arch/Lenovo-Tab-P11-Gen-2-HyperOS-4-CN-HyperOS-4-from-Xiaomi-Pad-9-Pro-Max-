@@ -82,10 +82,10 @@ jobs:
         run: |
           set -euo pipefail
           cd "$WORK"
-          gh release download 0.5-hyperos-port -p port-release-dsu.zip
+          gh release download 0.6-hyperos-port -p port-release-dsu.zip
           unzip -q port-release-dsu.zip -d emu-pkg
           rm -f port-release-dsu.zip
-          IMG="$WORK/emu-pkg/out/MysticalOS_0.5_DSU_nofooter.img"
+          IMG="$WORK/emu-pkg/out/MysticalOS_0.6_DSU_nofooter.img"
           test -s "$IMG" || { echo "::error::brak obrazu DSU w zipie"; exit 1; }
           # SHA256SUMS z buildera ma sciezki absolutne - porownujemy sam hash
           WANT=$(grep "DSU_nofooter" emu-pkg/out/SHA256SUMS.txt | awk '{print $1}')
@@ -569,7 +569,7 @@ jobs:
             fi
             echo
             echo "## Warunki testu"
-            echo '- obraz: MysticalOS_0.5_DSU_nofooter.img z release (sha256 OK)'
+            echo '- obraz: MysticalOS_0.6_DSU_nofooter.img z release (sha256 OK)'
             echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'

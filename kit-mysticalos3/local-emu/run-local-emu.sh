@@ -6,7 +6,7 @@
 #   zygote rc, /data rc) -> super 4-partycyjny (mksuper.py) -> qemu TCG
 #   + LIVE statusy bootu (fatal/loops/zyg/data/bc) i adb na porcie 5555
 # Uzycie (w WSL2/Linux):
-#   bash run-local-emu.sh /sciezka/do/MysticalOS_0.5_DSU_nofooter.img
+#   bash run-local-emu.sh /sciezka/do/MysticalOS_0.6_DSU_nofooter.img
 # ============================================================================
 set -uo pipefail
 
@@ -28,7 +28,7 @@ say() { echo -e "\e[1;32m== $*\e[0m"; }
 die() { echo -e "\e[1;31m!! $*\e[0m" >&2; exit 1; }
 
 IMG="${1:-}"
-[ -z "$IMG" ] && die "Podaj sciezke do obrazu, np.: bash run-local-emu.sh ~/Downloads/MysticalOS_0.5_DSU_nofooter.img"
+[ -z "$IMG" ] && die "Podaj sciezke do obrazu, np.: bash run-local-emu.sh ~/Downloads/MysticalOS_0.6_DSU_nofooter.img"
 [ -f "$IMG" ] || die "Nie ma pliku: $IMG"
 IMG="$(readlink -f "$IMG")"
 

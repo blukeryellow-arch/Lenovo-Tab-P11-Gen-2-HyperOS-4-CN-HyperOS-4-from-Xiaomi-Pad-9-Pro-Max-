@@ -5,8 +5,8 @@
 
 CZEGO POTRZEBUJESZ
   - WSL2 (Ubuntu) z internetem
-  - obraz MysticalOS_0.5_DSU_nofooter.img pobrany z Release
-  ( https://github.com/blukeryellow-arch/...releases/tag/0.5-hyperos-port
+  - obraz MysticalOS_0.6_DSU_nofooter.img pobrany z Release
+  ( https://github.com/blukeryellow-arch/...releases/tag/0.6-hyperos-port
     -> port-release-dsu.zip -> rozpakuj )
   - Android Studio LUB wgranym system-image android-33 arm64
     (skrypt sam znajdzie/sprobuje pobrac przez sdkmanager)
@@ -17,7 +17,7 @@ KROK 1 - zaleznosci (jednorazowo, w WSL2):
 
 KROK 2 - wejdz do folderu kitu i odpal:
   cd .../kit-mysticalos3/local-emu
-  bash run-local-emu.sh ~/sciezka/do/MysticalOS_0.5_DSU_nofooter.img
+  bash run-local-emu.sh ~/sciezka/do/MysticalOS_0.6_DSU_nofooter.img
 
 KROK 3 - obserwuj LIVE status co 15 s:
   t=90s  fatal=0 loops=1 zyg=0 data=0 apexd=0
