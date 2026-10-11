@@ -1810,35 +1810,42 @@ jobs:
           else { echo "::error::4d: nie moge znalezc roota systemu"; exit 1; }
           fi
           echo "[4d] root systemu: $SYS"
-          # --- FIX 1: init.zygote64.rc (obraz 0.5 go NIE mial -> init bez
-          # zygotego -> soft-bootloop na logo; dowod: emuboot v2.20-v2.22) ---
-          if sudo test -e "$SYS/etc/init/hw/init.zygote64.rc"; then
-            echo "[4d] UWAGA: init.zygote64.rc juz istnieje w drzewie (nadpisujemy kanonicznym)"
-          fi
+          # --- FIX 1: init.zygote64.rc = wariant wskazywany przez ro.zygote=zygote64.
+          # AOSP: init.rc importuje /system/etc/init/hw/init.${ro.zygote}.rc;
+          # warianty (init.zygote32/64_32) sa NIEAKTYWNE przy ro.zygote=zygote64.
+          # 0.5 nie mial w hw/ pliku 64 + brak ro.zygote = import 'init..rc' = nic
+          # -> zero zygotego -> soft-bootloop na logo (dowod: emuboot v2.20-v2.23).
           sudo mkdir -p "$SYS/etc/init/hw"
           sudo cp "$KDIR/tools/init.zygote64.rc" "$SYS/etc/init/hw/init.zygote64.rc"
-          # --- FIX 2: ro.zygote=zygote64 (wlasna linia; printf z \n - blad v2.21
-          # doklejal wartosc do ostatniej linii build.prop) ---
+          # --- FIX 2: ro.zygote=zygote64 (wlasna linia; printf z \n - blad v2.21) ---
           if sudo grep -q "^ro.zygote=" "$SYS/build.prop"; then
             echo "[4d] ro.zygote juz jest: $(sudo grep '^ro.zygote=' "$SYS/build.prop" | head -1)"
           else
             sudo sh -c "printf '\nro.zygote=zygote64\n' >> '$SYS/build.prop'"
             echo "[4d] dodano ro.zygote=zygote64"
           fi
-          # --- CELPOWIE NIETYKANE: property_contexts! 41 typow system_ext
-          # (nvram_lenovo_prop, vendor_nvram_country_prop...) deklaruje
-          # PRAWDZIWY vendor Lenovo na tablecie (stock z nimi boota). Rewrite
-          # na default_prop byl dostosowaniem pod emulator (vendor ranchu).
-          #fstab / zz-mystical-data.rc: tez NIE - to adaptacje emulatorowe.
+          # --- CELPOWIE NIETYKANE: property_contexts (41 typow system_ext
+          # deklaruje prawdziwy vendor Lenovo na tablecie) i fstab (tablet ma
+          # wlasny vendor). Rewrite byl adaptacja pod emulator ranchu.
           # ================= 5x TWARDY CHECK =================
-          # C1: rc istnieje + DOKLADNIE jeden serwis zygote w calym drzewie
+          # C1: plik 64 obecny/kompletny + JEDEN 'service zygote' w nim;
+          # duplikat grozi TYLKO w katalogach skanowanych automatycznie przez
+          # init (import katalogu czyta pliki *.rc z poziomu, bez wchodzenia
+          # w hw/): /system/etc/init, /system_ext/etc/init, /product/etc/init.
           sudo test -s "$SYS/etc/init/hw/init.zygote64.rc" \
             || { echo "::error::C1: brak init.zygote64.rc"; exit 1; }
-          DUP=$( { sudo grep -rl "^service zygote " "$SYS/etc/init" \
-                    "$T/system_ext/etc/init" "$T/product/etc/init" 2>/dev/null || true; } | wc -l )
-          [ "$DUP" -eq 1 ] || { echo "::error::C1: 'service zygote' zdefiniowany ${DUP}x (oczekiwano 1):"; \
-            sudo grep -rl "^service zygote " "$SYS/etc/init" "$T/system_ext/etc/init" "$T/product/etc/init" 2>/dev/null || true; exit 1; }
-          echo "C1 OK: init.zygote64.rc obecny, 'service zygote' x1"
+          [ "$(sudo grep -c '^service zygote ' "$SYS/etc/init/hw/init.zygote64.rc")" -eq 1 ] \
+            || { echo "::error::C1: init.zygote64.rc bez definicji 'service zygote'"; exit 1; }
+          DUPES=""
+          for D in "$SYS/etc/init" "$T/system_ext/etc/init" "$T/product/etc/init"; do
+            while IFS= read -r f; do
+              [ -n "$f" ] && DUPES="$DUPES $f"
+            done < <(sudo find "$D" -maxdepth 1 -type f -name '*.rc' \
+                       -exec grep -l '^service zygote ' {} + 2>/dev/null || true)
+          done
+          [ -z "$DUPES" ] || { echo "::error::C1: 'service zygote' w katalogach auto-importu:$DUPES"; exit 1; }
+          VARIANTS=$(sudo ls "$SYS/etc/init/hw/" 2>/dev/null | grep '^init\.zygote' | tr '\n' ' ' || true)
+          echo "C1 OK: init.zygote64.rc (1x service zygote); warianty w hw/ nieaktywne przy ro.zygote=zygote64: ${VARIANTS:-brak}"
           # C2: ro.zygote = wlasna, dokladnie jedna linia
           [ "$(sudo grep -c '^ro.zygote=' "$SYS/build.prop")" -eq 1 ] \
             || { echo "::error::C2: ro.zygote nie jest wlasna linia"; exit 1; }
@@ -1859,6 +1866,13 @@ jobs:
           sudo grep -q "socket zygote stream" "$SYS/etc/init/hw/init.zygote64.rc" \
             || { echo "::error::C5: rc bez socket zygote"; exit 1; }
           echo "C5 OK: init.zygote64.rc kompletny (app_process64 + system-server + socket)"
+          # forensyka do podsumowania runu (widoczna z API, bez logow)
+          {
+            echo "## 4d forensyka (v0.6)"
+            echo "- warianty init.zygote* w hw/ (nieaktywne przy ro.zygote=zygote64): ${VARIANTS:-brak}"
+            echo "- 'service zygote' w katalogach auto-importu: ${DUPES:-BRAK (OK)}"
+            echo "- ro.zygote: $(sudo grep '^ro.zygote=' "$SYS/build.prop" | head -1)"
+          } >> "$GITHUB_STEP_SUMMARY"
           echo "== 4d: FIXY v0.6 OK (5/5 CHECK) =="
 
       - name: "5. Zbuduj ext4 (system + system_ext; fallback EROFS)"
