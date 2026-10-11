@@ -1,5 +1,14 @@
 # ============================================================================
-# mysticalos-emuboot v2.22 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# mysticalos-emuboot v2.23 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# v2.23: run 38131494801 (v2.22): F2 stabilny (fatal=0, loops=1, 45 min), ale
+#        /data NADAL nie zamontowane (data=0) -> apexd bez pelnej aktywacji
+#        -> zygote nie startuje -> crash-fest updatable. Raport NIE rozstrzyga
+#        czy zz-mystical-data.rc byl parsowany (grep sekcji filtrowal liste).
+#        FIX: (1) znaczniki MYSTICAL: -> /dev/kmsg w rc (dowod triggerow)
+#        (2) retry mount na post-fs-data (3) BELT#2: minimalny fstab w
+#        /system/etc (czyta go 2. stage; mount_all --late montuje /data;
+#        bez partycji systemowych = apexd bezpieczny) (4) raport: PELNA lista
+#        parsowania + myst/data liczniki w LIVE (5) dowod ls plikow w obrazie.
 # v2.22: run 38087724802 (v2.21): system zywy 50+ min, apexd OK, ale:
 #        (a) /data NIGDY nie zamontowane (vold bez fstab) -> post-fsdata
 #        bez /data -> apexd bez pelnej aktywacji -> zygote nie startuje
@@ -468,7 +477,22 @@ jobs:
               # apexd pelna aktywacja -> zygote -> framework
               sudo cp "$GITHUB_WORKSPACE/kit-mysticalos3/tools/zz-mystical-data.rc" \
                 /tmp/mnt-ctx/system/etc/init/zz-mystical-data.rc
-              echo "[B2] zygote rc + ro.zygote + zz-mystical-data.rc OK" | tee -a "$WORK/emu-progress.log"
+              # v2.23 BELT#2: minimalny fstab w /system/etc (GetFstabPath poz.3).
+              # Czyta go dopiero DRUGI stage (system juz zamontowany; 1. stage
+              # czyta ramdisk) -> v2.20 (fstab vendora psul apexd) sie NIE
+              # powtorzy. mount_all --late (post-fs-data) zamontuje /data przez
+              # fs_mgr. Celowo BEZ system/vendor/product/system_ext.
+              printf '%s\n' \
+                '/dev/block/vdb   /data     ext4    noatime,nosuid,nodev    wait,check,quota,latemount' \
+                '/dev/block/zram0 none swap  defaults zramsize=75%' \
+                | sudo tee /tmp/mnt-ctx/system/etc/fstab.ranchu >/dev/null
+              # v2.23 DOWOD: pliki naprawde w obrazie (przed umount)
+              { echo "[B2] dowod w obrazie:"
+                sudo ls -la /tmp/mnt-ctx/system/etc/init/zz-mystical-data.rc \
+                            /tmp/mnt-ctx/system/etc/fstab.ranchu 2>&1
+                echo "--- build.prop tail:"; sudo tail -2 /tmp/mnt-ctx/system/build.prop
+              } | tee -a "$WORK/emu-progress.log"
+              echo "[B2] zygote rc + ro.zygote + zz-mystical-data.rc + fstab OK" | tee -a "$WORK/emu-progress.log"
               sudo umount /tmp/mnt-ctx 2>/dev/null || true
               FIXED=1
             else
@@ -481,7 +505,7 @@ jobs:
               for i in $(seq 1 54); do
                 sleep 50
                 C2="$WORK/qemu-console2.log"
-                ST="fatal=$(grep -ac 'Failed to initialize property area' $C2 2>/dev/null) loops=$(grep -ac 'Run /init' $C2 2>/dev/null) zyg=$(grep -ac \"starting service 'zygote'\" $C2 2>/dev/null) data=$(grep -ac '__mount.*target=/data' $C2 2>/dev/null)"
+                ST="fatal=$(grep -ac 'Failed to initialize property area' $C2 2>/dev/null) loops=$(grep -ac 'Run /init' $C2 2>/dev/null) zyg=$(grep -ac 'starting service .zygote' $C2 2>/dev/null) data=$(grep -acE '__mount.*target=/data|EXT4-fs .vdb.: mounted' $C2 2>/dev/null) myst=$(grep -ac 'MYSTICAL:' $C2 2>/dev/null)"
                 timeout 10 adb connect localhost:5555 >/dev/null 2>&1
                 if timeout 10 adb -s localhost:5555 shell true >/dev/null 2>&1; then
                   BC=$(timeout 10 adb -s localhost:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
@@ -549,7 +573,7 @@ jobs:
             echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'
-            echo '- v2.22: /data montuje INIT przez zz-mystical-data.rc (on fs) - bez fstabu volda (psul apexd); ro.zygote z poprawnym newline; LIVE statusy w progresie'
+            echo '- v2.23: /data x2 (zz-mystical-data.rc on fs+post-fs-data ze znacznikami MYSTICAL + minimalny fstab /system/etc dla mount_all --late); ro.zygote z newline; LIVE: fatal/loops/zyg/data/myst'
             echo '- faza 1: BOOT 1:1 (bez patchy). faza 2 (jesli 1:1 padlo): NOP-patch property FATAL-i (0x12337c/0x12339c)'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'
@@ -574,6 +598,14 @@ jobs:
             echo "PROPERTY_FATAL_F2=$(grep -ac 'Failed to initialize property area' "$WORK/qemu-console2.log" 2>/dev/null)"
             echo "BOOTLOOPS_F2=$(grep -ac 'Run /init' "$WORK/qemu-console2.log" 2>/dev/null)"
             grep -aiE "zygote|apexd|Unable to read|class_start|servicemanager|surfaceflinger|boot_completed|vold|received signal|updatable" "$WORK/qemu-console2.log" 2>/dev/null | head -45
+            echo '```'
+            echo "## /DATA + rc forensyka (v2.23) - ROZSTRZYGAJACE"; echo '```'
+            echo "--- PELNA lista parsowania rc (F2, bez filtra):"
+            grep -a "Parsing file" "$WORK/qemu-console2.log" 2>/dev/null | head -80
+            echo "--- znaczniki MYSTICAL + mkdir/mount /data + EXT4-fs (F2):"
+            grep -aE "MYSTICAL:|mkdir /data|mount .*/data|EXT4-fs" "$WORK/qemu-console2.log" 2>/dev/null | head -80
+            echo "--- apexd pelna aktywacja (F2):"
+            grep -aiE "apexd: .*(activat|fully)" "$WORK/qemu-console2.log" 2>/dev/null | head -20
             echo '```'
             echo "## qemu/konsola szeregowa (kernel+init; tail 200)"; echo '```'
             tail -200 "$WORK/qemu-console.log" 2>/dev/null || echo "(brak)"

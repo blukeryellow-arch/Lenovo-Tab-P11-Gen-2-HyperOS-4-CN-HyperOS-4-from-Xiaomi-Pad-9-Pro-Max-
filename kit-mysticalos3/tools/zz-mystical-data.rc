@@ -1,5 +1,16 @@
 # MysticalOS harness: /data bez fstabu volda (vold bez fstab = "continuing
 # anyways"; fstab w /vendor/etc psuje apexd-bootstrap - EACCES /system_ext/apex).
+# v2.23: znaczniki MYSTICAL: -> /dev/kmsg (dowod w konsoli, ktore triggery
+# odpalaja i co sie dzieje z mountem) + retry na post-fs-data (apexd potrzebuje
+# /data wlasnie tam).
 on fs
+    write /dev/kmsg MYSTICAL:on_fs_entry
     mkdir /data 0771 root root
     mount ext4 /dev/block/vdb /data noatime nosuid nodev
+    write /dev/kmsg MYSTICAL:on_fs_mount_done
+
+on post-fs-data
+    write /dev/kmsg MYSTICAL:post_fs_data_entry
+    mkdir /data 0771 root root
+    mount ext4 /dev/block/vdb /data noatime nosuid nodev
+    write /dev/kmsg MYSTICAL:post_fs_data_mount_done
