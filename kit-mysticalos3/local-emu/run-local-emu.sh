@@ -108,11 +108,14 @@ if gzip -t "$RAMDISK" 2>/dev/null; then
 else
   (cd "$WORK/rd-all" && lz4 -dc "$RAMDISK" | cpio -idm --quiet 2>/dev/null)
 fi
+# fstab 1:1 z CI v2.22 (workflow emuboot.yml): TYLKO system logical; vendor
+# fizycznie przez by-name (vdc); product/system_ext NIE montujemy w first stage
+# (w super sa to 16MB placeholdery - zawartosc siedzi w obrazie systemu).
+# UWAGA: vendor/product/system_ext jako "logical" wiesza first-stage init
+# ("Failed to mount required partitions early" -> reboot bootloader co ~16s).
 cat > "$WORK/rd-all/first_stage_ramdisk/fstab.ranchu" <<'EOF'
 system   /system     ext4    ro,barrier=1     wait,logical,first_stage_mount
-vendor   /vendor     ext4    ro,barrier=1     wait,logical,first_stage_mount
-product  /product    ext4    ro,barrier=1     wait,logical,first_stage_mount
-system_ext  /system_ext  ext4   ro,barrier=1   wait,logical,first_stage_mount
+/dev/block/platform/a003c00.virtio_mmio/by-name/vendor    /vendor    ext4    ro,barrier=1    wait,first_stage_mount
 /dev/block/vda   /metadata   ext4   noatime,nosuid,nodev   wait,formattable,first_stage_mount
 /dev/block/vdb   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,fileencryption=aes-256-xts:aes-256-cts,reservedsize=128M,fsverity,keydirectory=/metadata/vold/metadata_encryption,latemount
 /dev/block/zram0 none swap  defaults zramsize=75%
