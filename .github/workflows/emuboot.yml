@@ -1,10 +1,12 @@
 # ============================================================================
-# mysticalos-emuboot v2.21 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
-# v2.21: run 38081844818 (v2.20): z fstabem vendora apexd-bootstrap pada
-#        ('Failed to collect APEX keys: Can't open /system_ext/apex:
-#        Permission denied' -> exit 1 -> reboot,bootstrap-apexd-failed).
-#        v2.19 (bez fstab vendora) mial apexd OK i system zywy 49 min.
-#        => wracamy do v2.19 + zostawiamy ZYGOTE FIX (rc + ro.zygote).
+# mysticalos-emuboot v2.22 - TEST BOOTA PORTU W EMULATORZE (Rozkaz 18)
+# v2.22: run 38087724802 (v2.21): system zywy 50+ min, apexd OK, ale:
+#        (a) /data NIGDY nie zamontowane (vold bez fstab) -> post-fsdata
+#        bez /data -> apexd bez pelnej aktywacji -> zygote nie startuje
+#        -> crash-fest uslug updatable (surfaceflinger itd.)
+#        (b) ro.zygote doklejone bez newline (bug z v2.21)
+#        FIX: (1) zz-mystical-data.rc - init montuje /data na 'on fs'
+#        (2) printf z \n dla ro.zygote (3) LIVE statusy bootu w progresie.
 
 on:
   workflow_dispatch:
@@ -455,13 +457,18 @@ jobs:
                   "/tmp/mnt-ctx$D" --extra-cil "$WORK/vendor_sepolicy.cil" \
                   2>&1 | tee -a "$WORK/propctx-fix.txt" | tee -a "$WORK/emu-progress.log"
               done
-              # ZYGOTE: obraz nie ma init.zygote64.rc -> kanoniczny AOSP rc + ro.zygote
+              # ZYGOTE: kanoniczny AOSP rc + ro.zygote (printf z \n - w v2.21
+              # tee dokleil sie do ostatniej linii build.prop!)
               sudo mkdir -p /tmp/mnt-ctx/system/etc/init/hw
               sudo cp "$GITHUB_WORKSPACE/kit-mysticalos3/tools/init.zygote64.rc" \
                 /tmp/mnt-ctx/system/etc/init/hw/init.zygote64.rc
               sudo grep -q "^ro.zygote=" /tmp/mnt-ctx/system/build.prop \
-                || echo "ro.zygote=zygote64" | sudo tee -a /tmp/mnt-ctx/system/build.prop
-              echo "[B2] zygote rc OK" | tee -a "$WORK/emu-progress.log"
+                || sudo sh -c 'printf "\nro.zygote=zygote64\n" >> /tmp/mnt-ctx/system/build.prop'
+              # /DATA: montuje init (nie vold - bez fstabu) -> post-fsdata ->
+              # apexd pelna aktywacja -> zygote -> framework
+              sudo cp "$GITHUB_WORKSPACE/kit-mysticalos3/tools/zz-mystical-data.rc" \
+                /tmp/mnt-ctx/system/etc/init/zz-mystical-data.rc
+              echo "[B2] zygote rc + ro.zygote + zz-mystical-data.rc OK" | tee -a "$WORK/emu-progress.log"
               sudo umount /tmp/mnt-ctx 2>/dev/null || true
               FIXED=1
             else
@@ -473,11 +480,15 @@ jobs:
               run_qemu "$WORK/qemu-console2.log" "$WORK/qemu2.log"
               for i in $(seq 1 54); do
                 sleep 50
+                C2="$WORK/qemu-console2.log"
+                ST="fatal=$(grep -ac 'Failed to initialize property area' $C2 2>/dev/null) loops=$(grep -ac 'Run /init' $C2 2>/dev/null) zyg=$(grep -ac \"starting service 'zygote'\" $C2 2>/dev/null) data=$(grep -ac '__mount.*target=/data' $C2 2>/dev/null)"
                 timeout 10 adb connect localhost:5555 >/dev/null 2>&1
                 if timeout 10 adb -s localhost:5555 shell true >/dev/null 2>&1; then
                   BC=$(timeout 10 adb -s localhost:5555 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')
-                  echo "[B2] t=$((i*50))s bc='$BC'" >> "$WORK/emu-progress.log"
+                  echo "[B2] t=$((i*50))s bc='$BC' $ST" >> "$WORK/emu-progress.log"
                   if [ "$BC" = "1" ]; then boot=1; EMU_PHASE2=1; break; fi
+                else
+                  echo "[B2] t=$((i*50))s $ST" >> "$WORK/emu-progress.log"
                 fi
                 kill -0 $QPID 2>/dev/null || { echo "[B2] qemu padl po ~$((i*50))s" | tee -a "$WORK/emu-progress.log"; break; }
               done
@@ -538,7 +549,7 @@ jobs:
             echo '- guest arm64-v8a, Android 13/API 33 (jak TB350FU); vendor emulatorowy (Treble)'
             echo '- sciezka B (qemu): SELinux permissive - crashe frameworku lapane, polityka nie'
             echo '- v2.11: SUPER (mksuper.py, liblp) z logiczna partycja system - uklad jak na urzadzeniu'
-            echo '- v2.21: POWROT do stanu v2.19 (vendor bez fstab.ranchu - vold continuing anyways, apexd OK) + zygote fix (init.zygote64.rc + ro.zygote); v2.20 z fstabem vendora -> apexd EACCES /system_ext/apex -> bootstrap-apexd-failed'
+            echo '- v2.22: /data montuje INIT przez zz-mystical-data.rc (on fs) - bez fstabu volda (psul apexd); ro.zygote z poprawnym newline; LIVE statusy w progresie'
             echo '- faza 1: BOOT 1:1 (bez patchy). faza 2 (jesli 1:1 padlo): NOP-patch property FATAL-i (0x12337c/0x12339c)'
             echo
             echo "## progress"; echo '```'; cat "$WORK/emu-progress.log" 2>/dev/null; echo '```'

@@ -1,0 +1,5 @@
+# MysticalOS harness: /data bez fstabu volda (vold bez fstab = "continuing
+# anyways"; fstab w /vendor/etc psuje apexd-bootstrap - EACCES /system_ext/apex).
+on fs
+    mkdir /data 0771 root root
+    mount ext4 /dev/block/vdb /data noatime nosuid nodev
