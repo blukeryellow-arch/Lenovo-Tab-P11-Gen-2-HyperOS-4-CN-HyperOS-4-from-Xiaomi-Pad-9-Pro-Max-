@@ -106,24 +106,17 @@ dd if="$WORK/vendor-part.img" of="$WORK/vendor-mod.img" bs=512 seek="$VNDSTART" 
 say "vendor-mod OK (vendor_property_contexts + fstab.ranchu usuniete)"
 
 # ---- 3. ramdisk-mod: nasz fstab ---------------------------------------------
-# UWAGA (run lokalny 2026-10-11): stara ekstrakcja z 2>/dev/null pochlanela blad
-# i ramdisk-mod trafial do qemu BEZ /lib/modules -> init: 'Unable to open
-# /lib/modules' -> kernel ranchu ma virtio_blk/virtio_mmio jako MODULY (nie
-# builtin!) -> brak vda/vdb/vdc/vdd -> 'partition(s) not found' -> 'Failed to
-# mount required partitions early' -> petla reboot-bootloader co ~16s.
-# Teraz: log bledow + retry drugim dekompresorem + twarda weryfikacja.
-rm -rf "$WORK/rd-all"; mkdir -p "$WORK/rd-all/first_stage_ramdisk"
+# ANDROID RAMDISK = KILKA SKLEJONYCH archiwow cpio! GNU cpio -i czyta TYLKO
+# PIERWSZE (do TRAILER!!!) i cicho gubi reszte - w tym /lib/modules -> kernel
+# bez virtio -> petla bootloader. Dlatego jak w CI (workflow v2.x, forensyka):
+# cpio_multi_extract.py czyta WSZYSTKIE sklejone archiwa.
+# (run lokalny 2026-10-11: wlasnie ten bug - bylo init+build.prop, modulow nie)
+if gzip -t "$RAMDISK" 2>/dev/null; then DEC="gzip -dc"; else DEC="lz4 -dc"; fi
 RDERR="$WORK/ramdisk-extract.log"; : > "$RDERR"
-if gzip -t "$RAMDISK" 2>/dev/null; then
-  (cd "$WORK/rd-all" && gzip -dc "$RAMDISK" | cpio -idm --quiet) >>"$RDERR" 2>&1
-else
-  (cd "$WORK/rd-all" && lz4 -dc "$RAMDISK" | cpio -idm --quiet) >>"$RDERR" 2>&1
-fi
-say "ramdisk: rozpakowano $(find "$WORK/rd-all" -type f | wc -l) plikow (log bledow: $RDERR)"
-if [ ! -d "$WORK/rd-all/lib/modules" ]; then
-  say "!! brak /lib/modules po ekstrakcji - probuje drugi dekompresor"
-  (cd "$WORK/rd-all" && (gzip -dc "$RAMDISK" 2>/dev/null || lz4 -dc "$RAMDISK") | cpio -idm --quiet) >>"$RDERR" 2>&1 || true
-fi
+$DEC "$RAMDISK" > "$WORK/rd.cpio" 2>>"$RDERR"
+rm -rf "$WORK/rd-all"; mkdir -p "$WORK/rd-all/first_stage_ramdisk"
+python3 "$TOOLS/cpio_multi_extract.py" "$WORK/rd.cpio" "$WORK/rd-all" >>"$RDERR" 2>&1
+say "ramdisk: rozpakowano $(find "$WORK/rd-all" -type f | wc -l) plikow (dekompresor: $DEC; log: $RDERR)"
 if [ ! -d "$WORK/rd-all/lib/modules" ]; then
   { echo "--- pierwsze 4 bajty $RAMDISK:"; head -c 4 "$RAMDISK" | od -An -tx1; echo "--- df:"; df -h "$WORK"; } >> "$RDERR" 2>&1
   die "ramdisk bez /lib/modules - kernel NIE ZOBACZY dyskow (petla bootloader). Podeslij mi: $RDERR"
