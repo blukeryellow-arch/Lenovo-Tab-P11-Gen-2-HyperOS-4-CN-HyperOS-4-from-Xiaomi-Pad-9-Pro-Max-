@@ -1,5 +1,5 @@
 # ============================================================================
-# mysticalos3 v1.0 - MYSTICALOS 0.5 PRAWDZIWY PORT HYPEROS (Rozkaz 17)
+# mysticalos3 v1.0 - MYSTICALOS 0.6 PRAWDZIWY PORT HYPEROS (Rozkaz 17)
 # ============================================================================
 # PORT (nie kosmetyka!): natywne apki Xiaomi z oficjalnego ROM-u tabletu
 # Xiaomi Pad 5 (nabu) HyperOS 1.0.6.0.TKXMIXM Global = Android 13 = SDK 33
@@ -15,14 +15,14 @@
 #   4. app/miui + etc/device_features + privapp-permissions (systemui/miui).
 #   5. KIT port/mkclasspathpb.py (binarny proto ExportedClasspathsJars;
 #      cross-check z google.protobuf; bootimg.py zostaje w kitu jako backup).
-# Tozsamosc: display.id=MysticalOS 0.5 (HyperOS 4 x A17 Experience),
+# Tozsamosc: display.id=MysticalOS 0.6 (HyperOS 4 x A17 Experience),
 #   hyperos=4.0.0, miui.ui=V16/16, release=17, sdk=33 NIETYKANE.
 # Debloat: agresywny (Lenovo OTA/LSF/UE/DSA/TbEngine/center + Xiaomi
 #   analytics/msa/discover/cloudservice/yellowpage/joyose) - stuby + daemon.
 # Rust: coreutils + mystical-rust-daemon v0.6 (zRAM 4GB lz4, 120Hz,
 #   schedutil, debloat disable-user, RRO, home=MiuiHome). BOOTCLASSPATH
 #   nie rusza demona (start po boot_completed, exec_background init).
-# Wyjscie: MysticalOS_0.5_HyperOS_Port.img (RAW ext4, PS=3489660928,
+# Wyjscie: MysticalOS_0.6_HyperOS_Port.img (RAW ext4, PS=3489660928,
 #   stopka AVB flags 2 sha256 no-FEC). WGROWANIE: TYLKO system (jak 2.1/0.5).
 # ============================================================================
 # V2.1 (Rozkaz 15 - eliminacja soft-bootloopa v2.0, wislo na logo Lenovo):
@@ -37,7 +37,7 @@
 # 3. Rust: coreutils + daemon jako u:object_r:system_file:s0 (0755); rc startuje
 #    dopiero on property:sys.boot_completed=1 przez exec_background u:r:init:s0
 #    (v2.0: serwis class main we wczesnym inita - ryzyko blokady boota).
-# 4. Tozsamosc: display.id=MysticalOS 0.5 (HyperOS 4 x A17 Full UI), sdk=33 NIETYKANE,
+# 4. Tozsamosc: display.id=MysticalOS 0.6 (HyperOS 4 x A17 Full UI), sdk=33 NIETYKANE,
 #    120Hz/blur/dalvik/zRAM bez zmian.
 # 5. AVB: jak w v2.0 - flags 2, sha256, no FEC, PS 3489660928 B.
 # ============================================================================
@@ -50,7 +50,7 @@
 # 1. Baza: oficjalny system.img z paczki ROW S130714 (lolinet 7,3 GB);
 #    surowy ext4 z kontekstami SELinux; ro.build.version.sdk=33 NIETYKANE.
 # 2. /system/build.prop (+ system_ext/etc/build.prop): maska A17/HyperOS 4
-#    (release=17, display.id=MysticalOS 0.5, hyperos=4.0.0, miui.ui=V16,
+#    (release=17, display.id=MysticalOS 0.6, hyperos=4.0.0, miui.ui=V16,
 #    security_patch=2026-10-05) + flagi graficzne 120Hz/blur/skiagl
 #    + dodatki z wlasnego system.prop usera (heap/dalvik/MT6789).
 # 3. DEBLOAT fizyczny: LSF/LSF-Device-Phone, LenovoExtend, HecAgent,
@@ -74,7 +74,7 @@
 # Drzewo: mount ro -> tar --selinux --acls --xattrs -> mody -> mke2fs ext4
 # -> tar-in (konteksty wlascicieli zachowane 1:1). Konteksty nowych plikow
 # kopiowane z sasiadow (bin/sh, istniejacy .rc) przez getxattr/setxattr.
-# WYJSCIE: MysticalOS_0.5_HyperOS_Port.img + _System_ext.img + vbmetty
+# WYJSCIE: MysticalOS_0.6_HyperOS_Port.img + _System_ext.img + vbmetty
 # FLAGS3 (do wgrania PRZED system - stopka flags 2 nie obejmie wlasnego
 # rozmiaru stockowej vbmetty) + instrukcja FastbootD.
 # ============================================================================
@@ -483,7 +483,7 @@ jobs:
             # tozsamosc A17 / HyperOS 4 (spec usera)
             'ro.build.version.release': '17',
             'ro.build.version.release_or_codename': '17',
-            'ro.build.display.id': 'MysticalOS 0.5 (HyperOS 4 x A17 Experience)',
+            'ro.build.display.id': 'MysticalOS 0.6 (HyperOS 4 x A17 Experience)',
             'ro.build.version.incremental': 'MysticalOS-0.5-HyperOSPort',
             'ro.build.version.security_patch': '2026-10-05',
             'ro.mysticalos.version': '0.5',
@@ -533,7 +533,7 @@ jobs:
           def apply(path):
               if not os.path.isfile(path):
                   os.makedirs(os.path.dirname(path), exist_ok=True)
-                  open(path, 'w').write('# MysticalOS 0.5 Full UI\n')
+                  open(path, 'w').write('# MysticalOS 0.6 Full UI\n')
               raw = open(path, encoding='utf-8', errors='surrogateescape').read()
               lines = raw.split('\n')
               out, seen = [], set()
@@ -545,7 +545,7 @@ jobs:
                   out.append(l)
               missing = [k for k in PROPS if k not in seen]
               if missing:
-                  out.append('# ==== MysticalOS 0.5 (HyperOS 4 x A17 / Full UI / Rust) ====')
+                  out.append('# ==== MysticalOS 0.6 (HyperOS 4 x A17 / Full UI / Rust) ====')
                   for k in missing:
                       out.append(k + '=' + PROPS[k])
               open(path, 'w', encoding='utf-8', errors='surrogateescape').write('\n'.join(out))
@@ -565,7 +565,7 @@ jobs:
           sudo install -m 0755 "$WORK/rust/coreutils" "$SYS/bin/coreutils"
           sudo install -m 0755 "$WORK/rust/mystical-rust-daemon" "$SYS/bin/mystical-rust-daemon"
           cat > "$WORK/mystical_rust.rc" <<'RCEOF'
-          # MysticalOS 0.5 Full UI - Rust Engine (start PO pelnym boocie; nie blokuje inita)
+          # MysticalOS 0.6 Full UI - Rust Engine (start PO pelnym boocie; nie blokuje inita)
           # v2.0: serwis w klasie main startowal WE WCZESNYM inita (przed frameworkiem)
           # -> wczesny reset zRAM/swapon mogl zawieszac boot na logo. v2.1: wyzwalacz
           # boot_completed + exec_background w kontekscie inita (blok ze spec usera).
@@ -1800,6 +1800,67 @@ jobs:
           cat "$WORK/port-report.txt"
           echo "== PORT HyperOS OK =="; df -h /
 
+      - name: "4d. FIXY v0.6: init.zygote64.rc + ro.zygote (z emuboot v2.20-v2.23) + 5x CHECK"
+        run: |
+          set -euo pipefail
+          # Root systemu (ta sama detekcja co w kroku 4)
+          T="$WORK/tree-system"
+          if sudo test -d "$T/app"; then SYS="$T"
+          elif sudo test -d "$T/system/app"; then SYS="$T/system"
+          else { echo "::error::4d: nie moge znalezc roota systemu"; exit 1; }
+          fi
+          echo "[4d] root systemu: $SYS"
+          # --- FIX 1: init.zygote64.rc (obraz 0.5 go NIE mial -> init bez
+          # zygotego -> soft-bootloop na logo; dowod: emuboot v2.20-v2.22) ---
+          if sudo test -e "$SYS/etc/init/hw/init.zygote64.rc"; then
+            echo "[4d] UWAGA: init.zygote64.rc juz istnieje w drzewie (nadpisujemy kanonicznym)"
+          fi
+          sudo mkdir -p "$SYS/etc/init/hw"
+          sudo cp "$KDIR/tools/init.zygote64.rc" "$SYS/etc/init/hw/init.zygote64.rc"
+          # --- FIX 2: ro.zygote=zygote64 (wlasna linia; printf z \n - blad v2.21
+          # doklejal wartosc do ostatniej linii build.prop) ---
+          if sudo grep -q "^ro.zygote=" "$SYS/build.prop"; then
+            echo "[4d] ro.zygote juz jest: $(sudo grep '^ro.zygote=' "$SYS/build.prop" | head -1)"
+          else
+            sudo sh -c "printf '\nro.zygote=zygote64\n' >> '$SYS/build.prop'"
+            echo "[4d] dodano ro.zygote=zygote64"
+          fi
+          # --- CELPOWIE NIETYKANE: property_contexts! 41 typow system_ext
+          # (nvram_lenovo_prop, vendor_nvram_country_prop...) deklaruje
+          # PRAWDZIWY vendor Lenovo na tablecie (stock z nimi boota). Rewrite
+          # na default_prop byl dostosowaniem pod emulator (vendor ranchu).
+          #fstab / zz-mystical-data.rc: tez NIE - to adaptacje emulatorowe.
+          # ================= 5x TWARDY CHECK =================
+          # C1: rc istnieje + DOKLADNIE jeden serwis zygote w calym drzewie
+          sudo test -s "$SYS/etc/init/hw/init.zygote64.rc" \
+            || { echo "::error::C1: brak init.zygote64.rc"; exit 1; }
+          DUP=$( { sudo grep -rl "^service zygote " "$SYS/etc/init" \
+                    "$T/system_ext/etc/init" "$T/product/etc/init" 2>/dev/null || true; } | wc -l )
+          [ "$DUP" -eq 1 ] || { echo "::error::C1: 'service zygote' zdefiniowany ${DUP}x (oczekiwano 1):"; \
+            sudo grep -rl "^service zygote " "$SYS/etc/init" "$T/system_ext/etc/init" "$T/product/etc/init" 2>/dev/null || true; exit 1; }
+          echo "C1 OK: init.zygote64.rc obecny, 'service zygote' x1"
+          # C2: ro.zygote = wlasna, dokladnie jedna linia
+          [ "$(sudo grep -c '^ro.zygote=' "$SYS/build.prop")" -eq 1 ] \
+            || { echo "::error::C2: ro.zygote nie jest wlasna linia"; exit 1; }
+          echo "C2 OK: $(sudo grep '^ro.zygote=' "$SYS/build.prop" | head -1)"
+          # C3: build.prop konczy sie newline (dolaczanie v2.21)
+          [ "$(sudo tail -c 1 "$SYS/build.prop" | od -An -c | tr -d ' ')" = "\n" ] \
+            || { echo "::error::C3: build.prop bez newline na koncu"; exit 1; }
+          echo "C3 OK: build.prop konczy sie newline"
+          # C4: NIETYKALNE obecne (PenService/Dolby/Audio/WiFi/display)
+          for PAT in PenService dolby audio wifi display; do
+            N=$( { sudo find "$T" -iname "*$PAT*" 2>/dev/null || true; } | wc -l )
+            [ "$N" -gt 0 ] || { echo "::error::C4: 0 sciezek dla '$PAT' (NIETYKALNE!)"; exit 1; }
+            echo "C4 OK: $PAT: $N sciezek"
+          done
+          # C5: init.zygote64.rc kompletny (start-system-server + socket)
+          sudo grep -q -- "--start-system-server" "$SYS/etc/init/hw/init.zygote64.rc" \
+            || { echo "::error::C5: rc bez --start-system-server"; exit 1; }
+          sudo grep -q "socket zygote stream" "$SYS/etc/init/hw/init.zygote64.rc" \
+            || { echo "::error::C5: rc bez socket zygote"; exit 1; }
+          echo "C5 OK: init.zygote64.rc kompletny (app_process64 + system-server + socket)"
+          echo "== 4d: FIXY v0.6 OK (5/5 CHECK) =="
+
       - name: "5. Zbuduj ext4 (system + system_ext; fallback EROFS)"
         run: |
           set -euo pipefail
@@ -1845,16 +1906,16 @@ jobs:
             echo "$N: EROFS fallback OK"
           }
           echo "drzewo systemu: $(sudo du -sh "$WORK/tree-system" 2>/dev/null | cut -f1) (dedup e2fsdroid: tree > stock fs)"
-          if ! build_ext4 "$WORK/tree-system" "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" \
+          if ! build_ext4 "$WORK/tree-system" "$WORK/out/MysticalOS_0.6_HyperOS_Port.img" \
                           "$(cat "$WORK/fsz-system")" "$(cat "$WORK/ps-system")" system; then
             echo "== system: fallback EROFS (ext4 nie zmiescil sie w partycji) =="
-            build_erofs "$WORK/tree-system" "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" system
+            build_erofs "$WORK/tree-system" "$WORK/out/MysticalOS_0.6_HyperOS_Port.img" system
           fi
           if [ ! -e "$WORK/no-system_ext" ]; then
-            if ! build_ext4 "$WORK/tree-system-ext" "$WORK/out/MysticalOS_0.5_HyperOS_Port_ext.img" \
+            if ! build_ext4 "$WORK/tree-system-ext" "$WORK/out/MysticalOS_0.6_HyperOS_Port_ext.img" \
                             "$(cat "$WORK/fsz-system_ext")" "$(cat "$WORK/ps-system_ext")" system_ext; then
               echo "== system_ext: fallback EROFS =="
-              build_erofs "$WORK/tree-system-ext" "$WORK/out/MysticalOS_0.5_HyperOS_Port_ext.img" system_ext
+              build_erofs "$WORK/tree-system-ext" "$WORK/out/MysticalOS_0.6_HyperOS_Port_ext.img" system_ext
             fi
           fi
           sudo rm -rf "$WORK/tree-system" "$WORK/tree-system-ext"
@@ -1880,32 +1941,32 @@ jobs:
           }
           # spec: avbtool add_hashtree_footer --image system.img --partition_name
           # system --hash_algorithm sha256 --do_not_generate_fec --flags 2
-          add_footer "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" system "$(cat "$WORK/ps-system")"
+          add_footer "$WORK/out/MysticalOS_0.6_HyperOS_Port.img" system "$(cat "$WORK/ps-system")"
           if [ ! -e "$WORK/no-system_ext" ]; then
-            add_footer "$WORK/out/MysticalOS_0.5_HyperOS_Port_ext.img" system_ext "$(cat "$WORK/ps-system_ext")"
+            add_footer "$WORK/out/MysticalOS_0.6_HyperOS_Port_ext.img" system_ext "$(cat "$WORK/ps-system_ext")"
           fi
           rm -f /tmp/avb_key2.pem
           # info + kryptograficzny dowod (verify_image potrzebuje nazwy pliku
           # = partition_name w katalogu obrazu):
           mkdir -p "$WORK/vfy"
-          cp "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" "$WORK/vfy/system.img"
+          cp "$WORK/out/MysticalOS_0.6_HyperOS_Port.img" "$WORK/vfy/system.img"
           ( cd "$WORK/vfy" && python3 "$KDIR/tools/avbtool.py" verify_image --image system.img ) \
             | tee "$WORK/out/avb-verify-system.txt" \
             || { echo "::error::verify_image system NIE przechodzi"; exit 1; }
           grep -q "Successfully verified" "$WORK/out/avb-verify-system.txt" \
             || { echo "::error::system: brak potwierdzenia weryfikacji"; exit 1; }
           if [ ! -e "$WORK/no-system_ext" ]; then
-            cp "$WORK/out/MysticalOS_0.5_HyperOS_Port_ext.img" "$WORK/vfy/system_ext.img"
+            cp "$WORK/out/MysticalOS_0.6_HyperOS_Port_ext.img" "$WORK/vfy/system_ext.img"
             ( cd "$WORK/vfy" && python3 "$KDIR/tools/avbtool.py" verify_image --image system_ext.img ) \
               | tee "$WORK/out/avb-verify-system-ext.txt" \
               || { echo "::error::verify_image system_ext NIE przechodzi"; exit 1; }
           fi
-          python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" \
+          python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_0.6_HyperOS_Port.img" \
             | tee "$WORK/out/avb-info-system.txt"
           grep -q "Flags: *2$" "$WORK/out/avb-info-system.txt" || { echo "::error::Flags != 2 (system)"; exit 1; }
           grep -q "Hashtree descriptor" "$WORK/out/avb-info-system.txt" || { echo "::error::brak hashtree (system)"; exit 1; }
           if [ ! -e "$WORK/no-system_ext" ]; then
-            python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_0.5_HyperOS_Port_ext.img" \
+            python3 "$KDIR/tools/avbtool.py" info_image --image "$WORK/out/MysticalOS_0.6_HyperOS_Port_ext.img" \
               | tee "$WORK/out/avb-info-system-ext.txt"
             grep -q "Flags: *2$" "$WORK/out/avb-info-system-ext.txt" || { echo "::error::Flags != 2 (system_ext)"; exit 1; }
           fi
@@ -1915,11 +1976,11 @@ jobs:
           # hashtree wewnatrz obrazu powoduje probe zbudowania verity ->
           # "Hash device is too small" -> kernel panic (log z tabletu usera,
           # 2026-10-07 22:15:40 SYSTEM_LAST_KMSG). Dla DSU dajemy czysty fs.
-          cp "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" "$WORK/out/MysticalOS_0.5_DSU_nofooter.img"
-          python3 "$KDIR/tools/avbtool.py" erase_footer --image "$WORK/out/MysticalOS_0.5_DSU_nofooter.img"
-          FSIZE=$(stat -c%s "$WORK/out/MysticalOS_0.5_DSU_nofooter.img")
+          cp "$WORK/out/MysticalOS_0.6_HyperOS_Port.img" "$WORK/out/MysticalOS_0.6_DSU_nofooter.img"
+          python3 "$KDIR/tools/avbtool.py" erase_footer --image "$WORK/out/MysticalOS_0.6_DSU_nofooter.img"
+          FSIZE=$(stat -c%s "$WORK/out/MysticalOS_0.6_DSU_nofooter.img")
           echo "DSU no-footer: $FSIZE B (fs bez stopki)"
-          python3 - "$WORK/out/MysticalOS_0.5_DSU_nofooter.img" <<'CHKDSU'
+          python3 - "$WORK/out/MysticalOS_0.6_DSU_nofooter.img" <<'CHKDSU'
           import struct, sys
           with open(sys.argv[1], 'rb') as f:
               magic = f.read(4)
@@ -1936,8 +1997,8 @@ jobs:
         run: |
           set -euo pipefail
           M="$WORK/mntv"; sudo mkdir -p "$M"
-          if ! sudo mount -o ro,loop "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" "$M" 2>/dev/null; then
-            sudo mount -t erofs -o ro,loop "$WORK/out/MysticalOS_0.5_HyperOS_Port.img" "$M" \
+          if ! sudo mount -o ro,loop "$WORK/out/MysticalOS_0.6_HyperOS_Port.img" "$M" 2>/dev/null; then
+            sudo mount -t erofs -o ro,loop "$WORK/out/MysticalOS_0.6_HyperOS_Port.img" "$M" \
               || { echo "::error::montaz weryfikacyjny system"; exit 1; }
           fi
           # sysroot na finalnym obrazie (ta sama detekcja co w kroku 4)
@@ -1952,7 +2013,7 @@ jobs:
           for KV in \
             "ro.build.version.release=17" \
             "ro.build.version.release_or_codename=17" \
-            "ro.build.display.id=MysticalOS 0.5 (HyperOS 4 x A17 Experience)" \
+            "ro.build.display.id=MysticalOS 0.6 (HyperOS 4 x A17 Experience)" \
             "ro.build.version.incremental=MysticalOS-0.5-HyperOSPort" \
             "ro.build.version.security_patch=2026-10-05" \
             "ro.mysticalos.version=0.5" \
@@ -2236,7 +2297,7 @@ jobs:
             echo "fsck:"; tail -3 "$WORK/fsck-system.log" 2>/dev/null; } > "$WORK/out/mods-report.txt" 2>/dev/null || true
           cat > "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" <<'EOF'
           =====================================================================
-          MYSTICALOS 0.5 - PRAWDZIWY PORT HYPEROS (Pad Edition) - TB350FU
+          MYSTICALOS 0.6 - PRAWDZIWY PORT HYPEROS (Pad Edition) - TB350FU
           Baza: stock Lenovo S130714 A13 (sdk 33, MT6789) + fundament v2.1
           UI: oficjalny Xiaomi Pad 5 (nabu) HyperOS 1.0.6.0 Global (A13!)
           Tozsamosc: HyperOS 4 x A17 Experience (hyperos=4.0.0, V16, rel=17)
@@ -2267,7 +2328,7 @@ jobs:
           systemowa + styling = HyperOS 4 x A17 wg spec.
 
           ZAWARTOSC PACZKI:
-          - MysticalOS_0.5_HyperOS_Port.img (system; RAW ext4, stopka AVB
+          - MysticalOS_0.6_HyperOS_Port.img (system; RAW ext4, stopka AVB
             flags 2 sha256 no-FEC; dokladnie 3489660928 B = PS partycji)
           - vbmeta-FLAGS3/ + STOCK-ORYGINAL/ + INSTRUKCJA + SHA256SUMS
           - preview/ (podglad bootanim/tapety - zobacz zanim wgrasz)
@@ -2279,7 +2340,7 @@ jobs:
             fastboot flash vbmeta_system vbmeta-FLAGS3/vbmeta_system.img
             fastboot flash vbmeta_vendor vbmeta-FLAGS3/vbmeta_vendor.img
           KROK 1: adb reboot fastboot   (FastbootD)
-          KROK 2: fastboot flash system MysticalOS_0.5_HyperOS_Port.img
+          KROK 2: fastboot flash system MysticalOS_0.6_HyperOS_Port.img
           KROK 3: fastboot reboot
           (boot.img/kernel NIETYKANE - jary miui laduja sie przez
            /system/etc/classpaths/bootclasspath.pb; wgranie identycznie
@@ -2299,7 +2360,7 @@ jobs:
           (cmd overlay enable; lista: /system/etc/mystical/h4-overlays.txt).
 
           WGROWANIE PRZEZ DSU (alternatywa; NIE uzywaj obrazu ze stopka!):
-            Uzyj pliku MysticalOS_0.5_DSU_nofooter.img (czysty ext4, BEZ
+            Uzyj pliku MysticalOS_0.6_DSU_nofooter.img (czysty ext4, BEZ
             stopki AVB). Zwykly obraz HyperOS_Port.img w DSU powoduje
             kernel panic (verity: Hash device is too small - potwierdzone
             logiem z tabletu). DSU loader -> wybierz nofooter.img.
@@ -2334,8 +2395,8 @@ jobs:
             cat /sys/block/zram0/disksize   -> 4294967296
             logcat -s MysticalOS-Rust       -> home/debloat/RRO/zRAM
           EOF
-          sha256sum "$WORK/out"/MysticalOS_0.5_HyperOS_Port*.img \
-            "$WORK/out"/MysticalOS_0.5_DSU_nofooter.img \
+          sha256sum "$WORK/out"/MysticalOS_0.6_HyperOS_Port*.img \
+            "$WORK/out"/MysticalOS_0.6_DSU_nofooter.img \
                     "$WORK/vbmeta/FLAGS3"/*.img "$WORK/vbmeta/STOCK-ORYGINAL"/*.img \
                     "$WORK/out/INSTRUKCJA-FASTBOOTD.txt" > "$WORK/out/SHA256SUMS.txt"
           cat "$WORK/out/SHA256SUMS.txt"
@@ -2344,9 +2405,9 @@ jobs:
       - name: "9. Artifact (PERMANENT)"
         uses: actions/upload-artifact@v4
         with:
-          name: MysticalOS_0.5_HyperOS_Port
+          name: MysticalOS_0.6_HyperOS_Port
           path: |
-            /tmp/m2/out/MysticalOS_0.5_HyperOS_Port.img
+            /tmp/m2/out/MysticalOS_0.6_HyperOS_Port.img
             /tmp/m2/out/preview/preview-boot.jpg
             /tmp/m2/out/preview/preview-wallpaper.jpg
             /tmp/m2/out/port-report.txt
@@ -2413,7 +2474,7 @@ jobs:
           exec > >(tee "$WORK/11-console.log") 2>&1
           set -E
           trap 'RC=$?; echo "::error::krok 11 padl (exit $RC); ostatnie linie:"; tail -n 20 "$WORK/11-console.log" 2>/dev/null' ERR
-          TAG="0.5-hyperos-port"
+          TAG="0.6-hyperos-port"
           # zip ma sciezki WZGLEDNE (out/..., vbmeta/...) -> cwd = $WORK!
           # a gh CLI traci wtedy kontekst repo (brak .git w /tmp/m2) -> GH_REPO
           cd "$WORK"
@@ -2425,7 +2486,7 @@ jobs:
           # RAW img = 3 489 660 928 B (3.25 GiB) > limit 2 GiB na pojedynczy asset
           # release -> pakujemy w zip (jak artefakt Actions, ~1.8 GB po deflacie)
           zip -r -q "$WORK/port-release.zip" \
-            out/MysticalOS_0.5_HyperOS_Port.img \
+            out/MysticalOS_0.6_HyperOS_Port.img \
             out/INSTRUKCJA-FASTBOOTD.txt out/SHA256SUMS.txt \
             out/port-report.txt out/ui-report.txt out/mods-report.txt \
             out/avb-info-system.txt out/avb-verify-system.txt \
@@ -2434,14 +2495,21 @@ jobs:
           echo "zip release: $(stat -c%s "$WORK/port-release.zip") B"
           # wariant DSU: obraz bez stopki AVB + ta sama dokumentacja
           zip -r -q "$WORK/port-release-dsu.zip" \
-            out/MysticalOS_0.5_DSU_nofooter.img \
+            out/MysticalOS_0.6_DSU_nofooter.img \
             out/INSTRUKCJA-FASTBOOTD.txt out/SHA256SUMS.txt out/port-report.txt
           echo "zip DSU: $(stat -c%s "$WORK/port-release-dsu.zip") B"
-          SHA_IMG=$(awk '/MysticalOS_0\.5_HyperOS_Port\.img/{print $1}' "$WORK/out/SHA256SUMS.txt")
+          SHA_IMG=$(awk '/MysticalOS_0\.6_HyperOS_Port\.img/{print $1}' "$WORK/out/SHA256SUMS.txt")
           {
-            echo "# MysticalOS 0.5 — PRAWDZIWY PORT HyperOS (nabu OS1.0.6.0 → Lenovo TB350FU)"
+            echo "# MysticalOS 0.6 — PRAWDZIWY PORT HyperOS (nabu OS1.0.6.0 → Lenovo TB350FU)"
             echo
             echo "Run mysticalos3: ${GITHUB_RUN_ID} (SUCCESS) · evidence: reports/mysticalos3-${GITHUB_RUN_ID}.md"
+            echo
+            echo "## Nowe w 0.6 (fixy z emuboot v2.20-v2.23)"
+            echo "- **init.zygote64.rc + ro.zygote=zygote64** — obraz 0.5 nie mial definicji"
+            echo "  zygote: init startowal, ale framework nie wstawal (soft-bootloop na logo)."
+            echo "- 5x twardy CHECK w buildzie (C1-C5): jeden 'service zygote', wlasna linia"
+            echo "  ro.zygote, newline w build.prop, NIETYKALNE (PenService/Dolby/Audio/WiFi/display)."
+            echo "- property_contexts i boot.img NIETYKANE (typy Lenovo deklaruje vendor tabletu)."
             echo
             echo "## Co to jest"
             echo "Natywne apki Xiaomi z oficjalnego ROM-u HyperOS tabletu nabu (Pad 6 Pro, A13/sdk 33)"
@@ -2449,17 +2517,17 @@ jobs:
             echo "HyperOS, rozdzielone powiadomienia/przelaczniki), **MiuiHome** (25 MB, RELEASE-4.40.0.6206,"
             echo "tabletowy launcher), 14 jarow miui na BOOTCLASSPATH (przez /system/etc/classpaths/"
             echo "bootclasspath.pb — boot.img NIETYKANY), device_features, app/miui, privapp-permissions"
-            echo "+ library XML (57 plikow). Tozsamosc: MysticalOS 0.5 (HyperOS 4 x A17 Experience),"
+            echo "+ library XML (57 plikow). Tozsamosc: MysticalOS 0.6 (HyperOS 4 x A17 Experience),"
             echo "sdk=33 NIETYKANE. Debloat v2.2: stock LenovoSystemUI (61.7 MB, system_ext) + reszta"
             echo "Lenovo/Xiaomi jako atrapy; Rust coreutils + mystical-rust-daemon (zRAM 4 GB lz4)."
             echo
             echo "## Warianty"
-            echo "- **FastbootD**: port-release.zip (MysticalOS_0.5_HyperOS_Port.img, stopka AVB flags 2)"
-            echo "- **DSU**: port-release-dsu.zip (MysticalOS_0.5_DSU_nofooter.img — czysty ext4 BEZ stopki;"
+            echo "- **FastbootD**: port-release.zip (MysticalOS_0.6_HyperOS_Port.img, stopka AVB flags 2)"
+            echo "- **DSU**: port-release-dsu.zip (MysticalOS_0.6_DSU_nofooter.img — czysty ext4 BEZ stopki;"
             echo "  zwykly obraz w DSU powoduje kernel panic — verity too small, potwierdzone logiem)"
             echo
-            echo "## Zawartosc pelnego zipa (MysticalOS_0.5_HyperOS_Port-full.zip)"
-            echo "- out/MysticalOS_0.5_HyperOS_Port.img — RAW ext4, 3 489 660 928 B (= PS partycji), stopka AVB flags 2 sha256 no-FEC"
+            echo "## Zawartosc pelnego zipa (MysticalOS_0.6_HyperOS_Port-full.zip)"
+            echo "- out/MysticalOS_0.6_HyperOS_Port.img — RAW ext4, 3 489 660 928 B (= PS partycji), stopka AVB flags 2 sha256 no-FEC"
             echo "- out/INSTRUKCJA-FASTBOOTD.txt + out/SHA256SUMS.txt"
             echo "- vbmeta/FLAGS3/ + vbmeta/STOCK-ORYGINAL/ (po 3 pliki)"
             echo "- out/preview/ (bootanim + tapeta) + raporty (port/mods/avb)"
@@ -2472,7 +2540,7 @@ jobs:
             echo "fastboot flash vbmeta_system vbmeta/FLAGS3/vbmeta_system.img"
             echo "fastboot flash vbmeta_vendor vbmeta/FLAGS3/vbmeta_vendor.img"
             echo "adb reboot fastboot                                               # FastbootD"
-            echo "fastboot flash system out/MysticalOS_0.5_HyperOS_Port.img"
+            echo "fastboot flash system out/MysticalOS_0.6_HyperOS_Port.img"
             echo "fastboot reboot"
             echo '```'
             echo
@@ -2483,7 +2551,7 @@ jobs:
           } > "$WORK/NOTES.md"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
-              --title "MysticalOS 0.5 — PRAWDZIWY PORT HyperOS (Pad Edition)" \
+              --title "MysticalOS 0.6 — PRAWDZIWY PORT HyperOS (Pad Edition)" \
               --notes-file "$WORK/NOTES.md" --target "$GITHUB_SHA"
           fi
           echo "release $TAG: upload port-release.zip (clobber, retry x3)"
