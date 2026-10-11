@@ -102,11 +102,27 @@ dd if="$WORK/vendor-part.img" of="$WORK/vendor-mod.img" bs=512 seek="$VNDSTART" 
 say "vendor-mod OK (vendor_property_contexts + fstab.ranchu usuniete)"
 
 # ---- 3. ramdisk-mod: nasz fstab ---------------------------------------------
+# UWAGA (run lokalny 2026-10-11): stara ekstrakcja z 2>/dev/null pochlanela blad
+# i ramdisk-mod trafial do qemu BEZ /lib/modules -> init: 'Unable to open
+# /lib/modules' -> kernel ranchu ma virtio_blk/virtio_mmio jako MODULY (nie
+# builtin!) -> brak vda/vdb/vdc/vdd -> 'partition(s) not found' -> 'Failed to
+# mount required partitions early' -> petla reboot-bootloader co ~16s.
+# Teraz: log bledow + retry drugim dekompresorem + twarda weryfikacja.
 rm -rf "$WORK/rd-all"; mkdir -p "$WORK/rd-all/first_stage_ramdisk"
+RDERR="$WORK/ramdisk-extract.log"; : > "$RDERR"
 if gzip -t "$RAMDISK" 2>/dev/null; then
-  (cd "$WORK/rd-all" && gzip -dc "$RAMDISK" | cpio -idm --quiet 2>/dev/null)
+  (cd "$WORK/rd-all" && gzip -dc "$RAMDISK" | cpio -idm --quiet) >>"$RDERR" 2>&1
 else
-  (cd "$WORK/rd-all" && lz4 -dc "$RAMDISK" | cpio -idm --quiet 2>/dev/null)
+  (cd "$WORK/rd-all" && lz4 -dc "$RAMDISK" | cpio -idm --quiet) >>"$RDERR" 2>&1
+fi
+say "ramdisk: rozpakowano $(find "$WORK/rd-all" -type f | wc -l) plikow (log bledow: $RDERR)"
+if [ ! -d "$WORK/rd-all/lib/modules" ]; then
+  say "!! brak /lib/modules po ekstrakcji - probuje drugi dekompresor"
+  (cd "$WORK/rd-all" && (gzip -dc "$RAMDISK" 2>/dev/null || lz4 -dc "$RAMDISK") | cpio -idm --quiet) >>"$RDERR" 2>&1 || true
+fi
+if [ ! -d "$WORK/rd-all/lib/modules" ]; then
+  { echo "--- pierwsze 4 bajty $RAMDISK:"; head -c 4 "$RAMDISK" | od -An -tx1; echo "--- df:"; df -h "$WORK"; } >> "$RDERR" 2>&1
+  die "ramdisk bez /lib/modules - kernel NIE ZOBACZY dyskow (petla bootloader). Podeslij mi: $RDERR"
 fi
 # fstab 1:1 z CI v2.22 (workflow emuboot.yml): TYLKO system logical; vendor
 # fizycznie przez by-name (vdc); product/system_ext NIE montujemy w first stage
@@ -120,8 +136,12 @@ system   /system     ext4    ro,barrier=1     wait,logical,first_stage_mount
 /dev/block/vdb   /data     ext4      noatime,nosuid,nodev,nomblk_io_submit,errors=panic   wait,check,quota,fileencryption=aes-256-xts:aes-256-cts,reservedsize=128M,fsverity,keydirectory=/metadata/vold/metadata_encryption,latemount
 /dev/block/zram0 none swap  defaults zramsize=75%
 EOF
-( cd "$WORK/rd-all" && find . -print0 | cpio -0 -o -H newc -R 0:0 2>/dev/null | gzip -1 > "$WORK/ramdisk-mod.img" )
-say "ramdisk-mod OK (fstab: system/vendor logical, data=vdb, metadata=vda)"
+( cd "$WORK/rd-all" && find . -print0 | cpio -0 -o -H newc -R 0:0 2>>"$RDERR" | gzip -1 > "$WORK/ramdisk-mod.img" )
+# twarda weryfikacja koncowka-do-konca: spakowany ramdisk MUSI miec moduly virtio
+if ! gzip -dc "$WORK/ramdisk-mod.img" 2>/dev/null | cpio -t 2>/dev/null | grep -q "lib/modules/virtio_blk"; then
+  die "WERYFIKACJA: ramdisk-mod.img nie zawiera lib/modules/virtio_blk - nie bootnie. Log: $RDERR"
+fi
+say "ramdisk-mod OK (fstab 1:1 z CI + /lib/modules z modulami virtio zweryfikowane)"
 
 # ---- 4. fix obrazu (kopia robocza!) -----------------------------------------
 say "Kopiuje obraz do emu-work/our.img (oryginal nietkniety)"
