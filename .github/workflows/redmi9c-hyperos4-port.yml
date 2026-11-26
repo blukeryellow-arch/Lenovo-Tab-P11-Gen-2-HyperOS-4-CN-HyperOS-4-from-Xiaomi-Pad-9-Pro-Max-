@@ -331,7 +331,6 @@ jobs:
           SECILC_OK=0
           {
             echo "=== SELINUX SECILC CHECK ==="
-            secilc --version 2>&1 || true
             CILS_PLAT=()
             CILS=()
             SYS_SE="$WORK/out-tree/system/system/etc/selinux"
@@ -394,8 +393,11 @@ jobs:
               cat "$WORK/secilc.err" | head -n 60
             fi
             rm -f "$WORK/test_sepolicy" "$WORK/test_sepolicy_plat"
-          } | tee -a "$WORK/port-report.txt"
+          } > "$WORK/secilc_check.log"
+          cat "$WORK/secilc_check.log" | tee -a "$WORK/port-report.txt"
+          rm -f "$WORK/secilc_check.log"
           echo "SECILC_OK=$SECILC_OK" >> "$GITHUB_ENV"
+          echo "Exported SECILC_OK=$SECILC_OK"
           df -h /
 
       - name: "4. Pakowanie partycji + fstab + budowa super.img (4.5 GiB)"
