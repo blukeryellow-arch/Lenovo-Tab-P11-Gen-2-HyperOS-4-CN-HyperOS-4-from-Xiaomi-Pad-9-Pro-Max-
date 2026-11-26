@@ -1,0 +1,643 @@
+name: redmi9c-hyperos4-port
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Wariant urzadzenia (angelica = Redmi 9C, angelican = Redmi 9C NFC)"
+        required: true
+        default: "angelica"
+        type: choice
+        options:
+          - angelica
+          - angelican
+      debloat_level:
+        description: "Poziom debloatu HyperOS 4"
+        required: true
+        default: "aggressive"
+        type: choice
+        options:
+          - aggressive
+          - balanced
+      fs_mode:
+        description: "System plikow partycji system/system_ext/product w super.img"
+        required: true
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - erofs
+          - ext4
+      release_tag:
+        description: "Tag GitHub Release"
+        required: true
+        default: "redmi9c-hyperos4-v1"
+        type: string
+  push:
+    branches:
+      - arena/dd4cc57a-lenovo-tab-p11-gen-2-hyperos-4
+    paths:
+      - ".github/workflows/redmi9c-hyperos4-port.yml"
+      - "tools/**"
+      - "templates/**"
+
+concurrency:
+  group: redmi9c-hyperos4-port
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-port:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      WORK: /tmp/r9c
+      REPO_DIR: ${{ github.workspace }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VARIANT: ${{ inputs.variant || 'angelica' }}
+      DEBLOAT_LEVEL: ${{ inputs.debloat_level || 'aggressive' }}
+      FS_MODE: ${{ inputs.fs_mode || 'auto' }}
+      RELEASE_TAG: ${{ inputs.release_tag || 'redmi9c-hyperos4-v1' }}
+      BASE_URL: https://github.com/xc112lg/blossom_releases/releases/download/EvolutionX-17.0-20261120-1/EvolutionX-17.0-20261120-blossom-12.4-Vanilla-Unofficial.zip
+      BASE_FALLBACK_URL: https://github.com/xc112lg/blossom_releases/releases/download/crDroid-20261121-4/crDroidAndroid-17.0-20261121-blossom-v13.1.zip
+      DONOR_FILE: dew_global-ota_full-OS4.0.8.0.XBNMIXM-user-17.0-bff6fad64d.zip
+      DONOR_PATH: OS4.0.8.0.XBNMIXM/dew_global-ota_full-OS4.0.8.0.XBNMIXM-user-17.0-bff6fad64d.zip
+      DONOR_MD5: bff6fad64d879e13b520eaf15190c0aa
+      SUPER_SIZE: "4831838208"
+      MAIN_SIZE: "4829741056"
+      BOOT_MAX_SIZE: "67108864"
+    steps:
+      - name: "0. Checkout + dysk + narzedzia"
+        run: |
+          set -euo pipefail
+          echo "=== Czyszczenie dysku runnera ==="
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache 2>/dev/null || true
+          df -h /
+
+          echo "=== Instalacja pakietow ==="
+          sudo apt-get update -q
+          sudo apt-get install -y -q p7zip-full aria2 brotli e2fsprogs erofs-utils secilc cpio lz4 android-sdk-libsparse-utils || \
+            sudo apt-get install -y p7zip-full aria2 brotli e2fsprogs erofs-utils secilc cpio lz4
+          pip install --quiet cryptography 2>/dev/null || pip install --quiet --break-system-packages cryptography
+
+          mkdir -p "$WORK/bin" "$WORK/base-img" "$WORK/base-tree" "$WORK/donor-img" "$WORK/donor-tree" "$WORK/out-tree" "$WORK/out-img" "$WORK/package" "$WORK/release"
+
+          echo "=== Pobieranie payload-dumper-go + liblp/magiskboot ==="
+          curl -fsSL --retry 3 -o "$WORK/pdg.tgz" \
+            "https://github.com/ssut/payload-dumper-go/releases/download/2.1.0/payload-dumper-go_2.1.0_linux_amd64.tar.gz"
+          tar -xzf "$WORK/pdg.tgz" -C "$WORK/bin"
+          rm -f "$WORK/pdg.tgz"
+
+          PIN_REF="5f3c609fef8692d3214d9df66ccbee2de5f5a444"
+          for B in lpmake lpunpack mkfs.erofs fsck.erofs; do
+            curl -fsSL --retry 3 -o "$WORK/bin/$B" \
+              "https://github.com/${GH_REPO}/raw/${PIN_REF}/kit-mysticalos3/bin/$B"
+            chmod +x "$WORK/bin/$B"
+          done
+          curl -fsSL --retry 3 -o "$WORK/bin/magiskboot" \
+            "https://github.com/Z-Fovik-RT/HyperOS4.0-Port-Windows-Python/raw/main/bin/linux/x86_64/magiskboot" || true
+          [ -f "$WORK/bin/magiskboot" ] && chmod +x "$WORK/bin/magiskboot"
+
+          export PATH="$WORK/bin:$PATH"
+          for T in 7z aria2c brotli mke2fs e2fsck resize2fs secilc lpmake lpunpack payload-dumper-go mkfs.erofs fsck.erofs; do
+            command -v "$T" >/dev/null || { echo "::error::Brak narzedzia: $T"; exit 1; }
+          done
+          python3 "$REPO_DIR/tools/avbtool.py" version
+
+          echo "=== Self-test narzedzi (sdat2img, split_5_7z, lpmake/lpunpack) ==="
+          python3 -m py_compile "$REPO_DIR/tools/"*.py
+          dd if=/dev/urandom of="$WORK/mini.img" bs=1M count=4 status=none
+          "$WORK/bin/lpmake" --device-size=16777216 --metadata-size=65536 --metadata-slots=2 \
+            --block-size=4096 --alignment=1048576 --super-name=super -S \
+            --group=main:8388608 \
+            --partition=system:readonly:4194304:main --image=system="$WORK/mini.img" \
+            -o "$WORK/mini-super.img" >/dev/null
+          python3 "$REPO_DIR/tools/simg2img.py" "$WORK/mini-super.img" "$WORK/mini-super.raw" >/dev/null
+          mkdir -p "$WORK/mini-unp"
+          "$WORK/bin/lpunpack" "$WORK/mini-super.raw" "$WORK/mini-unp" >/dev/null
+          cmp "$WORK/mini.img" "$WORK/mini-unp/system.img"
+          rm -rf "$WORK/mini.img" "$WORK/mini-super.img" "$WORK/mini-super.raw" "$WORK/mini-unp"
+          echo "Self-test OK."
+
+      - name: "1. Pobierz i rozpakuj baze OSS Android 17 dla blossom (Redmi 9C)"
+        run: |
+          set -euo pipefail
+          export PATH="$WORK/bin:$PATH"
+          echo "=== Pobieranie bazy EvolutionX 17.0 blossom ==="
+          if ! aria2c -x16 -s16 -k4M --max-tries=5 --retry-wait=5 --summary-interval=30 \
+              -d "$WORK" -o base.zip "$BASE_URL"; then
+            echo "::warning::Glowny URL bazy padl, probuje crDroid 17.0 blossom..."
+            rm -f "$WORK/base.zip" "$WORK/base.zip.aria2"
+            aria2c -x16 -s16 -k4M --max-tries=5 --retry-wait=5 --summary-interval=30 \
+              -d "$WORK" -o base.zip "$BASE_FALLBACK_URL"
+          fi
+
+          mkdir -p "$WORK/base-unzip"
+          unzip -q "$WORK/base.zip" -d "$WORK/base-unzip"
+          rm -f "$WORK/base.zip"
+          find "$WORK/base-unzip" -maxdepth 3 | sort
+
+          # Zbierz boot, dtbo, vbmeta*
+          for IMG in boot.img dtbo.img vbmeta.img vbmeta_system.img vbmeta_vendor.img; do
+            FOUND=$(find "$WORK/base-unzip" -type f -name "$IMG" | head -1 || true)
+            if [ -n "$FOUND" ]; then
+              cp "$FOUND" "$WORK/out-img/$IMG"
+              echo "base $IMG -> out-img ($FOUND)"
+            fi
+          done
+          [ -s "$WORK/out-img/boot.img" ] || { echo "::error::Brak boot.img w bazie blossom!"; exit 1; }
+
+          # Patch lub utworz vbmeta z Flags=3 (AVB disabled)
+          python3 - "$WORK/out-img" "$REPO_DIR/tools/avbtool.py" <<'PYEOF'
+          import os, struct, subprocess, sys
+          out_dir, avbtool = sys.argv[1], sys.argv[2]
+          for name in ("vbmeta.img", "vbmeta_system.img", "vbmeta_vendor.img"):
+              p = os.path.join(out_dir, name)
+              if os.path.isfile(p):
+                  data = bytearray(open(p, "rb").read())
+                  if data[:4] == b"AVB0":
+                      data[120:124] = struct.pack(">I", 3)
+                      open(p, "wb").write(bytes(data))
+                      print(f"{name}: patched AVB0 flags -> 3")
+                      continue
+              subprocess.run(
+                  [sys.executable, avbtool, "make_vbmeta_image", "--flags", "3", "--padding_size", "4096", "--output", p],
+                  check=True,
+              )
+              print(f"{name}: created empty AVB0 flags=3")
+          PYEOF
+
+          # Rozpakuj obrazy dynamicznych partycji z bazy
+          PB_BASE=$(find "$WORK/base-unzip" -type f -name "payload.bin" | head -1 || true)
+          if [ -n "$PB_BASE" ]; then
+            echo "=== Baza ma payload.bin ($PB_BASE) ==="
+            payload-dumper-go -p system,system_ext,product,vendor,odm -o "$WORK/base-img" "$PB_BASE" || \
+              payload-dumper-go -o "$WORK/base-img" "$PB_BASE"
+          else
+            for P in system system_ext product vendor odm; do
+              BR_FILE=$(find "$WORK/base-unzip" -type f -name "${P}.new.dat.br" | head -1 || true)
+              TL_FILE=$(find "$WORK/base-unzip" -type f -name "${P}.transfer.list" | head -1 || true)
+              DAT_FILE=$(find "$WORK/base-unzip" -type f -name "${P}.new.dat" | head -1 || true)
+              RAW_IMG=$(find "$WORK/base-unzip" -type f -name "${P}.img" | head -1 || true)
+              if [ -n "$BR_FILE" ] && [ -n "$TL_FILE" ]; then
+                echo "=== Dekompresja ${P}.new.dat.br ==="
+                brotli -d "$BR_FILE" -o "$WORK/base-unzip/${P}.new.dat"
+                rm -f "$BR_FILE"
+                python3 "$REPO_DIR/tools/sdat2img.py" \
+                  "$TL_FILE" \
+                  "$WORK/base-unzip/${P}.new.dat" \
+                  "$WORK/base-img/${P}.img"
+                rm -f "$WORK/base-unzip/${P}.new.dat"
+              elif [ -n "$DAT_FILE" ] && [ -n "$TL_FILE" ]; then
+                python3 "$REPO_DIR/tools/sdat2img.py" \
+                  "$TL_FILE" \
+                  "$DAT_FILE" \
+                  "$WORK/base-img/${P}.img"
+              elif [ -n "$RAW_IMG" ]; then
+                mv "$RAW_IMG" "$WORK/base-img/${P}.img"
+              fi
+            done
+          fi
+          rm -rf "$WORK/base-unzip"
+
+          # Jesli ktorys obraz jest sparse -> desparse; potem mount -> tar z SELinux xattr
+          for P in system system_ext product vendor odm; do
+            IMG="$WORK/base-img/${P}.img"
+            [ -s "$IMG" ] || { echo "::error::Brak partycji bazowej: ${P}.img"; exit 1; }
+            IS_SPARSE=$(python3 -c "import struct,sys; print(1 if struct.unpack('<I', open(sys.argv[1],'rb').read(4))[0]==0xED26FF3A else 0)" "$IMG")
+            if [ "$IS_SPARSE" = "1" ]; then
+              python3 "$REPO_DIR/tools/simg2img.py" "$IMG" "$IMG.raw"
+              mv "$IMG.raw" "$IMG"
+            fi
+            M="$WORK/mnt-base-$P"; sudo mkdir -p "$M" "$WORK/base-tree/$P"
+            sudo mount -o ro,loop "$IMG" "$M" || sudo mount -t erofs -o ro,loop "$IMG" "$M" || sudo mount -t ext4 -o ro,loop "$IMG" "$M"
+            sudo tar -C "$M" --acls --xattrs --selinux -cf - . | sudo tar -C "$WORK/base-tree/$P" --acls --xattrs --selinux -xf -
+            sudo umount "$M"; sudo rmdir "$M"
+            rm -f "$IMG"
+            echo "base-tree/$P gotowe."
+          done
+          df -h /
+
+      - name: "2. Pobierz i rozpakuj HyperOS 4 Global (dew OS4.0.8.0.XBNMIXM, Android 17)"
+        run: |
+          set -euo pipefail
+          export PATH="$WORK/bin:$PATH"
+          sudo cp /etc/resolv.conf "$WORK/resolv.conf.orig" 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          printf 'nameserver 8.8.8.8\nnameserver 1.1.1.1\nnameserver 168.63.129.16\noptions timeout:2 attempts:3\n' | sudo tee /etc/resolv.conf >/dev/null
+          trap 'if [ -s "$WORK/resolv.conf.orig" ]; then sudo cp "$WORK/resolv.conf.orig" /etc/resolv.conf 2>/dev/null || true; fi' EXIT
+
+          URLS=""
+          for H in bn.d.miui.com cdnorg.d.miui.com bigota.d.miui.com hugeota.d.miui.com hugebackup.d.miui.com; do
+            U="https://$H/$DONOR_PATH"
+            CODE=$(curl -sI -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 25 "$U" || echo "000")
+            echo "mirror $H -> HTTP $CODE"
+            if [ "$CODE" = "200" ] || [ "$CODE" = "206" ] || [ "$CODE" = "302" ]; then
+              URLS="$URLS $U"
+            fi
+          done
+          [ -n "$URLS" ] || URLS="https://bigota.d.miui.com/$DONOR_PATH https://cdnorg.d.miui.com/$DONOR_PATH"
+
+          DL_OK=0
+          if aria2c -x16 -s16 -k4M --lowest-speed-limit=5K --connect-timeout=15 \
+              --max-tries=8 --retry-wait=5 --summary-interval=60 \
+              -d "$WORK" -o donor.zip $URLS; then
+            GOT_MD5=$(md5sum "$WORK/donor.zip" | awk '{print $1}')
+            echo "donor.zip size=$(stat -c%s "$WORK/donor.zip") md5=$GOT_MD5 (expected=$DONOR_MD5)"
+            if [ "$GOT_MD5" = "$DONOR_MD5" ]; then
+              DL_OK=1
+            else
+              echo "::warning::MD5 niezgodny ($GOT_MD5 != $DONOR_MD5), przechodze na payload_extract range..."
+              rm -f "$WORK/donor.zip"
+            fi
+          fi
+
+          if [ "$DL_OK" = "1" ]; then
+            unzip -o -q "$WORK/donor.zip" payload.bin -d "$WORK"
+            rm -f "$WORK/donor.zip"
+            payload-dumper-go -p system,system_ext,product,mi_ext -o "$WORK/donor-img" "$WORK/payload.bin" || \
+              payload-dumper-go -p system,system_ext,product -o "$WORK/donor-img" "$WORK/payload.bin"
+            rm -f "$WORK/payload.bin"
+          else
+            FIRST_URL=$(echo "$URLS" | awk '{print $1}')
+            for P in system system_ext product mi_ext; do
+              python3 "$REPO_DIR/tools/payload_extract.py" \
+                --zip-url "$FIRST_URL" --entry payload.bin \
+                --partition "$P" --out "$WORK/donor-img/${P}.img" \
+                --jobs 12 --chunk 16777216 --prefetch-ops 3 || {
+                  [ "$P" = "mi_ext" ] && echo "mi_ext opcjonalny pominiety" || exit 1
+                }
+            done
+          fi
+
+          for P in system system_ext product mi_ext; do
+            IMG="$WORK/donor-img/${P}.img"
+            [ -s "$IMG" ] || {
+              if [ "$P" = "mi_ext" ]; then
+                echo "donor: brak mi_ext.img (pomijam)"
+                continue
+              fi
+              echo "::error::Brak donor-img/${P}.img"; exit 1
+            }
+            M="$WORK/mnt-donor-$P"; sudo mkdir -p "$M" "$WORK/donor-tree/$P"
+            sudo mount -o ro,loop "$IMG" "$M" || sudo mount -t erofs -o ro,loop "$IMG" "$M" || sudo mount -t ext4 -o ro,loop "$IMG" "$M"
+            sudo tar -C "$M" --acls --xattrs --selinux -cf - . | sudo tar -C "$WORK/donor-tree/$P" --acls --xattrs --selinux -xf -
+            sudo umount "$M"; sudo rmdir "$M"
+            rm -f "$IMG"
+            echo "donor-tree/$P gotowe."
+          done
+          df -h /
+
+      - name: "3. Portowanie + agresywny debloat + test SELinux (secilc)"
+        run: |
+          set -euo pipefail
+          sudo python3 "$REPO_DIR/tools/port_redmi9c_hyperos4.py" \
+            --base-tree "$WORK/base-tree" \
+            --donor-tree "$WORK/donor-tree" \
+            --out-tree "$WORK/out-tree" \
+            --variant "$VARIANT" \
+            --debloat-level "$DEBLOAT_LEVEL" \
+            --report "$WORK/port-report.txt"
+
+          sudo rm -rf "$WORK/base-tree" "$WORK/donor-tree"
+
+          # Naprawa brakujacych kontekstow SELinux dla dogranych plikow
+          SYS_FC="$WORK/out-tree/system/system/etc/selinux/plat_file_contexts"
+          [ -f "$SYS_FC" ] || SYS_FC="$WORK/out-tree/system/etc/selinux/plat_file_contexts"
+          if [ -f "$SYS_FC" ]; then
+            sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$SYS_FC" --root "$WORK/out-tree/system" \
+              --only system/etc/properties system/etc/vintf system/build.prop || true
+          fi
+          SEXT_FC="$WORK/out-tree/system_ext/etc/selinux/system_ext_file_contexts"
+          if [ -f "$SEXT_FC" ]; then
+            sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$SEXT_FC" --root "$WORK/out-tree" \
+              --only system_ext/etc/vintf system_ext/etc/properties system_ext/apex system_ext/etc/build.prop || true
+          fi
+          PROD_FC="$WORK/out-tree/product/etc/selinux/product_file_contexts"
+          if [ -f "$PROD_FC" ]; then
+            sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$PROD_FC" --root "$WORK/out-tree" \
+              --only product/etc/device_features product/overlay product/etc/properties product/etc/build.prop || true
+          fi
+
+          # Weryfikacja kompilacji polityki SELinux (.cil) za pomoca secilc
+          echo "=== Test secilc polaczonych polityk HyperOS 4 + blossom vendor ==="
+          {
+            echo "=== SELINUX SECILC CHECK ==="
+            CILS=()
+            SYS_SE="$WORK/out-tree/system/system/etc/selinux"
+            [ -d "$SYS_SE" ] || SYS_SE="$WORK/out-tree/system/etc/selinux"
+            [ -f "$SYS_SE/plat_sepolicy.cil" ] && CILS+=("$SYS_SE/plat_sepolicy.cil")
+            if [ -f "$WORK/out-tree/vendor/etc/selinux/plat_sepolicy_vers.txt" ]; then
+              PV=$(cat "$WORK/out-tree/vendor/etc/selinux/plat_sepolicy_vers.txt" | tr -d '[:space:]')
+              echo "vendor plat_sepolicy_vers=$PV"
+              for MDIR in "$SYS_SE/mapping" "$WORK/out-tree/system_ext/etc/selinux/mapping"; do
+                [ -f "$MDIR/${PV}.cil" ] && CILS+=("$MDIR/${PV}.cil")
+                [ -f "$MDIR/${PV}.compat.cil" ] && CILS+=("$MDIR/${PV}.compat.cil")
+              done
+            fi
+            for F in \
+              "$WORK/out-tree/system_ext/etc/selinux/system_ext_sepolicy.cil" \
+              "$WORK/out-tree/product/etc/selinux/product_sepolicy.cil" \
+              "$WORK/out-tree/vendor/etc/selinux/vendor_sepolicy.cil" \
+              "$WORK/out-tree/odm/etc/selinux/odm_sepolicy.cil"; do
+              [ -f "$F" ] && CILS+=("$F")
+            done
+            [ -f "$WORK/out-tree/vendor/etc/selinux/plat_pub_versioned.cil" ] && CILS+=("$WORK/out-tree/vendor/etc/selinux/plat_pub_versioned.cil")
+            echo "CIL inputs: ${CILS[*]}"
+            if secilc -M true -G -N -c 30 -o "$WORK/test_sepolicy" -f /dev/null "${CILS[@]}" 2>"$WORK/secilc.err"; then
+              echo "secilc: PASS (polityka SELinux kompiluje sie bez bledow)"
+            else
+              echo "secilc: WARNING/ERROR:"
+              cat "$WORK/secilc.err" | head -n 40
+            fi
+            rm -f "$WORK/test_sepolicy"
+          } | tee -a "$WORK/port-report.txt"
+          df -h /
+
+      - name: "4. Pakowanie partycji + fstab + budowa super.img (4.5 GiB)"
+        run: |
+          set -euo pipefail
+          export PATH="$WORK/bin:$PATH"
+
+          build_ext4_part() {
+            local TREE="$1" OUT="$2" NAME="$3"
+            local USED_B CAP_B USE
+            USED_B=$(sudo du -sb "$TREE" | awk '{print $1}')
+            CAP_B=$(( ((USED_B * 118 / 100) + 67108864 + 4095) / 4096 * 4096 ))
+            [ "$CAP_B" -lt 16777216 ] && CAP_B=16777216
+            sudo mkdir -p "$WORK/mntbuild"
+            for TRY in 1 2 3 4 5; do
+              rm -f "$OUT"
+              mke2fs -q -F -t ext4 -b 4096 -I 256 -m 0 -O ^has_journal "$OUT" $((CAP_B / 4096))
+              sudo mount -o loop,rw "$OUT" "$WORK/mntbuild"
+              if sudo tar -C "$TREE" --acls --xattrs --selinux -cf - . \
+                 | sudo tar -C "$WORK/mntbuild" --acls --xattrs --selinux -xf -; then
+                USE=$(df --output=pcent "$WORK/mntbuild" | tail -1 | tr -dc '0-9')
+                sudo umount "$WORK/mntbuild"
+                if [ "${USE:-100}" -lt 98 ]; then
+                  e2fsck -f -y -D "$OUT" >/dev/null 2>&1 || true
+                  resize2fs -M "$OUT" >/dev/null 2>&1 || true
+                  e2fsck -f -y "$OUT" >/dev/null 2>&1 || true
+                  local FINAL_SZ=$(stat -c%s "$OUT")
+                  FINAL_SZ=$(( (FINAL_SZ + 4095) / 4096 * 4096 ))
+                  truncate -s "$FINAL_SZ" "$OUT"
+                  echo "$NAME (ext4): $FINAL_SZ B ($((FINAL_SZ / 1024 / 1024)) MiB)"
+                  return 0
+                fi
+              else
+                sudo umount "$WORK/mntbuild" 2>/dev/null || true
+              fi
+              CAP_B=$((CAP_B + 134217728))
+            done
+            echo "::error::$NAME: nie udalo sie zbudowac ext4"
+            return 1
+          }
+
+          build_erofs_part() {
+            local TREE="$1" OUT="$2" NAME="$3"
+            rm -f "$OUT"
+            sudo "$WORK/bin/mkfs.erofs" -zlz4hc,9 -T 1700000000 "$OUT" "$TREE" >/dev/null
+            sudo chown "$(id -u):$(id -g)" "$OUT"
+            local FINAL_SZ=$(stat -c%s "$OUT")
+            FINAL_SZ=$(( (FINAL_SZ + 4095) / 4096 * 4096 ))
+            truncate -s "$FINAL_SZ" "$OUT"
+            echo "$NAME (erofs): $FINAL_SZ B ($((FINAL_SZ / 1024 / 1024)) MiB)"
+          }
+
+          # Najpierw okresl tryb dla system/system_ext/product (auto -> erofs jesli przekracza 4.5 GiB ext4)
+          USE_FS="$FS_MODE"
+          if [ "$USE_FS" = "auto" ]; then
+            TOTAL_UNCOMP=$(sudo du -sb "$WORK/out-tree" | awk '{print $1}')
+            echo "Calkowity rozmiar nieskompresowanych drzew: $TOTAL_UNCOMP B (limit MAIN_SIZE: $MAIN_SIZE B)"
+            # 12% zapasu na metadane ext4 + inode'y
+            EST_EXT4=$((TOTAL_UNCOMP * 114 / 100))
+            if [ "$EST_EXT4" -le "$MAIN_SIZE" ]; then
+              USE_FS="ext4"
+            else
+              USE_FS="erofs"
+            fi
+          fi
+          echo "Wybrany tryb FS dla system/system_ext/product: $USE_FS" | tee -a "$WORK/port-report.txt"
+
+          # Jesli OS uzywa erofs, upewnij sie ze vendor/etc/fstab* oraz boot.img ramdisk fstab* zezwalaja na erofs
+          if [ "$USE_FS" = "erofs" ]; then
+            for FST in $(sudo find "$WORK/out-tree/vendor/etc" -maxdepth 2 -name "fstab*" 2>/dev/null); do
+              sudo python3 - "$FST" <<'PYEOF'
+          import os, re, sys
+          p = sys.argv[1]
+          try:
+              ctx = os.getxattr(p, "security.selinux", follow_symlinks=False)
+          except OSError:
+              ctx = None
+          txt = open(p, "r", encoding="utf-8", errors="replace").read()
+          out = []
+          for line in txt.splitlines():
+              if re.match(r"^(system|system_ext|product)\s+/", line):
+                  line = re.sub(r"\bext4\b", "erofs", line, count=1)
+              out.append(line)
+          open(p, "w", encoding="utf-8").write("\n".join(out) + "\n")
+          if ctx:
+              try:
+                  os.setxattr(p, "security.selinux", ctx, follow_symlinks=False)
+              except OSError:
+                  pass
+          print("Updated fstab to erofs:", p)
+          PYEOF
+            done
+
+            if [ -x "$WORK/bin/magiskboot" ]; then
+              mkdir -p "$WORK/bootwork"
+              cp "$WORK/out-img/boot.img" "$WORK/bootwork/boot.img"
+              (
+                cd "$WORK/bootwork"
+                "$WORK/bin/magiskboot" unpack boot.img
+                if [ -f ramdisk.cpio ]; then
+                  mkdir -p rd
+                  (cd rd && cpio -idmu < ../ramdisk.cpio 2>/dev/null || true)
+                  CHANGED=0
+                  for FST in $(find rd -name "fstab*"); do
+                    python3 - "$FST" <<'PYEOF'
+          import re, sys
+          p = sys.argv[1]
+          txt = open(p, "r", encoding="utf-8", errors="replace").read()
+          new = "\n".join(
+              re.sub(r"\bext4\b", "erofs", ln, count=1) if re.match(r"^(system|system_ext|product)\s+/", ln) else ln
+              for ln in txt.splitlines()
+          ) + "\n"
+          if new != txt:
+              open(p, "w", encoding="utf-8").write(new)
+              print("Patched boot ramdisk fstab:", p)
+          PYEOF
+                    CHANGED=1
+                  done
+                  if [ "$CHANGED" = "1" ]; then
+                    (cd rd && find . | cpio -H newc -o --quiet > ../ramdisk.cpio)
+                    "$WORK/bin/magiskboot" repack boot.img new-boot.img
+                    mv new-boot.img "$WORK/out-img/boot.img"
+                    echo "boot.img ramdisk fstab zaktualizowany na erofs!"
+                  fi
+                fi
+              )
+              rm -rf "$WORK/bootwork"
+            fi
+          fi
+
+          # Zbuduj obrazy partycji
+          build_ext4_part "$WORK/out-tree/vendor" "$WORK/out-img/vendor.img" "vendor"
+          build_ext4_part "$WORK/out-tree/odm" "$WORK/out-img/odm.img" "odm"
+          for P in system system_ext product; do
+            if [ "$USE_FS" = "erofs" ]; then
+              build_erofs_part "$WORK/out-tree/$P" "$WORK/out-img/${P}.img" "$P"
+            else
+              build_ext4_part "$WORK/out-tree/$P" "$WORK/out-img/${P}.img" "$P"
+            fi
+          done
+          sudo rm -rf "$WORK/out-tree"
+
+          # Sprawdz sume rozmiarow <= MAIN_SIZE
+          ARGS=()
+          SUM_SZ=0
+          for P in system system_ext product vendor odm; do
+            SZ=$(stat -c%s "$WORK/out-img/${P}.img")
+            SUM_SZ=$((SUM_SZ + SZ))
+            ARGS+=(--partition="${P}:readonly:${SZ}:main" --image="${P}=$WORK/out-img/${P}.img")
+          done
+          echo "Suma partycji w super: $SUM_SZ B / $MAIN_SIZE B ($((SUM_SZ * 100 / MAIN_SIZE))%)" | tee -a "$WORK/port-report.txt"
+          [ "$SUM_SZ" -le "$MAIN_SIZE" ] || {
+            echo "::error::Suma partycji ($SUM_SZ B) przekracza stockowy super Redmi 9C ($MAIN_SIZE B)!"
+            exit 1
+          }
+
+          "$WORK/bin/lpmake" \
+            --device-size="$SUPER_SIZE" \
+            --metadata-size=65536 \
+            --metadata-slots=2 \
+            --block-size=4096 \
+            --alignment=1048576 \
+            --super-name=super \
+            -S \
+            --group="main:${MAIN_SIZE}" \
+            "${ARGS[@]}" \
+            -o "$WORK/package/super.img"
+
+          rm -f "$WORK/out-img/"{system,system_ext,product,vendor,odm}.img
+          cp "$WORK/out-img/"{boot.img,dtbo.img,vbmeta.img,vbmeta_system.img,vbmeta_vendor.img} "$WORK/package/"
+
+          echo "=== Weryfikacja roundtrip super.img + xattrs ==="
+          python3 "$REPO_DIR/tools/simg2img.py" "$WORK/package/super.img" "$WORK/super.raw"
+          head -c 2097152 "$WORK/super.raw" > "$WORK/super_meta.bin"
+          python3 "$REPO_DIR/tools/lpinfo.py" "$WORK/super_meta.bin" | tee -a "$WORK/port-report.txt"
+          rm -f "$WORK/super_meta.bin"
+          mkdir -p "$WORK/super-check" "$WORK/mnt-verify"
+          "$WORK/bin/lpunpack" "$WORK/super.raw" "$WORK/super-check"
+          for P in system system_ext product vendor odm; do
+            [ -s "$WORK/super-check/${P}.img" ] || { echo "::error::Roundtrip fail: brak $P"; exit 1; }
+            sudo mount -o ro,loop "$WORK/super-check/${P}.img" "$WORK/mnt-verify" || \
+              sudo mount -t erofs -o ro,loop "$WORK/super-check/${P}.img" "$WORK/mnt-verify" || \
+              sudo mount -t ext4 -o ro,loop "$WORK/super-check/${P}.img" "$WORK/mnt-verify"
+            sudo python3 - "$WORK/mnt-verify" "$P" <<'PYEOF'
+          import os, sys
+          mnt, p = sys.argv[1], sys.argv[2]
+          ctx = os.getxattr(mnt, "security.selinux", follow_symlinks=False)
+          print(f"verify {p} root xattr={ctx.decode()}")
+          PYEOF
+            sudo umount "$WORK/mnt-verify"
+          done
+          rm -rf "$WORK/super.raw" "$WORK/super-check" "$WORK/mnt-verify"
+
+      - name: "5. Pakowanie do 5 plikow 7z (.7z.001 .. .7z.005) + weryfikacja"
+        run: |
+          set -euo pipefail
+          cp "$REPO_DIR/templates/FLASH-REDMI9C.bat" \
+             "$REPO_DIR/templates/FLASH-REDMI9C.sh" \
+             "$REPO_DIR/templates/INSTRUKCJA-FLASH.txt" \
+             "$WORK/package/"
+          chmod +x "$WORK/package/FLASH-REDMI9C.sh"
+          cp "$WORK/port-report.txt" "$WORK/package/BUILD-REPORT.txt"
+          (
+            cd "$WORK/package"
+            sha256sum *.img FLASH-REDMI9C.bat FLASH-REDMI9C.sh > SHA256SUMS.txt
+          )
+          ls -lh "$WORK/package"
+
+          chmod +x "$REPO_DIR/tools/split_5_7z.sh"
+          bash "$REPO_DIR/tools/split_5_7z.sh" \
+            "$WORK/package" \
+            "$WORK/release" \
+            "Redmi9C-HyperOS4-Debloated"
+
+          cp "$WORK/package/BUILD-REPORT.txt" \
+             "$WORK/package/SHA256SUMS.txt" \
+             "$WORK/package/INSTRUKCJA-FLASH.txt" \
+             "$WORK/release/"
+          ls -lh "$WORK/release"
+
+      - name: "6. Publikacja GitHub Release (5x .7z.001 .. .7z.005)"
+        run: |
+          set -euo pipefail
+          TAG="$RELEASE_TAG"
+          # Utworz lub zaktualizuj tag przez GitHub API (unikamy HTTP 422 --target dla SHA z galezi non-default)
+          if gh api "repos/${GH_REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/${GH_REPO}/git/refs/tags/${TAG}" -f sha="$GITHUB_SHA" >/dev/null
+          else
+            gh api -X POST "repos/${GH_REPO}/git/refs" -f ref="refs/tags/${TAG}" -f sha="$GITHUB_SHA" >/dev/null
+          fi
+
+          {
+            echo "# Redmi 9C (blossom: angelica / angelican) — HyperOS 4.0.8.0 Debloated Port"
+            echo
+            echo "- **Baza sprzetowa (OSS A17 + kernel 4.19):** \`EvolutionX 17.0 blossom\` (\`xc112lg/blossom_releases\`)"
+            echo "- **Dawca systemu (HyperOS 4 / Android 17):** Redmi 15C / POCO C85 Global (\`dew\`, \`OS4.0.8.0.XBNMIXM\`)"
+            echo "- **Wariant:** \`${VARIANT}\` (z \`/system/etc/properties/\${ro.boot.hwname}.prop\`)"
+            echo "- **Debloat:** \`${DEBLOAT_LEVEL}\`"
+            echo "- **GitHub Actions Run:** ${GITHUB_RUN_ID}"
+            echo
+            echo "## Pobieranie i rozpakowanie (5 czesci 7-Zip)"
+            echo "1. Pobierz **wszystkie 5 plikow** do jednego folderu:"
+            echo "   - \`Redmi9C-HyperOS4-Debloated.7z.001\`"
+            echo "   - \`Redmi9C-HyperOS4-Debloated.7z.002\`"
+            echo "   - \`Redmi9C-HyperOS4-Debloated.7z.003\`"
+            echo "   - \`Redmi9C-HyperOS4-Debloated.7z.004\`"
+            echo "   - \`Redmi9C-HyperOS4-Debloated.7z.005\`"
+            echo "2. Kliknij prawym przyciskiem myszy na **\`Redmi9C-HyperOS4-Debloated.7z.001\`** i wybierz **Wypakuj** (WinRAR lub 7-Zip)."
+            echo "3. Archiwum automatycznie zlaczy wszystkie 5 czesci i wypakuje gotowe obrazy (\`super.img\`, \`boot.img\`, \`dtbo.img\`, \`vbmeta*.img\`) oraz skrypt \`FLASH-REDMI9C.bat\`."
+            echo
+            echo "## Sumy kontrolne SHA-256 (.img)"
+            echo '```'
+            cat "$WORK/release/SHA256SUMS.txt"
+            echo '```'
+            echo
+            echo "## Sumy kontrolne 7-Zip (.7z.001 .. .7z.005)"
+            echo '```'
+            cat "$WORK/release/Redmi9C-HyperOS4-Debloated-7Z-SHA256SUMS.txt"
+            echo '```'
+          } > "$WORK/RELEASE-NOTES.md"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "Redmi 9C HyperOS 4.0.8.0 Debloated Port (5-part 7z)" \
+              --notes-file "$WORK/RELEASE-NOTES.md"
+          else
+            gh release edit "$TAG" \
+              --title "Redmi 9C HyperOS 4.0.8.0 Debloated Port (5-part 7z)" \
+              --notes-file "$WORK/RELEASE-NOTES.md"
+          fi
+
+          for ASSET in "$WORK/release"/*; do
+            OK=0
+            for TRY in 1 2 3 4 5; do
+              echo "Upload: $(basename "$ASSET") (proba $TRY/5)..."
+              if gh release upload "$TAG" "$ASSET" --clobber; then
+                OK=1
+                break
+              fi
+              sleep 20
+            done
+            [ "$OK" = "1" ] || { echo "::error::Upload $ASSET nie powiodl sie!"; exit 1; }
+          done
+
+          echo "=== OPUBLIKOWANE ASSETERY ==="
+          gh release view "$TAG" --json url,assets -q '.url, (.assets[] | "\(.name)\t\(.size) B")'
