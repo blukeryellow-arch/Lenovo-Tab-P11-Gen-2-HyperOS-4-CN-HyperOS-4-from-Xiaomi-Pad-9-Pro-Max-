@@ -302,7 +302,7 @@ jobs:
             --out-tree "$WORK/out-tree" \
             --variant "$VARIANT" \
             --debloat-level "$DEBLOAT_LEVEL" \
-            --target-os-mib 4700 \
+            --target-os-mib 5550 \
             --report "$WORK/port-report.txt"
           sudo chown "$(id -u):$(id -g)" "$WORK/port-report.txt"
 
@@ -358,7 +358,7 @@ jobs:
               [ -f "$F" ] && CILS+=("$F")
             done
             echo "CIL inputs: ${CILS[*]}"
-            if secilc -M true -G -N -c 30 -o "$WORK/test_sepolicy" -f /dev/null "${CILS[@]}" 2>"$WORK/secilc.err"; then
+            if secilc -m -M true -G -N -c 30 -o "$WORK/test_sepolicy" -f /dev/null "${CILS[@]}" 2>"$WORK/secilc.err"; then
               echo "secilc: PASS (polityka SELinux kompiluje sie bez bledow)"
               SECILC_OK=1
             else
@@ -367,11 +367,9 @@ jobs:
                 echo "--- FULL secilc stderr ---"
                 cat "$WORK/secilc.err"
                 echo "--- donor-only secilc test ---"
-                secilc -M true -G -N -c 30 -o "$WORK/test_sepolicy_plat" -f /dev/null "${CILS_PLAT[@]}" 2>&1 || true
+                secilc -m -M true -G -N -c 30 -o "$WORK/test_sepolicy_plat" -f /dev/null "${CILS_PLAT[@]}" 2>&1 || true
                 echo "--- system_and_vendor_property_type across CILs ---"
                 grep -n "system_and_vendor_property_type" "${CILS[@]}" 2>/dev/null | head -n 40 || true
-                echo "--- plat_sepolicy.cil around line 85971 ---"
-                sed -n '85960,85985p' "$SYS_SE/plat_sepolicy.cil" 2>/dev/null || true
               } > "$WORK/secilc.diag"
               mv "$WORK/secilc.diag" "$WORK/secilc.err"
               cat "$WORK/secilc.err" | head -n 60
@@ -390,8 +388,8 @@ jobs:
             local TREE="$1" OUT="$2" NAME="$3"
             local USED_B CAP_B USE
             USED_B=$(sudo du -sb "$TREE" | awk '{print $1}')
-            CAP_B=$(( ((USED_B * 118 / 100) + 67108864 + 4095) / 4096 * 4096 ))
-            [ "$CAP_B" -lt 16777216 ] && CAP_B=16777216
+            CAP_B=$(( ((USED_B * 107 / 100) + 20971520 + 4095) / 4096 * 4096 ))
+            [ "$CAP_B" -lt 8388608 ] && CAP_B=8388608
             sudo mkdir -p "$WORK/mntbuild"
             for TRY in 1 2 3 4 5; do
               rm -f "$OUT"
@@ -414,7 +412,7 @@ jobs:
               else
                 sudo umount "$WORK/mntbuild" 2>/dev/null || true
               fi
-              CAP_B=$((CAP_B + 134217728))
+              CAP_B=$((CAP_B + 33554432))
             done
             echo "::error::$NAME: nie udalo sie zbudowac ext4"
             return 1

@@ -233,12 +233,12 @@ def detect_comms_apps(roots: list[Path]) -> dict[str, bool]:
                 for child in d.iterdir():
                     names.add(child.name.lower())
     return {
-        "has_miui_dialer": any(k in names for k in ("incallui", "miuidialer", "contacts")),
+        "has_miui_dialer": any(k in names for k in ("incallui", "miuidialer", "contacts", "hyperphone")),
         "has_google_dialer": any("dialer" in k and "google" in k for k in names),
         "has_miui_mms": "mms" in names or "miuisms" in names,
-        "has_google_mms": any(k in names for k in ("prebuiltbugle", "messages")),
+        "has_google_mms": any(k in names for k in ("prebuiltbugle", "messages") or "messages_" in k),
         "has_miui_camera": any(k in names for k in ("miuicamera", "camera")),
-        "has_miui_gallery": any(k in names for k in ("miuigallery", "gallery")),
+        "has_miui_gallery": any("miuigallery" in k or k == "gallery" for k in names),
         "has_gboard": any("latinimegoogle" in k or "gboard" in k for k in names),
     }
 
@@ -454,11 +454,14 @@ def debloat_trees(
         "trichromechrome",
         "trichromechrome6432",
         "trichromechromelib",
+        "velvetcts",
         "speechservicesbygoogle",
         "personalsafety",
         "safetyhub",
         "androidautostub",
         "devicehealthservices",
+        "androidsystemintelligence_features_arm64",
+        "privatecomputeservices_arm64",
         "googleone",
         "docs",
         "sheets",
@@ -492,9 +495,17 @@ def debloat_trees(
         "miuisoundrecorder",
         "miuiradio",
         "miuimivideo",
+        "miuivideoplayer",
         "miuiplayer",
         "miuimimusic",
+        "miuimusicglobal",
         "miuigamecenter",
+        "miuimipicks",
+        "mediaviewerglobal",
+        "miuiextraphoto",
+        "miuiaicr",
+        "miuicleanmasterglobal-cleaner",
+        "milauncherglobal",
         "miuicontentextension",
         "contentextension",
         "miuiaiasst",
@@ -557,7 +568,7 @@ def debloat_trees(
 
     # Only remove Google Dialer/Messages if MIUI equivalents exist
     if comms["has_miui_dialer"]:
-        bloat_exact.add("googledialer")
+        bloat_exact.update({"googledialer", "googledialer_arm64"})
     if comms["has_miui_mms"]:
         bloat_exact.update({"prebuiltbugle", "messages"})
 
@@ -601,6 +612,15 @@ def debloat_trees(
         "miuisuperwallpaper",
         "trichromechrome",
         "hotwordenrollment",
+        "velvet",
+        "androidsystemintelligence",
+        "privatecomputeservices",
+        "miuicleanmaster",
+        "miuiextraphoto",
+        "miuiaicr",
+        "miuimusic",
+        "miuivideo",
+        "miuimipicks",
     )
 
     removed_count = 0
@@ -608,7 +628,7 @@ def debloat_trees(
 
     for root in scan_roots:
         # 1. Whole preload / data-app bloat directories (safe 3rd-party / preinstall folders)
-        for bloat_dir_name in ("data-app", "preload", "preinstall", "cust"):
+        for bloat_dir_name in ("data-app", "preload", "preinstall", "cust", "ai"):
             bd = root / bloat_dir_name
             if bd.is_dir():
                 sz = dir_size_bytes(bd)
@@ -629,6 +649,8 @@ def debloat_trees(
                 if low in protected:
                     continue
                 hit = (low in bloat_exact) or any(low.startswith(p) for p in bloat_prefixes)
+                if not hit and comms["has_miui_dialer"] and low.startswith("googledialer"):
+                    hit = True
                 if not hit:
                     if any(tok in low for tok in ("analytic", "joyose", "msa", "gamecenter", "mivideo", "mibrowser", "getapps", "mipay", "carwith", "aonservice", "hyperai", "superwallpaper", "speechservices", "galleryeditor", "mediaeditor", "micloud", "milink")):
                         hit = True
@@ -644,6 +666,7 @@ def debloat_trees(
             "media/video",
             "media/wallpaper",
             "media/theme/miui_mod_icons",
+            "etc/precust_theme",
             "etc/recovery-resource.dat",
         ):
             p = root / rel_rm
