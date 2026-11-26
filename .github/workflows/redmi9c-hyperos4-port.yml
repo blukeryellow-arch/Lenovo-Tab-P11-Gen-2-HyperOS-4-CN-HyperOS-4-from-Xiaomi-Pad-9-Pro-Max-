@@ -302,7 +302,9 @@ jobs:
             --out-tree "$WORK/out-tree" \
             --variant "$VARIANT" \
             --debloat-level "$DEBLOAT_LEVEL" \
+            --target-os-mib 4700 \
             --report "$WORK/port-report.txt"
+          sudo chown "$(id -u):$(id -g)" "$WORK/port-report.txt"
 
           sudo rm -rf "$WORK/base-tree" "$WORK/donor-tree"
 
@@ -326,37 +328,57 @@ jobs:
 
           # Weryfikacja kompilacji polityki SELinux (.cil) za pomoca secilc
           echo "=== Test secilc polaczonych polityk HyperOS 4 + blossom vendor ==="
+          SECILC_OK=0
           {
             echo "=== SELINUX SECILC CHECK ==="
+            secilc --version 2>&1 || true
+            CILS_PLAT=()
             CILS=()
             SYS_SE="$WORK/out-tree/system/system/etc/selinux"
             [ -d "$SYS_SE" ] || SYS_SE="$WORK/out-tree/system/etc/selinux"
-            [ -f "$SYS_SE/plat_sepolicy.cil" ] && CILS+=("$SYS_SE/plat_sepolicy.cil")
+            [ -f "$SYS_SE/plat_sepolicy.cil" ] && CILS_PLAT+=("$SYS_SE/plat_sepolicy.cil")
             if [ -f "$WORK/out-tree/vendor/etc/selinux/plat_sepolicy_vers.txt" ]; then
               PV=$(cat "$WORK/out-tree/vendor/etc/selinux/plat_sepolicy_vers.txt" | tr -d '[:space:]')
               echo "vendor plat_sepolicy_vers=$PV"
               for MDIR in "$SYS_SE/mapping" "$WORK/out-tree/system_ext/etc/selinux/mapping"; do
-                [ -f "$MDIR/${PV}.cil" ] && CILS+=("$MDIR/${PV}.cil")
-                [ -f "$MDIR/${PV}.compat.cil" ] && CILS+=("$MDIR/${PV}.compat.cil")
+                [ -f "$MDIR/${PV}.cil" ] && CILS_PLAT+=("$MDIR/${PV}.cil")
+                [ -f "$MDIR/${PV}.compat.cil" ] && CILS_PLAT+=("$MDIR/${PV}.compat.cil")
               done
             fi
             for F in \
               "$WORK/out-tree/system_ext/etc/selinux/system_ext_sepolicy.cil" \
-              "$WORK/out-tree/product/etc/selinux/product_sepolicy.cil" \
+              "$WORK/out-tree/product/etc/selinux/product_sepolicy.cil"; do
+              [ -f "$F" ] && CILS_PLAT+=("$F")
+            done
+            CILS=("${CILS_PLAT[@]}")
+            for F in \
+              "$WORK/out-tree/vendor/etc/selinux/plat_pub_versioned.cil" \
               "$WORK/out-tree/vendor/etc/selinux/vendor_sepolicy.cil" \
               "$WORK/out-tree/odm/etc/selinux/odm_sepolicy.cil"; do
               [ -f "$F" ] && CILS+=("$F")
             done
-            [ -f "$WORK/out-tree/vendor/etc/selinux/plat_pub_versioned.cil" ] && CILS+=("$WORK/out-tree/vendor/etc/selinux/plat_pub_versioned.cil")
             echo "CIL inputs: ${CILS[*]}"
             if secilc -M true -G -N -c 30 -o "$WORK/test_sepolicy" -f /dev/null "${CILS[@]}" 2>"$WORK/secilc.err"; then
               echo "secilc: PASS (polityka SELinux kompiluje sie bez bledow)"
+              SECILC_OK=1
             else
-              echo "secilc: WARNING/ERROR:"
-              cat "$WORK/secilc.err" | head -n 40
+              echo "secilc: ERROR:"
+              {
+                echo "--- FULL secilc stderr ---"
+                cat "$WORK/secilc.err"
+                echo "--- donor-only secilc test ---"
+                secilc -M true -G -N -c 30 -o "$WORK/test_sepolicy_plat" -f /dev/null "${CILS_PLAT[@]}" 2>&1 || true
+                echo "--- system_and_vendor_property_type across CILs ---"
+                grep -n "system_and_vendor_property_type" "${CILS[@]}" 2>/dev/null | head -n 40 || true
+                echo "--- plat_sepolicy.cil around line 85971 ---"
+                sed -n '85960,85985p' "$SYS_SE/plat_sepolicy.cil" 2>/dev/null || true
+              } > "$WORK/secilc.diag"
+              mv "$WORK/secilc.diag" "$WORK/secilc.err"
+              cat "$WORK/secilc.err" | head -n 60
             fi
-            rm -f "$WORK/test_sepolicy"
+            rm -f "$WORK/test_sepolicy" "$WORK/test_sepolicy_plat"
           } | tee -a "$WORK/port-report.txt"
+          echo "SECILC_OK=$SECILC_OK" >> "$GITHUB_ENV"
           df -h /
 
       - name: "4. Pakowanie partycji + fstab + budowa super.img (4.5 GiB)"
@@ -505,6 +527,7 @@ jobs:
           for P in system system_ext product vendor odm; do
             SZ=$(stat -c%s "$WORK/out-img/${P}.img")
             SUM_SZ=$((SUM_SZ + SZ))
+            echo "  img ${P}: $((SZ / 1048576)) MiB (${SZ} B)" | tee -a "$WORK/port-report.txt"
             ARGS+=(--partition="${P}:readonly:${SZ}:main" --image="${P}=$WORK/out-img/${P}.img")
           done
           echo "Suma partycji w super: $SUM_SZ B / $MAIN_SIZE B ($((SUM_SZ * 100 / MAIN_SIZE))%)" | tee -a "$WORK/port-report.txt"
@@ -578,6 +601,7 @@ jobs:
           ls -lh "$WORK/release"
 
       - name: "6. Publikacja GitHub Release (5x .7z.001 .. .7z.005)"
+        if: success() && env.SECILC_OK == '1'
         run: |
           set -euo pipefail
           TAG="$RELEASE_TAG"

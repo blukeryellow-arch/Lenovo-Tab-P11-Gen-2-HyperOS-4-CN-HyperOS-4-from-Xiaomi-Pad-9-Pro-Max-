@@ -76,6 +76,46 @@ def dir_size_bytes(path: Path) -> int:
     return total
 
 
+def top_space_hogs(roots: list[tuple[str, Path]], top_n: int = 45) -> list[str]:
+    entries: list[tuple[int, str]] = []
+    for label, r in roots:
+        if not r.is_dir():
+            continue
+        for child in r.iterdir():
+            if child.is_symlink():
+                continue
+            if child.is_dir():
+                if child.name in ("app", "priv-app", "apex", "media", "pangu", "data-app", "preload", "preinstall", "overlay", "etc"):
+                    for sub in child.iterdir():
+                        if sub.is_symlink():
+                            continue
+                        if child.name == "pangu" and sub.is_dir():
+                            for psub in sub.iterdir():
+                                if psub.is_dir() and psub.name in ("app", "priv-app", "data-app"):
+                                    for pkg in psub.iterdir():
+                                        sz = dir_size_bytes(pkg) if pkg.is_dir() else pkg.stat().st_size
+                                        entries.append((sz, f"{label}/pangu/{sub.name}/{psub.name}/{pkg.name}"))
+                                else:
+                                    sz = dir_size_bytes(psub) if psub.is_dir() else psub.stat().st_size
+                                    entries.append((sz, f"{label}/pangu/{sub.name}/{psub.name}"))
+                        else:
+                            sz = dir_size_bytes(sub) if sub.is_dir() else sub.stat().st_size
+                            entries.append((sz, f"{label}/{child.name}/{sub.name}"))
+                    continue
+                entries.append((dir_size_bytes(child), f"{label}/{child.name}"))
+            else:
+                try:
+                    entries.append((child.stat().st_size, f"{label}/{child.name}"))
+                except OSError:
+                    pass
+    entries.sort(reverse=True)
+    return [
+        f"  {sz // (1024 * 1024):4d} MiB  {name}"
+        for sz, name in entries[:top_n]
+        if sz >= 5 * 1024 * 1024
+    ]
+
+
 def read_props(path: Path) -> dict[str, str]:
     props: dict[str, str] = {}
     if not path.is_file():
@@ -408,9 +448,112 @@ def debloat_trees(
         "fm",
     }
 
+    # Expand bloat names for HyperOS 4 Global (Android 17)
+    bloat_exact.update({
+        "chrome64",
+        "trichromechrome",
+        "trichromechrome6432",
+        "trichromechromelib",
+        "speechservicesbygoogle",
+        "personalsafety",
+        "safetyhub",
+        "androidautostub",
+        "devicehealthservices",
+        "googleone",
+        "docs",
+        "sheets",
+        "slides",
+        "familylink",
+        "parentalcontrols",
+        "googlefeedback",
+        "googlepartnersetup",
+        "pixelbuds",
+        "androidswitch",
+        "migrateprebuilt",
+        "restore",
+        "datarestore",
+        "hotwordenrollment",
+        "hotwordenrollmentokgoogle",
+        "hotwordenrollmentxgoogle",
+        "googlelocationhistory",
+        "playautoinstallconfig",
+        "switchaccess",
+        "soundamplifier",
+        "livetranscribe",
+        "miuiupdater",
+        "updater",
+        "systemupdater",
+        "otaservice",
+        "miuinotes",
+        "miuiweather",
+        "miuiscanner",
+        "miuicompass",
+        "miuiscreenrecorder",
+        "miuisoundrecorder",
+        "miuiradio",
+        "miuimivideo",
+        "miuiplayer",
+        "miuimimusic",
+        "miuigamecenter",
+        "miuicontentextension",
+        "contentextension",
+        "miuiaiasst",
+        "translationservice",
+        "miuitranslation",
+        "galleryeditor",
+        "mediaeditor",
+        "micloud",
+        "milink",
+        "milinkservice",
+        "miplayclient",
+        "mijia",
+        "modemtestbox",
+        "logkit",
+        "wallet",
+        "mipaywallet",
+        "miuiaod",
+        "miuisuperwallpaper",
+        "superwallpaper",
+        "superwallpapermars",
+        "superwallpaperearth",
+        "superwallpapersnow",
+        "superwallpapersaturn",
+        "superwallpapergeometry",
+        "superwallpapermoon",
+        "miuiemail",
+        "email",
+        "thirdappassistant",
+        "mibrowserglobal_builtin_before_2021",
+    })
+
+    # Detect WebView packages so we NEVER remove TrichromeLibrary if TrichromeWebView depends on it
+    pkg_names_lower: set[str] = set()
+    scan_roots: list[Path] = []
+    for r in roots:
+        scan_roots.append(r)
+        for psub in (r / "pangu", r / "pangu" / "system"):
+            if psub.is_dir():
+                scan_roots.append(psub)
+
+    for sr in scan_roots:
+        for sub in ("app", "priv-app"):
+            ad = sr / sub
+            if ad.is_dir():
+                for pd in ad.iterdir():
+                    if pd.is_dir():
+                        pkg_names_lower.add(pd.name.lower())
+
+    has_trichrome_webview = any("trichromewebview" in n for n in pkg_names_lower)
+    if has_trichrome_webview:
+        protected.update({n for n in pkg_names_lower if "trichromelibrary" in n or "trichromewebview" in n})
+    else:
+        # Safe to remove trichrome library only if standalone webview exists
+        if any(n in pkg_names_lower for n in ("webviewgoogle", "androidsystemwebview", "webview")):
+            bloat_exact.update({"trichromelibrary", "trichromelibrary6432"})
+
     if level == "balanced":
         # Keep a few lightweight daily tools in balanced mode
-        bloat_exact -= {"notes", "weather", "weatherprovider", "calendar", "soundrecorder", "screenrecorder"}
+        bloat_exact -= {"notes", "miuinotes", "weather", "miuiweather", "weatherprovider", "calendar", "soundrecorder", "miuisoundrecorder", "screenrecorder", "miuiscreenrecorder"}
 
     # Only remove Google Dialer/Messages if MIUI equivalents exist
     if comms["has_miui_dialer"]:
@@ -452,12 +595,18 @@ def debloat_trees(
         "com.google.android.googlequicksearchbox",
         "com.android.chrome",
         "com.google.android.apps.wellbeing",
+        "com.google.android.tts",
+        "com.google.android.apps.safetyhub",
+        "superwallpaper",
+        "miuisuperwallpaper",
+        "trichromechrome",
+        "hotwordenrollment",
     )
 
     removed_count = 0
     freed_bytes = 0
 
-    for root in roots:
+    for root in scan_roots:
         # 1. Whole preload / data-app bloat directories (safe 3rd-party / preinstall folders)
         for bloat_dir_name in ("data-app", "preload", "preinstall", "cust"):
             bd = root / bloat_dir_name
@@ -481,8 +630,7 @@ def debloat_trees(
                     continue
                 hit = (low in bloat_exact) or any(low.startswith(p) for p in bloat_prefixes)
                 if not hit:
-                    # Also catch *Wallpaper* videos/live packs, *Game*, *Analytics*, *Msa*, *AiEngine*
-                    if any(tok in low for tok in ("analytic", "joyose", "msa", "gamecenter", "mivideo", "mibrowser", "getapps", "mipay", "carwith", "aonservice", "hyperai")):
+                    if any(tok in low for tok in ("analytic", "joyose", "msa", "gamecenter", "mivideo", "mibrowser", "getapps", "mipay", "carwith", "aonservice", "hyperai", "superwallpaper", "speechservices", "galleryeditor", "mediaeditor", "micloud", "milink")):
                         hit = True
                 if hit:
                     sz = dir_size_bytes(pkg_dir)
@@ -525,6 +673,88 @@ def debloat_trees(
             log.append(f"debloat tts: {tts_dir} ({sz // (1024 * 1024)} MiB)")
 
     log.append(f"DEBLOAT SUMMARY: removed {removed_count} items, freed ~{freed_bytes // (1024 * 1024)} MiB")
+
+
+def find_pkg_dir(root_tree: Path, names: tuple[str, ...]) -> Path | None:
+    low_set = {n.lower() for n in names}
+    for sub in ("app", "priv-app"):
+        d = root_tree / sub
+        if d.is_dir():
+            for child in d.iterdir():
+                if child.is_dir() and child.name.lower() in low_set:
+                    return child
+    return None
+
+
+def trim_to_budget(
+    base_dir: Path,
+    out_dir: Path,
+    out_sys_root: Path,
+    out_sys_ext: Path,
+    out_prod: Path,
+    target_os_mib: int,
+    log: list[str],
+) -> None:
+    if target_os_mib <= 0:
+        return
+
+    def os_mib() -> int:
+        return (dir_size_bytes(out_dir / "system") + dir_size_bytes(out_sys_ext) + dir_size_bytes(out_prod)) // (1024 * 1024)
+
+    cur = os_mib()
+    if cur <= target_os_mib:
+        log.append(f"budget check: OS={cur} MiB <= {target_os_mib} MiB (OK)")
+        return
+
+    log.append(f"budget check: OS={cur} MiB > {target_os_mib} MiB -> bezpieczne odchudzanie nadmiaru")
+
+    # 1. Swap oversized donor MiuiCamera (> 120 MiB) with base Aperture/Camera2 if available
+    base_cam = None
+    for bp in (base_dir / "product", base_dir / "system_ext", resolve_sys_root(base_dir / "system")):
+        base_cam = find_pkg_dir(bp, ("Aperture", "Camera2", "Snap"))
+        if base_cam:
+            break
+    if base_cam:
+        for tree in (out_prod, out_sys_ext, out_sys_root):
+            dcam = find_pkg_dir(tree, ("MiuiCamera", "Camera"))
+            if dcam and dir_size_bytes(dcam) > 120 * 1024 * 1024:
+                sz = dir_size_bytes(dcam)
+                shutil.rmtree(dcam)
+                cp_preserve(base_cam, out_prod / "priv-app" / base_cam.name)
+                log.append(f"budget swap camera: {dcam.name} ({sz // (1024 * 1024)} MiB) -> {base_cam.name}")
+                break
+
+    if os_mib() <= target_os_mib:
+        log.append(f"budget check: po zmianie aparatu OS={os_mib()} MiB <= {target_os_mib} MiB")
+        return
+
+    # 2. Trim offline AI/OCR/srec data blobs inside product
+    for rel in ("usr/srec", "etc/ai", "etc/ocr", "etc/miui_feature", "media/theme"):
+        p = out_prod / rel
+        if p.is_dir() and dir_size_bytes(p) > 25 * 1024 * 1024:
+            sz = dir_size_bytes(p)
+            shutil.rmtree(p)
+            log.append(f"budget trim dir: product/{rel} ({sz // (1024 * 1024)} MiB)")
+            if os_mib() <= target_os_mib:
+                return
+
+    # 3. Swap oversized Gboard (> 120 MiB) with base LatinIME if available
+    base_ime = None
+    for bp in (base_dir / "product", base_dir / "system_ext", resolve_sys_root(base_dir / "system")):
+        base_ime = find_pkg_dir(bp, ("LatinIME",))
+        if base_ime:
+            break
+    if base_ime:
+        for tree in (out_prod, out_sys_ext, out_sys_root):
+            dime = find_pkg_dir(tree, ("Gboard", "LatinIMEGoogle", "LatinIMEGooglePrebuilt"))
+            if dime and dir_size_bytes(dime) > 120 * 1024 * 1024:
+                sz = dir_size_bytes(dime)
+                shutil.rmtree(dime)
+                cp_preserve(base_ime, out_prod / "app" / base_ime.name)
+                log.append(f"budget swap keyboard: {dime.name} ({sz // (1024 * 1024)} MiB) -> {base_ime.name}")
+                break
+
+    log.append(f"budget check po odchudzaniu: OS={os_mib()} MiB (limit {target_os_mib} MiB)")
 
 
 def adapt_blossom_hardware(
@@ -740,6 +970,7 @@ def main() -> int:
     ap.add_argument("--out-tree", required=True, help="Output assembled trees dir")
     ap.add_argument("--variant", default="angelica", choices=["angelica", "angelican"])
     ap.add_argument("--debloat-level", default="aggressive", choices=["aggressive", "balanced"])
+    ap.add_argument("--target-os-mib", type=int, default=4700, help="Target max uncompressed MiB for system+system_ext+product (0=disabled)")
     ap.add_argument("--report", required=True, help="Write build/debloat report path")
     args = ap.parse_args()
 
@@ -773,6 +1004,7 @@ def main() -> int:
 
     merge_mi_ext(donor / "mi_ext", out_sys_root, out_sys_ext, out_prod, log)
     debloat_trees(out_sys_root, out_sys_ext, out_prod, args.debloat_level, log)
+    trim_to_budget(base, out, out_sys_root, out_sys_ext, out_prod, args.target_os_mib, log)
     adapt_blossom_hardware(base, out, out_sys_root, out_sys_ext, out_prod, log)
     configure_props_and_zygote(out_sys_root, out_sys_ext, out_prod, args.variant, log)
 
@@ -782,6 +1014,11 @@ def main() -> int:
     for p, sz in sizes.items():
         log.append(f"  {p}: {sz // (1024 * 1024)} MiB ({sz} B)")
     log.append(f"  TOTAL: {total_mb} MiB")
+
+    hogs = top_space_hogs([("system", out_sys_root), ("system_ext", out_sys_ext), ("product", out_prod)], top_n=45)
+    if hogs:
+        log.append("TOP REMAINING OS ENTRIES (>=5 MiB):")
+        log.extend(hogs)
 
     Path(args.report).write_text("\n".join(log) + "\n", encoding="utf-8")
     print("\n".join(log))
