@@ -70,7 +70,9 @@ jobs:
       MAIN_SIZE: "4829741056"
       BOOT_MAX_SIZE: "67108864"
     steps:
-      - name: "0. Checkout + dysk + narzedzia"
+      - uses: actions/checkout@v4
+
+      - name: "0. Dysk + narzedzia"
         run: |
           set -euo pipefail
           echo "=== Czyszczenie dysku runnera ==="
@@ -641,3 +643,45 @@ jobs:
 
           echo "=== OPUBLIKOWANE ASSETERY ==="
           gh release view "$TAG" --json url,assets -q '.url, (.assets[] | "\(.name)\t\(.size) B")'
+
+      - name: "7. Zapisz raport diagnostyczny (reports/)"
+        if: always()
+        run: |
+          set -uo pipefail
+          mkdir -p reports
+          R="reports/run-${GITHUB_RUN_ID}.md"
+          {
+            echo "# Redmi 9C HyperOS 4 Port — Run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## Dysk i pliki robocze"
+            echo '```'
+            df -h / 2>/dev/null || true
+            ls -lh "$WORK/out-img" "$WORK/package" "$WORK/release" 2>/dev/null || true
+            echo '```'
+            echo
+            echo "## Port & Debloat Report"
+            echo '```'
+            cat "$WORK/port-report.txt" 2>/dev/null || echo "(brak port-report.txt)"
+            echo '```'
+            echo
+            echo "## secilc stderr"
+            echo '```'
+            cat "$WORK/secilc.err" 2>/dev/null || echo "(brak secilc.err)"
+            echo '```'
+            echo
+            echo "## Release Assets"
+            echo '```'
+            ls -lh "$WORK/release" 2>/dev/null || echo "(brak katalogu release)"
+            echo '```'
+          } > "$R"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$R"
+          git commit -m "ci: build report for run ${GITHUB_RUN_ID}" || true
+          for A in 1 2 3; do
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              break
+            fi
+            git pull --rebase origin "$GITHUB_REF_NAME" || true
+            sleep 5
+          done
