@@ -467,7 +467,9 @@ def debloat_trees(
         "sheets",
         "slides",
         "familylink",
+        "familylinkparentalcontrols",
         "parentalcontrols",
+        "googleone_arm64",
         "googlefeedback",
         "googlepartnersetup",
         "pixelbuds",
@@ -857,7 +859,30 @@ def adapt_blossom_hardware(
             sys_ext_manifest.write_text(mtxt, encoding="utf-8")
             log.append(f"vintf: added <vendor-ndk>{vndk_ver}</vendor-ndk> to system_ext manifest.xml")
 
-    # 5. SELinux CIL mapping check/fallback from base
+    # 5. SELinux CIL mapping check/fallback from base + policycap alignment with blossom kernel
+    base_plat_cil = base_sys_root / "etc" / "selinux" / "plat_sepolicy.cil"
+    out_plat_cil = out_sys_root / "etc" / "selinux" / "plat_sepolicy.cil"
+    if base_plat_cil.is_file() and out_plat_cil.is_file():
+        cap_re = re.compile(r"^\(policycap\s+([^\s\)]+)\)")
+        base_caps = {m.group(1) for ln in base_plat_cil.read_text(encoding="utf-8", errors="replace").splitlines() if (m := cap_re.match(ln.strip()))}
+        out_lines = out_plat_cil.read_text(encoding="utf-8", errors="replace").splitlines()
+        out_caps = {m.group(1) for ln in out_lines if (m := cap_re.match(ln.strip()))}
+        extra_caps = sorted(out_caps - base_caps)
+        log.append(f"selinux policycaps base={sorted(base_caps)} donor={sorted(out_caps)}")
+        if extra_caps:
+            try:
+                orig_ctx = os.getxattr(out_plat_cil, "security.selinux", follow_symlinks=False)
+            except OSError:
+                orig_ctx = None
+            filtered = [ln for ln in out_lines if not ((m := cap_re.match(ln.strip())) and m.group(1) in extra_caps)]
+            out_plat_cil.write_text("\n".join(filtered) + "\n", encoding="utf-8")
+            if orig_ctx:
+                try:
+                    os.setxattr(out_plat_cil, "security.selinux", orig_ctx, follow_symlinks=False)
+                except OSError:
+                    pass
+            log.append(f"selinux policycaps removed unsupported by base kernel: {', '.join(extra_caps)}")
+
     plat_vers_file = out_dir / "vendor" / "etc" / "selinux" / "plat_sepolicy_vers.txt"
     if plat_vers_file.is_file():
         vers = plat_vers_file.read_text(encoding="utf-8", errors="replace").strip()

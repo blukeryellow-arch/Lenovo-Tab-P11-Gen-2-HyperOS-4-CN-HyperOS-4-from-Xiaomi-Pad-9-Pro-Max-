@@ -361,6 +361,27 @@ jobs:
             if secilc -m -M true -G -N -c 30 -o "$WORK/test_sepolicy" -f /dev/null "${CILS[@]}" 2>"$WORK/secilc.err"; then
               echo "secilc: PASS (polityka SELinux kompiluje sie bez bledow)"
               SECILC_OK=1
+            elif grep -q "Invalid policycap (" "$WORK/secilc.err"; then
+              echo "secilc 3.5 nie zna nowszego policycap z A17; weryfikuje pelna baze CIL bez nieznanego policycap..."
+              mkdir -p "$WORK/cil-test"
+              TEST_CILS=()
+              for cf in "${CILS[@]}"; do
+                if [ "$cf" = "$SYS_SE/plat_sepolicy.cil" ]; then
+                  python3 -c 'import re,sys;from pathlib import Path;src,dst,errf=map(Path,sys.argv[1:4]);bad=set(re.findall(r"Invalid policycap \(([^)]+)\)",errf.read_text()))|{"functionfs_seclabel","netlink_xperm","userfaultfd_anon_inode"};dst.write_text("\n".join(ln for ln in src.read_text(encoding="utf-8",errors="replace").splitlines() if not any(f"(policycap {b})" in ln for b in bad))+"\n",encoding="utf-8");print("secilc test filtered:",sorted(bad))' "$cf" "$WORK/cil-test/plat_sepolicy.cil" "$WORK/secilc.err"
+                  TEST_CILS+=("$WORK/cil-test/plat_sepolicy.cil")
+                else
+                  TEST_CILS+=("$cf")
+                fi
+              done
+              if secilc -m -M true -G -N -c 30 -o "$WORK/test_sepolicy" -f /dev/null "${TEST_CILS[@]}" 2>"$WORK/secilc.err2"; then
+                echo "secilc: PASS (cala baza CIL zweryfikowana poprawnie z filtrem policycap libsepol 3.5)"
+                SECILC_OK=1
+              else
+                echo "secilc: ERROR (po filtrze policycap):"
+                cat "$WORK/secilc.err2" | head -n 60
+                mv "$WORK/secilc.err2" "$WORK/secilc.err"
+              fi
+              rm -rf "$WORK/cil-test" "$WORK/secilc.err2"
             else
               echo "secilc: ERROR:"
               {
@@ -368,8 +389,6 @@ jobs:
                 cat "$WORK/secilc.err"
                 echo "--- donor-only secilc test ---"
                 secilc -m -M true -G -N -c 30 -o "$WORK/test_sepolicy_plat" -f /dev/null "${CILS_PLAT[@]}" 2>&1 || true
-                echo "--- system_and_vendor_property_type across CILs ---"
-                grep -n "system_and_vendor_property_type" "${CILS[@]}" 2>/dev/null | head -n 40 || true
               } > "$WORK/secilc.diag"
               mv "$WORK/secilc.diag" "$WORK/secilc.err"
               cat "$WORK/secilc.err" | head -n 60
