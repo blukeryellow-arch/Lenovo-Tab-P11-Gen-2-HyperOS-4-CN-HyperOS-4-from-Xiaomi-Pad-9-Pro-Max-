@@ -89,15 +89,32 @@ jobs:
           mkdir -p "$WORK/bin" "$WORK/rust-out" "$WORK/rust-apk/lib/arm64-v8a" "$WORK/rust-apk/lib/armeabi-v7a"
           {
             echo "=== RUST & ANDROID NDK BUILD ==="
-            NDK_BIN=$(find /usr/local/lib/android/sdk/ndk -maxdepth 5 -type d -path "*/toolchains/llvm/prebuilt/linux-x86_64/bin" | sort -V | tail -1)
+            NDK_BIN=$(find /usr/local/lib/android/sdk "${ANDROID_NDK_HOME:-/nonexistent}" "${ANDROID_NDK_LATEST_HOME:-/nonexistent}" -maxdepth 8 \( -type f -o -type l \) -name "aarch64-linux-android*-clang" -printf '%h\n' 2>/dev/null | sort -V | tail -1 || true)
+            if [ -z "$NDK_BIN" ]; then
+              echo "Brak lokalnego NDK - instaluje NDK przez sdkmanager..."
+              SDKM=$(find /usr/local/lib/android/sdk -maxdepth 5 -type f -name "sdkmanager" | sort -V | tail -1 || true)
+              [ -x "$SDKM" ] || { ls -la /usr/local/lib/android/sdk || true; exit 1; }
+              yes | "$SDKM" --licenses >/dev/null 2>&1 || true
+              "$SDKM" "ndk;27.2.12479018" >/dev/null
+              NDK_BIN=$(find /usr/local/lib/android/sdk -maxdepth 8 \( -type f -o -type l \) -name "aarch64-linux-android*-clang" -printf '%h\n' 2>/dev/null | sort -V | tail -1 || true)
+            fi
             BUILD_TOOLS=$(find /usr/local/lib/android/sdk/build-tools -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)
             ANDROID_JAR=$(find /usr/local/lib/android/sdk/platforms -maxdepth 2 -name "android.jar" | sort -V | tail -1)
             echo "NDK_BIN=$NDK_BIN"
             echo "BUILD_TOOLS=$BUILD_TOOLS"
             echo "ANDROID_JAR=$ANDROID_JAR"
-            [ -d "$NDK_BIN" ] || { echo "::error::Brak preinstalowanego Android NDK!"; exit 1; }
+            [ -d "$NDK_BIN" ] || { ls -la /usr/local/lib/android/sdk || true; echo "::error::Brak Android NDK!"; exit 1; }
             [ -x "$BUILD_TOOLS/aapt2" ] || { echo "::error::Brak aapt2!"; exit 1; }
             [ -f "$ANDROID_JAR" ] || { echo "::error::Brak android.jar!"; exit 1; }
+
+            CC64=""
+            [ -x "$NDK_BIN/aarch64-linux-android28-clang" ] && CC64="$NDK_BIN/aarch64-linux-android28-clang" || \
+              CC64=$(find "$NDK_BIN" -maxdepth 1 -name "aarch64-linux-android[0-9]*-clang" | sort -V | tail -1 || true)
+            CC32=""
+            [ -x "$NDK_BIN/armv7a-linux-androideabi28-clang" ] && CC32="$NDK_BIN/armv7a-linux-androideabi28-clang" || \
+              CC32=$(find "$NDK_BIN" -maxdepth 1 -name "armv7a-linux-androideabi[0-9]*-clang" | sort -V | tail -1 || true)
+            echo "CC64=$CC64 CC32=$CC32"
+            [ -x "$CC64" ] && [ -x "$CC32" ] || { echo "::error::Brak kompilatorow clang w NDK_BIN!"; exit 1; }
 
             # Zachowaj aapt2 przed czyszczeniem /usr/local/lib/android
             cp "$BUILD_TOOLS/aapt2" "$WORK/bin/aapt2"
@@ -110,11 +127,11 @@ jobs:
             cargo test --manifest-path "$REPO_DIR/rust/r9c-memd/Cargo.toml"
             cargo test --manifest-path "$REPO_DIR/rust/rust-app/Cargo.toml"
 
-            export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_BIN/aarch64-linux-android28-clang"
-            export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$NDK_BIN/armv7a-linux-androideabi28-clang"
-            export CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android28-clang"
+            export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC64"
+            export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$CC32"
+            export CC_aarch64_linux_android="$CC64"
             export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
-            export CC_armv7_linux_androideabi="$NDK_BIN/armv7a-linux-androideabi28-clang"
+            export CC_armv7_linux_androideabi="$CC32"
             export AR_armv7_linux_androideabi="$NDK_BIN/llvm-ar"
 
             echo "=== Budowanie r9c-memd (aarch64-linux-android) ==="
