@@ -27,33 +27,18 @@ import zipfile
 from pathlib import Path
 
 
-BRIDGE_JAVA = r"""
-import brut.androlib.smali.SmaliBuilder;
-import brut.androlib.smali.SmaliDecoder;
-import java.io.File;
-
-public class R9cSmaliBridge {
-    public static void main(String[] args) throws Exception {
-        String mode = args[0];
-        if ("d".equals(mode)) {
-            new SmaliDecoder(new File(args[1]), false).decode(args[2], new File(args[3]));
-        } else if ("a".equals(mode)) {
-            int api = args.length > 3 ? Integer.parseInt(args[3]) : 29;
-            new SmaliBuilder(api).build(new File(args[1]), new File(args[2]));
-        } else {
-            System.exit(1);
-        }
-    }
-}
-"""
-
-
 class SmaliRunner:
     def __init__(self, jar_path: Path, tmp_dir: Path) -> None:
         self.jar_path = jar_path
         self.tmp_dir = tmp_dir
         self.cp = str(jar_path)
         self.mode = ""
+        self.apktool_yml = (
+            "version: 3.0.3\n"
+            "apkFileName: wrap.jar\n"
+            "sdkInfo:\n"
+            "  minSdkVersion: 29\n"
+        )
         with zipfile.ZipFile(jar_path, "r") as zf:
             names = set(zf.namelist())
         if "com/android/tools/smali/baksmali/Main.class" in names and "com/android/tools/smali/smali/Main.class" in names:
@@ -64,43 +49,37 @@ class SmaliRunner:
             self.mode = "main_jf"
             self.bak_cls = "org.jf.baksmali.Main"
             self.sm_cls = "org.jf.smali.Main"
-        elif "brut/androlib/smali/SmaliDecoder.class" in names and "brut/androlib/smali/SmaliBuilder.class" in names:
-            self.mode = "apktool_bridge"
-            bdir = tmp_dir / "bridge_classes"
-            bdir.mkdir(parents=True, exist_ok=True)
-            jfile = bdir / "R9cSmaliBridge.java"
-            jfile.write_text(BRIDGE_JAVA, encoding="utf-8")
-            r = subprocess.run(["javac", "-cp", str(jar_path), "-d", str(bdir), str(jfile)], text=True, capture_output=True)
-            if r.returncode != 0:
-                raise RuntimeError(f"javac R9cSmaliBridge error: {r.stderr[:400]}")
-            self.cp = f"{bdir}{os.pathsep}{jar_path}"
-            self.bak_cls = "R9cSmaliBridge"
-            self.sm_cls = "R9cSmaliBridge"
+        elif "brut/apktool/Main.class" in names:
+            self.mode = "apktool_cli"
+            self.bak_cls = "brut.apktool.Main"
+            self.sm_cls = "brut.apktool.Main"
         else:
-            raise RuntimeError(f"Brak klas smali/baksmali w {jar_path}")
+            raise RuntimeError(f"Brak klas smali/baksmali ani apktool CLI w {jar_path}")
 
     def baksmali(self, dex_path: Path, out_dir: Path) -> subprocess.CompletedProcess:
-        if self.mode == "apktool_bridge":
+        if self.mode == "apktool_cli":
             out_dir.parent.mkdir(parents=True, exist_ok=True)
-            wrap_zip = out_dir.parent / f"{out_dir.name}_dexwrap.zip"
-            wrap_out = out_dir.parent / f"{out_dir.name}_wrapout"
-            if wrap_out.exists():
-                shutil.rmtree(wrap_out)
-            wrap_out.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(wrap_zip, "w", compression=zipfile.ZIP_STORED) as zf:
+            wrap_jar = out_dir.parent / f"{out_dir.name}_wrap.jar"
+            wrap_dec = out_dir.parent / f"{out_dir.name}_dec"
+            if wrap_dec.exists():
+                shutil.rmtree(wrap_dec)
+            with zipfile.ZipFile(wrap_jar, "w", compression=zipfile.ZIP_STORED) as zf:
                 zf.write(dex_path, arcname="classes.dex")
             r = subprocess.run(
-                ["java", "-Xmx1536m", "-cp", self.cp, "R9cSmaliBridge", "d", str(wrap_zip), "classes.dex", str(wrap_out)],
+                ["java", "-Xmx1536m", "-jar", str(self.jar_path), "d", "-r", "-f", "-o", str(wrap_dec), str(wrap_jar)],
                 text=True,
                 capture_output=True,
             )
-            wrap_zip.unlink(missing_ok=True)
-            if r.returncode == 0 and (wrap_out / "smali").is_dir():
+            wrap_jar.unlink(missing_ok=True)
+            yml_p = wrap_dec / "apktool.yml"
+            if yml_p.is_file():
+                self.apktool_yml = yml_p.read_text(encoding="utf-8", errors="replace")
+            if r.returncode == 0 and (wrap_dec / "smali").is_dir():
                 if out_dir.exists():
                     shutil.rmtree(out_dir)
-                shutil.move(str(wrap_out / "smali"), str(out_dir))
-            if wrap_out.exists():
-                shutil.rmtree(wrap_out, ignore_errors=True)
+                shutil.move(str(wrap_dec / "smali"), str(out_dir))
+            if wrap_dec.exists():
+                shutil.rmtree(wrap_dec, ignore_errors=True)
             return r
         return subprocess.run(
             ["java", "-Xmx1536m", "-cp", self.cp, self.bak_cls, "d", str(dex_path), "-o", str(out_dir)],
@@ -109,12 +88,29 @@ class SmaliRunner:
         )
 
     def smali(self, smali_dir: Path, out_dex: Path) -> subprocess.CompletedProcess:
-        if self.mode == "apktool_bridge":
-            return subprocess.run(
-                ["java", "-Xmx1536m", "-cp", self.cp, "R9cSmaliBridge", "a", str(smali_dir), str(out_dex), "29"],
+        if self.mode == "apktool_cli":
+            wrap_bld = out_dex.parent / f"{out_dex.stem}_bld"
+            wrap_out = out_dex.parent / f"{out_dex.stem}_out.jar"
+            if wrap_bld.exists():
+                shutil.rmtree(wrap_bld)
+            wrap_bld.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(smali_dir, wrap_bld / "smali")
+            (wrap_bld / "apktool.yml").write_text(self.apktool_yml, encoding="utf-8")
+            r = subprocess.run(
+                ["java", "-Xmx1536m", "-jar", str(self.jar_path), "b", "-f", "-o", str(wrap_out), str(wrap_bld)],
                 text=True,
                 capture_output=True,
             )
+            if r.returncode == 0 and wrap_out.is_file():
+                try:
+                    with zipfile.ZipFile(wrap_out, "r") as zf:
+                        if "classes.dex" in zf.namelist():
+                            out_dex.write_bytes(zf.read("classes.dex"))
+                except Exception:
+                    pass
+            wrap_out.unlink(missing_ok=True)
+            shutil.rmtree(wrap_bld, ignore_errors=True)
+            return r
         return subprocess.run(
             ["java", "-Xmx1536m", "-cp", self.cp, self.sm_cls, "a", str(smali_dir), "-o", str(out_dex)],
             text=True,
