@@ -29,39 +29,17 @@ from pathlib import Path
 
 BRIDGE_JAVA = r"""
 import brut.androlib.smali.SmaliBuilder;
-import com.android.tools.smali.baksmali.Baksmali;
-import com.android.tools.smali.baksmali.BaksmaliOptions;
-import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile;
-import java.io.BufferedInputStream;
+import brut.androlib.smali.SmaliDecoder;
 import java.io.File;
-import java.io.FileInputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 
 public class R9cSmaliBridge {
     public static void main(String[] args) throws Exception {
         String mode = args[0];
         if ("d".equals(mode)) {
-            File dex = new File(args[1]);
-            File outDir = new File(args[2]);
-            DexBackedDexFile df;
-            try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(dex))) {
-                df = DexBackedDexFile.fromInputStream(null, bis);
-            }
-            BaksmaliOptions opts = new BaksmaliOptions();
-            opts.parameterRegisters = true;
-            opts.localsDirective = true;
-            opts.sequentialLabels = true;
-            Files.createDirectories(outDir.toPath());
-            if (!Baksmali.disassembleDexFile(df, outDir, 4, opts)) {
-                System.exit(2);
-            }
+            new SmaliDecoder(new File(args[1]), false).decode(args[2], new File(args[3]));
         } else if ("a".equals(mode)) {
-            File smaliDir = Paths.get(args[1]).toFile();
-            File outDex = Paths.get(args[2]).toFile();
             int api = args.length > 3 ? Integer.parseInt(args[3]) : 29;
-            new SmaliBuilder(api).build(smaliDir, outDex);
+            new SmaliBuilder(api).build(new File(args[1]), new File(args[2]));
         } else {
             System.exit(1);
         }
@@ -86,7 +64,7 @@ class SmaliRunner:
             self.mode = "main_jf"
             self.bak_cls = "org.jf.baksmali.Main"
             self.sm_cls = "org.jf.smali.Main"
-        elif "com/android/tools/smali/baksmali/Baksmali.class" in names and "brut/androlib/smali/SmaliBuilder.class" in names:
+        elif "brut/androlib/smali/SmaliDecoder.class" in names and "brut/androlib/smali/SmaliBuilder.class" in names:
             self.mode = "apktool_bridge"
             bdir = tmp_dir / "bridge_classes"
             bdir.mkdir(parents=True, exist_ok=True)
@@ -103,11 +81,27 @@ class SmaliRunner:
 
     def baksmali(self, dex_path: Path, out_dir: Path) -> subprocess.CompletedProcess:
         if self.mode == "apktool_bridge":
-            return subprocess.run(
-                ["java", "-Xmx1536m", "-cp", self.cp, "R9cSmaliBridge", "d", str(dex_path), str(out_dir)],
+            out_dir.parent.mkdir(parents=True, exist_ok=True)
+            wrap_zip = out_dir.parent / f"{out_dir.name}_dexwrap.zip"
+            wrap_out = out_dir.parent / f"{out_dir.name}_wrapout"
+            if wrap_out.exists():
+                shutil.rmtree(wrap_out)
+            wrap_out.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(wrap_zip, "w", compression=zipfile.ZIP_STORED) as zf:
+                zf.write(dex_path, arcname="classes.dex")
+            r = subprocess.run(
+                ["java", "-Xmx1536m", "-cp", self.cp, "R9cSmaliBridge", "d", str(wrap_zip), "classes.dex", str(wrap_out)],
                 text=True,
                 capture_output=True,
             )
+            wrap_zip.unlink(missing_ok=True)
+            if r.returncode == 0 and (wrap_out / "smali").is_dir():
+                if out_dir.exists():
+                    shutil.rmtree(out_dir)
+                shutil.move(str(wrap_out / "smali"), str(out_dir))
+            if wrap_out.exists():
+                shutil.rmtree(wrap_out, ignore_errors=True)
+            return r
         return subprocess.run(
             ["java", "-Xmx1536m", "-cp", self.cp, self.bak_cls, "d", str(dex_path), "-o", str(out_dir)],
             text=True,

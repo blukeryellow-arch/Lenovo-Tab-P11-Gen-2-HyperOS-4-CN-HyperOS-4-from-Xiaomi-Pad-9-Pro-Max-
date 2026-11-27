@@ -272,16 +272,35 @@ def scan_launcher_apps(roots: list[tuple[str, Path]], aapt2_bin: str) -> list[di
                     continue
                 apk = apks[0]
                 r = subprocess.run([aapt2_bin, "dump", "badging", str(apk)], text=True, capture_output=True)
-                if r.returncode != 0:
-                    continue
-                txt = r.stdout
+                txt = r.stdout or ""
                 m_pkg = re.search(r"package:\s*name='([^']+)'", txt)
-                pkg_id = m_pkg.group(1) if m_pkg else pkg_dir.name
+                pkg_id = m_pkg.group(1) if m_pkg else ""
+                has_launcher = ("launchable-activity:" in txt) or ("android.intent.category.HOME" in txt)
+                m_lbl = re.search(r"application-label(?:-pl|-en)?:'([^']*)'", txt)
+                label = m_lbl.group(1) if m_lbl else pkg_dir.name
+
+                if not pkg_id or not has_launcher:
+                    rx = subprocess.run(
+                        [aapt2_bin, "dump", "xmltree", "--file", "AndroidManifest.xml", str(apk)],
+                        text=True,
+                        capture_output=True,
+                    )
+                    xtxt = rx.stdout or ""
+                    if not pkg_id:
+                        mx = re.search(r'package="([^"]+)"', xtxt)
+                        pkg_id = mx.group(1) if mx else pkg_dir.name
+                    if not has_launcher:
+                        has_launcher = (
+                            "android.intent.category.LAUNCHER" in xtxt
+                            or "android.intent.category.HOME" in xtxt
+                        )
+                    if label == pkg_dir.name and pkg_dir.name.startswith("Fossify"):
+                        label = pkg_dir.name.replace("Fossify", "Fossify ")
+
+                if not pkg_id:
+                    pkg_id = pkg_dir.name
                 if pkg_id in seen_pkgs:
                     continue
-                has_launcher = ("launchable-activity:" in txt) or ("android.intent.category.HOME" in txt)
-                m_lbl = re.search(r"application-label:'([^']*)'", txt)
-                label = m_lbl.group(1) if m_lbl else pkg_dir.name
                 sz_kib = sum(f.stat().st_size for f in pkg_dir.rglob("*") if f.is_file()) // 1024
                 seen_pkgs.add(pkg_id)
                 apps.append({
