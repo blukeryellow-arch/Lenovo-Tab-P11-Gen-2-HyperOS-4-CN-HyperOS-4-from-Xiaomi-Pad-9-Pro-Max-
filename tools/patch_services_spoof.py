@@ -31,10 +31,10 @@ BRIDGE_JAVA = r"""
 import brut.androlib.smali.SmaliBuilder;
 import com.android.tools.smali.baksmali.Baksmali;
 import com.android.tools.smali.baksmali.BaksmaliOptions;
-import com.android.tools.smali.dexlib2.DexFileFactory;
-import com.android.tools.smali.dexlib2.Opcodes;
 import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile;
+import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -45,7 +45,10 @@ public class R9cSmaliBridge {
         if ("d".equals(mode)) {
             File dex = new File(args[1]);
             File outDir = new File(args[2]);
-            DexBackedDexFile df = DexFileFactory.loadDexFile(dex, (Opcodes) null);
+            DexBackedDexFile df;
+            try (BufferedInputStream bis = new BufferedInputStream(new FileInputStream(dex))) {
+                df = DexBackedDexFile.fromInputStream(null, bis);
+            }
             BaksmaliOptions opts = new BaksmaliOptions();
             opts.parameterRegisters = true;
             opts.localsDirective = true;
@@ -55,8 +58,8 @@ public class R9cSmaliBridge {
                 System.exit(2);
             }
         } else if ("a".equals(mode)) {
-            Path smaliDir = Paths.get(args[1]);
-            Path outDex = Paths.get(args[2]);
+            File smaliDir = Paths.get(args[1]).toFile();
+            File outDex = Paths.get(args[2]).toFile();
             int api = args.length > 3 ? Integer.parseInt(args[3]) : 29;
             new SmaliBuilder(api).build(smaliDir, outDex);
         } else {

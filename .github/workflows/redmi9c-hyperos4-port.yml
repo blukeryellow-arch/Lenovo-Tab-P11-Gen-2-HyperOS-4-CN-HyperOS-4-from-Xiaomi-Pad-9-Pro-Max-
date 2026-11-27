@@ -31,7 +31,7 @@ on:
       release_tag:
         description: "Tag GitHub Release"
         required: true
-        default: "redmi9c-hyperos4-v2"
+        default: "mysticalos-redmi9c-v1"
         type: string
       gms_mode:
         description: "Tryb uslug Google / microG"
@@ -50,6 +50,7 @@ on:
       - "tools/**"
       - "templates/**"
       - "rust/**"
+      - "apps/**"
 
 concurrency:
   group: redmi9c-hyperos4-port
@@ -70,7 +71,7 @@ jobs:
       VARIANT: ${{ inputs.variant || 'angelica' }}
       DEBLOAT_LEVEL: ${{ inputs.debloat_level || 'aggressive' }}
       FS_MODE: ${{ inputs.fs_mode || 'auto' }}
-      RELEASE_TAG: ${{ inputs.release_tag || 'redmi9c-hyperos4-v2' }}
+      RELEASE_TAG: ${{ inputs.release_tag || 'mysticalos-redmi9c-v1' }}
       GMS_MODE: ${{ inputs.gms_mode || 'microg' }}
       BASE_URL: https://github.com/xc112lg/blossom_releases/releases/download/EvolutionX-17.0-20261120-1/EvolutionX-17.0-20261120-blossom-12.4-Vanilla-Unofficial.zip
       BASE_FALLBACK_URL: https://github.com/xc112lg/blossom_releases/releases/download/crDroid-20261121-4/crDroidAndroid-17.0-20261121-blossom-v13.1.zip
@@ -129,11 +130,12 @@ jobs:
             cp -a "$BUILD_TOOLS/lib64" "$WORK/bin/"
           fi
 
-          rustup target add aarch64-linux-android armv7-linux-androideabi
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-pc-windows-gnu
 
-          echo "=== cargo test (host unit tests) ==="
+          echo "=== cargo test (host unit tests: r9c-memd + rust-app + mystical-emulator) ==="
           cargo test --manifest-path "$REPO_DIR/rust/r9c-memd/Cargo.toml"
           cargo test --manifest-path "$REPO_DIR/rust/rust-app/Cargo.toml"
+          cargo test --manifest-path "$REPO_DIR/rust/mystical-emulator/Cargo.toml"
 
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC64"
           export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$CC32"
@@ -169,7 +171,7 @@ jobs:
           (cd "$WORK/rust-apk" && zip -0 -r unaligned.apk lib)
           "$BUILD_TOOLS/zipalign" -f -p 4 "$WORK/rust-apk/unaligned.apk" "$WORK/rust-apk/aligned.apk"
           keytool -genkeypair -v -keystore "$WORK/rust-apk/r9c.jks" -storepass android -keypass android \
-            -alias r9c -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Redmi9C Rust,O=Redmi9C"
+            -alias r9c -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=MysticalOS,O=Redmi9C"
           "$BUILD_TOOLS/apksigner" sign --ks "$WORK/rust-apk/r9c.jks" --ks-pass pass:android \
             --out "$WORK/rust-out/Redmi9CRustApp.apk" "$WORK/rust-apk/aligned.apk"
           "$BUILD_TOOLS/apksigner" verify "$WORK/rust-out/Redmi9CRustApp.apk"
@@ -178,12 +180,44 @@ jobs:
           unzip -l "$WORK/rust-out/Redmi9CRustApp.apk" | grep -q "lib/armeabi-v7a/libredmi9c_rust.so"
           "$WORK/bin/aapt2" dump badging "$WORK/rust-out/Redmi9CRustApp.apk" | head -n 12
 
-          echo "=== Test tools/apk2rust.py (selftest + generacja + cargo check) ==="
+          echo "=== Budowanie MysticalLauncher.apk (ColorOS 17 zmiana rozmiaru ikon + kafelki 1x1/2x1/1x2/2x2) ==="
+          mkdir -p "$WORK/launcher-gen" "$WORK/launcher-classes" "$WORK/launcher-dex"
+          "$WORK/bin/aapt2" compile --dir "$REPO_DIR/apps/mystical-launcher/res" -o "$WORK/launcher-res.zip"
+          "$WORK/bin/aapt2" link \
+            --manifest "$REPO_DIR/apps/mystical-launcher/AndroidManifest.xml" \
+            -I "$ANDROID_JAR" \
+            --java "$WORK/launcher-gen" \
+            -o "$WORK/launcher-unaligned.apk" \
+            "$WORK/launcher-res.zip"
+          javac -source 11 -target 11 -cp "$ANDROID_JAR" -d "$WORK/launcher-classes" \
+            $(find "$REPO_DIR/apps/mystical-launcher/src" "$WORK/launcher-gen" -name '*.java' | sort)
+          if [ -x "$BUILD_TOOLS/d8" ]; then
+            "$BUILD_TOOLS/d8" --min-api 28 --lib "$ANDROID_JAR" --output "$WORK/launcher-dex" \
+              $(find "$WORK/launcher-classes" -name '*.class')
+          else
+            java -cp "$BUILD_TOOLS/lib/d8.jar" com.android.tools.r8.D8 --min-api 28 --lib "$ANDROID_JAR" \
+              --output "$WORK/launcher-dex" $(find "$WORK/launcher-classes" -name '*.class')
+          fi
+          (cd "$WORK/launcher-dex" && zip -u "$WORK/launcher-unaligned.apk" classes*.dex)
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$WORK/launcher-unaligned.apk" "$WORK/launcher-aligned.apk"
+          "$BUILD_TOOLS/apksigner" sign --ks "$WORK/rust-apk/r9c.jks" --ks-pass pass:android \
+            --out "$WORK/rust-out/MysticalLauncher.apk" "$WORK/launcher-aligned.apk"
+          "$BUILD_TOOLS/apksigner" verify "$WORK/rust-out/MysticalLauncher.apk"
+          "$WORK/bin/aapt2" dump badging "$WORK/rust-out/MysticalLauncher.apk" | head -n 16
+          ls -lh "$WORK/rust-out/MysticalLauncher.apk"
+
+          echo "=== Test tools/apk2rust.py & mysticalos_brand.py ==="
+          python3 "$REPO_DIR/tools/mysticalos_brand.py" --selftest
           python3 "$REPO_DIR/tools/apk2rust.py" --selftest
           python3 "$REPO_DIR/tools/apk2rust.py" --apk "$WORK/rust-out/Redmi9CRustApp.apk" --out "$WORK/apk2rust-smoke"
           cargo check --manifest-path "$WORK/apk2rust-smoke/Cargo.toml" --target-dir "$WORK/cargo-target-smoke"
+          python3 "$REPO_DIR/tools/apk2rust.py" --apk "$WORK/rust-out/MysticalLauncher.apk" --out "$WORK/apk2rust-launcher" | tee -a "$WORK/rust-build.log"
+          cargo check --manifest-path "$WORK/apk2rust-launcher/Cargo.toml" --target-dir "$WORK/cargo-target-smoke" || echo "apk2rust-launcher info only"
 
-          rm -rf "$WORK/cargo-target-memd" "$WORK/cargo-target-app" "$WORK/cargo-target-smoke" "$WORK/rust-apk" "$WORK/apk2rust-smoke" "$REPO_DIR/rust/r9c-memd/target" "$REPO_DIR/rust/rust-app/target"
+          rm -rf "$WORK/cargo-target-memd" "$WORK/cargo-target-app" "$WORK/cargo-target-smoke" \
+            "$WORK/rust-apk" "$WORK/apk2rust-smoke" "$WORK/apk2rust-launcher" "$WORK/launcher-gen" "$WORK/launcher-classes" \
+            "$WORK/launcher-dex" "$WORK/launcher-res.zip" "$WORK/launcher-unaligned.apk" "$WORK/launcher-aligned.apk" \
+            "$REPO_DIR/rust/r9c-memd/target" "$REPO_DIR/rust/rust-app/target" "$REPO_DIR/rust/mystical-emulator/target"
           sleep 1
 
       - name: "0. Dysk + narzedzia + paczki microG/FOSS"
@@ -195,8 +229,8 @@ jobs:
 
           echo "=== Instalacja pakietow ==="
           sudo apt-get update -q
-          sudo apt-get install -y -q p7zip-full aria2 brotli e2fsprogs erofs-utils secilc cpio lz4 android-sdk-libsparse-utils || \
-            sudo apt-get install -y p7zip-full aria2 brotli e2fsprogs erofs-utils secilc cpio lz4
+          sudo apt-get install -y -q p7zip-full aria2 brotli e2fsprogs erofs-utils secilc cpio lz4 mingw-w64 android-sdk-libsparse-utils || \
+            sudo apt-get install -y p7zip-full aria2 brotli e2fsprogs erofs-utils secilc cpio lz4 mingw-w64
           pip install --quiet cryptography 2>/dev/null || pip install --quiet --break-system-packages cryptography
 
           mkdir -p "$WORK/bin" "$WORK/base-img" "$WORK/base-tree" "$WORK/donor-img" "$WORK/donor-tree" "$WORK/out-tree" "$WORK/out-img" "$WORK/package" "$WORK/release"
@@ -218,16 +252,36 @@ jobs:
           [ -f "$WORK/bin/magiskboot" ] && chmod +x "$WORK/bin/magiskboot"
 
           export PATH="$WORK/bin:$PATH"
-          for T in 7z aria2c brotli mke2fs e2fsck resize2fs secilc lpmake lpunpack payload-dumper-go mkfs.erofs fsck.erofs aapt2; do
+          for T in 7z aria2c brotli mke2fs e2fsck resize2fs secilc lpmake lpunpack payload-dumper-go mkfs.erofs fsck.erofs aapt2 x86_64-w64-mingw32-gcc; do
             command -v "$T" >/dev/null || { echo "::error::Brak narzedzia: $T"; exit 1; }
           done
           aapt2 version
           python3 "$REPO_DIR/tools/avbtool.py" version
 
-          echo "=== Pobieranie apktool + microG + FOSS APK ==="
+          echo "=== Pobieranie apktool + microG + pelnego pakietu FOSS (zastepnikow apek Xiaomi) ==="
           mkdir -p "$WORK/extra-apps"
           curl -fsSL --retry 3 -o "$WORK/bin/apktool.jar" \
             "https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar"
+          curl -fsSL --retry 3 -o "$WORK/extra-apps/HeliBoard.apk" \
+            "https://github.com/Helium314/HeliBoard/releases/download/v4.2/HeliBoard_4.2-release.apk"
+          curl -fsSL --retry 3 -o "$WORK/extra-apps/Droid-ify.apk" \
+            "https://github.com/Droid-ify/client/releases/download/v0.7.8/app-release.apk"
+          curl -fsSL --retry 3 -o "$WORK/extra-apps/FossifyGallery.apk" \
+            "https://github.com/FossifyOrg/Gallery/releases/download/1.14.3/gallery-50-foss-release.apk"
+          curl -fsSL --retry 3 -o "$WORK/extra-apps/FossifyFileManager.apk" \
+            "https://github.com/FossifyOrg/File-Manager/releases/download/1.6.5/file-manager-17-foss-release.apk"
+          curl -fsSL --retry 3 -o "$WORK/extra-apps/FossifyMessages.apk" \
+            "https://github.com/FossifyOrg/Messages/releases/download/1.10.3/messages-27-foss-release.apk"
+          curl -fsSL --retry 3 -o "$WORK/extra-apps/FossifyPhone.apk" \
+            "https://github.com/FossifyOrg/Phone/releases/download/1.11.1/phone-22-foss-release.apk"
+          curl -fsSL --retry 3 -o "$WORK/extra-apps/FossifyContacts.apk" \
+            "https://github.com/FossifyOrg/Contacts/releases/download/1.6.0/contacts-13-foss-release.apk"
+          curl -fsSL --retry 3 -o "$WORK/extra-apps/FossifyClock.apk" \
+            "https://github.com/FossifyOrg/Clock/releases/download/1.6.0/clock-10-foss-release.apk"
+          curl -fsSL --retry 3 -o "$WORK/extra-apps/FossifyCalculator.apk" \
+            "https://github.com/FossifyOrg/Calculator/releases/download/1.4.0/calculator-10-foss-release.apk"
+          curl -fsSL --retry 3 -o "$WORK/extra-apps/FossifyCamera.apk" \
+            "https://github.com/FossifyOrg/Camera/releases/download/1.5.0/camera-11-foss-release.apk"
           if [ "$GMS_MODE" = "microg" ]; then
             curl -fsSL --retry 3 -o "$WORK/extra-apps/GmsCore.apk" \
               "https://github.com/microg/GmsCore/releases/download/v0.3.18.252432/com.google.android.gms-252432036.apk"
@@ -235,18 +289,13 @@ jobs:
               "https://github.com/microg/GmsCore/releases/download/v0.3.18.252432/com.android.vending-84022636.apk"
             curl -fsSL --retry 3 -o "$WORK/extra-apps/GsfProxy.apk" \
               "https://github.com/microg/GsfProxy/releases/download/v0.1.0/GsfProxy.apk" || true
-            curl -fsSL --retry 3 -o "$WORK/extra-apps/HeliBoard.apk" \
-              "https://github.com/Helium314/HeliBoard/releases/download/v4.2/HeliBoard_4.2-release.apk"
-            curl -fsSL --retry 3 -o "$WORK/extra-apps/Droid-ify.apk" \
-              "https://github.com/Droid-ify/client/releases/download/v0.7.8/app-release.apk"
             curl -fsSL --retry 3 -o "$WORK/extra-apps/CromiteWebView.apk" \
               "https://github.com/uazo/cromite/releases/download/v153.0.8010.37-11507ac1061b5ea227806f5e84db5a57df6ccf6a/arm64_SystemWebView.apk" || true
-
-            echo "=== Test apk2rust.py na prawdziwym Kotlin/DEX APK (Droid-ify) ===" | tee -a "$WORK/rust-build.log"
-            python3 "$REPO_DIR/tools/apk2rust.py" --apk "$WORK/extra-apps/Droid-ify.apk" --out "$WORK/apk2rust-droidify" | tee -a "$WORK/rust-build.log"
-            rm -rf "$WORK/apk2rust-droidify"
-            ls -lh "$WORK/extra-apps"
           fi
+          echo "=== Test apk2rust.py na prawdziwym Kotlin/DEX APK (Droid-ify) ===" | tee -a "$WORK/rust-build.log"
+          python3 "$REPO_DIR/tools/apk2rust.py" --apk "$WORK/extra-apps/Droid-ify.apk" --out "$WORK/apk2rust-droidify" | tee -a "$WORK/rust-build.log"
+          rm -rf "$WORK/apk2rust-droidify"
+          ls -lh "$WORK/extra-apps"
 
           echo "=== Self-test narzedzi (sdat2img, split_5_7z, lpmake/lpunpack) ==="
           python3 -m py_compile "$REPO_DIR/tools/"*.py
@@ -432,7 +481,7 @@ jobs:
           done
           df -h /
 
-      - name: "3. Portowanie + agresywny debloat + test SELinux (secilc)"
+      - name: "3. Portowanie MysticalOS + usuniecie apek Xiaomi + ColorOS 17 Launcher + secilc"
         run: |
           set -euo pipefail
           sudo python3 "$REPO_DIR/tools/port_redmi9c_hyperos4.py" \
@@ -442,15 +491,18 @@ jobs:
             --variant "$VARIANT" \
             --debloat-level "$DEBLOAT_LEVEL" \
             --gms-mode "$GMS_MODE" \
+            --os-name "MysticalOS" \
             --extra-apps-dir "$WORK/extra-apps" \
+            --mystical-launcher-apk "$WORK/rust-out/MysticalLauncher.apk" \
             --r9c-memd-bin "$WORK/rust-out/r9c-memd" \
             --r9c-memd-rc "$REPO_DIR/rust/r9c-memd/r9c-memd.rc" \
             --rust-app-apk "$WORK/rust-out/Redmi9CRustApp.apk" \
             --apktool-jar "$WORK/bin/apktool.jar" \
             --aapt2-bin "$WORK/bin/aapt2" \
             --target-os-mib 5550 \
+            --manifest-out "$WORK/mysticalos-manifest.json" \
             --report "$WORK/port-report.txt"
-          sudo chown "$(id -u):$(id -g)" "$WORK/port-report.txt"
+          sudo chown "$(id -u):$(id -g)" "$WORK/port-report.txt" "$WORK/mysticalos-manifest.json"
 
           sudo rm -rf "$WORK/base-tree" "$WORK/donor-tree" "$WORK/extra-apps"
 
@@ -459,7 +511,7 @@ jobs:
           [ -f "$SYS_FC" ] || SYS_FC="$WORK/out-tree/system/etc/selinux/plat_file_contexts"
           if [ -f "$SYS_FC" ]; then
             sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$SYS_FC" --root "$WORK/out-tree/system" \
-              --only system/etc/properties system/etc/vintf system/build.prop system/framework/services.jar || true
+              --only system/etc/properties system/etc/vintf system/build.prop system/framework/services.jar system/media || true
           fi
           SEXT_FC="$WORK/out-tree/system_ext/etc/selinux/system_ext_file_contexts"
           if [ -f "$SEXT_FC" ]; then
@@ -469,7 +521,7 @@ jobs:
           PROD_FC="$WORK/out-tree/product/etc/selinux/product_file_contexts"
           if [ -f "$PROD_FC" ]; then
             sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$PROD_FC" --root "$WORK/out-tree" \
-              --only product/etc/device_features product/overlay product/etc/properties product/etc/build.prop product/app product/priv-app product/etc/permissions product/etc/sysconfig product/etc/default-permissions || true
+              --only product/etc/device_features product/overlay product/etc/properties product/etc/build.prop product/app product/priv-app product/etc/permissions product/etc/sysconfig product/etc/default-permissions product/media || true
           fi
 
           # Weryfikacja kompilacji polityki SELinux (.cil) za pomoca secilc
@@ -738,6 +790,27 @@ jobs:
           done
           rm -rf "$WORK/super.raw" "$WORK/super-check" "$WORK/mnt-verify"
 
+      - name: "4b. Kompilacja emulatora Windows PC (MysticalOS-Emulator.exe)"
+        run: |
+          set -euo pipefail
+          echo "=== Budowanie MysticalOS-Emulator.exe (x86_64-pc-windows-gnu) ===" | tee -a "$WORK/rust-build.log"
+          export MYSTICALOS_MANIFEST="$WORK/mysticalos-manifest.json"
+          export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
+          export RUSTFLAGS="-C link-arg=-static -C link-arg=-static-libgcc"
+          cargo build --release --target x86_64-pc-windows-gnu \
+            --target-dir "$WORK/cargo-target-emu" \
+            --manifest-path "$REPO_DIR/rust/mystical-emulator/Cargo.toml"
+          cp "$WORK/cargo-target-emu/x86_64-pc-windows-gnu/release/mystical-emulator.exe" \
+             "$WORK/release/MysticalOS-Emulator.exe"
+          rm -rf "$WORK/cargo-target-emu"
+          file "$WORK/release/MysticalOS-Emulator.exe" | tee -a "$WORK/rust-build.log"
+          ls -lh "$WORK/release/MysticalOS-Emulator.exe" | tee -a "$WORK/rust-build.log"
+          x86_64-w64-mingw32-objdump -p "$WORK/release/MysticalOS-Emulator.exe" | grep "DLL Name" | tee -a "$WORK/rust-build.log"
+          if x86_64-w64-mingw32-objdump -p "$WORK/release/MysticalOS-Emulator.exe" | grep -qiE "libgcc|winpthread|libstdc"; then
+            echo "::error::MysticalOS-Emulator.exe nadal zalezy od zewnetrznych DLL MinGW!"
+            exit 1
+          fi
+
       - name: "5. Pakowanie do 5 plikow 7z (.7z.001 .. .7z.005) + weryfikacja"
         run: |
           set -euo pipefail
@@ -757,16 +830,23 @@ jobs:
           bash "$REPO_DIR/tools/split_5_7z.sh" \
             "$WORK/package" \
             "$WORK/release" \
-            "Redmi9C-HyperOS4-Debloated"
+            "MysticalOS-Redmi9C"
 
           cp "$WORK/package/BUILD-REPORT.txt" \
              "$WORK/package/SHA256SUMS.txt" \
              "$WORK/package/INSTRUKCJA-FLASH.txt" \
+             "$WORK/mysticalos-manifest.json" \
              "$WORK/release/"
           [ -f "$WORK/rust-out/Redmi9CRustApp.apk" ] && cp "$WORK/rust-out/Redmi9CRustApp.apk" "$WORK/release/Redmi9CRustApp.apk"
+          [ -f "$WORK/rust-out/MysticalLauncher.apk" ] && cp "$WORK/rust-out/MysticalLauncher.apk" "$WORK/release/MysticalLauncher.apk"
+          (
+            cd "$WORK/release"
+            [ -f MysticalOS-Emulator.exe ] && sha256sum MysticalOS-Emulator.exe >> SHA256SUMS.txt
+            [ -f MysticalLauncher.apk ] && sha256sum MysticalLauncher.apk >> SHA256SUMS.txt
+          )
           ls -lh "$WORK/release"
 
-      - name: "6. Publikacja GitHub Release (5x .7z.001 .. .7z.005)"
+      - name: "6. Publikacja GitHub Release (MysticalOS + Emulator .exe + 5x .7z)"
         if: success() && env.SECILC_OK == '1'
         run: |
           set -euo pipefail
@@ -779,43 +859,50 @@ jobs:
           fi
 
           {
-            echo "# Redmi 9C (blossom: angelica / angelican) — HyperOS 4.0.8.0 (microG + FOSS + Rust)"
+            echo "# MysticalOS 1.0 — Redmi 9C (blossom: angelica / angelican)"
+            echo
+            echo "> **Rebranding HyperOS 4 (Android 17) na MysticalOS 1.0**: bez apek uzytkownika Xiaomi, z otwartymi zamiennikami **Fossify / microG / HeliBoard / Droid-ify**, autorskim **MysticalLauncher** (zmiana rozmiaru ikon + kafelki `1x1` / `2x1` / `1x2` / `2x2` w stylu ColorOS 17) oraz natywnym emulatorem **MysticalOS-Emulator.exe** na Windows PC."
             echo
             echo "- **Baza sprzetowa (OSS A17 + kernel 4.19):** \`EvolutionX 17.0 blossom\` (\`xc112lg/blossom_releases\`)"
-            echo "- **Dawca systemu (HyperOS 4 / Android 17):** Redmi 15C / POCO C85 Global (\`dew\`, \`OS4.0.8.0.XBNMIXM\`)"
-            echo "- **Wariant:** \`${VARIANT}\` (z \`/system/etc/properties/\${ro.boot.hwname}.prop\`)"
-            echo "- **Debloat / GMS:** \`${DEBLOAT_LEVEL}\` / \`${GMS_MODE}\` (usuniety bloat Google/MIUI, microG GmsCore + FakeStore, HeliBoard, Droid-ify, otwarty WebView)"
-            echo "- **Natywne komponenty Rust:** \`/system_ext/bin/r9c-memd\` (daemon RAM/zRAM/PSI) + \`Redmi9CRustApp.apk\` (pure Rust NativeActivity GLES2)"
+            echo "- **Dawca bazy systemowej (Android 17):** Redmi 15C / POCO C85 Global (\`dew\`, \`OS4.0.8.0.XBNMIXM\`)"
+            echo "- **Wariant:** \`${VARIANT}\` | **Debloat / GMS:** \`${DEBLOAT_LEVEL}\` / \`${GMS_MODE}\`"
+            echo "- **Autorskie aplikacje / uslugi:** \`MysticalLauncher.apk\` (ColorOS 17 Icon Resizer), \`MysticalOSFrameworkOverlay.apk\`, \`bootanimation.zip\` MysticalOS, \`/system_ext/bin/r9c-memd\`, \`Redmi9CRustApp.apk\`"
+            echo "- **Aplikacje FOSS w miejscu apek Xiaomi:** \`Fossify Phone\`, \`Messages\`, \`Contacts\`, \`Gallery\`, \`File Manager\`, \`Camera\`, \`Clock\`, \`Calculator\`, \`HeliBoard\`, \`Droid-ify\`, \`Cromite WebView\`, \`microG\`"
             echo "- **GitHub Actions Run:** ${GITHUB_RUN_ID}"
             echo
-            echo "## Pobieranie i rozpakowanie (5 czesci 7-Zip)"
-            echo "1. Pobierz **wszystkie 5 plikow** do jednego folderu:"
-            echo "   - \`Redmi9C-HyperOS4-Debloated.7z.001\`"
-            echo "   - \`Redmi9C-HyperOS4-Debloated.7z.002\`"
-            echo "   - \`Redmi9C-HyperOS4-Debloated.7z.003\`"
-            echo "   - \`Redmi9C-HyperOS4-Debloated.7z.004\`"
-            echo "   - \`Redmi9C-HyperOS4-Debloated.7z.005\`"
-            echo "2. Kliknij prawym przyciskiem myszy na **\`Redmi9C-HyperOS4-Debloated.7z.001\`** i wybierz **Wypakuj** (WinRAR lub 7-Zip)."
-            echo "3. Archiwum automatycznie zlaczy wszystkie 5 czesci i wypakuje gotowe obrazy (\`super.img\`, \`boot.img\`, \`dtbo.img\`, \`vbmeta*.img\`) oraz skrypt \`FLASH-REDMI9C.bat\`."
+            echo "## 1. Emulator na komputer Windows (\`MysticalOS-Emulator.exe\`)"
+            echo "- Pobierz sam plik **\`MysticalOS-Emulator.exe\`** i uruchom go dwuklikiem na Windows 10/11 (zero instalacji, zero zewnetrznych DLL)."
+            echo "- Emulator pozwala obejrzec i przetestowac ekran startowy MysticalOS, animacje startu, suwak **rozmiaru ikon (60%–150%)**, ksztalty ikon, kafelki **\`1x1\` / \`2x1\` / \`1x2\` / \`2x2\`** (prawy klik na ikone), wbudowane aplikacje oraz rzeczywisty audyt tego buildu z \`mysticalos-manifest.json\`."
+            echo "- *Uwaga techniczna:* \`MysticalOS-Emulator.exe\` jest symulatorem UI/UX i podgladem konfiguracji systemu na x86_64 Windows — nie wirtualizuje fizycznego kernela ARM64 MediaTek MT6765 z pliku \`super.img\`."
             echo
-            echo "## Sumy kontrolne SHA-256 (.img)"
+            echo "## 2. Wgranie prawdziwego ROM-u na telefon Redmi 9C (5 czesci 7-Zip)"
+            echo "1. Pobierz **wszystkie 5 plikow** do jednego folderu:"
+            echo "   - \`MysticalOS-Redmi9C.7z.001\`"
+            echo "   - \`MysticalOS-Redmi9C.7z.002\`"
+            echo "   - \`MysticalOS-Redmi9C.7z.003\`"
+            echo "   - \`MysticalOS-Redmi9C.7z.004\`"
+            echo "   - \`MysticalOS-Redmi9C.7z.005\`"
+            echo "2. Kliknij prawym przyciskiem myszy na **\`MysticalOS-Redmi9C.7z.001\`** i wybierz **Wypakuj** (WinRAR lub 7-Zip)."
+            echo "3. Wypakowane zostana \`super.img\`, \`boot.img\`, \`dtbo.img\`, \`vbmeta*.img\` oraz \`FLASH-REDMI9C.bat\`."
+            echo
+            echo "## Sumy kontrolne SHA-256"
             echo '```'
             cat "$WORK/release/SHA256SUMS.txt"
             echo '```'
             echo
             echo "## Sumy kontrolne 7-Zip (.7z.001 .. .7z.005)"
             echo '```'
-            cat "$WORK/release/Redmi9C-HyperOS4-Debloated-7Z-SHA256SUMS.txt"
+            cat "$WORK/release/MysticalOS-Redmi9C-7Z-SHA256SUMS.txt"
             echo '```'
           } > "$WORK/RELEASE-NOTES.md"
 
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
-              --title "Redmi 9C HyperOS 4.0.8.0 microG + Rust Port (5-part 7z)" \
+              --title "MysticalOS 1.0 — Redmi 9C + Windows Emulator .exe" \
               --notes-file "$WORK/RELEASE-NOTES.md"
           else
             gh release edit "$TAG" \
-              --title "Redmi 9C HyperOS 4.0.8.0 microG + Rust Port (5-part 7z)" \
+              --title "MysticalOS 1.0 — Redmi 9C + Windows Emulator .exe" \
               --notes-file "$WORK/RELEASE-NOTES.md"
           fi
 

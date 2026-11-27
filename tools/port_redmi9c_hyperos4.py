@@ -7,6 +7,7 @@ Preserves Linux modes, symlinks, ownership, and security.selinux xattrs.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -15,6 +16,9 @@ import sys
 import zipfile
 from pathlib import Path
 from typing import Iterable
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import mysticalos_brand
 
 
 def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
@@ -251,50 +255,32 @@ def debloat_trees(
     level: str,
     gms_mode: str,
     log: list[str],
-) -> None:
+    remove_xiaomi_apps: bool = True,
+) -> tuple[list[str], int]:
     roots = [out_sys_root, out_sys_ext, out_prod]
     comms = detect_comms_apps(roots)
-    log.append(f"comms detection: {comms}, gms_mode={gms_mode}")
+    log.append(f"comms detection: {comms}, gms_mode={gms_mode}, remove_xiaomi_apps={remove_xiaomi_apps}")
 
     # Core protected package directory names (case-insensitive exact matches)
+    # Keep ONLY boot/HAL/framework/SystemUI/Settings/Telephony essentials; user-facing Xiaomi apps are removed when remove_xiaomi_apps=True.
     protected = {
         "miuisystemui",
+        "miuisystemuiplugin",
         "systemui",
-        "miuihome",
         "settings",
-        "miuisettings",
-        "securitycenter",
-        "miuisecuritycenterglobal",
         "powerkeeper",
         "packageinstaller",
-        "miuiPackageInstaller".lower(),
+        "miuipackageinstaller",
         "permissioncontroller",
         "documentsui",
         "externalstorageprovider",
         "downloadprovider",
-        "downloadproviderui",
         "webview",
         "provision",
         "telephony",
         "telecom",
         "telephoneservice",
-        "incallui",
-        "hyperphone",
-        "contacts",
-        "mms",
-        "miuisms",
-        "miuimmsglobal",
-        "deskclock",
-        "calculator",
-        "miuiCalculator".lower(),
-        "fileexplorer",
-        "miuiFileExplorer".lower(),
-        "camera",
-        "miuicamera",
-        "aperture",
-        "gallery",
-        "miuigallery",
-        "miuigalleryglobal",
+        "mtkteleservice",
         "latinime",
         "wallpaperbackup",
         "wallpapercropper",
@@ -306,6 +292,7 @@ def debloat_trees(
         "miuisdk",
         "miuirom",
         "miuiextservices",
+        "miuibiometric",
         "android.ext.services",
         "networkstack",
         "captiveportallogin",
@@ -318,12 +305,39 @@ def debloat_trees(
         "nfcnci",
         "bluetooth",
         "bluetoothmidiservice",
-        "theme",
-        "thememanager",
-        "miuiThemeManager".lower(),
-        "miuithememanagerglobal",
-        "miwallpaper",
+        "bluetoothextension",
+        "mysticallauncher",
     }
+    if not remove_xiaomi_apps:
+        protected.update({
+            "miuihome",
+            "miuisettings",
+            "securitycenter",
+            "miuisecuritycenterglobal",
+            "downloadproviderui",
+            "incallui",
+            "hyperphone",
+            "contacts",
+            "mms",
+            "miuisms",
+            "miuimmsglobal",
+            "deskclock",
+            "calculator",
+            "miuicalculator",
+            "fileexplorer",
+            "miuifileexplorer",
+            "camera",
+            "miuicamera",
+            "aperture",
+            "gallery",
+            "miuigallery",
+            "miuigalleryglobal",
+            "theme",
+            "thememanager",
+            "miuithememanager",
+            "miuithememanagerglobal",
+            "miwallpaper",
+        })
     if gms_mode == "keep":
         protected.update({
             "webviewgoogle",
@@ -612,11 +626,65 @@ def debloat_trees(
         # Keep a few lightweight daily tools in balanced mode
         bloat_exact -= {"notes", "miuinotes", "weather", "miuiweather", "weatherprovider", "calendar", "soundrecorder", "miuisoundrecorder", "screenrecorder", "miuiscreenrecorder"}
 
-    # Only remove Google Dialer/Messages if MIUI equivalents exist
-    if comms["has_miui_dialer"]:
+    # Remove Google Dialer/Messages when replacing with MIUI or FOSS equivalents
+    if comms["has_miui_dialer"] or remove_xiaomi_apps:
         bloat_exact.update({"googledialer", "googledialer_arm64"})
-    if comms["has_miui_mms"]:
+    if comms["has_miui_mms"] or remove_xiaomi_apps:
         bloat_exact.update({"prebuiltbugle", "messages", "messages_arm64_hdpi"})
+
+    if remove_xiaomi_apps:
+        bloat_exact.update({
+            "miuihome",
+            "miuicamera",
+            "camera",
+            "aperture",
+            "miuigallery",
+            "miuigalleryglobal",
+            "gallery",
+            "miuithememanager",
+            "miuithememanagerglobal",
+            "thememanager",
+            "miuixiaomiaccountglobal",
+            "xiaomiaccount",
+            "account",
+            "miuicloudserviceglobal",
+            "cloudservice",
+            "cloudbackup",
+            "miuifileexplorerglobal",
+            "miuifileexplorer",
+            "fileexplorer",
+            "miexplorer",
+            "miuimmsglobal",
+            "mms",
+            "miuisms",
+            "hyperphone",
+            "miuidialer",
+            "incallui",
+            "contacts",
+            "googlecontacts",
+            "miuisecuritycenterglobal",
+            "securitycenter",
+            "securitycoreadd",
+            "misettings",
+            "backup",
+            "miuibackup",
+            "deskclock",
+            "miuideskclock",
+            "miuiclock",
+            "clock",
+            "calculator",
+            "miuicalculator",
+            "exactcalculator",
+            "downloadproviderui",
+            "miwallpaper",
+            "finddevice",
+            "miuifrequentphrase",
+            "cit",
+            "miuiaccessibility",
+            "miuiaccessibilityglobal",
+            "miuiaod",
+            "miuisuperwallpaper",
+        })
 
     bloat_prefixes = [
         "com.facebook.",
@@ -685,6 +753,7 @@ def debloat_trees(
     bloat_prefixes_t = tuple(bloat_prefixes)
 
     removed_count = 0
+    removed_items: list[str] = []
     freed_bytes = 0
 
     for root in scan_roots:
@@ -696,6 +765,7 @@ def debloat_trees(
                 shutil.rmtree(bd)
                 freed_bytes += sz
                 removed_count += 1
+                removed_items.append(bloat_dir_name)
                 log.append(f"debloat dir: {bd} ({sz // (1024 * 1024)} MiB)")
 
         # 2. Heavy app/priv-app packages
@@ -710,6 +780,13 @@ def debloat_trees(
                 if low in protected:
                     continue
                 hit = (low in bloat_exact) or any(low.startswith(p) for p in bloat_prefixes_t)
+                if not hit and remove_xiaomi_apps and (low.startswith("miui") or low.startswith("xiaomi") or low.startswith("mi_")):
+                    if not any(keep_tok in low for keep_tok in (
+                        "framework", "core", "telephony", "telecom", "wifi", "bluetooth",
+                        "nfc", "biometric", "provision", "sdk", "systemui", "overlay",
+                        "rro", "extservices", "config", "location", "powerkeeper",
+                    )):
+                        hit = True
                 if not hit and comms["has_miui_dialer"] and low.startswith("googledialer"):
                     hit = True
                 if not hit:
@@ -720,6 +797,7 @@ def debloat_trees(
                     shutil.rmtree(pkg_dir)
                     freed_bytes += sz
                     removed_count += 1
+                    removed_items.append(pkg_dir.name)
                     log.append(f"debloat pkg: {pkg_dir.relative_to(root.parent)} ({sz // (1024 * 1024)} MiB)")
 
         # 2b. Google GMS Mainline APEX (only remove in non-keep mode if verified not core AOSP extservices/permission)
@@ -781,6 +859,7 @@ def debloat_trees(
             log.append(f"debloat tts: {tts_dir} ({sz // (1024 * 1024)} MiB)")
 
     log.append(f"DEBLOAT SUMMARY: removed {removed_count} items, freed ~{freed_bytes // (1024 * 1024)} MiB")
+    return removed_items, freed_bytes
 
 
 def find_pkg_dir(root_tree: Path, names: tuple[str, ...]) -> Path | None:
@@ -1092,7 +1171,7 @@ def integrate_microg_and_foss(
     gms_mode: str,
     log: list[str],
 ) -> None:
-    if gms_mode != "microg":
+    if gms_mode == "keep":
         return
 
     # 1. Inspect donor framework-res.apk WebView config before choosing OSS WebView
@@ -1140,20 +1219,81 @@ def integrate_microg_and_foss(
     else:
         log.append("WARNING: brak otwartozrodlowego WebView (ani base webview, ani CromiteWebView.apk)")
 
-    # 2. Install microG + FakeStore + GsfProxy + HeliBoard + Droid-ify
+    # 2. Install FOSS replacement suite (Fossify + HeliBoard + Droid-ify) and optional microG
     if extra_apps_dir and extra_apps_dir.is_dir():
+        foss_priv = [
+            ("FossifyPhone.apk", "FossifyPhone"),
+            ("FossifyMessages.apk", "FossifyMessages"),
+        ]
+        foss_apps = [
+            ("FossifyContacts.apk", "FossifyContacts"),
+            ("FossifyGallery.apk", "FossifyGallery"),
+            ("FossifyFileManager.apk", "FossifyFileManager"),
+            ("FossifyCamera.apk", "FossifyCamera"),
+            ("FossifyClock.apk", "FossifyClock"),
+            ("FossifyCalculator.apk", "FossifyCalculator"),
+            ("HeliBoard.apk", "HeliBoard"),
+            ("Droid-ify.apk", "Droid-ify"),
+        ]
+        for fname, dname in foss_priv:
+            ap = extra_apps_dir / fname
+            if ap.is_file():
+                install_apk_dir(ap, out_prod / "priv-app" / dname, log)
+        for fname, dname in foss_apps:
+            ap = extra_apps_dir / fname
+            if ap.is_file():
+                install_apk_dir(ap, out_prod / "app" / dname, log)
+
+        # Grant priv-app permissions for FossifyPhone / FossifyMessages if installed
+        foss_priv_lines = ['<?xml version="1.0" encoding="utf-8"?>', "<permissions>"]
+        has_foss_priv = False
+        for fname in ("FossifyPhone.apk", "FossifyMessages.apk"):
+            ap = extra_apps_dir / fname
+            if not ap.is_file():
+                continue
+            pkg_id = query_apk_package(ap, aapt2_bin)
+            if not pkg_id:
+                continue
+            p_list = sorted(
+                {
+                    "android.permission.READ_PRIVILEGED_PHONE_STATE",
+                    "android.permission.MODIFY_PHONE_STATE",
+                    "android.permission.CALL_PRIVILEGED",
+                    "android.permission.WRITE_SECURE_SETTINGS",
+                    "android.permission.SEND_SMS",
+                    "android.permission.RECEIVE_SMS",
+                    "android.permission.READ_SMS",
+                }
+                if "phone" in fname.lower()
+                else {
+                    "android.permission.READ_PRIVILEGED_PHONE_STATE",
+                    "android.permission.SEND_SMS",
+                    "android.permission.RECEIVE_SMS",
+                    "android.permission.READ_SMS",
+                }
+            )
+            p_list = sorted(set(p_list) | {p for p in query_apk_permissions(ap, aapt2_bin) if p.startswith("android.permission.")})
+            foss_priv_lines.append(f'    <privapp-permissions package="{pkg_id}">')
+            for p in p_list:
+                foss_priv_lines.append(f'        <permission name="{p}" />')
+            foss_priv_lines.append("    </privapp-permissions>")
+            has_foss_priv = True
+        if has_foss_priv:
+            foss_priv_lines.append("</permissions>")
+            perm_dir = out_prod / "etc" / "permissions"
+            perm_dir.mkdir(parents=True, exist_ok=True)
+            fp_xml = perm_dir / "privapp-permissions-foss.xml"
+            fp_xml.write_text("\n".join(foss_priv_lines) + "\n", encoding="utf-8")
+            os.chmod(fp_xml, 0o644)
+
+    if gms_mode == "microg" and extra_apps_dir and extra_apps_dir.is_dir():
         gms_apk = extra_apps_dir / "GmsCore.apk"
         vending_apk = extra_apps_dir / "FakeStore.apk"
         gsf_apk = extra_apps_dir / "GsfProxy.apk"
-        ime_apk = extra_apps_dir / "HeliBoard.apk"
-        store_apk = extra_apps_dir / "Droid-ify.apk"
 
         install_apk_dir(gms_apk, out_prod / "priv-app" / "GmsCore", log)
         install_apk_dir(vending_apk, out_prod / "priv-app" / "FakeStore", log)
         install_apk_dir(gsf_apk, out_prod / "priv-app" / "GsfProxy", log)
-        if ime_apk.is_file():
-            install_apk_dir(ime_apk, out_prod / "app" / "HeliBoard", log)
-        install_apk_dir(store_apk, out_prod / "app" / "Droid-ify", log)
 
         # Build comprehensive privapp-permissions-microg.xml using aapt2 + known required priv permissions
         base_gms_priv = {
@@ -1283,7 +1423,7 @@ def integrate_microg_and_foss(
     services_jar = out_sys_root / "framework" / "services.jar"
     framework_jar = out_sys_root / "framework" / "framework.jar"
     patcher_py = Path(__file__).resolve().parent / "patch_services_spoof.py"
-    if apktool_jar and patcher_py.is_file() and services_jar.is_file():
+    if gms_mode == "microg" and apktool_jar and patcher_py.is_file() and services_jar.is_file():
         r = subprocess.run(
             [
                 sys.executable,
@@ -1381,12 +1521,70 @@ def integrate_rust_components(
         install_apk_dir(Path(rust_app_apk), out_prod / "app" / "Redmi9CRustApp", log)
 
 
+def integrate_mysticalos(
+    out_sys_root: Path,
+    out_prod: Path,
+    mystical_launcher_apk: str,
+    bootanimation_zip: str,
+    aapt2_bin: str,
+    log: list[str],
+) -> None:
+    # 1. Install MysticalLauncher.apk (ColorOS 17 icon resizer & Flux tiles) as priv-app HOME launcher
+    if mystical_launcher_apk and Path(mystical_launcher_apk).is_file():
+        launcher_src = Path(mystical_launcher_apk)
+        install_apk_dir(launcher_src, out_prod / "priv-app" / "MysticalLauncher", log)
+        perm_dir = out_prod / "etc" / "permissions"
+        perm_dir.mkdir(parents=True, exist_ok=True)
+        ml_perm = perm_dir / "privapp-permissions-mysticalos.xml"
+        ml_perm.write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<permissions>\n"
+            '    <privapp-permissions package="org.mysticalos.launcher">\n'
+            '        <permission name="android.permission.QUERY_ALL_PACKAGES" />\n'
+            '        <permission name="android.permission.SET_WALLPAPER" />\n'
+            '        <permission name="android.permission.REQUEST_DELETE_PACKAGES" />\n'
+            '        <permission name="android.permission.EXPAND_STATUS_BAR" />\n'
+            '        <permission name="android.permission.PACKAGE_USAGE_STATS" />\n'
+            "    </privapp-permissions>\n"
+            "</permissions>\n",
+            encoding="utf-8",
+        )
+        os.chmod(ml_perm, 0o644)
+        log.append("MysticalLauncher permissions written: privapp-permissions-mysticalos.xml")
+
+    # 2. Install MysticalOS bootanimation.zip (720x1600, ZIP_STORED)
+    boot_dst_prod = out_prod / "media" / "bootanimation.zip"
+    boot_dst_prod.parent.mkdir(parents=True, exist_ok=True)
+    if bootanimation_zip and Path(bootanimation_zip).is_file():
+        shutil.copy2(bootanimation_zip, boot_dst_prod)
+        os.chmod(boot_dst_prod, 0o644)
+    else:
+        mysticalos_brand.generate_bootanimation(boot_dst_prod, target_w=720, target_h=1600)
+    log.append(f"MysticalOS bootanimation installed: {boot_dst_prod} ({boot_dst_prod.stat().st_size // 1024} KiB)")
+
+    sys_boot = out_sys_root / "media" / "bootanimation.zip"
+    if sys_boot.exists():
+        shutil.copy2(boot_dst_prod, sys_boot)
+        os.chmod(sys_boot, 0o644)
+        log.append(f"MysticalOS bootanimation mirrored -> {sys_boot}")
+
+    # 3. Compile & install MysticalOSFrameworkOverlay.apk (ColorOS 17 squircle mask + Flux accent)
+    donor_fw_res = out_sys_root / "framework" / "framework-res.apk"
+    mysticalos_brand.build_framework_rro_overlay(
+        donor_fw_res=donor_fw_res,
+        aapt2_bin=aapt2_bin,
+        out_apk=out_prod / "overlay" / "MysticalOSFrameworkOverlay.apk",
+        log=log,
+    )
+
+
 def configure_props_and_zygote(
     out_sys_root: Path,
     out_sys_ext: Path,
     out_prod: Path,
     variant: str,
     gms_mode: str,
+    os_name: str,
     log: list[str],
 ) -> None:
     has_32 = (out_sys_root / "bin" / "app_process32").exists()
@@ -1408,11 +1606,18 @@ def configure_props_and_zygote(
     else:
         model, market, dev = "M2006C3MG", "Redmi 9C", "angelica"
 
+    os_label = os_name.strip() or "MysticalOS"
     common_updates = {
         "ro.zygote": zygote_mode,
         "ro.sf.lcd_density": "320",
-        "ro.mi.os.version.name": "OS4.0.8.0.XBNMIXM",
-        "ro.build.display.id": f"HyperOS 4.0.8.0 {'microG+Rust' if gms_mode == 'microg' else 'Debloated'} (Redmi 9C)",
+        "ro.product.os.name": os_label,
+        "ro.mysticalos.version": "1.0",
+        "ro.mysticalos.codename": "Flux17",
+        "ro.mysticalos.icon_engine": "ColorOS17-FluxResize",
+        "ro.modversion": f"{os_label}-1.0-{dev}",
+        "ro.mi.os.version.name": f"{os_label} 1.0",
+        "ro.build.flavor": f"mysticalos_{dev}-userdebug",
+        "ro.build.display.id": f"{os_label} 1.0 (ColorOS17 Icons · {'microG+FOSS+Rust' if gms_mode == 'microg' else 'FOSS+Rust'} · {market})",
         "persist.sys.background_blur_supported": "false",
         "ro.surface_flinger.supports_background_blur": "0",
         "persist.sys.miui.blur.level": "0",
@@ -1476,13 +1681,18 @@ def main() -> int:
     ap.add_argument("--variant", default="angelica", choices=["angelica", "angelican"])
     ap.add_argument("--debloat-level", default="aggressive", choices=["aggressive", "balanced"])
     ap.add_argument("--gms-mode", default="microg", choices=["microg", "keep", "none"])
-    ap.add_argument("--extra-apps-dir", default="", help="Dir containing GmsCore.apk, FakeStore.apk, HeliBoard.apk, Droid-ify.apk, CromiteWebView.apk")
+    ap.add_argument("--os-name", default="MysticalOS", help="OS brand name for build.prop and manifest")
+    ap.add_argument("--keep-xiaomi-apps", action="store_true", help="Keep Xiaomi user-facing apps instead of replacing with FOSS")
+    ap.add_argument("--extra-apps-dir", default="", help="Dir containing GmsCore.apk, FakeStore.apk, HeliBoard.apk, Droid-ify.apk, Fossify*.apk")
+    ap.add_argument("--mystical-launcher-apk", default="", help="Compiled MysticalLauncher.apk (ColorOS 17 icon size/tile launcher)")
+    ap.add_argument("--bootanimation-zip", default="", help="Optional prebuilt MysticalOS bootanimation.zip")
     ap.add_argument("--r9c-memd-bin", default="", help="Compiled aarch64 r9c-memd binary")
     ap.add_argument("--r9c-memd-rc", default="", help="r9c-memd.rc init script")
     ap.add_argument("--rust-app-apk", default="", help="Compiled pure-Rust NativeActivity APK")
     ap.add_argument("--apktool-jar", default="", help="apktool jar for services.jar inspection/patching")
     ap.add_argument("--aapt2-bin", default="", help="aapt2 binary for APK manifest/webview inspection")
     ap.add_argument("--target-os-mib", type=int, default=4700, help="Target max uncompressed MiB for system+system_ext+product (0=disabled)")
+    ap.add_argument("--manifest-out", default="", help="Optional JSON manifest path for MysticalOS Windows Emulator")
     ap.add_argument("--report", required=True, help="Write build/debloat report path")
     args = ap.parse_args()
 
@@ -1514,8 +1724,11 @@ def main() -> int:
     out_sys_ext = out / "system_ext"
     out_prod = out / "product"
 
+    remove_xiaomi_apps = not args.keep_xiaomi_apps
     merge_mi_ext(donor / "mi_ext", out_sys_root, out_sys_ext, out_prod, log)
-    debloat_trees(out_sys_root, out_sys_ext, out_prod, args.debloat_level, args.gms_mode, log)
+    removed_items, freed_bytes = debloat_trees(
+        out_sys_root, out_sys_ext, out_prod, args.debloat_level, args.gms_mode, log, remove_xiaomi_apps=remove_xiaomi_apps
+    )
     extra_dir = Path(args.extra_apps_dir) if args.extra_apps_dir else None
     integrate_microg_and_foss(
         base,
@@ -1537,9 +1750,17 @@ def main() -> int:
         args.rust_app_apk,
         log,
     )
+    integrate_mysticalos(
+        out_sys_root,
+        out_prod,
+        args.mystical_launcher_apk,
+        args.bootanimation_zip,
+        args.aapt2_bin,
+        log,
+    )
     trim_to_budget(base, out, out_sys_root, out_sys_ext, out_prod, args.target_os_mib, log)
     adapt_blossom_hardware(base, out, out_sys_root, out_sys_ext, out_prod, log)
-    configure_props_and_zygote(out_sys_root, out_sys_ext, out_prod, args.variant, args.gms_mode, log)
+    configure_props_and_zygote(out_sys_root, out_sys_ext, out_prod, args.variant, args.gms_mode, args.os_name, log)
 
     sizes = {p: dir_size_bytes(out / p) for p in ("system", "system_ext", "product", "vendor", "odm")}
     total_mb = sum(sizes.values()) // (1024 * 1024)
@@ -1547,6 +1768,43 @@ def main() -> int:
     for p, sz in sizes.items():
         log.append(f"  {p}: {sz // (1024 * 1024)} MiB ({sz} B)")
     log.append(f"  TOTAL: {total_mb} MiB")
+
+    scanned_apps = mysticalos_brand.scan_launcher_apps(
+        [("system", out_sys_root), ("system_ext", out_sys_ext), ("product", out_prod)],
+        args.aapt2_bin,
+    )
+    launchable_apps = [a for a in scanned_apps if a.get("launchable")]
+    if launchable_apps:
+        log.append(f"LAUNCHABLE APPS AUDIT ({len(launchable_apps)} apps visible in launcher):")
+        for a in launchable_apps:
+            log.append(f"  - {a['label']} ({a['package']}) [{a['partition']}, {a['size_kib']} KiB]")
+
+    if args.manifest_out:
+        spoof_line = next((ln for ln in log if ln.startswith("services.jar spoof: STATUS:")), "services.jar spoof: unknown")
+        manifest = {
+            "os_name": args.os_name,
+            "os_version": "1.0",
+            "codename": "Flux17",
+            "variant": args.variant,
+            "market_name": "Redmi 9C NFC" if args.variant == "angelican" else "Redmi 9C",
+            "android_version": "17",
+            "kernel_version": "4.19 OSS (blossom)",
+            "base_rom": "EvolutionX 17.0 blossom",
+            "donor_rom": "HyperOS 4.0.8.0.XBNMIXM (dew) debloated",
+            "gms_mode": args.gms_mode,
+            "icon_engine": "ColorOS 17 Flux Icon Resizer (60%-150% + 1x1/2x1/1x2/2x2)",
+            "removed_count": len(removed_items),
+            "freed_mib": freed_bytes // (1024 * 1024),
+            "removed_items": removed_items,
+            "partition_uncompressed_mib": {k: v // (1024 * 1024) for k, v in sizes.items()},
+            "services_spoof": spoof_line,
+            "launchable_apps": launchable_apps,
+            "total_apks_audited": len(scanned_apps),
+        }
+        mp = Path(args.manifest_out)
+        mp.parent.mkdir(parents=True, exist_ok=True)
+        mp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        log.append(f"MysticalOS manifest written: {mp} ({len(launchable_apps)} launchable apps)")
 
     hogs = top_space_hogs([("system", out_sys_root), ("system_ext", out_sys_ext), ("product", out_prod)], top_n=45)
     if hogs:

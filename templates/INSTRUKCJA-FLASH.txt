@@ -1,44 +1,49 @@
 ================================================================================
-  Redmi 9C (angelica / angelican / blossom) — HyperOS 4 Debloated Port
+  MysticalOS 1.0 — Redmi 9C (angelica / angelican / blossom)
+  Android 17 · Zero apek Xiaomi · Styl ikon ColorOS 17 · microG + FOSS + Rust
 ================================================================================
 
-1. JAK ROZPAKOWAC ARCHIWUM 5-CZESCIOWE (.7z.001 .. .7z.005)
+1. POBIERANIE I EMULATOR NA KOMPUTER (.EXE)
+   - Aby zobaczyc system na Windowsie BEZ wgrywania na telefon:
+     pobierz z GitHub Release plik "MysticalOS-Emulator.exe" i uruchom go
+     dwuklikiem (dziala na Windows 10/11 bez instalacji Android Studio/SDK).
+   - W emulatorze przetestujesz wyglad MysticalOS, podglad aplikacji FOSS,
+     liste usunietych apek Xiaomi oraz suwak rozmiaru ikon ColorOS 17
+     (a takze kafelki 1x1 / 2x1 / 1x2 / 2x2 po kliknieciu prawym przyciskiem).
+
+2. JAK ROZPAKOWAC PRAWIDLOWY ROM DO WGRANIA (5-CZESCIOWE .7z.001 .. .7z.005)
    - Pobierz WSZYSTKIE 5 plikow z GitHub Release do JEDNEGO folderu:
-       Redmi9C-HyperOS4-Debloated.7z.001
-       Redmi9C-HyperOS4-Debloated.7z.002
-       Redmi9C-HyperOS4-Debloated.7z.003
-       Redmi9C-HyperOS4-Debloated.7z.004
-       Redmi9C-HyperOS4-Debloated.7z.005
+       MysticalOS-Redmi9C.7z.001
+       MysticalOS-Redmi9C.7z.002
+       MysticalOS-Redmi9C.7z.003
+       MysticalOS-Redmi9C.7z.004
+       MysticalOS-Redmi9C.7z.005
    - Kliknij prawym przyciskiem na plik konczacy sie na ".7z.001" ->
      WinRAR / 7-Zip -> "Wypakuj tutaj" (Extract here).
    - Program sam odczyta czesci .001 - .005 i utworzy gotowe obrazy:
-       * super.img  (HyperOS 4 Debloated system + system_ext + product + vendor + odm)
+       * super.img  (MysticalOS 1.0 system + system_ext + product + vendor + odm)
        * boot.img   (kernel 4.19 OSS blossom z obsluga eBPF pod Android 17)
        * dtbo.img
        * vbmeta.img / vbmeta_system.img / vbmeta_vendor.img (AVB flags=3)
        * FLASH-REDMI9C.bat / FLASH-REDMI9C.sh
 
-2. PRZED WGRANIEM (WAZNE!)
+3. PRZED WGRANIEM (WAZNE!)
    - Wymagany odblokowany bootloader.
-   - Zrob pelny backup partycji (szczegolnie nvram / nvdata / persist / boot / super)
+   - Zrob pelny backup partycji (nvram / nvdata / persist / boot / super)
      za pomoca MTKClient lub Custom Recovery przed jakimkolwiek flashem!
    - Jesli przechodzisz ze stockowego MIUI 12 (Android 10), sflashuj CALY zestaw
      (vbmeta + dtbo + boot + super), a nie samo super.img — stockowy kernel 4.9
-     z MIUI 12 NIE uruchomi Androida 17 / HyperOS 4.
+     z MIUI 12 NIE uruchomi Androida 17 / MysticalOS.
 
-3. WGRYWANIE PRZEZ FASTBOOT
+4. WGRYWANIE PRZEZ FASTBOOT
    - Uruchom telefon w trybie Fastboot (trzymaj Power + Vol Down).
    - Podlacz kabel USB do komputera.
    - Na Windows: uruchom dwuklikiem "FLASH-REDMI9C.bat".
    - Na Linux/macOS: uruchom "./FLASH-REDMI9C.sh".
    - Przy pierwszej instalacji potwierdz wyczyszczenie danych (`fastboot -w`).
 
-4. DIAGNOSTYKA BOOTLOOPA (JESLI SYSTEM NIE WSTANIE PO 8 MINUTACH)
+5. DIAGNOSTYKA BOOTLOOPA (JESLI SYSTEM NIE WSTANIE PO 8 MINUTACH)
    - W obrazie wlaczone jest wczesne ADB (`ro.debuggable=1`, `ro.adb.secure=0`).
    - Podlacz telefon po USB podczas logo startowego i uruchom:
        adb logcat -b all -d > logcat.txt
-   - Jesli ADB jeszcze nie wstaje, uruchom Recovery (TWRP/OrangeFox) i zgraj:
-       /sys/fs/pstore/console-ramoops*
-       /cache/recovery/last_log
-   - Przeslij logi, aby dobrac brakujace biblioteki lub patche pod Twoj wariant.
 ================================================================================

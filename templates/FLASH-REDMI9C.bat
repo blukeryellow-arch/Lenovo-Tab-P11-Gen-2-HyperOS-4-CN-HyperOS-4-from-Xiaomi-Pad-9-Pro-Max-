@@ -3,7 +3,8 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo ============================================================================
-echo   Redmi 9C (angelica / angelican / blossom) - HyperOS 4 Debloated Port
+echo   MysticalOS 1.0 - Redmi 9C (angelica / angelican / blossom)
+echo   Zero apek Xiaomi + Styl ikon ColorOS 17 + microG + FOSS + Rust
 echo ============================================================================
 echo.
 echo WYMAGANIA PRZED WGRANIEM:
@@ -51,7 +52,7 @@ if exist "dtbo.img" "%FASTBOOT%" flash dtbo dtbo.img || goto :fail
 echo [3/5] Wgrywam boot.img (kernel 4.19 OSS blossom)...
 "%FASTBOOT%" flash boot boot.img || goto :fail
 
-echo [4/5] Wgrywam super.img (HyperOS 4 Debloated + blossom OSS vendor)...
+echo [4/5] Wgrywam super.img (MysticalOS 1.0 + blossom OSS vendor)...
 "%FASTBOOT%" flash super super.img || goto :fail
 
 echo.

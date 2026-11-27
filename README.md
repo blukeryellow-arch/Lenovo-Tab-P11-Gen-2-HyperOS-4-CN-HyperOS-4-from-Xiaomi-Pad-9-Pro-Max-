@@ -1,31 +1,38 @@
-# Redmi 9C (`angelica` / `angelican` / `blossom`) — HyperOS 4.0.8.0 (microG + FOSS + Rust)
+# MysticalOS 1.0 — Redmi 9C (`angelica` / `angelican` / `blossom`) + Emulator Windows `.exe`
 
-Zautomatyzowany builder GitHub Actions tworzący mocno odchudzony, od-Googlowany port **HyperOS 4 (`OS4.0.8.0.XBNMIXM`, Android 17)** dla **Redmi 9C (`angelica` / `angelican`, rodzina `blossom`)**, z integracją **microG**, otwartoźródłowych zamienników FOSS, natywnego daemona RAM w **Rust** (`r9c-memd`) oraz wsparciem dla aplikacji **`.apk` pisanych w Rust** — spakowany w **5-częściowe archiwum 7-Zip (`.7z.001` .. `.7z.005`)** w **GitHub Releases**.
+Zautomatyzowany builder GitHub Actions tworzący system **MysticalOS 1.0** (oparty na bazie **HyperOS 4 / Android 17** bez apek użytkownika Xiaomi) dla telefonu **Redmi 9C (`angelica` / `angelican`, rodzina `blossom`)**, z otwartoźródłowymi zamiennikami **Fossify / microG / HeliBoard / Droid-ify**, launcherem **MysticalLauncher** ze zmianą rozmiaru ikon i kafelkami w stylu **ColorOS 17**, natywnym daemonem RAM w **Rust** (`r9c-memd`) oraz lekkim **emulatorem `.exe` na komputer Windows** (`MysticalOS-Emulator.exe`).
 
-## Skład portu (v2)
+## Co zostało zmienione względem zwykłego HyperOS 4
 
-- **Baza sprzętowa (OSS Android 17 + kernel 4.19):** `EvolutionX 17.0 blossom` (`xc112lg/blossom_releases`, fallback `crDroid 17.0 blossom`) — dostarcza `boot.img` (kernel 4.19 z obsługą eBPF dla Androida 17), `dtbo.img`, `vendor.img`, `odm.img`, nakładki sprzętowe RRO, matryce VINTF MT6765 oraz `/system/etc/properties/${ro.boot.hwname}.prop` (automatyczne rozróżnienie `angelica` vs `angelican` NFC).
-- **Dawca systemu (HyperOS 4 / Android 17):** oficjalna paczka Global dla **Redmi 15C / POCO C85 (`dew`, `OS4.0.8.0.XBNMIXM`)**.
-- **Pełne usunięcie Google GMS & bloatu + microG (`--gms-mode microg`):**
-  - usunięte `GmsCore` (Google), `Phonesky`, `WebViewGoogle64`, `TrichromeLibrary64`, `LatinImeGoogle`, `Messages_arm64_hdpi` (pozostaje lekkie `MiuiMmsGlobal`), `GoogleDialer` (pozostaje `HyperPhone`), `GoogleRestore`, `VelvetCtS`, `Chrome64`, `YouTube`, `Maps`, `Gmail2`, `Drive`, `Photos`, `Meet`, `MSA`, `AnalyticsCore`, `Joyose`, `MiBrowser`, `AppFinder`, `VoiceUnlock` itd.,
-  - wbudowane **microG (`GmsCore` + `FakeStore`/`Companion` + `GsfProxy`)** z kompletem plików `privapp-permissions-microg.xml`, `sysconfig/microg.xml` i `default-permissions-microg.xml`,
-  - wbudowana otwartoźródłowa klawiatura **HeliBoard**, sklep FOSS **Droid-ify** oraz otwartoźródłowy **WebView** (zweryfikowany z `config_webview_packages.xml`),
-  - inspekcja i bezpieczne patchowanie `services.jar` (`tools/patch_services_spoof.py`) pod ograniczony Signature Spoofing microG (wykonywane wyłącznie, gdy `services.jar` zawiera `classes*.dex` i sygnatury w `framework.jar`/`ComputerEngine` zgadzają się 1:1 — w obrazach odex/vdex-only pomijane bezpiecznie z czytelnym raportem).
-- **Natywny Rust w systemie oraz wsparcie `.apk` w Rust:**
-  - `rust/r9c-memd/` (`/system_ext/bin/r9c-memd` + `r9c-memd.rc` + dynamiczne reguły SELinux CIL `r9c_memd`): lekki daemon w Rust monitorujący `/proc/meminfo` i PSI (`/proc/pressure/memory`) oraz strojący zRAM/VM (`swappiness`, `page-cluster`, `vfs_cache_pressure`),
-  - `rust/rust-app/` (`Redmi9CRustApp.apk`, preinstalowana w `/product/app/Redmi9CRustApp/`): czysto natywna aplikacja Android `.apk` napisana w 100% w Rust (`NativeActivity` + `EGL`/`GLESv2` bez Javy/Kotlina),
-  - aplikacje **Java i Kotlin działają bez zmian** (pełny ART + `zygote64_32`),
-  - `tools/apk2rust.py`: eksperymentalny parser `AndroidManifest.xml` (AXML) + `classes*.dex` tłumaczący proste metody skalarne Dalvik bezpośrednio na kod Rust i generujący szkielet projektu Rust + mostki JNI.
+1. **Rebranding na MysticalOS 1.0 (`tools/mysticalos_brand.py`):**
+   - właściwości systemowe (`ro.mysticalos.version=1.0`, `ro.mysticalos.codename=Flux17`, `ro.build.display.id`, `ro.product.marketname`),
+   - własna animacja startowa `bootanimation.zip` (`720x1600`, `24 fps`) wygenerowana w czystym Pythonie,
+   - nakładka RRO `MysticalOSFrameworkOverlay.apk` (`ro.boot.vendor.overlay.theme`) ustawiająca nazwę urządzenia i paletę akcentową MysticalOS.
+2. **Usunięcie apek użytkownika Xiaomi + otwarte zamienniki FOSS:**
+   - usunięte: `MiuiHome`, `HyperPhone` / `InCallUI`, `MiuiMmsGlobal`, `MIUIGalleryGlobal`, `MIUIFileExplorerGlobal`, `MiuiCamera`, `MIUISecurityCenterGlobal`, `SecurityCoreAdd`, `MISettings` (z zachowaniem systemowego AOSP `Settings`), `MIUIThemeManagerGlobal`, `MIUIXiaomiAccountGlobal`, `MIUICloudServiceGlobal`, `Backup`, `MiuiExtraPhoto`, `Notes`, `MiMusic`, `MiVideo`, `Weather`, `MiBrowser`, `AnalyticsCore`, `MSA`, `Joyose` oraz bloat Google GMS,
+   - zainstalowane w `/product/app` i `/product/priv-app`: **Fossify Phone**, **Fossify Messages**, **Fossify Contacts**, **Fossify Gallery**, **Fossify File Manager**, **Fossify Camera**, **Fossify Clock**, **Fossify Calculator**, klawiatura **HeliBoard**, sklep FOSS **Droid-ify**, **microG (`GmsCore` + `FakeStore` + `GsfProxy`)**, otwarty **WebView** oraz **Redmi9CRustApp** (`NativeActivity` w Rust),
+   - `MiuiSystemUI` pozostaje z bazy `dew`, aby zachować panel powiadomień, pasek statusu i obsługę warstwy systemowej Androida 17 (opcjonalne `MiuiSystemUIPlugin` zostaje jako moduł pomocniczy SystemUI).
+3. **Styl ikon i zmiana rozmiaru apek jak w ColorOS 17 (`apps/mystical-launcher/` -> `MysticalLauncher.apk`):**
+   - domyślny launcher `HOME` napisany w 100% na czystym Android SDK (bez zewnętrznych zależności),
+   - przytrzymanie pustego pola pulpitu albo kliknięcie **Styl ikon (ColorOS 17)** otwiera panel dostosowywania:
+     - **Suwak rozmiaru ikon** (`60%` – `150%`),
+     - **Kształt ikon** (`Zaokrąglony kwadrat` / `Pebble` / `Koło` / `Kwiat`),
+     - **Siatka pulpitu** (`4` lub `5` kolumn),
+     - **Etykiety apek** (`Pokaż` / `Ukryj`),
+     - **Tapeta Flux** (`4` warianty),
+   - przytrzymanie dowolnej ikony zmienia rozmiar kafelka pomiędzy **`1x1`**, **`2x1`**, **`1x2`** i **`2x2`** (jak duże ikony folderów/aplikacji w ColorOS 17), a kliknięcie otwiera odpowiednią aplikację (`Fossify*`, `Droid-ify`, `Ustawienia`, `Rust Monitor`, `Styl ikon`).
+4. **Emulator `.exe` na Windows (`rust/mystical-emulator/` -> `MysticalOS-Emulator.exe`):**
+   - samodzielny plik wykonywalny **x86_64 Windows** (`kernel32.dll` + `user32.dll` + `gdi32.dll`, zero zewnętrznych bibliotek DLL i zero instalacji),
+   - w czasie kompilacji wbudowuje rzeczywisty raport `mysticalos-manifest.json` wygenerowany podczas tworzenia obrazu dla Redmi 9C,
+   - pozwala przetestować na komputerze animację startową MysticalOS, pulpit, suwak rozmiaru ikon `60%–150%`, kształty ikon, siatkę `4/5` kolumn, powiększanie pojedynczych kafelków (`prawy klik` lub `przytrzymanie lewego`) na `1x1`/`2x1`/`1x2`/`2x2`, otwieranie aplikacji i kalkulatora, podgląd usuniętych apek Xiaomi oraz zapis zrzutu ekranu `.bmp`.
 
 ## Uczciwe ograniczenia techniczne
 
-1. Zamkniętoźródłowe binarki i framework HyperOS (`system_server`, `MiuiSystemUI`, `SurfaceFlinger`, `ART`) nie mają publicznego kodu źródłowego i nie da się ich w całości przepisać na Rust — dlatego przeniesiono do Rusta warstwę zarządzania pamięcią (`r9c-memd`), zoptymalizowano limity ART/LMKD/blur w `build.prop` oraz usunięto zbędne usługi Google/MIUI w tle.
-2. Automatyczny tłumacz `tools/apk2rust.py` nie konwertuje w 100% złożonych aplikacji UI (`android.view.*`, Jetpack Compose, refleksja) na sam kod Rust bez ART — dla nich generuje mostki JNI i zachowuje współpracę z warstwą Java/Kotlin.
-3. Obrazy zostały zbudowane, skompresowane (`erofs` + `ext4`) oraz zweryfikowane narzędziami `secilc`, `simg2img`, `lpinfo`, `lpunpack` i pętlą `mount`, lecz nie były uruchamiane na fizycznym egzemplarzu Redmi 9C.
+1. **`MysticalOS-Emulator.exe` jest symulatorem UI/UX i konfiguracji systemu**, a nie sprzętowym emulatorem QEMU/ARM64 procesora MediaTek MT6765: pozwala dokładnie obejrzeć interfejs MysticalOS, przetestować układ i rozmiar ikon ColorOS 17 oraz zweryfikować listę paczek w zbudowanym ROM-ie bez podłączania telefonu, ale **nie uruchamia binarnie jądra Linux 4.19 / partycji `super.img` z telefonu**.
+2. Zamkniętoźródłowe komponenty szkieletu Androida 17 z `dew` (`system_server`, `SurfaceFlinger`, `MiuiSystemUI`, `ART`) pozostają na poziomie frameworku, natomiast usunięte zostały aplikacje użytkownika Xiaomi oraz zbędne usługi w tle.
+3. Obrazy zostały zbudowane oraz zweryfikowane przez `secilc`, `simg2img`, `lpinfo`, `lpunpack` i pętlę `mount` w GitHub Actions — nie były uruchamiane na fizycznym Redmi 9C.
 
-## Pobieranie i rozpakowanie (5 plików 7-Zip)
+## Pobieranie z GitHub Releases
 
-1. Przejdź do **Releases** w tym repozytorium i pobierz wszystkie 5 części do jednego katalogu:
-   - `Redmi9C-HyperOS4-Debloated.7z.001` .. `Redmi9C-HyperOS4-Debloated.7z.005`
-2. Kliknij prawym przyciskiem myszy **`Redmi9C-HyperOS4-Debloated.7z.001`** i wybierz **Wypakuj** (WinRAR lub 7-Zip).
-3. Archiwum złoży obrazy `super.img`, `boot.img`, `dtbo.img`, `vbmeta*.img` oraz skrypty `FLASH-REDMI9C.bat` / `FLASH-REDMI9C.sh` i instrukcję `INSTRUKCJA-FLASH.txt`.
+- **Na komputer Windows (podgląd / emulator):** pobierz sam plik **`MysticalOS-Emulator.exe`** i uruchom go dwuklikiem.
+- **Na telefon Redmi 9C (prawdziwy ROM do wgrania):** pobierz wszystkie 5 części archiwum **`MysticalOS-Redmi9C.7z.001` .. `.7z.005`** do jednego folderu, rozpakuj `.7z.001` programem 7-Zip/WinRAR i użyj `FLASH-REDMI9C.bat` lub `FLASH-REDMI9C.sh` zgodnie z `INSTRUKCJA-FLASH.txt`.

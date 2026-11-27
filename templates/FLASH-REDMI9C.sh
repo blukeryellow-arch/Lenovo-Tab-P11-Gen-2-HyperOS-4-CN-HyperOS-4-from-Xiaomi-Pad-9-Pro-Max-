@@ -27,7 +27,7 @@ echo "==> [2/4] dtbo..."
 echo "==> [3/4] boot (kernel 4.19 OSS)..."
 fastboot flash boot boot.img
 
-echo "==> [4/4] super (HyperOS 4 Debloated + OSS vendor)..."
+echo "==> [4/4] super (MysticalOS 1.0 + OSS vendor)..."
 fastboot flash super super.img
 
 read -r -p "Wykonać format danych fastboot -w (wymagane przy 1. instalacji)? [t/N]: " WIPE
