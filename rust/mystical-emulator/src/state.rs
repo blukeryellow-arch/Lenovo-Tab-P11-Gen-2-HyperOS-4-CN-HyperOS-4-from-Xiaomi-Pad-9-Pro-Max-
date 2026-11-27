@@ -1,5 +1,10 @@
 #![allow(dead_code)]
+use crate::image_reader::{
+    extract_named_partition, inspect_image_file, list_path_in_image, read_text_in_image, FsEntry,
+    LoadedImageData,
+};
 use std::f32::consts::PI;
+use std::path::Path;
 
 pub const WIN_W: i32 = 1140;
 pub const WIN_H: i32 = 860;
@@ -81,6 +86,15 @@ pub enum AppKind {
     MicroG,
     RustMonitor,
     RomAudit,
+    ImageExplorer,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum UiCommand {
+    None,
+    SaveScreenshot,
+    OpenImageDialog,
+    ExtractSystemImg,
 }
 
 #[derive(Clone, Debug)]
@@ -182,6 +196,12 @@ pub enum HitAction {
     CalcKey(char),
     CameraShutter,
     ScrollAudit(i32),
+    OpenImageDialog,
+    ExtractSystemImg,
+    ExplorerSelectPartIdx(usize),
+    ExplorerOpenEntry(usize),
+    ExplorerUpDir,
+    ExplorerClosePreview,
 }
 
 #[derive(Clone, Debug)]
@@ -231,6 +251,12 @@ pub struct EmulatorState {
     pub calc_acc: f64,
     pub calc_op: Option<char>,
     pub calc_fresh: bool,
+    // Real super.img / system.img runtime state
+    pub loaded_image: Option<LoadedImageData>,
+    pub explorer_part: String,
+    pub explorer_dir: String,
+    pub explorer_entries: Vec<FsEntry>,
+    pub explorer_file_preview: Option<(String, String)>,
     // Interactive state per frame
     pub hits: Vec<HitRegion>,
     pub active_slider: Option<HitAction>,
@@ -443,6 +469,15 @@ pub fn default_app_icons() -> Vec<AppIcon> {
             glyph: "ROM",
             span: TileSpan::S1x1,
         },
+        AppIcon {
+            title: "Obraz .img".into(),
+            package: "org.mysticalos.imgexplorer".into(),
+            kind: AppKind::ImageExplorer,
+            color1: 0x0E7490,
+            color2: 0x06B6D4,
+            glyph: "IMG+",
+            span: TileSpan::S1x1,
+        },
     ]
 }
 
@@ -478,11 +513,91 @@ impl EmulatorState {
             calc_acc: 0.0,
             calc_op: None,
             calc_fresh: true,
+            loaded_image: None,
+            explorer_part: "system".into(),
+            explorer_dir: "/".into(),
+            explorer_entries: Vec::new(),
+            explorer_file_preview: None,
             hits: Vec::new(),
             active_slider: None,
             pending_long_press: None,
-            status_msg: "MysticalOS 1.0 gotowy. Kliknij lub przytrzymaj ikone, aby zmienic rozmiar (ColorOS 17).".into(),
+            status_msg: "Brak otwartego super.img/system.img — uzyj 'Otworz super.img / system.img...' lub przeciagnij plik na okno.".into(),
         }
+    }
+
+    pub fn load_image_from_path(&mut self, path: &Path) -> Result<(), String> {
+        let data = inspect_image_file(path)?;
+        if let Some(rel) = data.props.get("ro.build.version.release") {
+            self.manifest.android_version = rel.clone();
+        }
+        if let Some(m) = data.props.get("ro.product.system.model").or_else(|| data.props.get("ro.product.model")) {
+            self.manifest.market_name = m.clone();
+        }
+        if let Some(v) = data.props.get("ro.mysticalos.version") {
+            self.manifest.os_version = v.clone();
+        }
+        if let Some(disp) = data.props.get("ro.build.display.id") {
+            self.manifest.base_rom = disp.clone();
+        }
+        if !data.services_spoof_verified.is_empty() {
+            self.manifest.services_spoof = data.services_spoof_verified.clone();
+        }
+        if !data.apks.is_empty() {
+            self.manifest.app_labels = data
+                .apks
+                .iter()
+                .map(|a| (format!("{} [{}]", a.dir_name, a.partition), a.package.clone()))
+                .collect();
+        }
+
+        let default_part = data
+            .partitions
+            .iter()
+            .find(|p| p.name == "system" && (p.fs_kind == "erofs" || p.fs_kind == "ext4"))
+            .or_else(|| data.partitions.iter().find(|p| p.fs_kind == "erofs" || p.fs_kind == "ext4"))
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| "system".into());
+
+        let part_cnt = data.partitions.len();
+        let apk_cnt = data.apks.len();
+        let kind_s = data.container_kind.clone();
+        self.loaded_image = Some(data);
+        self.explorer_part = default_part;
+        self.explorer_dir = "/".into();
+        self.explorer_file_preview = None;
+        self.audit_scroll = 0;
+        self.refresh_explorer();
+        self.status_msg = format!("Zaladowano {}: {} partycji, {} APK-ow z obrazu!", kind_s, part_cnt, apk_cnt);
+        self.show_toast(&format!("Wczytano {} ({} APK)", kind_s, apk_cnt));
+        Ok(())
+    }
+
+    pub fn refresh_explorer(&mut self) {
+        self.explorer_entries.clear();
+        if let Some(img) = &self.loaded_image {
+            let p = Path::new(&img.file_path);
+            if let Ok(mut list) = list_path_in_image(p, &self.explorer_part, &self.explorer_dir) {
+                list.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
+                self.explorer_entries = list;
+            }
+        }
+    }
+
+    pub fn extract_system_img_to(&mut self, out_path: &Path) -> Result<u64, String> {
+        let src_str = self
+            .loaded_image
+            .as_ref()
+            .map(|img| img.file_path.clone())
+            .ok_or_else(|| "Najpierw otworz plik super.img".to_string())?;
+        let src = Path::new(&src_str);
+        let sz = extract_named_partition(src, "system", out_path)?;
+        self.status_msg = format!(
+            "Wyeksportowano system.img ({} MiB) do {}",
+            sz / (1024 * 1024),
+            out_path.display()
+        );
+        self.show_toast("Zapisano system.img z super.img!");
+        Ok(sz)
     }
 
     pub fn tick(&mut self, hh: u16, mm: u16) {
@@ -696,7 +811,76 @@ impl EmulatorState {
                 self.show_toast(&format!("Zdjecie #{} (Fossify Camera)", self.camera_shots));
             }
             HitAction::CalcKey(ch) => self.handle_calc(ch),
-            HitAction::DragIconSlider(_) | HitAction::DragBrightnessSlider(_) | HitAction::SaveScreenshot => {}
+            HitAction::ExplorerSelectPartIdx(idx) => {
+                let pname = self
+                    .loaded_image
+                    .as_ref()
+                    .and_then(|img| img.partitions.get(idx))
+                    .map(|p| p.name.clone());
+                if let Some(name) = pname {
+                    self.explorer_part = name;
+                    self.explorer_dir = "/".into();
+                    self.explorer_file_preview = None;
+                    self.audit_scroll = 0;
+                    self.refresh_explorer();
+                }
+            }
+            HitAction::ExplorerOpenEntry(idx) => {
+                if let Some(ent) = self.explorer_entries.get(idx).cloned() {
+                    let base = if self.explorer_dir == "/" {
+                        String::new()
+                    } else {
+                        self.explorer_dir.clone()
+                    };
+                    let next_path = format!("{}/{}", base, ent.name);
+                    if ent.is_dir {
+                        self.explorer_dir = next_path;
+                        self.explorer_file_preview = None;
+                        self.audit_scroll = 0;
+                        self.refresh_explorer();
+                    } else if let Some(img_path) = self.loaded_image.as_ref().map(|i| i.file_path.clone()) {
+                        let p = Path::new(&img_path);
+                        let preview = match read_text_in_image(p, &self.explorer_part, &next_path, 8192) {
+                            Ok(txt) => {
+                                let clean: String = txt
+                                    .chars()
+                                    .map(|c| if c == '\n' || c == '\t' || (c >= ' ' && c <= '~') { c } else { '.' })
+                                    .take(2200)
+                                    .collect();
+                                clean
+                            }
+                            Err(e) => format!("Blad odczytu pliku: {}", e),
+                        };
+                        self.explorer_file_preview = Some((next_path, preview));
+                        self.audit_scroll = 0;
+                    }
+                }
+            }
+            HitAction::ExplorerUpDir => {
+                self.explorer_file_preview = None;
+                self.audit_scroll = 0;
+                if self.explorer_dir != "/" {
+                    if let Some(pos) = self.explorer_dir.rfind('/') {
+                        self.explorer_dir = if pos == 0 {
+                            "/".into()
+                        } else {
+                            self.explorer_dir[..pos].to_string()
+                        };
+                    } else {
+                        self.explorer_dir = "/".into();
+                    }
+                    self.refresh_explorer();
+                }
+            }
+            HitAction::ExplorerClosePreview => {
+                self.explorer_file_preview = None;
+                self.audit_scroll = 0;
+            }
+            HitAction::DragIconSlider(_)
+            | HitAction::DragBrightnessSlider(_)
+            | HitAction::SaveScreenshot
+            | HitAction::OpenImageDialog
+            | HitAction::ExtractSystemImg => {}
         }
     }
 
@@ -858,6 +1042,49 @@ impl EmulatorState {
     }
 
     fn render_boot(&mut self, fb: &mut [u32], w: i32, h: i32, texts: &mut Vec<TextDraw>) {
+        if let Some(img) = &self.loaded_image {
+            if !img.boot_frames.is_empty() {
+                let frame_idx = (self.boot_ticks as usize) % img.boot_frames.len();
+                let bf = &img.boot_frames[frame_idx];
+                if bf.w > 0 && bf.h > 0 && bf.pixels.len() >= (bf.w * bf.h) as usize {
+                    for dy in 0..SCR_H {
+                        let sy = ((dy as u64 * bf.h as u64) / SCR_H as u64).min((bf.h - 1) as u64) as usize;
+                        let dst_row = ((SCR_Y + dy) * w) as usize;
+                        let src_row = sy * (bf.w as usize);
+                        for dx in 0..SCR_W {
+                            let sx = ((dx as u64 * bf.w as u64) / SCR_W as u64).min((bf.w - 1) as u64) as usize;
+                            fb[dst_row + (SCR_X + dx) as usize] = bf.pixels[src_row + sx];
+                        }
+                    }
+                    texts.push(TextDraw {
+                        rect: Rect { x: SCR_X + 16, y: SCR_Y + 36, w: SCR_W - 32, h: 22 },
+                        text: format!("BOOTANIMATION.ZIP Z {} (klatka {}/{})", img.container_kind, frame_idx + 1, img.boot_frames.len()),
+                        color: 0x00E0FF,
+                        size: 10,
+                        bold: true,
+                        align: TextAlign::Center,
+                        clip_to_screen: true,
+                    });
+                    let skip = Rect { x: SCR_X + 115, y: SCR_Y + SCR_H - 72, w: 130, h: 32 };
+                    fill_round_rect_alpha(fb, w, h, skip.x, skip.y, skip.w, skip.h, 16, 0x202742, 200);
+                    texts.push(TextDraw {
+                        rect: skip,
+                        text: "Pomin start >".into(),
+                        color: 0xC8D4F5,
+                        size: 13,
+                        bold: false,
+                        align: TextAlign::Center,
+                        clip_to_screen: true,
+                    });
+                    self.hits.push(HitRegion {
+                        rect: skip,
+                        action: HitAction::GoScreen(Screen::LockScreen),
+                        long_press_app: None,
+                    });
+                    return;
+                }
+            }
+        }
         fill_gradient_v(fb, w, h, SCR_X, SCR_Y, SCR_W, SCR_H, 0x050710, 0x0F1426);
         let cx = SCR_X + SCR_W / 2;
         let cy = SCR_Y + SCR_H * 44 / 100;
@@ -1522,6 +1749,7 @@ impl EmulatorState {
             AppKind::DroidIfy => "Droid-ify (Sklep FOSS)",
             AppKind::MicroG => "microG Services Core",
             AppKind::IconStyle => "Ikony ColorOS 17",
+            AppKind::ImageExplorer => "Eksplorator .img",
         };
         texts.push(TextDraw {
             rect: Rect { x: SCR_X + 84, y: app_y + 10, w: SCR_W - 96, h: 28 },
@@ -1606,12 +1834,28 @@ impl EmulatorState {
             }
             AppKind::RomAudit => {
                 let mut lines: Vec<String> = Vec::new();
-                lines.push(format!("Zainstalowane apki FOSS/System ({}):", self.manifest.app_labels.len()));
-                for (lbl, pkg) in &self.manifest.app_labels {
-                    lines.push(format!(" + {} ({})", lbl, pkg));
+                if let Some(img) = &self.loaded_image {
+                    lines.push(format!("OBRAZ: {}", img.container_kind));
+                    lines.push(format!("services.jar: {}", img.services_spoof_verified));
+                    lines.push(format!("r9c-memd: {}", if img.has_r9c_memd { "OBECNY" } else { "BRAK" }));
+                    lines.push(format!("Pozostalosci Xiaomi: {}", if img.xiaomi_bloat_left.is_empty() { "0 (CZYSTO!)".into() } else { format!("{}", img.xiaomi_bloat_left.len()) }));
+                    for p in &img.partitions {
+                        lines.push(format!(" [part] {} ({} MiB, {})", p.name, p.size_mib, p.fs_kind));
+                    }
+                    lines.push(String::new());
+                    lines.push(format!("Zainstalowane APK z obrazu ({}):", img.apks.len()));
+                    for a in &img.apks {
+                        lines.push(format!(" + {} ({}, {} KiB)", a.dir_name, a.package, a.size_kib));
+                    }
+                } else {
+                    lines.push("Brak otwartego pliku .img — dane z wbudowanego manifestu:".into());
+                    lines.push(format!("Zainstalowane apki FOSS/System ({}):", self.manifest.app_labels.len()));
+                    for (lbl, pkg) in &self.manifest.app_labels {
+                        lines.push(format!(" + {} ({})", lbl, pkg));
+                    }
                 }
                 lines.push(String::new());
-                lines.push(format!("Usuniete apki Xiaomi / bloat ({}):", self.manifest.removed_items.len()));
+                lines.push(format!("Lista usuwanych pakietow Xiaomi / bloat ({}):", self.manifest.removed_items.len()));
                 for rm in &self.manifest.removed_items {
                     lines.push(format!(" - {} [USUNIETO]", rm));
                 }
@@ -1628,16 +1872,141 @@ impl EmulatorState {
                 let start = (self.audit_scroll as usize).min(lines.len().saturating_sub(1));
                 for (row_i, ln) in lines[start..].iter().take(24).enumerate() {
                     let ly = body_y + 42 + (row_i as i32) * 24;
-                    let col = if ln.starts_with(" -") { 0xFF7B95 } else if ln.starts_with(" +") { 0x62F0B8 } else { fg };
+                    let col = if ln.starts_with(" -") { 0xFF7B95 } else if ln.starts_with(" +") { 0x62F0B8 } else if ln.starts_with(" [") { 0x00D6FF } else { fg };
                     texts.push(TextDraw {
                         rect: Rect { x: SCR_X + 16, y: ly, w: SCR_W - 32, h: 20 },
                         text: ln.clone(),
                         color: col,
                         size: 11,
-                        bold: ln.ends_with(':'),
+                        bold: ln.ends_with(':') || ln.starts_with("OBRAZ:"),
                         align: TextAlign::Left,
                         clip_to_screen: true,
                     });
+                }
+            }
+            AppKind::ImageExplorer => {
+                if self.loaded_image.is_none() {
+                    fill_round_rect(fb, w, h, SCR_X + 16, body_y + 12, SCR_W - 32, 220, 18, card_bg);
+                    texts.push(TextDraw {
+                        rect: Rect { x: SCR_X + 28, y: body_y + 28, w: SCR_W - 56, h: 120 },
+                        text: "Nie wczytano jeszcze pliku super.img ani system.img.\n\nOtworz rozpakowany super.img lub system.img (EROFS/EXT4/Sparse), aby przegladac katalogi, build.prop, services.jar i aplikacje bezposrednio z obrazu.".into(),
+                        color: fg,
+                        size: 13,
+                        bold: false,
+                        align: TextAlign::Left,
+                        clip_to_screen: true,
+                    });
+                    let ob = Rect { x: SCR_X + 28, y: body_y + 166, w: SCR_W - 56, h: 44 };
+                    fill_round_rect(fb, w, h, ob.x, ob.y, ob.w, ob.h, 12, 0x0E7490);
+                    texts.push(TextDraw { rect: ob, text: "Otworz super.img / system.img...".into(), color: 0xFFFFFF, size: 13, bold: true, align: TextAlign::Center, clip_to_screen: true });
+                    self.hits.push(HitRegion { rect: ob, action: HitAction::OpenImageDialog, long_press_app: None });
+                } else {
+                    let parts_snap: Vec<(String, String)> = self
+                        .loaded_image
+                        .as_ref()
+                        .unwrap()
+                        .partitions
+                        .iter()
+                        .map(|p| (p.name.clone(), p.fs_kind.clone()))
+                        .collect();
+                    let mut px_cur = SCR_X + 10;
+                    for (idx, (pname, fsk)) in parts_snap.iter().enumerate() {
+                        if fsk != "erofs" && fsk != "ext4" {
+                            continue;
+                        }
+                        let bw = 66;
+                        if px_cur + bw > SCR_X + SCR_W - 8 {
+                            break;
+                        }
+                        let active = *pname == self.explorer_part;
+                        let pr = Rect { x: px_cur, y: body_y, w: bw, h: 28 };
+                        fill_round_rect(fb, w, h, pr.x, pr.y, pr.w, pr.h, 8, if active { 0x5B3CF5 } else { 0x242C4A });
+                        texts.push(TextDraw { rect: pr, text: pname.clone(), color: 0xFFFFFF, size: 10, bold: active, align: TextAlign::Center, clip_to_screen: true });
+                        self.hits.push(HitRegion { rect: pr, action: HitAction::ExplorerSelectPartIdx(idx), long_press_app: None });
+                        px_cur += bw + 4;
+                    }
+
+                    if let Some((fpath, content)) = self.explorer_file_preview.clone() {
+                        let back_f = Rect { x: SCR_X + 12, y: body_y + 34, w: 120, h: 28 };
+                        fill_round_rect(fb, w, h, back_f.x, back_f.y, back_f.w, back_f.h, 8, 0x253052);
+                        texts.push(TextDraw { rect: back_f, text: "< Lista plikow".into(), color: 0xFFFFFF, size: 11, bold: true, align: TextAlign::Center, clip_to_screen: true });
+                        self.hits.push(HitRegion { rect: back_f, action: HitAction::ExplorerClosePreview, long_press_app: None });
+
+                        texts.push(TextDraw { rect: Rect { x: SCR_X + 140, y: body_y + 36, w: SCR_W - 152, h: 24 }, text: fpath, color: 0x00E0FF, size: 11, bold: true, align: TextAlign::Left, clip_to_screen: true });
+                        fill_round_rect(fb, w, h, SCR_X + 10, body_y + 68, SCR_W - 20, SCR_H - NAV_H - body_y - 76, 12, 0x0D111E);
+                        let lines: Vec<&str> = content.lines().collect();
+                        let start = (self.audit_scroll as usize).min(lines.len().saturating_sub(1));
+                        for (ri, ln) in lines[start..].iter().take(28).enumerate() {
+                            texts.push(TextDraw {
+                                rect: Rect { x: SCR_X + 16, y: body_y + 74 + (ri as i32) * 19, w: SCR_W - 32, h: 18 },
+                                text: (*ln).into(),
+                                color: 0xC6F2E0,
+                                size: 10,
+                                bold: false,
+                                align: TextAlign::Left,
+                                clip_to_screen: true,
+                            });
+                        }
+                    } else {
+                        let up_d = Rect { x: SCR_X + 12, y: body_y + 34, w: 68, h: 26 };
+                        fill_round_rect(fb, w, h, up_d.x, up_d.y, up_d.w, up_d.h, 8, 0x253052);
+                        texts.push(TextDraw { rect: up_d, text: ".. Wyzej".into(), color: 0xFFFFFF, size: 11, bold: true, align: TextAlign::Center, clip_to_screen: true });
+                        self.hits.push(HitRegion { rect: up_d, action: HitAction::ExplorerUpDir, long_press_app: None });
+
+                        texts.push(TextDraw {
+                            rect: Rect { x: SCR_X + 86, y: body_y + 36, w: SCR_W - 166, h: 22 },
+                            text: format!("/{}{}", self.explorer_part, if self.explorer_dir == "/" { "" } else { &self.explorer_dir }),
+                            color: 0x00E0FF,
+                            size: 11,
+                            bold: true,
+                            align: TextAlign::Left,
+                            clip_to_screen: true,
+                        });
+                        let sc_up = Rect { x: SCR_X + SCR_W - 76, y: body_y + 34, w: 30, h: 26 };
+                        let sc_dn = Rect { x: SCR_X + SCR_W - 42, y: body_y + 34, w: 30, h: 26 };
+                        fill_round_rect(fb, w, h, sc_up.x, sc_up.y, sc_up.w, sc_up.h, 6, 0x253052);
+                        fill_round_rect(fb, w, h, sc_dn.x, sc_dn.y, sc_dn.w, sc_dn.h, 6, 0x253052);
+                        texts.push(TextDraw { rect: sc_up, text: "^".into(), color: 0xFFFFFF, size: 12, bold: true, align: TextAlign::Center, clip_to_screen: true });
+                        texts.push(TextDraw { rect: sc_dn, text: "v".into(), color: 0xFFFFFF, size: 12, bold: true, align: TextAlign::Center, clip_to_screen: true });
+                        self.hits.push(HitRegion { rect: sc_up, action: HitAction::ScrollAudit(-6), long_press_app: None });
+                        self.hits.push(HitRegion { rect: sc_dn, action: HitAction::ScrollAudit(6), long_press_app: None });
+
+                        let start = (self.audit_scroll as usize).min(self.explorer_entries.len().saturating_sub(1));
+                        let entries_view: Vec<(usize, FsEntry)> = self
+                            .explorer_entries
+                            .iter()
+                            .enumerate()
+                            .skip(start)
+                            .take(21)
+                            .map(|(i, e)| (i, e.clone()))
+                            .collect();
+                        for (row_i, (orig_idx, ent)) in entries_view.into_iter().enumerate() {
+                            let ry = body_y + 68 + (row_i as i32) * 28;
+                            let rr = Rect { x: SCR_X + 12, y: ry, w: SCR_W - 24, h: 24 };
+                            fill_round_rect(fb, w, h, rr.x, rr.y, rr.w, rr.h, 6, card_bg);
+                            let tag = if ent.is_dir { "[DIR]" } else if ent.is_symlink { "[LNK]" } else { "[PLK]" };
+                            let col = if ent.is_dir { 0xFFD24C } else if ent.is_symlink { 0x62F0B8 } else { fg };
+                            let label = if ent.is_dir || ent.is_symlink {
+                                format!("{} {}", tag, ent.name)
+                            } else if ent.size >= 1024 * 1024 {
+                                format!("{} {} ({:.1} MiB)", tag, ent.name, ent.size as f64 / (1024.0 * 1024.0))
+                            } else {
+                                format!("{} {} ({} B)", tag, ent.name, ent.size)
+                            };
+                            texts.push(TextDraw {
+                                rect: Rect { x: rr.x + 8, y: rr.y + 2, w: rr.w - 16, h: 20 },
+                                text: label,
+                                color: col,
+                                size: 11,
+                                bold: ent.is_dir,
+                                align: TextAlign::Left,
+                                clip_to_screen: true,
+                            });
+                            if ent.is_dir || !ent.is_symlink {
+                                self.hits.push(HitRegion { rect: rr, action: HitAction::ExplorerOpenEntry(orig_idx), long_press_app: None });
+                            }
+                        }
+                    }
                 }
             }
             _ => {
@@ -1759,21 +2128,70 @@ impl EmulatorState {
             self.hits.push(HitRegion { rect: br, action: *ac, long_press_app: None });
         }
 
-        // ColorOS 17 Icon Resizer Control Card on PC panel
-        let c1 = Rect { x: px + 24, y: 162, w: pw - 48, h: 194 };
-        fill_round_rect(fb, w, h, c1.x, c1.y, c1.w, c1.h, 16, 0x1B233B);
-        draw_round_border(fb, w, h, c1.x, c1.y, c1.w, c1.h, 16, 0x5B3CF5);
+        // Image Engine Card (super.img / system.img loader + extractor)
+        let img_card = Rect { x: px + 24, y: 154, w: pw - 48, h: 98 };
+        fill_round_rect(fb, w, h, img_card.x, img_card.y, img_card.w, img_card.h, 14, 0x102233);
+        draw_round_border(fb, w, h, img_card.x, img_card.y, img_card.w, img_card.h, 14, 0x06B6D4);
+
+        let img_title = if let Some(img) = &self.loaded_image {
+            format!("SILNIK OBRAZU: {} (AKTYWNY Z PLIKU)", img.container_kind)
+        } else {
+            "SILNIK OBRAZU super.img / system.img (wskaz plik lub upusc na okno)".into()
+        };
         texts.push(TextDraw {
-            rect: Rect { x: c1.x + 16, y: c1.y + 12, w: c1.w - 32, h: 24 },
-            text: format!("ColorOS 17 — Zmiana rozmiaru ikon na zywo ({}%)", self.icon_scale),
-            color: 0xFFFFFF,
-            size: 15,
+            rect: Rect { x: img_card.x + 14, y: img_card.y + 8, w: img_card.w - 28, h: 20 },
+            text: img_title,
+            color: if self.loaded_image.is_some() { 0x62F0B8 } else { 0xFFD24C },
+            size: 13,
             bold: true,
             align: TextAlign::Left,
             clip_to_screen: false,
         });
 
-        let pc_track = Rect { x: c1.x + 18, y: c1.y + 46, w: c1.w - 36, h: 30 };
+        let open_img_b = Rect { x: img_card.x + 14, y: img_card.y + 34, w: 230, h: 32 };
+        let ext_sys_b = Rect { x: img_card.x + 252, y: img_card.y + 34, w: 184, h: 32 };
+        let exp_b = Rect { x: img_card.x + 444, y: img_card.y + 34, w: img_card.w - 458, h: 32 };
+        fill_round_rect(fb, w, h, open_img_b.x, open_img_b.y, open_img_b.w, open_img_b.h, 9, 0x0E7490);
+        fill_round_rect(fb, w, h, ext_sys_b.x, ext_sys_b.y, ext_sys_b.w, ext_sys_b.h, 9, if self.loaded_image.is_some() { 0x264B6E } else { 0x1B243B });
+        fill_round_rect(fb, w, h, exp_b.x, exp_b.y, exp_b.w, exp_b.h, 9, 0x2D3C66);
+        texts.push(TextDraw { rect: open_img_b, text: "Otworz super.img / system.img...".into(), color: 0xFFFFFF, size: 12, bold: true, align: TextAlign::Center, clip_to_screen: false });
+        texts.push(TextDraw { rect: ext_sys_b, text: "Wypakuj system.img".into(), color: if self.loaded_image.is_some() { 0xFFFFFF } else { 0x7A88AD }, size: 12, bold: false, align: TextAlign::Center, clip_to_screen: false });
+        texts.push(TextDraw { rect: exp_b, text: "Eksploruj .img".into(), color: 0xFFFFFF, size: 12, bold: true, align: TextAlign::Center, clip_to_screen: false });
+        self.hits.push(HitRegion { rect: open_img_b, action: HitAction::OpenImageDialog, long_press_app: None });
+        self.hits.push(HitRegion { rect: ext_sys_b, action: HitAction::ExtractSystemImg, long_press_app: None });
+        self.hits.push(HitRegion { rect: exp_b, action: HitAction::OpenApp(AppKind::ImageExplorer), long_press_app: None });
+
+        let img_sub = if let Some(img) = &self.loaded_image {
+            let pnames: Vec<String> = img.partitions.iter().map(|p| format!("{}({}M/{})", p.name, p.size_mib, p.fs_kind)).collect();
+            format!("Partycje: {}", pnames.join(", "))
+        } else {
+            "Uruchom po rozpakowaniu MysticalOS-Redmi9C.7z.001..005 (wykrywa super.img/system.img automatycznie).".into()
+        };
+        texts.push(TextDraw {
+            rect: Rect { x: img_card.x + 14, y: img_card.y + 72, w: img_card.w - 28, h: 18 },
+            text: img_sub,
+            color: 0xB8D4EE,
+            size: 11,
+            bold: false,
+            align: TextAlign::Left,
+            clip_to_screen: false,
+        });
+
+        // ColorOS 17 Icon Resizer Control Card on PC panel
+        let c1 = Rect { x: px + 24, y: 262, w: pw - 48, h: 176 };
+        fill_round_rect(fb, w, h, c1.x, c1.y, c1.w, c1.h, 16, 0x1B233B);
+        draw_round_border(fb, w, h, c1.x, c1.y, c1.w, c1.h, 16, 0x5B3CF5);
+        texts.push(TextDraw {
+            rect: Rect { x: c1.x + 16, y: c1.y + 10, w: c1.w - 32, h: 22 },
+            text: format!("ColorOS 17 — Zmiana rozmiaru ikon na zywo ({}%)", self.icon_scale),
+            color: 0xFFFFFF,
+            size: 14,
+            bold: true,
+            align: TextAlign::Left,
+            clip_to_screen: false,
+        });
+
+        let pc_track = Rect { x: c1.x + 18, y: c1.y + 38, w: c1.w - 36, h: 28 };
         draw_slider(fb, w, h, pc_track, (self.icon_scale - 60) as f32 / 90.0, 0x00D6FF);
         self.hits.push(HitRegion {
             rect: pc_track,
@@ -1784,16 +2202,16 @@ impl EmulatorState {
         let shapes = [IconShape::Squircle, IconShape::Circle, IconShape::Rounded, IconShape::Teardrop];
         let sw = (c1.w - 60) / 4;
         for (i, sh) in shapes.iter().enumerate() {
-            let br = Rect { x: c1.x + 18 + (i as i32) * (sw + 8), y: c1.y + 90, w: sw, h: 36 };
+            let br = Rect { x: c1.x + 18 + (i as i32) * (sw + 8), y: c1.y + 78, w: sw, h: 34 };
             let act = self.icon_shape == *sh;
             fill_round_rect(fb, w, h, br.x, br.y, br.w, br.h, 10, if act { 0x5B3CF5 } else { 0x263152 });
             texts.push(TextDraw { rect: br, text: format!("Ksztalt: {}", sh.name()), color: 0xFFFFFF, size: 12, bold: act, align: TextAlign::Center, clip_to_screen: false });
             self.hits.push(HitRegion { rect: br, action: HitAction::SetShape(*sh), long_press_app: None });
         }
 
-        let nav_b = Rect { x: c1.x + 18, y: c1.y + 140, w: 190, h: 36 };
-        let ram_b = Rect { x: c1.x + 218, y: c1.y + 140, w: 195, h: 36 };
-        let rst_b = Rect { x: c1.x + 423, y: c1.y + 140, w: c1.w - 441, h: 36 };
+        let nav_b = Rect { x: c1.x + 18, y: c1.y + 124, w: 190, h: 34 };
+        let ram_b = Rect { x: c1.x + 218, y: c1.y + 124, w: 195, h: 34 };
+        let rst_b = Rect { x: c1.x + 423, y: c1.y + 124, w: c1.w - 441, h: 34 };
         fill_round_rect(fb, w, h, nav_b.x, nav_b.y, nav_b.w, nav_b.h, 10, 0x263152);
         fill_round_rect(fb, w, h, ram_b.x, ram_b.y, ram_b.w, ram_b.h, 10, 0x263152);
         fill_round_rect(fb, w, h, rst_b.x, rst_b.y, rst_b.w, rst_b.h, 10, 0x2D3C66);
@@ -1804,62 +2222,97 @@ impl EmulatorState {
         self.hits.push(HitRegion { rect: ram_b, action: HitAction::ToggleRamVariant, long_press_app: None });
         self.hits.push(HitRegion { rect: rst_b, action: HitAction::ResetTiles, long_press_app: None });
 
-        // ROM Build Details Card
-        let c2 = Rect { x: px + 24, y: 374, w: pw - 48, h: 332 };
+        // ROM Live Inspection / Build Details Card
+        let c2 = Rect { x: px + 24, y: 450, w: pw - 48, h: 256 };
         fill_round_rect(fb, w, h, c2.x, c2.y, c2.w, c2.h, 16, 0x111728);
         draw_round_border(fb, w, h, c2.x, c2.y, c2.w, c2.h, 16, 0x2B385B);
+        let hdr_c2 = if self.loaded_image.is_some() {
+            "Odczyt na zywo z pliku super.img / system.img (Sparse + liblp + EROFS/EXT4)"
+        } else {
+            "Dane zbudowanego ROM-u (wbudowany manifest — otworz .img dla skanu na zywo)"
+        };
         texts.push(TextDraw {
-            rect: Rect { x: c2.x + 16, y: c2.y + 12, w: c2.w - 32, h: 24 },
-            text: "Dane zbudowanego ROM-u (wbudowane z GitHub Actions)".into(),
+            rect: Rect { x: c2.x + 16, y: c2.y + 10, w: c2.w - 32, h: 22 },
+            text: hdr_c2.into(),
             color: 0x62F0B8,
-            size: 14,
+            size: 13,
             bold: true,
             align: TextAlign::Left,
             clip_to_screen: false,
         });
 
-        let summary_lines = format!(
-            "System: {} {} ({})\n\
-             Baza: {} (Kernel 4.19 + eBPF)\n\
-             Dawca UI: {}\n\
-             Usuniete apki Xiaomi / bloat: {} pozycji (zwolniono ~{} MiB)\n\
-             Zastapione pakietem FOSS: MysticalLauncher, Fossify Phone/Messages/Contacts,\n\
-             Fossify Camera/Gallery/Files/Clock/Calculator, HeliBoard, Droid-ify, microG\n\
-             Spoof microG: {}\n\n\
-             Jak zmienic rozmiar ikon w emulatorze:\n\
-             - Przesun suwak 'Rozmiar ikon' powyzej albo otworz 'Ikony ColorOS 17' na ekranie\n\
-             - Kliknij PRAWYM przyciskiem myszy (lub przytrzymaj lewy) na ikonie aplikacji,\n\
-               aby zmienic kafelek na 1x1, 2x1, 1x2 lub duzy 2x2!",
-            self.manifest.os_name,
-            self.manifest.os_version,
-            self.manifest.codename,
-            self.manifest.base_rom,
-            self.manifest.donor_rom,
-            self.manifest.removed_count,
-            self.manifest.freed_mib,
-            self.manifest.services_spoof
-        );
+        let summary_lines = if let Some(img) = &self.loaded_image {
+            let boot_info = if img.boot_frames.is_empty() {
+                "brak PNG (albo obraz to sam system.img bez product.img)".into()
+            } else {
+                format!("zaladowano {} prawdziwych klatek PNG", img.boot_frames.len())
+            };
+            let bloat_info = if img.xiaomi_bloat_left.is_empty() {
+                "0 wykrytych apek Xiaomi (czysto!)".into()
+            } else {
+                format!("WYKRYTO {}: {}", img.xiaomi_bloat_left.len(), img.xiaomi_bloat_left.join(", "))
+            };
+            format!(
+                "Plik: {}\n\
+                 Android (z build.prop): {} | Model: {} | Wersja: {}\n\
+                 Weryfikacja services.jar: {}\n\
+                 Daemon r9c-memd: {} | Bootanimation.zip: {}\n\
+                 Apki wyciagniete z APK (AXML): {} pakietow | Bloat Xiaomi: {}\n\
+                 Wlasciwosci build.prop: {} wpisow\n\n\
+                 Uzyj ikony 'Obraz .img' na ekranie lub przycisku 'Eksploruj .img' powyzej,\n\
+                 aby przegladac katalogi /system, /product i podgladac pliki build.prop / .rc!",
+                img.file_path,
+                self.manifest.android_version,
+                self.manifest.market_name,
+                self.manifest.os_version,
+                img.services_spoof_verified,
+                if img.has_r9c_memd { "OBECNY" } else { "brak w tym obrazie" },
+                boot_info,
+                img.apks.len(),
+                bloat_info,
+                img.props.len(),
+            )
+        } else {
+            format!(
+                "System: {} {} ({}) | Baza: {}\n\
+                 Dawca UI: {}\n\
+                 Usuniete apki Xiaomi / bloat: {} pozycji (zwolniono ~{} MiB)\n\
+                 Spoof microG: {}\n\n\
+                 Wskaz plik super.img lub system.img uzywajac przycisku powyzej lub przeciagajac go\n\
+                 na okno — dekoder przeczyta na zywo partycje liblp, EROFS+LZ4, EXT4, build.prop,\n\
+                 manifesty APK, services.jar (R9cMicrogSpoof) oraz klatki bootanimation.zip!",
+                self.manifest.os_name,
+                self.manifest.os_version,
+                self.manifest.codename,
+                self.manifest.base_rom,
+                self.manifest.donor_rom,
+                self.manifest.removed_count,
+                self.manifest.freed_mib,
+                self.manifest.services_spoof
+            )
+        };
         texts.push(TextDraw {
-            rect: Rect { x: c2.x + 16, y: c2.y + 42, w: c2.w - 32, h: c2.h - 54 },
+            rect: Rect { x: c2.x + 16, y: c2.y + 38, w: c2.w - 32, h: c2.h - 46 },
             text: summary_lines,
             color: 0xD2DCF5,
-            size: 13,
+            size: 12,
             bold: false,
             align: TextAlign::Left,
             clip_to_screen: false,
         });
 
         // Honest technical note at bottom of PC panel
-        let c3 = Rect { x: px + 24, y: 722, w: pw - 48, h: 100 };
+        let c3 = Rect { x: px + 24, y: 718, w: pw - 48, h: 104 };
         fill_round_rect(fb, w, h, c3.x, c3.y, c3.w, c3.h, 14, 0x191F33);
         texts.push(TextDraw {
-            rect: Rect { x: c3.x + 16, y: c3.y + 10, w: c3.w - 32, h: 82 },
+            rect: Rect { x: c3.x + 16, y: c3.y + 10, w: c3.w - 32, h: 86 },
             text: format!(
-                "UWAGA TECHNICZNA: Ten plik .exe jest natywnym symulatorem UI i manifestu {} na Windows PC.\n\
-                 Prawdziwe obrazy partycji ARM64 dla MediaTek Helio G35 (super.img, boot.img, dtbo.img)\n\
-                 znajduja sie w archiwum MysticalOS-Redmi9C.7z.001..005 i wgrywa sie je na telefon przez FLASH-REDMI9C.bat.\n\
+                "UWAGA TECHNICZNA (GRANICA EMULACJI): Ten program czyta i weryfikuje prawdziwe obrazy super.img i system.img\n\
+                 (Sparse + liblp + EROFS/LZ4 + EXT4 + AXML + bootanimation) oraz symuluje interfejs ColorOS 17 / MysticalOS.\n\
+                 Samo zbootowanie pelnego jadra i SurfaceFlinger ARM64 MediaTek MT6765 na Windows x86_64 wymaga\n\
+                 osobnej maszyny wirtualnej QEMU ARM64 z jadrem virtio/ranchu oraz wirtualnego vendor.img Android 17.\n\
                  Status: {}",
-                self.manifest.os_name, self.status_msg
+                self.status_msg
             ),
             color: 0x99AACF,
             size: 11,
@@ -1869,7 +2322,7 @@ impl EmulatorState {
         });
     }
 
-    pub fn handle_left_down(&mut self, x: i32, y: i32, now_ms: u64) -> bool {
+    pub fn handle_left_down(&mut self, x: i32, y: i32, now_ms: u64) -> UiCommand {
         self.pending_long_press = None;
         let matched = self.hits.iter().rev().find(|h| h.rect.contains(x, y)).cloned();
         if let Some(hit) = matched {
@@ -1878,27 +2331,29 @@ impl EmulatorState {
                     self.active_slider = Some(HitAction::DragIconSlider(r));
                     let t = ((x - r.x) as f32 / r.w.max(1) as f32).clamp(0.0, 1.0);
                     self.icon_scale = (60.0 + t * 90.0).round() as i32;
-                    return false;
+                    return UiCommand::None;
                 }
                 HitAction::DragBrightnessSlider(r) => {
                     self.active_slider = Some(HitAction::DragBrightnessSlider(r));
                     let t = ((x - r.x) as f32 / r.w.max(1) as f32).clamp(0.0, 1.0);
                     self.brightness = (30.0 + t * 70.0).round() as i32;
-                    return false;
+                    return UiCommand::None;
                 }
-                HitAction::SaveScreenshot => return true,
+                HitAction::SaveScreenshot => return UiCommand::SaveScreenshot,
+                HitAction::OpenImageDialog => return UiCommand::OpenImageDialog,
+                HitAction::ExtractSystemImg => return UiCommand::ExtractSystemImg,
                 act => {
                     if let Some(app_idx) = hit.long_press_app {
                         self.pending_long_press = Some((app_idx, now_ms));
                         // Wait for mouse up (short click opens app) or long-press timer (420ms opens tile menu)
-                        return false;
+                        return UiCommand::None;
                     }
                     self.apply_action(act);
-                    return false;
+                    return UiCommand::None;
                 }
             }
         }
-        false
+        UiCommand::None
     }
 
     pub fn handle_mouse_move(&mut self, x: i32, _y: i32) {
@@ -2318,5 +2773,13 @@ mod tests {
         let texts = st.render(&mut fb, WIN_W, WIN_H);
         assert!(!texts.is_empty());
         assert!(!st.hits.is_empty());
+
+        st.apply_action(HitAction::OpenApp(AppKind::ImageExplorer));
+        let exp_texts = st.render(&mut fb, WIN_W, WIN_H);
+        assert!(exp_texts.iter().any(|t| t.text.contains("super.img")));
+
+        st.apply_action(HitAction::OpenApp(AppKind::RomAudit));
+        let aud_texts = st.render(&mut fb, WIN_W, WIN_H);
+        assert!(!aud_texts.is_empty());
     }
 }

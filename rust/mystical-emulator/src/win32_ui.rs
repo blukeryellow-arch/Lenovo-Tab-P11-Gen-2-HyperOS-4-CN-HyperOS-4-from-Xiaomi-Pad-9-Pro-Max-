@@ -1,11 +1,12 @@
 #![allow(dead_code, unused_imports)]
 use crate::state::{
-    EmulatorState, HitAction, Rect, TextAlign, WIN_H, WIN_W,
+    EmulatorState, HitAction, Rect, TextAlign, UiCommand, WIN_H, WIN_W,
 };
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::fs::File;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::ptr;
 
 type HANDLE = *mut c_void;
@@ -18,6 +19,7 @@ type HINSTANCE = HANDLE;
 type HICON = HANDLE;
 type HCURSOR = HANDLE;
 type HBRUSH = HANDLE;
+type HDROP = HANDLE;
 type LRESULT = isize;
 type WPARAM = usize;
 type LPARAM = isize;
@@ -109,6 +111,33 @@ struct SYSTEMTIME {
     w_milliseconds: u16,
 }
 
+#[repr(C)]
+struct OPENFILENAMEW {
+    l_struct_size: DWORD,
+    hwnd_owner: HWND,
+    h_instance: HINSTANCE,
+    lpstr_filter: *const u16,
+    lpstr_custom_filter: *mut u16,
+    n_max_cust_filter: DWORD,
+    n_filter_index: DWORD,
+    lpstr_file: *mut u16,
+    n_max_file: DWORD,
+    lpstr_file_title: *mut u16,
+    n_max_file_title: DWORD,
+    lpstr_initial_dir: *const u16,
+    lpstr_title: *const u16,
+    flags: DWORD,
+    n_file_offset: u16,
+    n_file_extension: u16,
+    lpstr_def_ext: *const u16,
+    l_cust_data: LPARAM,
+    lpfn_hook: HANDLE,
+    lp_template_name: *const u16,
+    pv_reserved: *mut c_void,
+    dw_reserved: DWORD,
+    flags_ex: DWORD,
+}
+
 const WS_OVERLAPPED: DWORD = 0x00000000;
 const WS_CAPTION: DWORD = 0x00C00000;
 const WS_SYSMENU: DWORD = 0x00080000;
@@ -126,6 +155,12 @@ const WM_LBUTTONDOWN: UINT = 0x0201;
 const WM_LBUTTONUP: UINT = 0x0202;
 const WM_RBUTTONDOWN: UINT = 0x0204;
 const WM_MOUSEWHEEL: UINT = 0x020A;
+const WM_DROPFILES: UINT = 0x0233;
+
+const OFN_OVERWRITEPROMPT: DWORD = 0x00000002;
+const OFN_NOCHANGEDIR: DWORD = 0x00000008;
+const OFN_PATHMUSTEXIST: DWORD = 0x00000800;
+const OFN_FILEMUSTEXIST: DWORD = 0x00001000;
 
 const TRANSPARENT: i32 = 1;
 const SRCCOPY: DWORD = 0x00CC0020;
@@ -232,6 +267,19 @@ extern "system" {
     ) -> HFONT;
 }
 
+#[link(name = "comdlg32")]
+extern "system" {
+    fn GetOpenFileNameW(lpofn: *mut OPENFILENAMEW) -> BOOL;
+    fn GetSaveFileNameW(lpofn: *mut OPENFILENAMEW) -> BOOL;
+}
+
+#[link(name = "shell32")]
+extern "system" {
+    fn DragAcceptFiles(h_wnd: HWND, f_accept: BOOL);
+    fn DragQueryFileW(h_drop: HDROP, i_file: UINT, lpsz_file: *mut u16, cch: UINT) -> UINT;
+    fn DragFinish(h_drop: HDROP);
+}
+
 fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
@@ -241,6 +289,57 @@ fn to_colorref(rgb: u32) -> DWORD {
     let g = (rgb >> 8) & 0xFF;
     let b = rgb & 0xFF;
     (b << 16) | (g << 8) | r
+}
+
+unsafe fn open_image_file_dialog(hwnd: HWND) -> Option<PathBuf> {
+    let mut file_buf = vec![0u16; 4096];
+    let filter: Vec<u16> = "Obrazy Android (super.img, system.img)\0*.img\0Wszystkie pliki (*.*)\0*.*\0\0"
+        .encode_utf16()
+        .collect();
+    let title = to_wide("Wybierz super.img lub system.img MysticalOS");
+    let mut ofn: OPENFILENAMEW = std::mem::zeroed();
+    ofn.l_struct_size = std::mem::size_of::<OPENFILENAMEW>() as DWORD;
+    ofn.hwnd_owner = hwnd;
+    ofn.lpstr_filter = filter.as_ptr();
+    ofn.lpstr_file = file_buf.as_mut_ptr();
+    ofn.n_max_file = file_buf.len() as DWORD;
+    ofn.lpstr_title = title.as_ptr();
+    ofn.flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+    if GetOpenFileNameW(&mut ofn) != 0 {
+        let len = file_buf.iter().position(|&c| c == 0).unwrap_or(0);
+        if len > 0 {
+            return Some(PathBuf::from(String::from_utf16_lossy(&file_buf[..len])));
+        }
+    }
+    None
+}
+
+unsafe fn save_system_img_dialog(hwnd: HWND) -> Option<PathBuf> {
+    let mut file_buf = vec![0u16; 4096];
+    for (i, c) in "system.img".encode_utf16().enumerate() {
+        file_buf[i] = c;
+    }
+    let filter: Vec<u16> = "Obraz partycji Android (*.img)\0*.img\0Wszystkie pliki (*.*)\0*.*\0\0"
+        .encode_utf16()
+        .collect();
+    let title = to_wide("Zapisz wypakowany obraz system.img");
+    let def_ext = to_wide("img");
+    let mut ofn: OPENFILENAMEW = std::mem::zeroed();
+    ofn.l_struct_size = std::mem::size_of::<OPENFILENAMEW>() as DWORD;
+    ofn.hwnd_owner = hwnd;
+    ofn.lpstr_filter = filter.as_ptr();
+    ofn.lpstr_file = file_buf.as_mut_ptr();
+    ofn.n_max_file = file_buf.len() as DWORD;
+    ofn.lpstr_title = title.as_ptr();
+    ofn.lpstr_def_ext = def_ext.as_ptr();
+    ofn.flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+    if GetSaveFileNameW(&mut ofn) != 0 {
+        let len = file_buf.iter().position(|&c| c == 0).unwrap_or(0);
+        if len > 0 {
+            return Some(PathBuf::from(String::from_utf16_lossy(&file_buf[..len])));
+        }
+    }
+    None
 }
 
 struct WindowCtx {
@@ -398,19 +497,52 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: UINT, w_param: WPARAM, l_par
             InvalidateRect(hwnd, ptr::null(), 0);
             0
         }
+        WM_DROPFILES => {
+            let hdrop = w_param as HDROP;
+            let mut path_buf = vec![0u16; 2048];
+            let n = DragQueryFileW(hdrop, 0, path_buf.as_mut_ptr(), path_buf.len() as UINT);
+            if n > 0 {
+                let p = PathBuf::from(String::from_utf16_lossy(&path_buf[..n as usize]));
+                if let Err(e) = ctx.state.load_image_from_path(&p) {
+                    ctx.state.status_msg = format!("Blad ładowania {}: {}", p.display(), e);
+                    ctx.state.show_toast("Blad odczytu obrazu .img");
+                }
+            }
+            DragFinish(hdrop);
+            InvalidateRect(hwnd, ptr::null(), 0);
+            0
+        }
         WM_LBUTTONDOWN => {
             let (x, y) = map_mouse(hwnd, l_param);
             SetCapture(hwnd);
             let now = GetTickCount64();
-            let want_shot = ctx.state.handle_left_down(x, y, now);
-            if want_shot {
-                match ctx.save_bmp() {
+            match ctx.state.handle_left_down(x, y, now) {
+                UiCommand::SaveScreenshot => match ctx.save_bmp() {
                     Ok(f) => {
                         ctx.state.status_msg = format!("Zapisano zrzut: {}", f);
                         ctx.state.show_toast("Zapisano zrzut ekranu");
                     }
                     Err(_) => ctx.state.status_msg = "Nie udalo sie zapisac zrzutu".into(),
+                },
+                UiCommand::OpenImageDialog => {
+                    ReleaseCapture();
+                    if let Some(path) = open_image_file_dialog(hwnd) {
+                        if let Err(e) = ctx.state.load_image_from_path(&path) {
+                            ctx.state.status_msg = format!("Blad: {}", e);
+                            ctx.state.show_toast("Nie udalo sie wczytac pliku .img");
+                        }
+                    }
                 }
+                UiCommand::ExtractSystemImg => {
+                    ReleaseCapture();
+                    if let Some(out) = save_system_img_dialog(hwnd) {
+                        if let Err(e) = ctx.state.extract_system_img_to(&out) {
+                            ctx.state.status_msg = format!("Blad eksportu: {}", e);
+                            ctx.state.show_toast("Blad zapisu system.img");
+                        }
+                    }
+                }
+                UiCommand::None => {}
             }
             InvalidateRect(hwnd, ptr::null(), 0);
             0
@@ -451,11 +583,38 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: UINT, w_param: WPARAM, l_par
     }
 }
 
+fn find_initial_image() -> Option<PathBuf> {
+    if let Some(arg) = std::env::args_os().nth(1) {
+        let p = PathBuf::from(arg);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let mut dirs = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        dirs.push(cwd);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            dirs.push(parent.to_path_buf());
+        }
+    }
+    for dir in dirs {
+        for cand in ["super.img", "system.img", "package/super.img", "images/super.img", "images/system.img"] {
+            let p = dir.join(cand);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
 pub fn run_windows_emulator(manifest_json: &str) {
     unsafe {
         let hinst = GetModuleHandleW(ptr::null());
         let cls_name = to_wide("MysticalOSEmulatorWnd");
-        let title = to_wide("MysticalOS 1.0 (Flux17) - Redmi 9C Windows Emulator");
+        let title = to_wide("MysticalOS 1.0 (Flux17) - super.img / system.img Emulator");
 
         let wc = WNDCLASSEXW {
             cb_size: std::mem::size_of::<WNDCLASSEXW>() as UINT,
@@ -493,6 +652,7 @@ pub fn run_windows_emulator(manifest_json: &str) {
         if hwnd.is_null() {
             return;
         }
+        DragAcceptFiles(hwnd, 1);
 
         let mem_dc = CreateCompatibleDC(ptr::null_mut());
         let bmi = BITMAPINFO {
@@ -515,8 +675,15 @@ pub fn run_windows_emulator(manifest_json: &str) {
         let dib = CreateDIBSection(mem_dc, &bmi, 0, &mut bits, ptr::null_mut(), 0);
         let old_bmp = SelectObject(mem_dc, dib);
 
+        let mut state = EmulatorState::new(manifest_json);
+        if let Some(p) = find_initial_image() {
+            if let Err(e) = state.load_image_from_path(&p) {
+                state.status_msg = format!("Auto-odczyt {}: {}", p.display(), e);
+            }
+        }
+
         let ctx = Box::new(WindowCtx {
-            state: EmulatorState::new(manifest_json),
+            state,
             mem_dc,
             dib,
             pixels: bits as *mut u32,

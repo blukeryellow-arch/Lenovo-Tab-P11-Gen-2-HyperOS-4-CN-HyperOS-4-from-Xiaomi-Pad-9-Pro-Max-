@@ -135,7 +135,7 @@ jobs:
           echo "=== cargo test (host unit tests: r9c-memd + rust-app + mystical-emulator) ==="
           cargo test --manifest-path "$REPO_DIR/rust/r9c-memd/Cargo.toml"
           cargo test --manifest-path "$REPO_DIR/rust/rust-app/Cargo.toml"
-          cargo test --manifest-path "$REPO_DIR/rust/mystical-emulator/Cargo.toml"
+          cargo test --manifest-path "$REPO_DIR/rust/mystical-emulator/Cargo.toml" 2>&1 | tee -a "$WORK/rust-build.log"
 
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CC64"
           export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$CC32"
@@ -790,11 +790,19 @@ jobs:
           done
           rm -rf "$WORK/super.raw" "$WORK/super-check" "$WORK/mnt-verify"
 
-      - name: "4b. Kompilacja emulatora Windows PC (MysticalOS-Emulator.exe)"
+      - name: "4b. Weryfikacja dekodera super.img/system.img + kompilacja MysticalOS-Emulator.exe"
         run: |
           set -euo pipefail
-          echo "=== Budowanie MysticalOS-Emulator.exe (x86_64-pc-windows-gnu) ===" | tee -a "$WORK/rust-build.log"
           export MYSTICALOS_MANIFEST="$WORK/mysticalos-manifest.json"
+          echo "=== Test silnika super.img / system.img na prawdziwym super.img ===" | tee -a "$WORK/rust-build.log"
+          cargo run --release --manifest-path "$REPO_DIR/rust/mystical-emulator/Cargo.toml" \
+            --target-dir "$WORK/cargo-target-emu-host" \
+            -- --verify-image "$WORK/package/super.img" --extract-system "$WORK/verify_system.img" \
+            2>&1 | tee -a "$WORK/rust-build.log"
+          ls -lh "$WORK/verify_system.img" | tee -a "$WORK/rust-build.log"
+          rm -rf "$WORK/verify_system.img" "$WORK/cargo-target-emu-host"
+
+          echo "=== Budowanie MysticalOS-Emulator.exe (x86_64-pc-windows-gnu) ===" | tee -a "$WORK/rust-build.log"
           export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc
           export RUSTFLAGS="-C link-arg=-static -C link-arg=-static-libgcc"
           cargo build --release --target x86_64-pc-windows-gnu \
@@ -817,6 +825,7 @@ jobs:
           cp "$REPO_DIR/templates/FLASH-REDMI9C.bat" \
              "$REPO_DIR/templates/FLASH-REDMI9C.sh" \
              "$REPO_DIR/templates/INSTRUKCJA-FLASH.txt" \
+             "$WORK/release/MysticalOS-Emulator.exe" \
              "$WORK/package/"
           chmod +x "$WORK/package/FLASH-REDMI9C.sh"
           cp "$WORK/port-report.txt" "$WORK/package/BUILD-REPORT.txt"
@@ -870,10 +879,13 @@ jobs:
             echo "- **Aplikacje FOSS w miejscu apek Xiaomi:** \`Fossify Phone\`, \`Messages\`, \`Contacts\`, \`Gallery\`, \`File Manager\`, \`Camera\`, \`Clock\`, \`Calculator\`, \`HeliBoard\`, \`Droid-ify\`, \`Cromite WebView\`, \`microG\`"
             echo "- **GitHub Actions Run:** ${GITHUB_RUN_ID}"
             echo
-            echo "## 1. Emulator na komputer Windows (\`MysticalOS-Emulator.exe\`)"
-            echo "- Pobierz sam plik **\`MysticalOS-Emulator.exe\`** i uruchom go dwuklikiem na Windows 10/11 (zero instalacji, zero zewnetrznych DLL)."
-            echo "- Emulator pozwala obejrzec i przetestowac ekran startowy MysticalOS, animacje startu, suwak **rozmiaru ikon (60%–150%)**, ksztalty ikon, kafelki **\`1x1\` / \`2x1\` / \`1x2\` / \`2x2\`** (prawy klik na ikone), wbudowane aplikacje oraz rzeczywisty audyt tego buildu z \`mysticalos-manifest.json\`."
-            echo "- *Uwaga techniczna:* \`MysticalOS-Emulator.exe\` jest symulatorem UI/UX i podgladem konfiguracji systemu na x86_64 Windows — nie wirtualizuje fizycznego kernela ARM64 MediaTek MT6765 z pliku \`super.img\`."
+            echo "## 1. Emulator i analizator obrazu na komputer Windows (\`MysticalOS-Emulator.exe\`)"
+            echo "- Pobierz sam plik **\`MysticalOS-Emulator.exe\`** (albo uruchom go bezposrednio po wypakowaniu archiwum 7z w tym samym folderze co \`super.img\` — wczyta go automatycznie!)."
+            echo "- Zero instalacji i zero zewnetrznych bibliotek DLL (czyste Win32 API: \`kernel32\`, \`user32\`, \`gdi32\`, \`comdlg32\`, \`shell32\`)."
+            echo "- **Prawdziwy silnik odczytu obrazow w czystym Rust** (bez \`7z\` ani zewnetrznych narzedzi): obsluguje **Android Sparse**, **\`super.img\` (liblp)**, **EROFS (w tym skompresowany LZ4 z \`big_pcluster\` i \`ztailpacking\`)** oraz **EXT4**."
+            echo "- Mozesz wskazac lub przeciagnac na okno wlasny plik **\`super.img\`** albo **\`system.img\`**: emulator odczyta prawdziwy \`build.prop\`, wczyta z obrazu prawdziwa animacje startowa \`bootanimation.zip\`, przeskanuje rzeczywiste pliki \`.apk\` (AXML), sprawdzi status spoofingu microG w \`services.jar\`, otworzy eksplorator katalogow partycji i wyeksportuje z \`super.img\` samodzielny \`system.img\`."
+            echo "- Dodatkowo zawiera interaktywny symulator UI/UX MysticalOS (ColorOS 17 suwak rozmiaru ikon \`60%–150%\`, kafelki \`1x1\`/\`2x1\`/\`1x2\`/\`2x2\`, kalkulator, ustawienia, podglad audytu)."
+            echo "- *Uwaga techniczna:* \`MysticalOS-Emulator.exe\` analizuje obrazy \`super.img\`/\`system.img\` na poziomie systemu plikow oraz symuluje UI/UX na x86_64 Windows — nie uruchamia binarnie fizycznego kernela Linux ARM64 ani sterownikow sprzetowych MediaTek MT6765 (HAL)."
             echo
             echo "## 2. Wgranie prawdziwego ROM-u na telefon Redmi 9C (5 czesci 7-Zip)"
             echo "1. Pobierz **wszystkie 5 plikow** do jednego folderu:"
