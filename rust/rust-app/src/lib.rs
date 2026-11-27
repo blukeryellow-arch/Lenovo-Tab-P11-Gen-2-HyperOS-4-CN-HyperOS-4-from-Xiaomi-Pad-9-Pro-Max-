@@ -179,6 +179,11 @@ mod android_app {
 
     struct SendPtr(*mut c_void);
     unsafe impl Send for SendPtr {}
+    impl SendPtr {
+        fn get(&self) -> *mut c_void {
+            self.0
+        }
+    }
 
     pub unsafe extern "C" fn on_window_created(activity: *mut ANativeActivity, window: *mut c_void) {
         if activity.is_null() || (*activity).instance.is_null() || window.is_null() {
@@ -195,7 +200,7 @@ mod android_app {
 
         log_info("Rust NativeActivity window created - starting GLES2 monitor");
         state.render_thread = Some(thread::spawn(move || {
-            let win = win_wrap.0;
+            let win = win_wrap.get();
             let dpy = eglGetDisplay(ptr::null_mut());
             if dpy == EGL_NO_DISPLAY || eglInitialize(dpy, ptr::null_mut(), ptr::null_mut()) == 0 {
                 log_info("EGL init failed");

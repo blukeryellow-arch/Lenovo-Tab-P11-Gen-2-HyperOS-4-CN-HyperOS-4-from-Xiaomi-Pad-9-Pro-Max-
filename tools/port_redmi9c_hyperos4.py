@@ -552,6 +552,8 @@ def debloat_trees(
         "appfinder",
         "voiceunlock",
         "miuisecurityadd",
+        "mibugreportos4global",
+        "mi_connect_service",
     })
 
     # Detect WebView packages so we NEVER remove TrichromeLibrary if TrichromeWebView depends on it (when keeping GMS)
@@ -1104,8 +1106,11 @@ def integrate_microg_and_foss(
         )
         if r.returncode == 0:
             wv_xml_dump = r.stdout
-            pkgs = re.findall(r'packageName\([^)]+\)="([^"]+)"', wv_xml_dump)
-            log.append(f"donor config_webview_packages.xml allows: {pkgs}")
+            pkgs = re.findall(r'packageName[^=]*="([^"]+)"', wv_xml_dump)
+            if not pkgs:
+                log.append(f"donor config_webview_packages.xml raw: {' | '.join(wv_xml_dump.splitlines()[:12])}")
+            else:
+                log.append(f"donor config_webview_packages.xml allows: {pkgs}")
 
     # Check blossom base OSS WebView (usually multi-ABI com.android.webview)
     base_wv = None

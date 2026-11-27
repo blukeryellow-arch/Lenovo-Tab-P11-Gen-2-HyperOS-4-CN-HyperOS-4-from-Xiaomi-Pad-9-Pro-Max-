@@ -27,25 +27,102 @@ import zipfile
 from pathlib import Path
 
 
-def detect_smali_classes(jar_path: Path) -> tuple[str, str]:
-    with zipfile.ZipFile(jar_path, "r") as zf:
-        names = set(zf.namelist())
-    if "com/android/tools/smali/baksmali/Main.class" in names and "com/android/tools/smali/smali/Main.class" in names:
-        return (
-            "com.android.tools.smali.baksmali.Main",
-            "com.android.tools.smali.smali.Main",
+BRIDGE_JAVA = r"""
+import brut.androlib.smali.SmaliBuilder;
+import com.android.tools.smali.baksmali.Baksmali;
+import com.android.tools.smali.baksmali.BaksmaliOptions;
+import com.android.tools.smali.dexlib2.DexFileFactory;
+import com.android.tools.smali.dexlib2.Opcodes;
+import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+public class R9cSmaliBridge {
+    public static void main(String[] args) throws Exception {
+        String mode = args[0];
+        if ("d".equals(mode)) {
+            File dex = new File(args[1]);
+            File outDir = new File(args[2]);
+            DexBackedDexFile df = DexFileFactory.loadDexFile(dex, (Opcodes) null);
+            BaksmaliOptions opts = new BaksmaliOptions();
+            opts.parameterRegisters = true;
+            opts.localsDirective = true;
+            opts.sequentialLabels = true;
+            Files.createDirectories(outDir.toPath());
+            if (!Baksmali.disassembleDexFile(df, outDir, 4, opts)) {
+                System.exit(2);
+            }
+        } else if ("a".equals(mode)) {
+            Path smaliDir = Paths.get(args[1]);
+            Path outDex = Paths.get(args[2]);
+            int api = args.length > 3 ? Integer.parseInt(args[3]) : 29;
+            new SmaliBuilder(api).build(smaliDir, outDex);
+        } else {
+            System.exit(1);
+        }
+    }
+}
+"""
+
+
+class SmaliRunner:
+    def __init__(self, jar_path: Path, tmp_dir: Path) -> None:
+        self.jar_path = jar_path
+        self.tmp_dir = tmp_dir
+        self.cp = str(jar_path)
+        self.mode = ""
+        with zipfile.ZipFile(jar_path, "r") as zf:
+            names = set(zf.namelist())
+        if "com/android/tools/smali/baksmali/Main.class" in names and "com/android/tools/smali/smali/Main.class" in names:
+            self.mode = "main_android"
+            self.bak_cls = "com.android.tools.smali.baksmali.Main"
+            self.sm_cls = "com.android.tools.smali.smali.Main"
+        elif "org/jf/baksmali/Main.class" in names and "org/jf/smali/Main.class" in names:
+            self.mode = "main_jf"
+            self.bak_cls = "org.jf.baksmali.Main"
+            self.sm_cls = "org.jf.smali.Main"
+        elif "com/android/tools/smali/baksmali/Baksmali.class" in names and "brut/androlib/smali/SmaliBuilder.class" in names:
+            self.mode = "apktool_bridge"
+            bdir = tmp_dir / "bridge_classes"
+            bdir.mkdir(parents=True, exist_ok=True)
+            jfile = bdir / "R9cSmaliBridge.java"
+            jfile.write_text(BRIDGE_JAVA, encoding="utf-8")
+            r = subprocess.run(["javac", "-cp", str(jar_path), "-d", str(bdir), str(jfile)], text=True, capture_output=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"javac R9cSmaliBridge error: {r.stderr[:400]}")
+            self.cp = f"{bdir}{os.pathsep}{jar_path}"
+            self.bak_cls = "R9cSmaliBridge"
+            self.sm_cls = "R9cSmaliBridge"
+        else:
+            raise RuntimeError(f"Brak klas smali/baksmali w {jar_path}")
+
+    def baksmali(self, dex_path: Path, out_dir: Path) -> subprocess.CompletedProcess:
+        if self.mode == "apktool_bridge":
+            return subprocess.run(
+                ["java", "-Xmx1536m", "-cp", self.cp, "R9cSmaliBridge", "d", str(dex_path), str(out_dir)],
+                text=True,
+                capture_output=True,
+            )
+        return subprocess.run(
+            ["java", "-Xmx1536m", "-cp", self.cp, self.bak_cls, "d", str(dex_path), "-o", str(out_dir)],
+            text=True,
+            capture_output=True,
         )
-    if "org/jf/baksmali/Main.class" in names and "org/jf/smali/Main.class" in names:
-        return ("org.jf.baksmali.Main", "org.jf.smali.Main")
-    raise RuntimeError(f"Brak klas smali/baksmali w {jar_path}")
 
-
-def run_java_tool(jar_path: Path, main_cls: str, args: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["java", "-Xmx1536m", "-cp", str(jar_path), main_cls, *args],
-        text=True,
-        capture_output=True,
-    )
+    def smali(self, smali_dir: Path, out_dex: Path) -> subprocess.CompletedProcess:
+        if self.mode == "apktool_bridge":
+            return subprocess.run(
+                ["java", "-Xmx1536m", "-cp", self.cp, "R9cSmaliBridge", "a", str(smali_dir), str(out_dex), "29"],
+                text=True,
+                capture_output=True,
+            )
+        return subprocess.run(
+            ["java", "-Xmx1536m", "-cp", self.cp, self.sm_cls, "a", str(smali_dir), "-o", str(out_dex)],
+            text=True,
+            capture_output=True,
+        )
 
 
 def build_spoof_helper_smali(has_signing_details_ctor: bool, has_signing_info_ctor: bool) -> str:
@@ -170,7 +247,7 @@ def patch_computer_engine_smali(smali_path: Path) -> tuple[bool, int]:
     return False, 0
 
 
-def check_framework_descriptors(framework_jar: Path, apktool_jar: Path, baksmali_cls: str, tmp: Path) -> tuple[bool, bool, bool]:
+def check_framework_descriptors(framework_jar: Path, runner: SmaliRunner, tmp: Path) -> tuple[bool, bool, bool]:
     if not framework_jar.is_file():
         return False, False, False
     with zipfile.ZipFile(framework_jar, "r") as zf:
@@ -187,7 +264,7 @@ def check_framework_descriptors(framework_jar: Path, apktool_jar: Path, baksmali
         with zipfile.ZipFile(framework_jar, "r") as zf:
             dex_p.write_bytes(zf.read(dn))
         sub = fw_out / dn.replace(".dex", "")
-        r = run_java_tool(apktool_jar, baksmali_cls, ["d", str(dex_p), "-o", str(sub)])
+        r = runner.baksmali(dex_p, sub)
         if r.returncode != 0:
             continue
         sig_sm = sub / "android" / "content" / "pm" / "Signature.smali"
@@ -228,12 +305,16 @@ def main() -> int:
         print("STATUS: SKIPPED (services.jar nie zawiera classes*.dex - obraz odex/vdex-only; uzyj LSPosed+FakeGApps po roocie lub vdexExtractor)")
         return 0
 
-    baksmali_cls, smali_cls = detect_smali_classes(apktool_jar)
-    print(f"services.jar DEX files: {dex_names} (using {baksmali_cls})")
-
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
-        has_sig, has_sd, has_si = check_framework_descriptors(framework_jar, apktool_jar, baksmali_cls, tmp)
+        try:
+            runner = SmaliRunner(apktool_jar, tmp)
+        except Exception as exc:
+            print(f"STATUS: SKIPPED ({exc})")
+            return 0
+        print(f"services.jar DEX files: {dex_names} (mode={runner.mode})")
+
+        has_sig, has_sd, has_si = check_framework_descriptors(framework_jar, runner, tmp)
         print(f"framework.jar check: Signature(String)={has_sig}, SigningDetails(Signature[],int)={has_sd}, SigningInfo(SigningDetails)={has_si}")
         if not has_sig:
             print("STATUS: SKIPPED (nie znaleziono lub brak DEX w framework.jar dla bezpiecznej weryfikacji Signature.<init>(String))")
@@ -248,7 +329,7 @@ def main() -> int:
             with zipfile.ZipFile(services_jar, "r") as zf:
                 dex_p.write_bytes(zf.read(dn))
             out_sm = tmp / f"sm_{dn}"
-            r = run_java_tool(apktool_jar, baksmali_cls, ["d", str(dex_p), "-o", str(out_sm)])
+            r = runner.baksmali(dex_p, out_sm)
             if r.returncode != 0:
                 print(f"baksmali error on {dn}: {r.stderr[:400]}")
                 continue
@@ -273,7 +354,7 @@ def main() -> int:
         helper_cls_path.write_text(build_spoof_helper_smali(has_sd, has_si), encoding="utf-8")
 
         new_target_dex = tmp / f"patched_{target_dex}"
-        r1 = run_java_tool(apktool_jar, smali_cls, ["a", str(target_dir), "-o", str(new_target_dex)])
+        r1 = runner.smali(target_dir, new_target_dex)
         if r1.returncode != 0 or not new_target_dex.is_file():
             print(f"STATUS: SKIPPED (blad smali na {target_dex}: {r1.stderr[:500]})")
             return 0
@@ -281,15 +362,15 @@ def main() -> int:
         next_idx = len(dex_names) + 1
         extra_dex_name = f"classes{next_idx}.dex"
         extra_dex_path = tmp / extra_dex_name
-        r2 = run_java_tool(apktool_jar, smali_cls, ["a", str(helper_dir), "-o", str(extra_dex_path)])
+        r2 = runner.smali(helper_dir, extra_dex_path)
         if r2.returncode != 0 or not extra_dex_path.is_file():
             print(f"STATUS: SKIPPED (blad smali na R9cMicrogSpoof: {r2.stderr[:500]})")
             return 0
 
         # Roundtrip baksmali verification before writing services.jar
         chk = tmp / "roundtrip"
-        r3 = run_java_tool(apktool_jar, baksmali_cls, ["d", str(new_target_dex), "-o", str(chk / "t")])
-        r4 = run_java_tool(apktool_jar, baksmali_cls, ["d", str(extra_dex_path), "-o", str(chk / "h")])
+        r3 = runner.baksmali(new_target_dex, chk / "t")
+        r4 = runner.baksmali(extra_dex_path, chk / "h")
         if r3.returncode != 0 or r4.returncode != 0:
             print("STATUS: SKIPPED (roundtrip baksmali nie przeszedl weryfikacji)")
             return 0
