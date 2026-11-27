@@ -206,8 +206,46 @@ jobs:
           "$WORK/bin/aapt2" dump badging "$WORK/rust-out/MysticalLauncher.apk" | head -n 16
           ls -lh "$WORK/rust-out/MysticalLauncher.apk"
 
-          echo "=== Test tools/apk2rust.py & mysticalos_brand.py ==="
+          echo "=== Budowanie MysticalFluxStudio.apk (ColorOS 17 Flux Icon & Widget Companion bez HOME conflict) ==="
+          python3 - "$REPO_DIR/apps/mystical-launcher/AndroidManifest.xml" "$WORK/launcher-flux-manifest.xml" <<'PYEOF'
+          import sys, xml.etree.ElementTree as ET
+          src, dst = sys.argv[1], sys.argv[2]
+          ANDROID_NS = "http://schemas.android.com/apk/res/android"
+          ET.register_namespace("android", ANDROID_NS)
+          tree = ET.parse(src)
+          root = tree.getroot()
+          app = root.find("application")
+          for act in app.findall("activity"):
+              if act.attrib.get(f"{{{ANDROID_NS}}}name", "").endswith("MysticalHomeActivity"):
+                  for inf in list(act.findall("intent-filter")):
+                      cats = [c.attrib.get(f"{{{ANDROID_NS}}}name", "") for c in inf.findall("category")]
+                      if "android.intent.category.HOME" in cats:
+                          act.remove(inf)
+          tree.write(dst, encoding="utf-8", xml_declaration=True)
+          PYEOF
+          "$WORK/bin/aapt2" link \
+            --manifest "$WORK/launcher-flux-manifest.xml" \
+            -I "$ANDROID_JAR" \
+            -o "$WORK/flux-unaligned.apk" \
+            "$WORK/launcher-res.zip"
+          (cd "$WORK/launcher-dex" && zip -u "$WORK/flux-unaligned.apk" classes*.dex)
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$WORK/flux-unaligned.apk" "$WORK/flux-aligned.apk"
+          "$BUILD_TOOLS/apksigner" sign --ks "$WORK/rust-apk/r9c.jks" --ks-pass pass:android \
+            --out "$WORK/rust-out/MysticalFluxStudio.apk" "$WORK/flux-aligned.apk"
+          "$BUILD_TOOLS/apksigner" verify "$WORK/rust-out/MysticalFluxStudio.apk"
+          rm -f "$WORK/launcher-flux-manifest.xml" "$WORK/flux-unaligned.apk" "$WORK/flux-aligned.apk"
+          ls -lh "$WORK/rust-out/MysticalFluxStudio.apk"
+
+          echo "=== Dekompresja i weryfikacja oryginalnego HyperOS 4 System_launcher ==="
+          H4_XZ="$REPO_DIR/apps/hyperos4-launcher/System_launcher_RELEASE-8.01.02.9248-261013-11112305-R.apk.xz"
+          xz -d -k -c "$H4_XZ" > "$WORK/hyperos4-launcher.apk"
+          EXPECTED_H4_SHA=$(awk '/\.apk$/ {print $1}' "$REPO_DIR/apps/hyperos4-launcher/SHA256SUMS")
+          echo "${EXPECTED_H4_SHA}  $WORK/hyperos4-launcher.apk" | sha256sum -c -
+          "$WORK/bin/aapt2" dump badging "$WORK/hyperos4-launcher.apk" | head -n 12
+
+          echo "=== Test tools/apk2rust.py, patch_hyperos4_island.py & mysticalos_brand.py ==="
           python3 "$REPO_DIR/tools/mysticalos_brand.py" --selftest
+          python3 "$REPO_DIR/tools/patch_hyperos4_island.py" --selftest
           python3 "$REPO_DIR/tools/apk2rust.py" --selftest
           python3 "$REPO_DIR/tools/apk2rust.py" --apk "$WORK/rust-out/Redmi9CRustApp.apk" --out "$WORK/apk2rust-smoke"
           cargo check --manifest-path "$WORK/apk2rust-smoke/Cargo.toml" --target-dir "$WORK/cargo-target-smoke"
@@ -481,7 +519,7 @@ jobs:
           done
           df -h /
 
-      - name: "3. Portowanie MysticalOS + usuniecie apek Xiaomi + ColorOS 17 Launcher + secilc"
+      - name: "3. Portowanie MysticalOS + HyperOS 4 Launcher + Dynamic Island + ColorOS 17 + secilc"
         run: |
           set -euo pipefail
           sudo python3 "$REPO_DIR/tools/port_redmi9c_hyperos4.py" \
@@ -493,7 +531,9 @@ jobs:
             --gms-mode "$GMS_MODE" \
             --os-name "MysticalOS" \
             --extra-apps-dir "$WORK/extra-apps" \
+            --hyperos4-launcher-apk "$WORK/hyperos4-launcher.apk" \
             --mystical-launcher-apk "$WORK/rust-out/MysticalLauncher.apk" \
+            --flux-studio-apk "$WORK/rust-out/MysticalFluxStudio.apk" \
             --r9c-memd-bin "$WORK/rust-out/r9c-memd" \
             --r9c-memd-rc "$REPO_DIR/rust/r9c-memd/r9c-memd.rc" \
             --rust-app-apk "$WORK/rust-out/Redmi9CRustApp.apk" \
@@ -504,19 +544,19 @@ jobs:
             --report "$WORK/port-report.txt"
           sudo chown "$(id -u):$(id -g)" "$WORK/port-report.txt" "$WORK/mysticalos-manifest.json"
 
-          sudo rm -rf "$WORK/base-tree" "$WORK/donor-tree" "$WORK/extra-apps"
+          sudo rm -rf "$WORK/base-tree" "$WORK/donor-tree" "$WORK/extra-apps" "$WORK/hyperos4-launcher.apk"
 
           # Naprawa brakujacych kontekstow SELinux dla dogranych plikow
           SYS_FC="$WORK/out-tree/system/system/etc/selinux/plat_file_contexts"
           [ -f "$SYS_FC" ] || SYS_FC="$WORK/out-tree/system/etc/selinux/plat_file_contexts"
           if [ -f "$SYS_FC" ]; then
             sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$SYS_FC" --root "$WORK/out-tree/system" \
-              --only system/etc/properties system/etc/vintf system/build.prop system/framework/services.jar system/media || true
+              --only system/etc/properties system/etc/vintf system/build.prop system/framework system/media || true
           fi
           SEXT_FC="$WORK/out-tree/system_ext/etc/selinux/system_ext_file_contexts"
           if [ -f "$SEXT_FC" ]; then
             sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$SEXT_FC" --root "$WORK/out-tree" \
-              --only system_ext/etc/vintf system_ext/etc/properties system_ext/apex system_ext/etc/build.prop system_ext/bin system_ext/etc/init system_ext/etc/selinux || true
+              --only system_ext/etc/vintf system_ext/etc/properties system_ext/apex system_ext/etc/build.prop system_ext/framework system_ext/priv-app system_ext/bin system_ext/etc/init system_ext/etc/selinux || true
           fi
           PROD_FC="$WORK/out-tree/product/etc/selinux/product_file_contexts"
           if [ -f "$PROD_FC" ]; then
@@ -781,10 +821,34 @@ jobs:
               sudo mount -t erofs -o ro,loop "$WORK/super-check/${P}.img" "$WORK/mnt-verify" || \
               sudo mount -t ext4 -o ro,loop "$WORK/super-check/${P}.img" "$WORK/mnt-verify"
             sudo python3 - "$WORK/mnt-verify" "$P" <<'PYEOF'
-          import os, sys
+          import os, subprocess, sys, zipfile
           mnt, p = sys.argv[1], sys.argv[2]
           ctx = os.getxattr(mnt, "security.selinux", follow_symlinks=False)
           print(f"verify {p} root xattr={ctx.decode()}")
+          if p == "product":
+              import glob
+              miui_home = os.path.join(mnt, "priv-app/MiuiHome/MiuiHome.apk")
+              assert os.path.isfile(miui_home), f"Missing {miui_home}"
+              assert os.path.isfile(os.path.join(mnt, "priv-app/MiuiHome/lib/arm64/libapp.so")), "Missing MiuiHome libapp.so"
+              assert os.path.isfile(os.path.join(mnt, "priv-app/MysticalFluxStudio/MysticalFluxStudio.apk")), "Missing MysticalFluxStudio.apk"
+              assert os.path.isfile(os.path.join(mnt, "overlay/MysticalOSFrameworkOverlay.apk")), "Missing MysticalOSFrameworkOverlay.apk"
+              assert os.path.isfile(os.path.join(mnt, "media/theme/default/runtime_largeicon.config")), "Missing runtime_largeicon.config"
+              df_files = sorted(glob.glob(os.path.join(mnt, "etc/device_features/*.xml")))
+              assert df_files, "Missing product/etc/device_features/*.xml"
+              for df in df_files:
+                  dft = open(df, "r", encoding="utf-8", errors="replace").read()
+                  assert '<bool name="support_dynamic_island">true</bool>' in dft, f"Missing support_dynamic_island in {df}"
+                  assert '<bool name="support_largeicon">true</bool>' in dft, f"Missing support_largeicon in {df}"
+              with zipfile.ZipFile(miui_home, "r") as zf:
+                  rsa = [n for n in zf.namelist() if n.startswith("META-INF/") and n.endswith((".RSA", ".DSA", ".EC"))]
+                  assert rsa, "MiuiHome.apk missing META-INF signature!"
+                  sig_info = subprocess.run(
+                      ["openssl", "pkcs7", "-inform", "DER", "-print_certs", "-noout"],
+                      input=zf.read(rsa[0]), capture_output=True, check=True,
+                  ).stdout.decode("utf-8", "replace")
+                  assert "MIUI" in sig_info, f"Expected CN=MIUI signature, got: {sig_info}"
+              ov_list = [os.path.basename(x) for x in sorted(glob.glob(os.path.join(mnt, "overlay/*.apk")))]
+              print(f"verify product OK: MiuiHome CN=MIUI + libapp.so + FluxStudio + runtime_largeicon.config + device_features({len(df_files)}) + overlays={ov_list}")
           PYEOF
             sudo umount "$WORK/mnt-verify"
           done
@@ -798,7 +862,11 @@ jobs:
           cargo run --release --manifest-path "$REPO_DIR/rust/mystical-emulator/Cargo.toml" \
             --target-dir "$WORK/cargo-target-emu-host" \
             -- --verify-image "$WORK/package/super.img" --extract-system "$WORK/verify_system.img" \
-            2>&1 | tee -a "$WORK/rust-build.log"
+            2>&1 | tee "$WORK/emu-verify.txt" | tee -a "$WORK/rust-build.log"
+          grep -q "HyperOS 4 launcher: true" "$WORK/emu-verify.txt" || { echo "::error::Brak HyperOS 4 launcher w super.img!"; exit 1; }
+          grep -q "Dynamic Island ON : true" "$WORK/emu-verify.txt" || { echo "::error::Brak Dynamic Island ON w super.img!"; exit 1; }
+          grep -q "xiaomi bloat left : 0" "$WORK/emu-verify.txt" || { echo "::error::Wykryto pozostaly bloat Xiaomi w super.img!"; exit 1; }
+          rm -f "$WORK/emu-verify.txt"
           ls -lh "$WORK/verify_system.img" | tee -a "$WORK/rust-build.log"
           rm -rf "$WORK/verify_system.img" "$WORK/cargo-target-emu-host"
 
@@ -848,10 +916,12 @@ jobs:
              "$WORK/release/"
           [ -f "$WORK/rust-out/Redmi9CRustApp.apk" ] && cp "$WORK/rust-out/Redmi9CRustApp.apk" "$WORK/release/Redmi9CRustApp.apk"
           [ -f "$WORK/rust-out/MysticalLauncher.apk" ] && cp "$WORK/rust-out/MysticalLauncher.apk" "$WORK/release/MysticalLauncher.apk"
+          [ -f "$WORK/rust-out/MysticalFluxStudio.apk" ] && cp "$WORK/rust-out/MysticalFluxStudio.apk" "$WORK/release/MysticalFluxStudio.apk"
           (
             cd "$WORK/release"
             [ -f MysticalOS-Emulator.exe ] && sha256sum MysticalOS-Emulator.exe >> SHA256SUMS.txt
             [ -f MysticalLauncher.apk ] && sha256sum MysticalLauncher.apk >> SHA256SUMS.txt
+            [ -f MysticalFluxStudio.apk ] && sha256sum MysticalFluxStudio.apk >> SHA256SUMS.txt
           )
           ls -lh "$WORK/release"
 
@@ -870,12 +940,13 @@ jobs:
           {
             echo "# MysticalOS 1.0 — Redmi 9C (blossom: angelica / angelican)"
             echo
-            echo "> **Rebranding HyperOS 4 (Android 17) na MysticalOS 1.0**: bez apek uzytkownika Xiaomi, z otwartymi zamiennikami **Fossify / microG / HeliBoard / Droid-ify**, autorskim **MysticalLauncher** (zmiana rozmiaru ikon + kafelki `1x1` / `2x1` / `1x2` / `2x2` w stylu ColorOS 17) oraz natywnym emulatorem **MysticalOS-Emulator.exe** na Windows PC."
+            echo "> **Rebranding HyperOS 4 (Android 17) na MysticalOS 1.0**: bez bloatware'u Xiaomi, z oryginalnym **HyperOS 4 System_launcher (8.01)** z odblokowanym **Always-On Dynamic Island** oraz **ColorOS 17 Flux Icon & Tile Resizer** (zmiana rozmiaru ikon \`60%–150%\`, kafelki \`1x1\` / \`2x1\` / \`1x2\` / \`2x2\` + otwarte apki **Fossify / microG / HeliBoard / Droid-ify**) oraz natywnym emulatorem **MysticalOS-Emulator.exe** na Windows PC."
             echo
             echo "- **Baza sprzetowa (OSS A17 + kernel 4.19):** \`EvolutionX 17.0 blossom\` (\`xc112lg/blossom_releases\`)"
             echo "- **Dawca bazy systemowej (Android 17):** Redmi 15C / POCO C85 Global (\`dew\`, \`OS4.0.8.0.XBNMIXM\`)"
+            echo "- **Baza Launchera:** Oryginalny HyperOS 4 \`System_launcher 8.01.02.9248\` (\`com.miui.home\`, podpis \`CN=MIUI\` zachowany, odblokowane bramki \`Dynamic Island\` + \`LargeIcon\`)"
             echo "- **Wariant:** \`${VARIANT}\` | **Debloat / GMS:** \`${DEBLOAT_LEVEL}\` / \`${GMS_MODE}\`"
-            echo "- **Autorskie aplikacje / uslugi:** \`MysticalLauncher.apk\` (ColorOS 17 Icon Resizer), \`MysticalOSFrameworkOverlay.apk\`, \`bootanimation.zip\` MysticalOS, \`/system_ext/bin/r9c-memd\`, \`Redmi9CRustApp.apk\`"
+            echo "- **Autorskie aplikacje / uslugi:** \`MysticalFluxStudio.apk\` (ColorOS 17 Icon & Tile Resizer), \`MysticalOSIsland*Overlay.apk\`, \`MysticalOSFrameworkOverlay.apk\`, \`bootanimation.zip\` MysticalOS, \`/system_ext/bin/r9c-memd\`, \`Redmi9CRustApp.apk\`"
             echo "- **Aplikacje FOSS w miejscu apek Xiaomi:** \`Fossify Phone\`, \`Messages\`, \`Contacts\`, \`Gallery\`, \`File Manager\`, \`Camera\`, \`Clock\`, \`Calculator\`, \`HeliBoard\`, \`Droid-ify\`, \`Cromite WebView\`, \`microG\`"
             echo "- **GitHub Actions Run:** ${GITHUB_RUN_ID}"
             echo

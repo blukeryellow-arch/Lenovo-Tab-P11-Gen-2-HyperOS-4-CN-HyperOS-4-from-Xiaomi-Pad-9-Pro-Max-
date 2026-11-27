@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="org.mysticalos.launcher"
-    android:versionCode="1"
-    android:versionName="1.0-flux17">
+    android:versionCode="3"
+    android:versionName="2.1-hyperflux17">
 
     <uses-sdk
         android:minSdkVersion="28"
@@ -12,22 +12,27 @@
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="false"
+        android:hardwareAccelerated="true"
         android:icon="@drawable/ic_mystical_launcher"
-        android:label="MysticalOS Launcher"
+        android:label="MysticalOS ColorOS 17 Icons"
         android:supportsRtl="true">
 
         <activity
             android:name=".MysticalHomeActivity"
             android:clearTaskOnLaunch="true"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize"
             android:exported="true"
-            android:label="MysticalOS"
+            android:label="MysticalOS Launcher"
             android:launchMode="singleTask"
             android:screenOrientation="portrait"
             android:stateNotNeeded="true"
-            android:theme="@android:style/Theme.Wallpaper.NoTitleBar">
+            android:theme="@android:style/Theme.Wallpaper.NoTitleBar"
+            android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
@@ -47,6 +52,29 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ColorOsTileConfigActivity"
+            android:exported="true"
+            android:icon="@drawable/ic_widgets"
+            android:label="Kafelek ColorOS 17"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".ColorOsTileWidgetProvider"
+            android:exported="true"
+            android:label="Kafelek aplikacji ColorOS 17 (1x1 / 2x1 / 1x2 / 2x2)">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/coloros_tile_widget_info" />
+        </receiver>
 
     </application>
 </manifest>

@@ -252,6 +252,86 @@ def build_framework_rro_overlay(
     return True
 
 
+def build_island_rro_overlays(
+    donor_fw_res: Path,
+    target_apks: list[tuple[str, Path, str]],
+    aapt2_bin: str,
+    out_overlay_dir: Path,
+    log: list[str],
+) -> int:
+    """Scan SystemUI / MiuiHome resources via aapt2 and build targeted RRO overlays enabling Dynamic Island & Large Icons."""
+    if not aapt2_bin or not donor_fw_res.is_file():
+        return 0
+
+    built = 0
+    for target_pkg, target_apk, overlay_name in target_apks:
+        if not target_apk.is_file():
+            continue
+        r = subprocess.run([aapt2_bin, "dump", "resources", str(target_apk)], text=True, capture_output=True)
+        if r.returncode != 0:
+            continue
+
+        seen_bools: set[str] = set()
+        values_items: list[str] = []
+        for m in re.finditer(r"bool/([A-Za-z0-9_]*(?:dynamic_island|super_island|island_support|support_island|largeicon|large_icon|big_icon|config_.*island)[A-Za-z0-9_]*)", r.stdout, re.I):
+            bname = m.group(1)
+            if bname in seen_bools:
+                continue
+            seen_bools.add(bname)
+            # Only force enable positive support flags, avoid enabling disable_* flags
+            low = bname.lower()
+            if any(bad in low for bad in ("disable", "hide", "forbidden", "without", "no_island")):
+                continue
+            values_items.append(f'    <bool name="{bname}">true</bool>')
+
+        if not values_items:
+            log.append(f"MysticalOS Island RRO ({target_pkg}): no matching bool resources found in {target_apk.name}")
+            continue
+
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            res_dir = tmp / "res" / "values"
+            res_dir.mkdir(parents=True, exist_ok=True)
+            (res_dir / "values.xml").write_text(
+                '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+                + "\n".join(values_items)
+                + "\n</resources>\n",
+                encoding="utf-8",
+            )
+            manifest = tmp / "AndroidManifest.xml"
+            overlay_pkg = f"org.mysticalos.overlay.island.{target_pkg.replace('.', '_')}"
+            manifest.write_text(
+                '<?xml version="1.0" encoding="utf-8"?>\n'
+                '<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n'
+                f'    package="{overlay_pkg}">\n'
+                '    <application android:hasCode="false" />\n'
+                f'    <overlay android:targetPackage="{target_pkg}"\n'
+                '        android:isStatic="true"\n'
+                '        android:priority="960" />\n'
+                "</manifest>\n",
+                encoding="utf-8",
+            )
+            compiled = tmp / "compiled.zip"
+            r1 = subprocess.run([aapt2_bin, "compile", "--dir", str(tmp / "res"), "-o", str(compiled)], text=True, capture_output=True)
+            if r1.returncode != 0:
+                log.append(f"MysticalOS Island RRO ({target_pkg}) compile err: {r1.stderr[:200]}")
+                continue
+            out_apk = out_overlay_dir / overlay_name
+            out_apk.parent.mkdir(parents=True, exist_ok=True)
+            r2 = subprocess.run(
+                [aapt2_bin, "link", "-I", str(donor_fw_res), "-I", str(target_apk), "--manifest", str(manifest), "-o", str(out_apk), str(compiled)],
+                text=True,
+                capture_output=True,
+            )
+            if r2.returncode == 0 and out_apk.is_file():
+                os.chmod(out_apk, 0o644)
+                built += 1
+                log.append(f"MysticalOS Island RRO installed: {out_apk.name} -> {target_pkg} ({len(values_items)} flags: {', '.join(sorted(seen_bools)[:8])})")
+            else:
+                log.append(f"MysticalOS Island RRO ({target_pkg}) link err: {r2.stderr[:200]}")
+    return built
+
+
 def scan_launcher_apps(roots: list[tuple[str, Path]], aapt2_bin: str) -> list[dict[str, object]]:
     """Audit all launchable APKs remaining across system/system_ext/product using aapt2."""
     apps: list[dict[str, object]] = []

@@ -20,6 +20,9 @@ fn run_cli_verify(img_path: &str, extract_out: Option<&str>) -> Result<(), Strin
     println!("  build.prop entries: {}", img.props.len());
     for key in [
         "ro.mysticalos.version",
+        "ro.mysticalos.launcher",
+        "ro.mysticalos.dynamic_island",
+        "ro.mysticalos.icon_engine",
         "ro.build.display.id",
         "ro.build.version.release",
         "ro.product.system.model",
@@ -28,6 +31,8 @@ fn run_cli_verify(img_path: &str, extract_out: Option<&str>) -> Result<(), Strin
             println!("    {} = {}", key, v);
         }
     }
+    println!("  HyperOS 4 launcher: {}", img.has_hyperos4_launcher);
+    println!("  Dynamic Island ON : {}", img.has_dynamic_island_config);
     println!("  services.jar spoof: {}", img.services_spoof_verified);
     println!("  r9c-memd present  : {}", img.has_r9c_memd);
     println!("  bootanimation PNGs: {}", img.boot_frames.len());

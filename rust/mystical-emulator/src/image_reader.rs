@@ -1640,6 +1640,8 @@ pub struct LoadedImageData {
     pub props: HashMap<String, String>,
     pub apks: Vec<ImgApkEntry>,
     pub has_r9c_memd: bool,
+    pub has_hyperos4_launcher: bool,
+    pub has_dynamic_island_config: bool,
     pub services_spoof_verified: String,
     pub xiaomi_bloat_left: Vec<String>,
     pub boot_frames: Vec<BootAnimFrame>,
@@ -1698,6 +1700,8 @@ pub fn inspect_image_file(path: &Path) -> Result<LoadedImageData, String> {
     let mut props: HashMap<String, String> = HashMap::new();
     let mut apks: Vec<ImgApkEntry> = Vec::new();
     let mut has_r9c_memd = false;
+    let mut has_hyperos4_launcher = false;
+    let mut has_dynamic_island_config = false;
     let mut services_spoof_verified = "brak services.jar w otwartym obrazie".to_string();
     let mut xiaomi_bloat_left = Vec::new();
     let mut boot_frames = Vec::new();
@@ -1778,7 +1782,6 @@ pub fn inspect_image_file(path: &Path) -> Result<LoadedImageData, String> {
             vec!["/priv-app", "/app"]
         };
         let xiaomi_check = [
-            "MiuiHome",
             "MiLauncherGlobal",
             "MiuiCamera",
             "MIUIGalleryGlobal",
@@ -1832,6 +1835,9 @@ pub fn inspect_image_file(path: &Path) -> Result<LoadedImageData, String> {
                                 }
                             }
                         }
+                        if pkg_id == "com.miui.home" {
+                            has_hyperos4_launcher = true;
+                        }
                         apks.push(ImgApkEntry {
                             dir_name: ad.name,
                             package: pkg_id,
@@ -1840,6 +1846,18 @@ pub fn inspect_image_file(path: &Path) -> Result<LoadedImageData, String> {
                             size_kib: (apk_f.size / 1024) as u32,
                             is_launcher,
                         });
+                    }
+                }
+            }
+        }
+
+        // Check device_features/*.xml in product for support_dynamic_island=true
+        if part.name == "product" {
+            for df_p in ["/etc/device_features/angelica.xml", "/etc/device_features/angelican.xml"] {
+                if let Ok(df_b) = vol.read_path(&mut pv, df_p, 128 * 1024) {
+                    let df_s = String::from_utf8_lossy(&df_b);
+                    if df_s.contains("<bool name=\"support_dynamic_island\">true</bool>") {
+                        has_dynamic_island_config = true;
                     }
                 }
             }
@@ -1867,6 +1885,12 @@ pub fn inspect_image_file(path: &Path) -> Result<LoadedImageData, String> {
         }
     }
 
+    if props.get("ro.mysticalos.dynamic_island").map(|s| s.as_str()) == Some("always_on")
+        || props.get("persist.sys.dynamic_island.enabled").map(|s| s.as_str()) == Some("true")
+    {
+        has_dynamic_island_config = true;
+    }
+
     Ok(LoadedImageData {
         file_path: path.display().to_string(),
         container_kind,
@@ -1874,6 +1898,8 @@ pub fn inspect_image_file(path: &Path) -> Result<LoadedImageData, String> {
         props,
         apks,
         has_r9c_memd,
+        has_hyperos4_launcher,
+        has_dynamic_island_config,
         services_spoof_verified,
         xiaomi_bloat_left,
         boot_frames,
@@ -2081,5 +2107,14 @@ mod tests {
         sup[4096..4100].copy_from_slice(&0x616C4467u32.to_le_bytes());
         let mut smd = MemDisk(sup);
         assert_eq!(detect_fs_kind(&mut smd), "super");
+    }
+
+    #[test]
+    fn test_hyperos4_dynamic_island_prop_check() {
+        let mut props = HashMap::new();
+        props.insert("ro.mysticalos.dynamic_island".to_string(), "always_on".to_string());
+        props.insert("ro.mysticalos.launcher".to_string(), "HyperOS4-Original-Base".to_string());
+        let enabled = props.get("ro.mysticalos.dynamic_island").map(|s| s.as_str()) == Some("always_on");
+        assert!(enabled);
     }
 }

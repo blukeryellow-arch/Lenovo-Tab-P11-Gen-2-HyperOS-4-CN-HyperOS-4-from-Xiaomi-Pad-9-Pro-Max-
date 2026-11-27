@@ -2047,6 +2047,19 @@ impl EmulatorState {
             align: TextAlign::Left,
             clip_to_screen: true,
         });
+        // Always-On Dynamic Island pill
+        let di = Rect { x: SCR_X + (SCR_W / 2) - 54, y: SCR_Y + 4, w: 108, h: 19 };
+        fill_round_rect(fb, w, h, di.x, di.y, di.w, di.h, 9, 0x05070D);
+        draw_round_border(fb, w, h, di.x, di.y, di.w, di.h, 9, 0x00D6FF);
+        texts.push(TextDraw {
+            rect: di,
+            text: "● Island ON".into(),
+            color: 0x9FF5FF,
+            size: 10,
+            bold: true,
+            align: TextAlign::Center,
+            clip_to_screen: true,
+        });
         texts.push(TextDraw {
             rect: Rect { x: SCR_X + SCR_W - 118, y: SCR_Y + 5, w: 106, h: 18 },
             text: format!("{} 4G 94%", if self.wifi_on { "WiFi" } else { "--" }),
@@ -2258,6 +2271,7 @@ impl EmulatorState {
                  Weryfikacja services.jar: {}\n\
                  Daemon r9c-memd: {} | Bootanimation.zip: {}\n\
                  Apki wyciagniete z APK (AXML): {} pakietow | Bloat Xiaomi: {}\n\
+                 Launcher HyperOS 4: {} | Dynamic Island: {}\n\
                  Wlasciwosci build.prop: {} wpisow\n\n\
                  Uzyj ikony 'Obraz .img' na ekranie lub przycisku 'Eksploruj .img' powyzej,\n\
                  aby przegladac katalogi /system, /product i podgladac pliki build.prop / .rc!",
@@ -2270,6 +2284,8 @@ impl EmulatorState {
                 boot_info,
                 img.apks.len(),
                 bloat_info,
+                if img.has_hyperos4_launcher { "TAK (com.miui.home)" } else { "MysticalLauncher" },
+                if img.has_dynamic_island_config { "ZAWSZE WLACZONY" } else { "brak w prop/xml" },
                 img.props.len(),
             )
         } else {

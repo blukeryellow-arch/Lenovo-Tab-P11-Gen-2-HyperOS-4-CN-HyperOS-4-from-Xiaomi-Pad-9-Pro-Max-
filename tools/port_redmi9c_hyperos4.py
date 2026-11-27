@@ -19,6 +19,7 @@ from typing import Iterable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mysticalos_brand
+import patch_hyperos4_island
 
 
 def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
@@ -854,11 +855,10 @@ def debloat_trees(
                         removed_count += 1
                         log.append(f"debloat apex: {apx.name} ({sz // (1024 * 1024)} MiB)")
 
-        # 3. Heavy media & voice bloat
+        # 3. Heavy media & voice bloat (keep media/theme/miui_mod_icons for HyperOS 4 launcher large icons)
         for rel_rm in (
             "media/video",
             "media/wallpaper",
-            "media/theme/miui_mod_icons",
             "etc/precust_theme",
             "etc/recovery-resource.dat",
         ):
@@ -945,8 +945,8 @@ def trim_to_budget(
         log.append(f"budget check: po zmianie aparatu OS={os_mib()} MiB <= {target_os_mib} MiB")
         return
 
-    # 2. Trim offline AI/OCR/srec data blobs inside product
-    for rel in ("usr/srec", "etc/ai", "etc/ocr", "etc/miui_feature", "media/theme"):
+    # 2. Trim offline AI/OCR/srec data blobs inside product (keep media/theme for HyperOS 4 icons unless >65 MiB)
+    for rel in ("usr/srec", "etc/ai", "etc/ocr", "etc/miui_feature"):
         p = out_prod / rel
         if p.is_dir() and dir_size_bytes(p) > 25 * 1024 * 1024:
             sz = dir_size_bytes(p)
@@ -954,6 +954,13 @@ def trim_to_budget(
             log.append(f"budget trim dir: product/{rel} ({sz // (1024 * 1024)} MiB)")
             if os_mib() <= target_os_mib:
                 return
+    theme_p = out_prod / "media" / "theme"
+    if theme_p.is_dir() and dir_size_bytes(theme_p) > 65 * 1024 * 1024:
+        sz = dir_size_bytes(theme_p)
+        shutil.rmtree(theme_p)
+        log.append(f"budget trim dir: product/media/theme ({sz // (1024 * 1024)} MiB)")
+        if os_mib() <= target_os_mib:
+            return
 
     # 3. Swap oversized Gboard (> 120 MiB) with base LatinIME if available
     base_ime = None
@@ -1097,7 +1104,7 @@ def adapt_blossom_hardware(
                     cp_preserve(item, out_prod / "overlay" / item.name)
                     log.append(f"RRO overlay copied: {item.name}")
 
-    # 7. Device features XML adaptation (dew -> angelica / angelican / blossom, 60Hz phone)
+    # 7. Device features XML adaptation (dew -> angelica / angelican / blossom, 60Hz phone + Always-On Dynamic Island + Large Icons)
     df_dir = out_prod / "etc" / "device_features"
     if df_dir.is_dir():
         xmls = sorted(df_dir.glob("*.xml"))
@@ -1126,9 +1133,32 @@ def adapt_blossom_hardware(
                 '<bool name="is_pad">false</bool>',
                 txt,
             )
+
+            forced_bools = {
+                "support_dynamic_island": "true",
+                "support_dynamic_island_middle": "true",
+                "support_dynamic_island_blur": "true",
+                "support_super_island": "true",
+                "support_largeicon": "true",
+                "support_big_icon": "true",
+                "support_folder_largeicon": "true",
+                "support_round_corner": "true",
+                "is_pad": "false",
+            }
+            for fname, fval in forced_bools.items():
+                pat = re.compile(rf'<bool name="{re.escape(fname)}">.*?</bool>')
+                repl = f'<bool name="{fname}">{fval}</bool>'
+                if pat.search(txt):
+                    txt = pat.sub(repl, txt)
+                elif "</features>" in txt:
+                    txt = txt.replace("</features>", f"    {repl}\n</features>")
+
             for codename in ("angelica", "angelican", "dandelion", "cattail", "angelicain", "blossom"):
                 (df_dir / f"{codename}.xml").write_text(txt, encoding="utf-8")
-            log.append(f"device_features adapted from {src_xml.name} -> angelica/angelican/blossom (60Hz)")
+            # Also update original donor xml(s) in case a service probes ro.product.vendor.device or fallback xml
+            for existing_xml in xmls:
+                existing_xml.write_text(txt, encoding="utf-8")
+            log.append(f"device_features adapted from {src_xml.name} -> angelica/angelican/blossom (60Hz + Dynamic Island ALWAYS ON + largeicon)")
 
 
 def install_apk_dir(apk_src: Path, dst_dir: Path, log: list[str]) -> None:
@@ -1551,18 +1581,159 @@ def integrate_rust_components(
         install_apk_dir(Path(rust_app_apk), out_prod / "app" / "Redmi9CRustApp", log)
 
 
+def integrate_hyperos4_launcher(
+    base_dir: Path,
+    out_sys_root: Path,
+    out_sys_ext: Path,
+    out_prod: Path,
+    hyperos4_launcher_apk: str,
+    aapt2_bin: str,
+    log: list[str],
+) -> None:
+    """Install original HyperOS 4 System_launcher (com.miui.home) with ABI checks & large-icon theme config."""
+    if not hyperos4_launcher_apk or not Path(hyperos4_launcher_apk).is_file():
+        log.append("hyperos4 launcher: brak --hyperos4-launcher-apk (pomijam)")
+        return
+
+    src_apk = Path(hyperos4_launcher_apk)
+
+    # 1. Check hyperos.rustruntime framework & native DT_NEEDED compatibility against dew_global
+    rust_jars = sorted((out_sys_ext / "framework").glob("hyperos.rustruntime*.jar")) if (out_sys_ext / "framework").is_dir() else []
+    log.append(f"hyperos4 ABI check: system_ext rustruntime jars={[p.name for p in rust_jars]}")
+    has_v5 = any("v5" in p.name for p in rust_jars)
+    if not has_v5 and rust_jars:
+        # Check if base or donor system has v5 elsewhere
+        log.append(f"WARNING: expected hyperos.rustruntime.v5.jar; found {[p.name for p in rust_jars]}")
+
+    # Probe DT_NEEDED shared libs of libapp_launcher.so & libresources_frb.so inside the APK
+    avail_libs: set[str] = set()
+    for ldir in (out_sys_ext / "lib64", out_sys_root / "lib64", out_prod / "lib64"):
+        if ldir.is_dir():
+            avail_libs.update(p.name for p in ldir.iterdir())
+    try:
+        with zipfile.ZipFile(src_apk, "r") as zf:
+            apk_libs = {Path(n).name for n in zf.namelist() if n.startswith("lib/arm64-v8a/") and n.endswith(".so")}
+            avail_libs.update(apk_libs)
+            missing_needed: list[str] = []
+            checked_needed = 0
+            for inner in ("lib/arm64-v8a/libapp_launcher.so", "lib/arm64-v8a/libresources_frb.so"):
+                if inner in zf.namelist() and shutil.which("readelf"):
+                    tmp_so = out_prod / f".tmp_{Path(inner).name}"
+                    tmp_so.write_bytes(zf.read(inner))
+                    r = subprocess.run(["readelf", "-d", str(tmp_so)], text=True, capture_output=True)
+                    tmp_so.unlink(missing_ok=True)
+                    for m in re.finditer(r"Shared library:\s*\[([^\]]+)\]", r.stdout):
+                        checked_needed += 1
+                        lib_nm = m.group(1)
+                        if lib_nm not in avail_libs:
+                            missing_needed.append(f"{Path(inner).name}->{lib_nm}")
+            if checked_needed > 0:
+                log.append(
+                    f"hyperos4 ABI check: verified {checked_needed} DT_NEEDED libs, missing={len(missing_needed)}"
+                    + (f" ({', '.join(missing_needed[:10])})" if missing_needed else " (ALL PRESENT)")
+                )
+    except Exception as exc:
+        log.append(f"hyperos4 ABI probe note: {exc}")
+
+    # 2. Install original CN=MIUI signed System_launcher as /product/priv-app/MiuiHome/MiuiHome.apk
+    dst_dir = out_prod / "priv-app" / "MiuiHome"
+    install_apk_dir(src_apk, dst_dir, log)
+
+    # 3. Grant full priv-app permissions + power-save sysconfig whitelist for com.miui.home
+    base_home_priv = {
+        "android.permission.BIND_APPWIDGET",
+        "android.permission.CHANGE_COMPONENT_ENABLED_STATE",
+        "android.permission.CONTROL_REMOTE_APP_TRANSITION_ANIMATIONS",
+        "android.permission.DELETE_PACKAGES",
+        "android.permission.FORCE_STOP_PACKAGES",
+        "android.permission.GET_ACCOUNTS_PRIVILEGED",
+        "android.permission.INSTALL_PACKAGES",
+        "android.permission.INTERACT_ACROSS_USERS",
+        "android.permission.INTERNAL_SYSTEM_WINDOW",
+        "android.permission.MANAGE_ACTIVITY_STACKS",
+        "android.permission.MANAGE_USERS",
+        "android.permission.MODIFY_APPWIDGET_BIND_PERMISSIONS",
+        "android.permission.PACKAGE_USAGE_STATS",
+        "android.permission.READ_PRIVILEGED_PHONE_STATE",
+        "android.permission.READ_WALLPAPER_INTERNAL",
+        "android.permission.REAL_GET_TASKS",
+        "android.permission.SET_WALLPAPER_COMPONENT",
+        "android.permission.START_ACTIVITIES_FROM_BACKGROUND",
+        "android.permission.START_TASKS_FROM_RECENTS",
+        "android.permission.STATUS_BAR_SERVICE",
+        "android.permission.STOP_APP_SWITCHES",
+        "android.permission.WRITE_SECURE_SETTINGS",
+    }
+    home_perms = sorted(base_home_priv | {p for p in query_apk_permissions(src_apk, aapt2_bin) if p.startswith("android.permission.")})
+    perm_dir = out_prod / "etc" / "permissions"
+    perm_dir.mkdir(parents=True, exist_ok=True)
+    xml_lines = [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        "<permissions>",
+        '    <privapp-permissions package="com.miui.home">',
+    ]
+    for p in home_perms:
+        xml_lines.append(f'        <permission name="{p}" />')
+    xml_lines.extend(["    </privapp-permissions>", "</permissions>"])
+    perm_xml = perm_dir / "privapp-permissions-miuihome.xml"
+    perm_xml.write_text("\n".join(xml_lines) + "\n", encoding="utf-8")
+    os.chmod(perm_xml, 0o644)
+
+    sys_dir = out_prod / "etc" / "sysconfig"
+    sys_dir.mkdir(parents=True, exist_ok=True)
+    sys_xml = sys_dir / "miuihome.xml"
+    sys_xml.write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        "<config>\n"
+        '    <allow-in-power-save package="com.miui.home" />\n'
+        '    <allow-in-data-usage-save package="com.miui.home" />\n'
+        "</config>\n",
+        encoding="utf-8",
+    )
+    os.chmod(sys_xml, 0o644)
+
+    # 4. Ensure default runtime_largeicon.config exists so LargeIconModeRuntimeManager can unlock per-app big icons
+    theme_def = out_prod / "media" / "theme" / "default"
+    theme_def.mkdir(parents=True, exist_ok=True)
+    os.chmod(theme_def, 0o755)
+    lic_cfg = theme_def / "runtime_largeicon.config"
+    if not lic_cfg.exists():
+        lic_cfg.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "largeIconEnable": True,
+                    "supportDynamicIsland": True,
+                    "fallbackSnapshotFill": True,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.chmod(lic_cfg, 0o644)
+    log.append(f"HyperOS 4 original System_launcher installed as MiuiHome (CN=MIUI signature preserved, privapp perms={len(home_perms)})")
+
+
 def integrate_mysticalos(
     out_sys_root: Path,
+    out_sys_ext: Path,
     out_prod: Path,
     mystical_launcher_apk: str,
+    flux_studio_apk: str,
     bootanimation_zip: str,
     aapt2_bin: str,
     log: list[str],
 ) -> None:
-    # 1. Install MysticalLauncher.apk (ColorOS 17 icon resizer & Flux tiles) as priv-app HOME launcher
-    if mystical_launcher_apk and Path(mystical_launcher_apk).is_file():
-        launcher_src = Path(mystical_launcher_apk)
+    # 1. Install ColorOS 17 Flux Icon & Tile companion (or standalone launcher if no HyperOS4 launcher)
+    studio_src = Path(flux_studio_apk) if flux_studio_apk and Path(flux_studio_apk).is_file() else Path("")
+    launcher_src = Path(mystical_launcher_apk) if mystical_launcher_apk and Path(mystical_launcher_apk).is_file() else Path("")
+    if studio_src.is_file():
+        install_apk_dir(studio_src, out_prod / "priv-app" / "MysticalFluxStudio", log)
+    elif launcher_src.is_file():
         install_apk_dir(launcher_src, out_prod / "priv-app" / "MysticalLauncher", log)
+
+    if studio_src.is_file() or launcher_src.is_file():
         perm_dir = out_prod / "etc" / "permissions"
         perm_dir.mkdir(parents=True, exist_ok=True)
         ml_perm = perm_dir / "privapp-permissions-mysticalos.xml"
@@ -1580,7 +1751,7 @@ def integrate_mysticalos(
             encoding="utf-8",
         )
         os.chmod(ml_perm, 0o644)
-        log.append("MysticalLauncher permissions written: privapp-permissions-mysticalos.xml")
+        log.append("MysticalLauncher/FluxStudio permissions written: privapp-permissions-mysticalos.xml")
 
     # 2. Install MysticalOS bootanimation.zip (720x1600, ZIP_STORED)
     boot_dst_prod = out_prod / "media" / "bootanimation.zip"
@@ -1598,12 +1769,23 @@ def integrate_mysticalos(
         os.chmod(sys_boot, 0o644)
         log.append(f"MysticalOS bootanimation mirrored -> {sys_boot}")
 
-    # 3. Compile & install MysticalOSFrameworkOverlay.apk (ColorOS 17 squircle mask + Flux accent)
+    # 3. Compile & install MysticalOSFrameworkOverlay.apk + Always-On Dynamic Island RRO Overlays
     donor_fw_res = out_sys_root / "framework" / "framework-res.apk"
     mysticalos_brand.build_framework_rro_overlay(
         donor_fw_res=donor_fw_res,
         aapt2_bin=aapt2_bin,
         out_apk=out_prod / "overlay" / "MysticalOSFrameworkOverlay.apk",
+        log=log,
+    )
+    island_targets = [
+        ("com.android.systemui", out_sys_ext / "priv-app" / "MiuiSystemUI" / "MiuiSystemUI.apk", "MysticalOSIslandSystemUIOverlay.apk"),
+        ("com.miui.home", out_prod / "priv-app" / "MiuiHome" / "MiuiHome.apk", "MysticalOSIslandHomeOverlay.apk"),
+    ]
+    mysticalos_brand.build_island_rro_overlays(
+        donor_fw_res=donor_fw_res,
+        target_apks=island_targets,
+        aapt2_bin=aapt2_bin,
+        out_overlay_dir=out_prod / "overlay",
         log=log,
     )
 
@@ -1643,11 +1825,25 @@ def configure_props_and_zygote(
         "ro.product.os.name": os_label,
         "ro.mysticalos.version": "1.0",
         "ro.mysticalos.codename": "Flux17",
-        "ro.mysticalos.icon_engine": "ColorOS17-FluxResize",
+        "ro.mysticalos.launcher": "HyperOS4-Original-Base",
+        "ro.mysticalos.dynamic_island": "always_on",
+        "ro.mysticalos.icon_engine": "ColorOS17-FluxResize+HyperOS4",
         "ro.modversion": f"{os_label}-1.0-{dev}",
         "ro.mi.os.version.name": f"{os_label} 1.0",
         "ro.build.flavor": f"mysticalos_{dev}-userdebug",
-        "ro.build.display.id": f"{os_label} 1.0 (ColorOS17 Icons · {'microG+FOSS+Rust' if gms_mode == 'microg' else 'FOSS+Rust'} · {market})",
+        "ro.build.display.id": f"{os_label} 1.0 (HyperOS4 Launcher + Dynamic Island + ColorOS17 Icons · {'microG+FOSS+Rust' if gms_mode == 'microg' else 'FOSS+Rust'} · {market})",
+        "persist.sys.dynamic_island.enabled": "true",
+        "ro.miui.support_dynamic_island": "true",
+        "persist.sys.miui.dynamic_island": "true",
+        "ro.config.device_level_for_animation": "3",
+        "persist.sys.computility.version": "2",
+        "persist.sys.computility.cpulevel": "3",
+        "persist.sys.computility.gpulevel": "3",
+        "persist.sys.computilityV2.devicelevel": "3",
+        "ro.config.low_ram.go": "false",
+        "ro.config.low_ram.threshold_gb": "0",
+        "ro.config.low_ram.middle.threshold_gb": "0",
+        "ro.config.low_ram.support_miuilite_plus": "false",
         "persist.sys.background_blur_supported": "false",
         "ro.surface_flinger.supports_background_blur": "0",
         "persist.sys.miui.blur.level": "0",
@@ -1714,7 +1910,9 @@ def main() -> int:
     ap.add_argument("--os-name", default="MysticalOS", help="OS brand name for build.prop and manifest")
     ap.add_argument("--keep-xiaomi-apps", action="store_true", help="Keep Xiaomi user-facing apps instead of replacing with FOSS")
     ap.add_argument("--extra-apps-dir", default="", help="Dir containing GmsCore.apk, FakeStore.apk, HeliBoard.apk, Droid-ify.apk, Fossify*.apk")
-    ap.add_argument("--mystical-launcher-apk", default="", help="Compiled MysticalLauncher.apk (ColorOS 17 icon size/tile launcher)")
+    ap.add_argument("--hyperos4-launcher-apk", default="", help="Original HyperOS 4 System_launcher APK (base com.miui.home)")
+    ap.add_argument("--mystical-launcher-apk", default="", help="Compiled MysticalLauncher.apk (standalone ColorOS 17 launcher)")
+    ap.add_argument("--flux-studio-apk", default="", help="Compiled MysticalFluxStudio.apk (ColorOS 17 widget & icon resizer companion without HOME conflict)")
     ap.add_argument("--bootanimation-zip", default="", help="Optional prebuilt MysticalOS bootanimation.zip")
     ap.add_argument("--r9c-memd-bin", default="", help="Compiled aarch64 r9c-memd binary")
     ap.add_argument("--r9c-memd-rc", default="", help="r9c-memd.rc init script")
@@ -1780,12 +1978,30 @@ def main() -> int:
         args.rust_app_apk,
         log,
     )
+    integrate_hyperos4_launcher(
+        base,
+        out_sys_root,
+        out_sys_ext,
+        out_prod,
+        args.hyperos4_launcher_apk,
+        args.aapt2_bin,
+        log,
+    )
     integrate_mysticalos(
         out_sys_root,
+        out_sys_ext,
         out_prod,
         args.mystical_launcher_apk,
+        args.flux_studio_apk,
         args.bootanimation_zip,
         args.aapt2_bin,
+        log,
+    )
+    island_patched_cnt = patch_hyperos4_island.patch_tree(
+        out_sys_root,
+        out_sys_ext,
+        out_prod,
+        args.apktool_jar,
         log,
     )
     trim_to_budget(base, out, out_sys_root, out_sys_ext, out_prod, args.target_os_mib, log)
@@ -1820,9 +2036,11 @@ def main() -> int:
             "android_version": "17",
             "kernel_version": "4.19 OSS (blossom)",
             "base_rom": "EvolutionX 17.0 blossom",
-            "donor_rom": "HyperOS 4.0.8.0.XBNMIXM (dew) debloated",
+            "donor_rom": "HyperOS 4.0.8.0.XBNMIXM (dew) + Original System_launcher 8.01",
             "gms_mode": args.gms_mode,
-            "icon_engine": "ColorOS 17 Flux Icon Resizer (60%-150% + 1x1/2x1/1x2/2x2)",
+            "launcher_base": "HyperOS 4 Original System_launcher (com.miui.home)" if args.hyperos4_launcher_apk else "MysticalLauncher",
+            "dynamic_island": f"always_on (framework gates patched={island_patched_cnt})",
+            "icon_engine": "HyperOS 4 LargeIcon + ColorOS 17 Flux Tile Resizer (60%-150% + 1x1/2x1/1x2/2x2)",
             "removed_count": len(removed_items),
             "freed_mib": freed_bytes // (1024 * 1024),
             "removed_items": removed_items,
