@@ -1614,7 +1614,7 @@ def integrate_hyperos4_launcher(
                 continue
             if "hyperos.rustruntime" in xtxt:
                 existing_rt_xmls.append(xp)
-                log.append(f"hyperos4 rustruntime perm XML: {xp.name} -> {' '.join(xtxt.split())[:180]}")
+                log.append(f"hyperos4 rustruntime perm XML: {xp.name} -> {' '.join(xtxt.split())[:600]}")
                 if '"hyperos.rustruntime.v5"' in xtxt or "'hyperos.rustruntime.v5'" in xtxt:
                     has_v5_decl = True
 
