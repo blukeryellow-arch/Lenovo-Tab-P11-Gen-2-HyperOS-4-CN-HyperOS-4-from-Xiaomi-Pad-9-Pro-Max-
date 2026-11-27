@@ -2028,7 +2028,7 @@ mod tests {
     #[test]
     fn test_synthetic_erofs_dir_symlink_and_detect() {
         // Build tiny 12KB EROFS image:
-        // root_nid=0 (dir at blk 2), nid=1 (inline "ro.os=Mystical"), nid=2 (symlink "/build.prop")
+        // root_nid=0 (dir at blk 2), nid=1 (inline "ro.os=Mystical"), nid=3 (symlink "/build.prop")
         let mut img = vec![0u8; 12288];
         // Superblock @1024
         img[1024..1028].copy_from_slice(&0xE0F5E1E2u32.to_le_bytes());
@@ -2036,31 +2036,32 @@ mod tests {
         img[1024 + 14..1024 + 16].copy_from_slice(&0u16.to_le_bytes()); // root_nid = 0
         img[1024 + 40..1024 + 44].copy_from_slice(&1u32.to_le_bytes()); // meta_blkaddr = 1 (off 4096)
 
-        // Compact inode 0 @ 4096: mode=0x41ED (dir), datalayout=0 (FLAT_PLAIN), size=48, startblk=2
+        // Compact inode 0 @ 4096: mode=0x41ED (dir), datalayout=0 (FLAT_PLAIN), size=44, startblk=2
         img[4096..4098].copy_from_slice(&0x0000u16.to_le_bytes());
         img[4096 + 4..4096 + 6].copy_from_slice(&0x41EDu16.to_le_bytes());
-        img[4096 + 8..4096 + 12].copy_from_slice(&48u32.to_le_bytes());
+        img[4096 + 8..4096 + 12].copy_from_slice(&44u32.to_le_bytes());
         img[4096 + 16..4096 + 20].copy_from_slice(&2u32.to_le_bytes());
 
         // nid 1 at 4096 + 32 = 4128: regular file, datalayout=2 (FLAT_INLINE -> i_format=4), size=14
+        // Note: 32B header + 14B inline data occupies bytes 4128..4174, so next inode starts at nid=3 (4192).
         img[4128..4130].copy_from_slice(&0x0004u16.to_le_bytes());
         img[4128 + 4..4128 + 6].copy_from_slice(&0x81A4u16.to_le_bytes());
         img[4128 + 8..4128 + 12].copy_from_slice(&14u32.to_le_bytes());
         img[4128 + 32..4128 + 46].copy_from_slice(b"ro.os=Mystical");
 
-        // nid 2 at 4096 + 64 = 4160: symlink -> "/build.prop", datalayout=2, size=11
-        img[4160..4162].copy_from_slice(&0x0004u16.to_le_bytes());
-        img[4160 + 4..4160 + 6].copy_from_slice(&0xA1FFu16.to_le_bytes());
-        img[4160 + 8..4160 + 12].copy_from_slice(&11u32.to_le_bytes());
-        img[4160 + 32..4160 + 43].copy_from_slice(b"/build.prop");
+        // nid 3 at 4096 + 96 = 4192: symlink -> "/build.prop", datalayout=2, size=11
+        img[4192..4194].copy_from_slice(&0x0004u16.to_le_bytes());
+        img[4192 + 4..4192 + 6].copy_from_slice(&0xA1FFu16.to_le_bytes());
+        img[4192 + 8..4192 + 12].copy_from_slice(&11u32.to_le_bytes());
+        img[4192 + 32..4192 + 43].copy_from_slice(b"/build.prop");
 
         // Dir block 2 @ 8192: 2 dirents (24 bytes header table, then names)
         // entry 0: nid=1, nameoff=24 ("build.prop", 10B -> ends at 34)
         img[8192..8200].copy_from_slice(&1u64.to_le_bytes());
         img[8192 + 8..8192 + 10].copy_from_slice(&24u16.to_le_bytes());
         img[8192 + 10] = 1; // REG_FILE
-        // entry 1: nid=2, nameoff=34 ("alias.prop", 10B -> ends at 44)
-        img[8192 + 12..8192 + 20].copy_from_slice(&2u64.to_le_bytes());
+        // entry 1: nid=3, nameoff=34 ("alias.prop", 10B -> ends at 44)
+        img[8192 + 12..8192 + 20].copy_from_slice(&3u64.to_le_bytes());
         img[8192 + 20..8192 + 22].copy_from_slice(&34u16.to_le_bytes());
         img[8192 + 22] = 7; // SYMLINK
         img[8192 + 24..8192 + 34].copy_from_slice(b"build.prop");
