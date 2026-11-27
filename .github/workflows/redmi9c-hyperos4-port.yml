@@ -31,8 +31,17 @@ on:
       release_tag:
         description: "Tag GitHub Release"
         required: true
-        default: "redmi9c-hyperos4-v1"
+        default: "redmi9c-hyperos4-v2"
         type: string
+      gms_mode:
+        description: "Tryb uslug Google / microG"
+        required: true
+        default: "microg"
+        type: choice
+        options:
+          - microg
+          - keep
+          - none
   push:
     branches:
       - arena/dd4cc57a-lenovo-tab-p11-gen-2-hyperos-4
@@ -40,6 +49,7 @@ on:
       - ".github/workflows/redmi9c-hyperos4-port.yml"
       - "tools/**"
       - "templates/**"
+      - "rust/**"
 
 concurrency:
   group: redmi9c-hyperos4-port
@@ -60,7 +70,8 @@ jobs:
       VARIANT: ${{ inputs.variant || 'angelica' }}
       DEBLOAT_LEVEL: ${{ inputs.debloat_level || 'aggressive' }}
       FS_MODE: ${{ inputs.fs_mode || 'auto' }}
-      RELEASE_TAG: ${{ inputs.release_tag || 'redmi9c-hyperos4-v1' }}
+      RELEASE_TAG: ${{ inputs.release_tag || 'redmi9c-hyperos4-v2' }}
+      GMS_MODE: ${{ inputs.gms_mode || 'microg' }}
       BASE_URL: https://github.com/xc112lg/blossom_releases/releases/download/EvolutionX-17.0-20261120-1/EvolutionX-17.0-20261120-blossom-12.4-Vanilla-Unofficial.zip
       BASE_FALLBACK_URL: https://github.com/xc112lg/blossom_releases/releases/download/crDroid-20261121-4/crDroidAndroid-17.0-20261121-blossom-v13.1.zip
       DONOR_FILE: dew_global-ota_full-OS4.0.8.0.XBNMIXM-user-17.0-bff6fad64d.zip
@@ -72,7 +83,81 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: "0. Dysk + narzedzia"
+      - name: "0a. Kompilacja komponentow Rust (r9c-memd + Redmi9CRustApp.apk) + test apk2rust"
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK/bin" "$WORK/rust-out" "$WORK/rust-apk/lib/arm64-v8a" "$WORK/rust-apk/lib/armeabi-v7a"
+          {
+            echo "=== RUST & ANDROID NDK BUILD ==="
+            NDK_BIN=$(find /usr/local/lib/android/sdk/ndk -maxdepth 5 -type d -path "*/toolchains/llvm/prebuilt/linux-x86_64/bin" | sort -V | tail -1)
+            BUILD_TOOLS=$(find /usr/local/lib/android/sdk/build-tools -maxdepth 1 -mindepth 1 -type d | sort -V | tail -1)
+            ANDROID_JAR=$(find /usr/local/lib/android/sdk/platforms -maxdepth 2 -name "android.jar" | sort -V | tail -1)
+            echo "NDK_BIN=$NDK_BIN"
+            echo "BUILD_TOOLS=$BUILD_TOOLS"
+            echo "ANDROID_JAR=$ANDROID_JAR"
+            [ -d "$NDK_BIN" ] || { echo "::error::Brak preinstalowanego Android NDK!"; exit 1; }
+            [ -x "$BUILD_TOOLS/aapt2" ] || { echo "::error::Brak aapt2!"; exit 1; }
+            [ -f "$ANDROID_JAR" ] || { echo "::error::Brak android.jar!"; exit 1; }
+
+            # Zachowaj aapt2 przed czyszczeniem /usr/local/lib/android
+            cp "$BUILD_TOOLS/aapt2" "$WORK/bin/aapt2"
+            chmod +x "$WORK/bin/aapt2"
+            [ -d "$BUILD_TOOLS/lib64" ] && cp -a "$BUILD_TOOLS/lib64" "$WORK/bin/" || true
+
+            rustup target add aarch64-linux-android armv7-linux-androideabi
+
+            echo "=== cargo test (host unit tests) ==="
+            cargo test --manifest-path "$REPO_DIR/rust/r9c-memd/Cargo.toml"
+            cargo test --manifest-path "$REPO_DIR/rust/rust-app/Cargo.toml"
+
+            export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$NDK_BIN/aarch64-linux-android28-clang"
+            export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$NDK_BIN/armv7a-linux-androideabi28-clang"
+            export CC_aarch64_linux_android="$NDK_BIN/aarch64-linux-android28-clang"
+            export AR_aarch64_linux_android="$NDK_BIN/llvm-ar"
+            export CC_armv7_linux_androideabi="$NDK_BIN/armv7a-linux-androideabi28-clang"
+            export AR_armv7_linux_androideabi="$NDK_BIN/llvm-ar"
+
+            echo "=== Budowanie r9c-memd (aarch64-linux-android) ==="
+            cargo build --release --target aarch64-linux-android \
+              --target-dir "$WORK/cargo-target-memd" \
+              --manifest-path "$REPO_DIR/rust/r9c-memd/Cargo.toml"
+            cp "$WORK/cargo-target-memd/aarch64-linux-android/release/r9c-memd" "$WORK/rust-out/r9c-memd"
+            chmod 755 "$WORK/rust-out/r9c-memd"
+            file "$WORK/rust-out/r9c-memd"
+
+            echo "=== Budowanie pure-Rust NativeActivity APK (arm64-v8a + armeabi-v7a) ==="
+            cargo build --release --target aarch64-linux-android \
+              --target-dir "$WORK/cargo-target-app" \
+              --manifest-path "$REPO_DIR/rust/rust-app/Cargo.toml"
+            cargo build --release --target armv7-linux-androideabi \
+              --target-dir "$WORK/cargo-target-app" \
+              --manifest-path "$REPO_DIR/rust/rust-app/Cargo.toml"
+            cp "$WORK/cargo-target-app/aarch64-linux-android/release/libredmi9c_rust.so" "$WORK/rust-apk/lib/arm64-v8a/libredmi9c_rust.so"
+            cp "$WORK/cargo-target-app/armv7-linux-androideabi/release/libredmi9c_rust.so" "$WORK/rust-apk/lib/armeabi-v7a/libredmi9c_rust.so"
+
+            "$WORK/bin/aapt2" link \
+              --manifest "$REPO_DIR/rust/rust-app/AndroidManifest.xml" \
+              -I "$ANDROID_JAR" \
+              -o "$WORK/rust-apk/unaligned.apk"
+            (cd "$WORK/rust-apk" && zip -0 -r unaligned.apk lib)
+            "$BUILD_TOOLS/zipalign" -f -p 4 "$WORK/rust-apk/unaligned.apk" "$WORK/rust-apk/aligned.apk"
+            keytool -genkeypair -v -keystore "$WORK/rust-apk/r9c.jks" -storepass android -keypass android \
+              -alias r9c -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Redmi9C Rust,O=Redmi9C"
+            "$BUILD_TOOLS/apksigner" sign --ks "$WORK/rust-apk/r9c.jks" --ks-pass pass:android \
+              --out "$WORK/rust-out/Redmi9CRustApp.apk" "$WORK/rust-apk/aligned.apk"
+            "$BUILD_TOOLS/apksigner" verify "$WORK/rust-out/Redmi9CRustApp.apk"
+            "$WORK/bin/aapt2" dump badging "$WORK/rust-out/Redmi9CRustApp.apk" | head -n 12
+
+            echo "=== Test tools/apk2rust.py (selftest + generacja + cargo check) ==="
+            python3 "$REPO_DIR/tools/apk2rust.py" --selftest
+            python3 "$REPO_DIR/tools/apk2rust.py" --apk "$WORK/rust-out/Redmi9CRustApp.apk" --out "$WORK/apk2rust-smoke"
+            cargo check --manifest-path "$WORK/apk2rust-smoke/Cargo.toml" --target-dir "$WORK/cargo-target-smoke"
+
+            rm -rf "$WORK/cargo-target-memd" "$WORK/cargo-target-app" "$WORK/cargo-target-smoke" "$WORK/rust-apk" "$WORK/apk2rust-smoke" "$REPO_DIR/rust/r9c-memd/target" "$REPO_DIR/rust/rust-app/target"
+          } > "$WORK/rust-build.log" 2>&1 || { cat "$WORK/rust-build.log"; exit 1; }
+          cat "$WORK/rust-build.log"
+
+      - name: "0. Dysk + narzedzia + paczki microG/FOSS"
         run: |
           set -euo pipefail
           echo "=== Czyszczenie dysku runnera ==="
@@ -104,10 +189,35 @@ jobs:
           [ -f "$WORK/bin/magiskboot" ] && chmod +x "$WORK/bin/magiskboot"
 
           export PATH="$WORK/bin:$PATH"
-          for T in 7z aria2c brotli mke2fs e2fsck resize2fs secilc lpmake lpunpack payload-dumper-go mkfs.erofs fsck.erofs; do
+          for T in 7z aria2c brotli mke2fs e2fsck resize2fs secilc lpmake lpunpack payload-dumper-go mkfs.erofs fsck.erofs aapt2; do
             command -v "$T" >/dev/null || { echo "::error::Brak narzedzia: $T"; exit 1; }
           done
+          aapt2 version
           python3 "$REPO_DIR/tools/avbtool.py" version
+
+          echo "=== Pobieranie apktool + microG + FOSS APK ==="
+          mkdir -p "$WORK/extra-apps"
+          curl -fsSL --retry 3 -o "$WORK/bin/apktool.jar" \
+            "https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar"
+          if [ "$GMS_MODE" = "microg" ]; then
+            curl -fsSL --retry 3 -o "$WORK/extra-apps/GmsCore.apk" \
+              "https://github.com/microg/GmsCore/releases/download/v0.3.18.252432/com.google.android.gms-252432036.apk"
+            curl -fsSL --retry 3 -o "$WORK/extra-apps/FakeStore.apk" \
+              "https://github.com/microg/GmsCore/releases/download/v0.3.18.252432/com.android.vending-84022636.apk"
+            curl -fsSL --retry 3 -o "$WORK/extra-apps/GsfProxy.apk" \
+              "https://github.com/microg/GsfProxy/releases/download/v0.1.0/GsfProxy.apk" || true
+            curl -fsSL --retry 3 -o "$WORK/extra-apps/HeliBoard.apk" \
+              "https://github.com/Helium314/HeliBoard/releases/download/v4.2/HeliBoard_4.2-release.apk"
+            curl -fsSL --retry 3 -o "$WORK/extra-apps/Droid-ify.apk" \
+              "https://github.com/Droid-ify/client/releases/download/v0.7.8/app-release.apk"
+            curl -fsSL --retry 3 -o "$WORK/extra-apps/CromiteWebView.apk" \
+              "https://github.com/uazo/cromite/releases/download/v153.0.8010.37-11507ac1061b5ea227806f5e84db5a57df6ccf6a/arm64_SystemWebView.apk" || true
+
+            echo "=== Test apk2rust.py na prawdziwym Kotlin/DEX APK (Droid-ify) ===" | tee -a "$WORK/rust-build.log"
+            python3 "$REPO_DIR/tools/apk2rust.py" --apk "$WORK/extra-apps/Droid-ify.apk" --out "$WORK/apk2rust-droidify" | tee -a "$WORK/rust-build.log"
+            rm -rf "$WORK/apk2rust-droidify"
+            ls -lh "$WORK/extra-apps"
+          fi
 
           echo "=== Self-test narzedzi (sdat2img, split_5_7z, lpmake/lpunpack) ==="
           python3 -m py_compile "$REPO_DIR/tools/"*.py
@@ -302,28 +412,35 @@ jobs:
             --out-tree "$WORK/out-tree" \
             --variant "$VARIANT" \
             --debloat-level "$DEBLOAT_LEVEL" \
+            --gms-mode "$GMS_MODE" \
+            --extra-apps-dir "$WORK/extra-apps" \
+            --r9c-memd-bin "$WORK/rust-out/r9c-memd" \
+            --r9c-memd-rc "$REPO_DIR/rust/r9c-memd/r9c-memd.rc" \
+            --rust-app-apk "$WORK/rust-out/Redmi9CRustApp.apk" \
+            --apktool-jar "$WORK/bin/apktool.jar" \
+            --aapt2-bin "$WORK/bin/aapt2" \
             --target-os-mib 5550 \
             --report "$WORK/port-report.txt"
           sudo chown "$(id -u):$(id -g)" "$WORK/port-report.txt"
 
-          sudo rm -rf "$WORK/base-tree" "$WORK/donor-tree"
+          sudo rm -rf "$WORK/base-tree" "$WORK/donor-tree" "$WORK/extra-apps"
 
           # Naprawa brakujacych kontekstow SELinux dla dogranych plikow
           SYS_FC="$WORK/out-tree/system/system/etc/selinux/plat_file_contexts"
           [ -f "$SYS_FC" ] || SYS_FC="$WORK/out-tree/system/etc/selinux/plat_file_contexts"
           if [ -f "$SYS_FC" ]; then
             sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$SYS_FC" --root "$WORK/out-tree/system" \
-              --only system/etc/properties system/etc/vintf system/build.prop || true
+              --only system/etc/properties system/etc/vintf system/build.prop system/framework/services.jar || true
           fi
           SEXT_FC="$WORK/out-tree/system_ext/etc/selinux/system_ext_file_contexts"
           if [ -f "$SEXT_FC" ]; then
             sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$SEXT_FC" --root "$WORK/out-tree" \
-              --only system_ext/etc/vintf system_ext/etc/properties system_ext/apex system_ext/etc/build.prop || true
+              --only system_ext/etc/vintf system_ext/etc/properties system_ext/apex system_ext/etc/build.prop system_ext/bin system_ext/etc/init system_ext/etc/selinux || true
           fi
           PROD_FC="$WORK/out-tree/product/etc/selinux/product_file_contexts"
           if [ -f "$PROD_FC" ]; then
             sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$PROD_FC" --root "$WORK/out-tree" \
-              --only product/etc/device_features product/overlay product/etc/properties product/etc/build.prop || true
+              --only product/etc/device_features product/overlay product/etc/properties product/etc/build.prop product/app product/priv-app product/etc/permissions product/etc/sysconfig product/etc/default-permissions || true
           fi
 
           # Weryfikacja kompilacji polityki SELinux (.cil) za pomoca secilc
@@ -617,6 +734,7 @@ jobs:
              "$WORK/package/SHA256SUMS.txt" \
              "$WORK/package/INSTRUKCJA-FLASH.txt" \
              "$WORK/release/"
+          [ -f "$WORK/rust-out/Redmi9CRustApp.apk" ] && cp "$WORK/rust-out/Redmi9CRustApp.apk" "$WORK/release/Redmi9CRustApp.apk"
           ls -lh "$WORK/release"
 
       - name: "6. Publikacja GitHub Release (5x .7z.001 .. .7z.005)"
@@ -632,12 +750,13 @@ jobs:
           fi
 
           {
-            echo "# Redmi 9C (blossom: angelica / angelican) — HyperOS 4.0.8.0 Debloated Port"
+            echo "# Redmi 9C (blossom: angelica / angelican) — HyperOS 4.0.8.0 (microG + FOSS + Rust)"
             echo
             echo "- **Baza sprzetowa (OSS A17 + kernel 4.19):** \`EvolutionX 17.0 blossom\` (\`xc112lg/blossom_releases\`)"
             echo "- **Dawca systemu (HyperOS 4 / Android 17):** Redmi 15C / POCO C85 Global (\`dew\`, \`OS4.0.8.0.XBNMIXM\`)"
             echo "- **Wariant:** \`${VARIANT}\` (z \`/system/etc/properties/\${ro.boot.hwname}.prop\`)"
-            echo "- **Debloat:** \`${DEBLOAT_LEVEL}\`"
+            echo "- **Debloat / GMS:** \`${DEBLOAT_LEVEL}\` / \`${GMS_MODE}\` (usuniety bloat Google/MIUI, microG GmsCore + FakeStore, HeliBoard, Droid-ify, otwarty WebView)"
+            echo "- **Natywne komponenty Rust:** \`/system_ext/bin/r9c-memd\` (daemon RAM/zRAM/PSI) + \`Redmi9CRustApp.apk\` (pure Rust NativeActivity GLES2)"
             echo "- **GitHub Actions Run:** ${GITHUB_RUN_ID}"
             echo
             echo "## Pobieranie i rozpakowanie (5 czesci 7-Zip)"
@@ -663,11 +782,11 @@ jobs:
 
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
-              --title "Redmi 9C HyperOS 4.0.8.0 Debloated Port (5-part 7z)" \
+              --title "Redmi 9C HyperOS 4.0.8.0 microG + Rust Port (5-part 7z)" \
               --notes-file "$WORK/RELEASE-NOTES.md"
           else
             gh release edit "$TAG" \
-              --title "Redmi 9C HyperOS 4.0.8.0 Debloated Port (5-part 7z)" \
+              --title "Redmi 9C HyperOS 4.0.8.0 microG + Rust Port (5-part 7z)" \
               --notes-file "$WORK/RELEASE-NOTES.md"
           fi
 
@@ -695,6 +814,11 @@ jobs:
           R="reports/run-${GITHUB_RUN_ID}.md"
           {
             echo "# Redmi 9C HyperOS 4 Port — Run ${GITHUB_RUN_ID} ($(date -u +%FT%TZ))"
+            echo
+            echo "## Rust Build & apk2rust Test"
+            echo '```'
+            cat "$WORK/rust-build.log" 2>/dev/null || echo "(brak rust-build.log)"
+            echo '```'
             echo
             echo "## Dysk i pliki robocze"
             echo '```'

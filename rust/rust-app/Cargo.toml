@@ -1,0 +1,16 @@
+[package]
+name = "redmi9c-rust-app"
+version = "0.1.0"
+edition = "2021"
+description = "Natywna aplikacja APK napisana w 100% w Ruście (NativeActivity + OpenGL ES 2.0 + monitor RAM)"
+
+[lib]
+name = "redmi9c_rust"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

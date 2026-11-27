@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 from typing import Iterable
 
@@ -235,8 +236,8 @@ def detect_comms_apps(roots: list[Path]) -> dict[str, bool]:
     return {
         "has_miui_dialer": any(k in names for k in ("incallui", "miuidialer", "contacts", "hyperphone")),
         "has_google_dialer": any("dialer" in k and "google" in k for k in names),
-        "has_miui_mms": "mms" in names or "miuisms" in names,
-        "has_google_mms": any(k in names for k in ("prebuiltbugle", "messages") or "messages_" in k),
+        "has_miui_mms": any(n in ("mms", "miuisms") or ("mms" in n and "miui" in n) for n in names),
+        "has_google_mms": any(n in ("prebuiltbugle", "messages") or n.startswith("messages_") for n in names),
         "has_miui_camera": any(k in names for k in ("miuicamera", "camera")),
         "has_miui_gallery": any("miuigallery" in k or k == "gallery" for k in names),
         "has_gboard": any("latinimegoogle" in k or "gboard" in k for k in names),
@@ -248,11 +249,12 @@ def debloat_trees(
     out_sys_ext: Path,
     out_prod: Path,
     level: str,
+    gms_mode: str,
     log: list[str],
 ) -> None:
     roots = [out_sys_root, out_sys_ext, out_prod]
     comms = detect_comms_apps(roots)
-    log.append(f"comms detection: {comms}")
+    log.append(f"comms detection: {comms}, gms_mode={gms_mode}")
 
     # Core protected package directory names (case-insensitive exact matches)
     protected = {
@@ -262,6 +264,7 @@ def debloat_trees(
         "settings",
         "miuisettings",
         "securitycenter",
+        "miuisecuritycenterglobal",
         "powerkeeper",
         "packageinstaller",
         "miuiPackageInstaller".lower(),
@@ -271,23 +274,16 @@ def debloat_trees(
         "downloadprovider",
         "downloadproviderui",
         "webview",
-        "webviewgoogle",
-        "trichromelibrary",
-        "prebuiltgmscore",
-        "gmscore",
-        "phonesky",
-        "googleservicesframework",
-        "googleloginservice",
-        "googleonetimerinitializer",
-        "setupwizard",
         "provision",
         "telephony",
         "telecom",
         "telephoneservice",
         "incallui",
+        "hyperphone",
         "contacts",
         "mms",
         "miuisms",
+        "miuimmsglobal",
         "deskclock",
         "calculator",
         "miuiCalculator".lower(),
@@ -298,9 +294,8 @@ def debloat_trees(
         "aperture",
         "gallery",
         "miuigallery",
-        "gboard",
+        "miuigalleryglobal",
         "latinime",
-        "latinimegoogle",
         "wallpaperbackup",
         "wallpapercropper",
         "managedprovisioning",
@@ -326,8 +321,25 @@ def debloat_trees(
         "theme",
         "thememanager",
         "miuiThemeManager".lower(),
+        "miuithememanagerglobal",
         "miwallpaper",
     }
+    if gms_mode == "keep":
+        protected.update({
+            "webviewgoogle",
+            "webviewgoogle64",
+            "trichromelibrary",
+            "trichromelibrary64",
+            "prebuiltgmscore",
+            "gmscore",
+            "phonesky",
+            "googleservicesframework",
+            "googleloginservice",
+            "googleonetimerinitializer",
+            "setupwizard",
+            "gboard",
+            "latinimegoogle",
+        })
 
     # Exact bloat names / prefixes (lowercase)
     bloat_exact = {
@@ -537,9 +549,12 @@ def debloat_trees(
         "email",
         "thirdappassistant",
         "mibrowserglobal_builtin_before_2021",
+        "appfinder",
+        "voiceunlock",
+        "miuisecurityadd",
     })
 
-    # Detect WebView packages so we NEVER remove TrichromeLibrary if TrichromeWebView depends on it
+    # Detect WebView packages so we NEVER remove TrichromeLibrary if TrichromeWebView depends on it (when keeping GMS)
     pkg_names_lower: set[str] = set()
     scan_roots: list[Path] = []
     for r in roots:
@@ -556,13 +571,40 @@ def debloat_trees(
                     if pd.is_dir():
                         pkg_names_lower.add(pd.name.lower())
 
-    has_trichrome_webview = any("trichromewebview" in n for n in pkg_names_lower)
-    if has_trichrome_webview:
-        protected.update({n for n in pkg_names_lower if "trichromelibrary" in n or "trichromewebview" in n})
+    if gms_mode == "keep":
+        has_trichrome_webview = any("trichromewebview" in n for n in pkg_names_lower)
+        if has_trichrome_webview:
+            protected.update({n for n in pkg_names_lower if "trichromelibrary" in n or "trichromewebview" in n})
+        else:
+            if any(n in pkg_names_lower for n in ("webviewgoogle", "androidsystemwebview", "webview")):
+                bloat_exact.update({"trichromelibrary", "trichromelibrary6432", "trichromelibrary64"})
     else:
-        # Safe to remove trichrome library only if standalone webview exists
-        if any(n in pkg_names_lower for n in ("webviewgoogle", "androidsystemwebview", "webview")):
-            bloat_exact.update({"trichromelibrary", "trichromelibrary6432"})
+        # Full de-Googling for microG / vanilla FOSS mode
+        bloat_exact.update({
+            "prebuiltgmscore",
+            "gmscore",
+            "phonesky",
+            "googleservicesframework",
+            "googleloginservice",
+            "googleonetimerinitializer",
+            "googlebackupadapter",
+            "googlebackuptransport",
+            "googlecontactssyncadapter",
+            "googlecalendarsyncadapter",
+            "googlerestore",
+            "setupwizard",
+            "setupwizardprebuilt",
+            "webviewgoogle",
+            "webviewgoogle64",
+            "trichromewebview",
+            "trichromewebview64",
+            "trichromelibrary",
+            "trichromelibrary64",
+            "trichromelibrary6432",
+            "gboard",
+            "latinimegoogle",
+            "latinimegoogleprebuilt",
+        })
 
     if level == "balanced":
         # Keep a few lightweight daily tools in balanced mode
@@ -572,9 +614,9 @@ def debloat_trees(
     if comms["has_miui_dialer"]:
         bloat_exact.update({"googledialer", "googledialer_arm64"})
     if comms["has_miui_mms"]:
-        bloat_exact.update({"prebuiltbugle", "messages"})
+        bloat_exact.update({"prebuiltbugle", "messages", "messages_arm64_hdpi"})
 
-    bloat_prefixes = (
+    bloat_prefixes = [
         "com.facebook.",
         "com.zhiliaoapp.",
         "com.ss.android.",
@@ -623,7 +665,22 @@ def debloat_trees(
         "miuimusic",
         "miuivideo",
         "miuimipicks",
-    )
+    ]
+    if gms_mode != "keep":
+        bloat_prefixes.extend([
+            "com.google.android.gms",
+            "com.android.vending",
+            "com.google.android.gsf",
+            "com.google.android.setupwizard",
+            "com.google.android.webview",
+            "com.google.android.trichromelibrary",
+            "com.google.android.inputmethod.latin",
+            "com.google.android.apps.restore",
+            "webviewgoogle",
+            "trichrome",
+            "messages_arm64",
+        ])
+    bloat_prefixes_t = tuple(bloat_prefixes)
 
     removed_count = 0
     freed_bytes = 0
@@ -650,7 +707,7 @@ def debloat_trees(
                 low = pkg_dir.name.lower()
                 if low in protected:
                     continue
-                hit = (low in bloat_exact) or any(low.startswith(p) for p in bloat_prefixes)
+                hit = (low in bloat_exact) or any(low.startswith(p) for p in bloat_prefixes_t)
                 if not hit and comms["has_miui_dialer"] and low.startswith("googledialer"):
                     hit = True
                 if not hit:
@@ -662,6 +719,30 @@ def debloat_trees(
                     freed_bytes += sz
                     removed_count += 1
                     log.append(f"debloat pkg: {pkg_dir.relative_to(root.parent)} ({sz // (1024 * 1024)} MiB)")
+
+        # 2b. Google GMS Mainline APEX (only remove in non-keep mode if verified not core AOSP extservices/permission)
+        if gms_mode != "keep":
+            apex_dir = root / "apex"
+            if apex_dir.is_dir():
+                for apx in sorted(apex_dir.glob("com.google.android.gmssystem*")):
+                    safe_rm = True
+                    if apx.is_file() and apx.suffix == ".apex":
+                        try:
+                            with zipfile.ZipFile(apx, "r") as zf:
+                                mf = zf.read("apex_manifest.pb") if "apex_manifest.pb" in zf.namelist() else b""
+                                if b"permission" in mf.lower() or b"extservices" in mf.lower():
+                                    safe_rm = False
+                        except Exception:
+                            pass
+                    if safe_rm and apx.exists():
+                        sz = dir_size_bytes(apx) if apx.is_dir() else apx.stat().st_size
+                        if apx.is_dir():
+                            shutil.rmtree(apx)
+                        else:
+                            apx.unlink()
+                        freed_bytes += sz
+                        removed_count += 1
+                        log.append(f"debloat apex: {apx.name} ({sz // (1024 * 1024)} MiB)")
 
         # 3. Heavy media & voice bloat
         for rel_rm in (
@@ -939,11 +1020,368 @@ def adapt_blossom_hardware(
             log.append(f"device_features adapted from {src_xml.name} -> angelica/angelican/blossom (60Hz)")
 
 
+def install_apk_dir(apk_src: Path, dst_dir: Path, log: list[str]) -> None:
+    if not apk_src.is_file():
+        return
+    if dst_dir.exists():
+        shutil.rmtree(dst_dir)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(dst_dir, 0o755)
+    dst_apk = dst_dir / f"{dst_dir.name}.apk"
+    shutil.copy2(apk_src, dst_apk)
+    os.chmod(dst_apk, 0o644)
+
+    extracted = []
+    try:
+        with zipfile.ZipFile(dst_apk, "r") as zf:
+            for member in zf.namelist():
+                if not member.endswith(".so"):
+                    continue
+                if member.startswith("lib/arm64-v8a/"):
+                    out_so = dst_dir / "lib" / "arm64" / Path(member).name
+                elif member.startswith("lib/armeabi-v7a/"):
+                    out_so = dst_dir / "lib" / "arm" / Path(member).name
+                else:
+                    continue
+                out_so.parent.mkdir(parents=True, exist_ok=True)
+                os.chmod(out_so.parent, 0o755)
+                if out_so.parent.parent.is_dir():
+                    os.chmod(out_so.parent.parent, 0o755)
+                out_so.write_bytes(zf.read(member))
+                os.chmod(out_so, 0o644)
+                extracted.append(str(out_so.relative_to(dst_dir)))
+    except Exception as exc:
+        log.append(f"warn extract libs {dst_apk.name}: {exc}")
+    log.append(f"installed APK: {dst_apk.name} ({dst_apk.stat().st_size // 1024} KiB, libs={len(extracted)})")
+
+
+def query_apk_permissions(apk_path: Path, aapt2_bin: str) -> list[str]:
+    if not aapt2_bin or not apk_path.is_file():
+        return []
+    r = subprocess.run([aapt2_bin, "dump", "permissions", str(apk_path)], text=True, capture_output=True)
+    if r.returncode != 0:
+        return []
+    perms: list[str] = []
+    for line in r.stdout.splitlines():
+        m = re.search(r"name='([^']+)'", line)
+        if m and m.group(1) not in perms:
+            perms.append(m.group(1))
+    return perms
+
+
+def query_apk_package(apk_path: Path, aapt2_bin: str) -> str:
+    if not aapt2_bin or not apk_path.is_file():
+        return ""
+    r = subprocess.run([aapt2_bin, "dump", "badging", str(apk_path)], text=True, capture_output=True)
+    if r.returncode != 0:
+        return ""
+    m = re.search(r"package:\s*name='([^']+)'", r.stdout)
+    return m.group(1) if m else ""
+
+
+def integrate_microg_and_foss(
+    base_dir: Path,
+    out_sys_root: Path,
+    out_sys_ext: Path,
+    out_prod: Path,
+    extra_apps_dir: Path | None,
+    apktool_jar: str,
+    aapt2_bin: str,
+    gms_mode: str,
+    log: list[str],
+) -> None:
+    if gms_mode != "microg":
+        return
+
+    # 1. Inspect donor framework-res.apk WebView config before choosing OSS WebView
+    donor_fw_res = out_sys_root / "framework" / "framework-res.apk"
+    wv_xml_dump = ""
+    if aapt2_bin and donor_fw_res.is_file():
+        r = subprocess.run(
+            [aapt2_bin, "dump", "xmltree", str(donor_fw_res), "--file", "res/xml/config_webview_packages.xml"],
+            text=True,
+            capture_output=True,
+        )
+        if r.returncode == 0:
+            wv_xml_dump = r.stdout
+            pkgs = re.findall(r'packageName\([^)]+\)="([^"]+)"', wv_xml_dump)
+            log.append(f"donor config_webview_packages.xml allows: {pkgs}")
+
+    # Check blossom base OSS WebView (usually multi-ABI com.android.webview)
+    base_wv = None
+    for bp in (base_dir / "product", base_dir / "system_ext", resolve_sys_root(base_dir / "system")):
+        base_wv = find_pkg_dir(bp, ("webview", "AndroidSystemWebView", "WebView", "CromiteWebView"))
+        if base_wv:
+            break
+
+    cromite_apk = (extra_apps_dir / "CromiteWebView.apk") if extra_apps_dir else Path("")
+    base_wv_pkg = ""
+    if base_wv:
+        apks = list(base_wv.rglob("*.apk"))
+        if apks:
+            base_wv_pkg = query_apk_package(apks[0], aapt2_bin)
+        log.append(f"base OSS WebView found: {base_wv.name} (package={base_wv_pkg or 'unknown'})")
+
+    if base_wv and (not wv_xml_dump or not base_wv_pkg or base_wv_pkg in wv_xml_dump):
+        dst_wv = out_prod / "app" / base_wv.name
+        if dst_wv.exists():
+            shutil.rmtree(dst_wv)
+        cp_preserve(base_wv, dst_wv)
+        log.append(f"WebView installed from base OSS ({base_wv.name}, multi-ABI safe)")
+    elif cromite_apk.is_file():
+        install_apk_dir(cromite_apk, out_prod / "app" / "CromiteWebView", log)
+        if wv_xml_dump and "org.cromite.webview" not in wv_xml_dump:
+            log.append("WARNING: org.cromite.webview nie jest wymieniony w donor config_webview_packages.xml (brak zgodnego podpisu systemowego)")
+    else:
+        log.append("WARNING: brak otwartozrodlowego WebView (ani base webview, ani CromiteWebView.apk)")
+
+    # 2. Install microG + FakeStore + GsfProxy + HeliBoard + Droid-ify
+    if extra_apps_dir and extra_apps_dir.is_dir():
+        gms_apk = extra_apps_dir / "GmsCore.apk"
+        vending_apk = extra_apps_dir / "FakeStore.apk"
+        gsf_apk = extra_apps_dir / "GsfProxy.apk"
+        ime_apk = extra_apps_dir / "HeliBoard.apk"
+        store_apk = extra_apps_dir / "Droid-ify.apk"
+
+        install_apk_dir(gms_apk, out_prod / "priv-app" / "GmsCore", log)
+        install_apk_dir(vending_apk, out_prod / "priv-app" / "FakeStore", log)
+        install_apk_dir(gsf_apk, out_prod / "priv-app" / "GsfProxy", log)
+        if ime_apk.is_file():
+            install_apk_dir(ime_apk, out_prod / "app" / "HeliBoard", log)
+        install_apk_dir(store_apk, out_prod / "app" / "Droid-ify", log)
+
+        # Build comprehensive privapp-permissions-microg.xml using aapt2 + known required priv permissions
+        base_gms_priv = {
+            "android.permission.ACCESS_COARSE_LOCATION",
+            "android.permission.ACCESS_CONTEXT_HUB",
+            "android.permission.ACCESS_NETWORK_STATE",
+            "android.permission.ACCESS_WIFI_STATE",
+            "android.permission.ALLOCATE_AGGRESSIVE",
+            "android.permission.BATTERY_STATS",
+            "android.permission.CHANGE_DEVICE_IDLE_TEMP_WHITELIST",
+            "android.permission.CONNECTIVITY_USE_RESTRICTED_NETWORKS",
+            "android.permission.DUMP",
+            "android.permission.FAKE_PACKAGE_SIGNATURE",
+            "android.permission.GET_APP_OPS_STATS",
+            "android.permission.INSTALL_LOCATION_PROVIDER",
+            "android.permission.INTERACT_ACROSS_USERS",
+            "android.permission.LOCAL_MAC_ADDRESS",
+            "android.permission.LOCATION_BYPASS",
+            "android.permission.LOCATION_HARDWARE",
+            "android.permission.MANAGE_USB",
+            "android.permission.MODIFY_PHONE_STATE",
+            "android.permission.NETWORK_BYPASS_PRIVATE_DNS",
+            "android.permission.NETWORK_SCAN",
+            "android.permission.OBSERVE_GRANT_REVOKE_PERMISSIONS",
+            "android.permission.PACKAGE_USAGE_STATS",
+            "android.permission.READ_DEVICE_CONFIG",
+            "android.permission.READ_LOGS",
+            "android.permission.READ_PRIVILEGED_PHONE_STATE",
+            "android.permission.REAL_GET_TASKS",
+            "android.permission.RECEIVE_DATA_ACTIVITY_CHANGE",
+            "android.permission.START_ACTIVITIES_FROM_BACKGROUND",
+            "android.permission.STATUS_BAR_SERVICE",
+            "android.permission.SUBSTITUTE_NOTIFICATION_APP_NAME",
+            "android.permission.SYSTEM_ALERT_WINDOW",
+            "android.permission.TETHER_PRIVILEGED",
+            "android.permission.UPDATE_APP_OPS_STATS",
+            "android.permission.UPDATE_DEVICE_STATS",
+            "android.permission.USE_BIOMETRIC",
+            "android.permission.WRITE_GSERVICES",
+            "android.permission.WRITE_SECURE_SETTINGS",
+        }
+        gms_perms = sorted(base_gms_priv | {p for p in query_apk_permissions(gms_apk, aapt2_bin) if p.startswith("android.permission.")})
+        vending_perms = sorted(
+            {
+                "android.permission.FAKE_PACKAGE_SIGNATURE",
+                "android.permission.INSTALL_PACKAGES",
+                "android.permission.DELETE_PACKAGES",
+                "android.permission.CHECK_LICENSE",
+            }
+            | {p for p in query_apk_permissions(vending_apk, aapt2_bin) if p.startswith("android.permission.")}
+        )
+        gsf_perms = sorted({p for p in query_apk_permissions(gsf_apk, aapt2_bin) if p.startswith("android.permission.")})
+
+        perm_dir = out_prod / "etc" / "permissions"
+        perm_dir.mkdir(parents=True, exist_ok=True)
+        xml_lines = ['<?xml version="1.0" encoding="utf-8"?>', "<permissions>"]
+        xml_lines.append('    <privapp-permissions package="com.google.android.gms">')
+        for p in gms_perms:
+            xml_lines.append(f'        <permission name="{p}" />')
+        xml_lines.append("    </privapp-permissions>")
+        xml_lines.append('    <privapp-permissions package="com.android.vending">')
+        for p in vending_perms:
+            xml_lines.append(f'        <permission name="{p}" />')
+        xml_lines.append("    </privapp-permissions>")
+        if gsf_perms:
+            xml_lines.append('    <privapp-permissions package="com.google.android.gsf">')
+            for p in gsf_perms:
+                xml_lines.append(f'        <permission name="{p}" />')
+            xml_lines.append("    </privapp-permissions>")
+        xml_lines.append("</permissions>")
+        (perm_dir / "privapp-permissions-microg.xml").write_text("\n".join(xml_lines) + "\n", encoding="utf-8")
+        os.chmod(perm_dir / "privapp-permissions-microg.xml", 0o644)
+
+        sys_dir = out_prod / "etc" / "sysconfig"
+        sys_dir.mkdir(parents=True, exist_ok=True)
+        (sys_dir / "microg.xml").write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<config>\n"
+            '    <allow-in-power-save package="com.google.android.gms" />\n'
+            '    <allow-in-data-usage-save package="com.google.android.gms" />\n'
+            '    <allow-in-power-save package="com.android.vending" />\n'
+            "</config>\n",
+            encoding="utf-8",
+        )
+        os.chmod(sys_dir / "microg.xml", 0o644)
+
+        def_dir = out_prod / "etc" / "default-permissions"
+        def_dir.mkdir(parents=True, exist_ok=True)
+        (def_dir / "default-permissions-microg.xml").write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<exceptions>\n"
+            '    <exception package="com.google.android.gms">\n'
+            '        <permission name="android.permission.ACCESS_COARSE_LOCATION" fixed="false" />\n'
+            '        <permission name="android.permission.ACCESS_FINE_LOCATION" fixed="false" />\n'
+            '        <permission name="android.permission.ACCESS_BACKGROUND_LOCATION" fixed="false" />\n'
+            '        <permission name="android.permission.POST_NOTIFICATIONS" fixed="false" />\n'
+            "    </exception>\n"
+            "</exceptions>\n",
+            encoding="utf-8",
+        )
+        os.chmod(def_dir / "default-permissions-microg.xml", 0o644)
+        log.append(f"microG config written: privapp({len(gms_perms)} gms, {len(vending_perms)} vending) + sysconfig + default-permissions")
+
+    # Fallback keyboard if HeliBoard was not supplied
+    if not (out_prod / "app" / "HeliBoard").is_dir():
+        for bp in (base_dir / "product", base_dir / "system_ext", resolve_sys_root(base_dir / "system")):
+            base_ime = find_pkg_dir(bp, ("LatinIME",))
+            if base_ime:
+                cp_preserve(base_ime, out_prod / "app" / base_ime.name)
+                log.append(f"keyboard fallback copied from base: {base_ime.name}")
+                break
+
+    # Ensure Provision exists if Google SetupWizard was removed
+    has_prov = any(
+        find_pkg_dir(t, ("Provision", "SetupWizard")) is not None
+        for t in (out_sys_root, out_sys_ext, out_prod)
+    )
+    if not has_prov:
+        for bp in (base_dir / "product", base_dir / "system_ext", resolve_sys_root(base_dir / "system")):
+            prov = find_pkg_dir(bp, ("Provision",))
+            if prov:
+                cp_preserve(prov, out_prod / "priv-app" / prov.name)
+                log.append(f"copied base Provision for setup completion: {prov.name}")
+                break
+
+    # 3. Inspect / best-effort patch services.jar for microG signature spoofing
+    services_jar = out_sys_root / "framework" / "services.jar"
+    framework_jar = out_sys_root / "framework" / "framework.jar"
+    patcher_py = Path(__file__).resolve().parent / "patch_services_spoof.py"
+    if apktool_jar and patcher_py.is_file() and services_jar.is_file():
+        r = subprocess.run(
+            [
+                sys.executable,
+                str(patcher_py),
+                "--services-jar",
+                str(services_jar),
+                "--framework-jar",
+                str(framework_jar),
+                "--apktool-jar",
+                apktool_jar,
+                "--oat-dir",
+                str(out_sys_root / "framework" / "oat"),
+            ],
+            text=True,
+            capture_output=True,
+        )
+        for ln in (r.stdout + "\n" + r.stderr).splitlines():
+            if ln.strip():
+                log.append(f"services.jar spoof: {ln.strip()}")
+
+
+def integrate_rust_components(
+    out_sys_root: Path,
+    out_sys_ext: Path,
+    out_prod: Path,
+    memd_bin: str,
+    memd_rc: str,
+    rust_app_apk: str,
+    log: list[str],
+) -> None:
+    # 1. Native Rust RAM/zRAM/PSI daemon -> /system_ext/bin/r9c-memd + SELinux CIL
+    if memd_bin and Path(memd_bin).is_file():
+        dst_bin = out_sys_ext / "bin" / "r9c-memd"
+        dst_bin.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(memd_bin, dst_bin)
+        os.chmod(dst_bin, 0o755)
+        log.append(f"installed Rust daemon: {dst_bin} ({dst_bin.stat().st_size // 1024} KiB)")
+
+        if memd_rc and Path(memd_rc).is_file():
+            dst_rc = out_sys_ext / "etc" / "init" / "r9c-memd.rc"
+            dst_rc.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(memd_rc, dst_rc)
+            os.chmod(dst_rc, 0o644)
+            log.append(f"installed Rust daemon init rc: {dst_rc}")
+
+        fc_path = out_sys_ext / "etc" / "selinux" / "system_ext_file_contexts"
+        if fc_path.is_file():
+            fc_txt = fc_path.read_text(encoding="utf-8", errors="replace")
+            if "/system_ext/bin/r9c-memd" not in fc_txt:
+                fc_path.write_text(
+                    fc_txt.rstrip("\n") + "\n/system_ext/bin/r9c-memd\tu:object_r:r9c_memd_exec:s0\n",
+                    encoding="utf-8",
+                )
+                log.append("added r9c_memd_exec context to system_ext_file_contexts")
+
+        plat_cil = out_sys_root / "etc" / "selinux" / "plat_sepolicy.cil"
+        se_cil = out_sys_ext / "etc" / "selinux" / "system_ext_sepolicy.cil"
+        if plat_cil.is_file() and se_cil.is_file():
+            plat_txt = plat_cil.read_text(encoding="utf-8", errors="replace")
+            se_txt = se_cil.read_text(encoding="utf-8", errors="replace")
+            if "(type r9c_memd)" not in se_txt:
+                cil_lines = [
+                    "; r9c-memd native Rust daemon domain",
+                    "(type r9c_memd)",
+                    "(roletype object_r r9c_memd)",
+                    "(typeattributeset domain (r9c_memd))",
+                    "(type r9c_memd_exec)",
+                    "(roletype object_r r9c_memd_exec)",
+                    "(typeattributeset file_type (r9c_memd_exec))",
+                    "(typeattributeset exec_type (r9c_memd_exec))",
+                ]
+                for attr in ("coredomain", "mlstrustedsubject"):
+                    if f"(typeattribute {attr})" in plat_txt:
+                        cil_lines.append(f"(typeattributeset {attr} (r9c_memd))")
+                for fattr in ("system_file_type",):
+                    if f"(typeattribute {fattr})" in plat_txt:
+                        cil_lines.append(f"(typeattributeset {fattr} (r9c_memd_exec))")
+                cil_lines.extend([
+                    "(typetransition init r9c_memd_exec process r9c_memd)",
+                    "(allow init r9c_memd_exec (file (read getattr map execute open)))",
+                    "(allow init r9c_memd (process (transition)))",
+                    "(allow r9c_memd r9c_memd_exec (file (read getattr map execute open entrypoint)))",
+                    "(allow r9c_memd init (fd (use)))",
+                    "(allow r9c_memd init (fifo_file (write getattr)))",
+                    "(allow r9c_memd init (process (sigchld)))",
+                ])
+                for ptype in ("proc_meminfo", "proc_pressure_memory", "proc_pressure"):
+                    if f"(type {ptype})" in plat_txt:
+                        cil_lines.append(f"(allow r9c_memd {ptype} (file (read open getattr)))")
+                se_cil.write_text(se_txt.rstrip("\n") + "\n" + "\n".join(cil_lines) + "\n", encoding="utf-8")
+                log.append("added r9c_memd SELinux CIL domain rules to system_ext_sepolicy.cil")
+
+    # 2. Pure-Rust NativeActivity APK -> /product/app/Redmi9CRustApp/Redmi9CRustApp.apk
+    if rust_app_apk and Path(rust_app_apk).is_file():
+        install_apk_dir(Path(rust_app_apk), out_prod / "app" / "Redmi9CRustApp", log)
+
+
 def configure_props_and_zygote(
     out_sys_root: Path,
     out_sys_ext: Path,
     out_prod: Path,
     variant: str,
+    gms_mode: str,
     log: list[str],
 ) -> None:
     has_32 = (out_sys_root / "bin" / "app_process32").exists()
@@ -969,15 +1407,27 @@ def configure_props_and_zygote(
         "ro.zygote": zygote_mode,
         "ro.sf.lcd_density": "320",
         "ro.mi.os.version.name": "OS4.0.8.0.XBNMIXM",
-        "ro.build.display.id": "HyperOS 4.0.8.0 Debloated (Redmi 9C)",
+        "ro.build.display.id": f"HyperOS 4.0.8.0 {'microG+Rust' if gms_mode == 'microg' else 'Debloated'} (Redmi 9C)",
         "persist.sys.background_blur_supported": "false",
         "ro.surface_flinger.supports_background_blur": "0",
         "persist.sys.miui.blur.level": "0",
         "persist.arm64.memtag.system_server": "off",
+        "dalvik.vm.heapstartsize": "8m",
+        "dalvik.vm.heapgrowthlimit": "192m",
+        "dalvik.vm.heapsize": "384m",
+        "dalvik.vm.heaptargetutilization": "0.75",
+        "dalvik.vm.heapminfree": "2m",
+        "dalvik.vm.heapmaxfree": "8m",
+        "dalvik.vm.dex2oat-threads": "4",
         "ro.lmk.use_psi": "true",
         "ro.lmk.kill_heaviest_task": "true",
         "ro.lmk.psi_partial_stall_ms": "70",
-        "ro.lmk.psi_complete_stall_ms": "700",
+        "ro.lmk.psi_complete_stall_ms": "500",
+        "ro.lmk.thrashing_limit": "30",
+        "ro.lmk.thrashing_limit_decay": "10",
+        "ro.lmk.swap_free_low_percentage": "15",
+        "ro.sys.fw.bg_apps_limit": "16",
+        "persist.sys.purgeable_assets": "1",
         "ro.debuggable": "1",
         "ro.adb.secure": "0",
         "persist.sys.usb.config": "mtp,adb",
@@ -993,6 +1443,8 @@ def configure_props_and_zygote(
         "ro.product.marketname": market,
         "ro.product.mod_device": f"{dev}_global",
     }
+    if gms_mode != "keep":
+        common_updates["ro.setupwizard.mode"] = "DISABLED"
 
     replace_pairs = [
         ("dew_global", f"{dev}_global"),
@@ -1018,6 +1470,13 @@ def main() -> int:
     ap.add_argument("--out-tree", required=True, help="Output assembled trees dir")
     ap.add_argument("--variant", default="angelica", choices=["angelica", "angelican"])
     ap.add_argument("--debloat-level", default="aggressive", choices=["aggressive", "balanced"])
+    ap.add_argument("--gms-mode", default="microg", choices=["microg", "keep", "none"])
+    ap.add_argument("--extra-apps-dir", default="", help="Dir containing GmsCore.apk, FakeStore.apk, HeliBoard.apk, Droid-ify.apk, CromiteWebView.apk")
+    ap.add_argument("--r9c-memd-bin", default="", help="Compiled aarch64 r9c-memd binary")
+    ap.add_argument("--r9c-memd-rc", default="", help="r9c-memd.rc init script")
+    ap.add_argument("--rust-app-apk", default="", help="Compiled pure-Rust NativeActivity APK")
+    ap.add_argument("--apktool-jar", default="", help="apktool jar for services.jar inspection/patching")
+    ap.add_argument("--aapt2-bin", default="", help="aapt2 binary for APK manifest/webview inspection")
     ap.add_argument("--target-os-mib", type=int, default=4700, help="Target max uncompressed MiB for system+system_ext+product (0=disabled)")
     ap.add_argument("--report", required=True, help="Write build/debloat report path")
     args = ap.parse_args()
@@ -1051,10 +1510,31 @@ def main() -> int:
     out_prod = out / "product"
 
     merge_mi_ext(donor / "mi_ext", out_sys_root, out_sys_ext, out_prod, log)
-    debloat_trees(out_sys_root, out_sys_ext, out_prod, args.debloat_level, log)
+    debloat_trees(out_sys_root, out_sys_ext, out_prod, args.debloat_level, args.gms_mode, log)
+    extra_dir = Path(args.extra_apps_dir) if args.extra_apps_dir else None
+    integrate_microg_and_foss(
+        base,
+        out_sys_root,
+        out_sys_ext,
+        out_prod,
+        extra_dir,
+        args.apktool_jar,
+        args.aapt2_bin,
+        args.gms_mode,
+        log,
+    )
+    integrate_rust_components(
+        out_sys_root,
+        out_sys_ext,
+        out_prod,
+        args.r9c_memd_bin,
+        args.r9c_memd_rc,
+        args.rust_app_apk,
+        log,
+    )
     trim_to_budget(base, out, out_sys_root, out_sys_ext, out_prod, args.target_os_mib, log)
     adapt_blossom_hardware(base, out, out_sys_root, out_sys_ext, out_prod, log)
-    configure_props_and_zygote(out_sys_root, out_sys_ext, out_prod, args.variant, log)
+    configure_props_and_zygote(out_sys_root, out_sys_ext, out_prod, args.variant, args.gms_mode, log)
 
     sizes = {p: dir_size_bytes(out / p) for p in ("system", "system_ext", "product", "vendor", "odm")}
     total_mb = sum(sizes.values()) // (1024 * 1024)

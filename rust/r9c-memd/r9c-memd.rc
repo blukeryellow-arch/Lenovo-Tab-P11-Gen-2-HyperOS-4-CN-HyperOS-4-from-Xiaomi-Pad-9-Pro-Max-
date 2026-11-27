@@ -1,0 +1,13 @@
+on boot
+    write /proc/sys/vm/swappiness 130
+    write /proc/sys/vm/page-cluster 0
+    write /proc/sys/vm/vfs_cache_pressure 120
+    write /proc/sys/vm/watermark_scale_factor 60
+    write /proc/sys/vm/dirty_background_ratio 5
+    write /proc/sys/vm/dirty_ratio 15
+
+service r9c_memd /system_ext/bin/r9c-memd
+    class main
+    user root
+    group root system
+    oom_score_adjust -800
