@@ -1600,10 +1600,48 @@ def integrate_hyperos4_launcher(
     # 1. Check hyperos.rustruntime framework & native DT_NEEDED compatibility against dew_global
     rust_jars = sorted((out_sys_ext / "framework").glob("hyperos.rustruntime*.jar")) if (out_sys_ext / "framework").is_dir() else []
     log.append(f"hyperos4 ABI check: system_ext rustruntime jars={[p.name for p in rust_jars]}")
-    has_v5 = any("v5" in p.name for p in rust_jars)
-    if not has_v5 and rust_jars:
-        # Check if base or donor system has v5 elsewhere
-        log.append(f"WARNING: expected hyperos.rustruntime.v5.jar; found {[p.name for p in rust_jars]}")
+
+    # Inspect existing rustruntime permissions XML and ensure hyperos.rustruntime.v5 alias exists
+    existing_rt_xmls: list[Path] = []
+    has_v5_decl = False
+    for pdir in (out_sys_ext / "etc" / "permissions", out_sys_root / "etc" / "permissions", out_prod / "etc" / "permissions"):
+        if not pdir.is_dir():
+            continue
+        for xp in sorted(pdir.glob("*.xml")):
+            try:
+                xtxt = xp.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if "hyperos.rustruntime" in xtxt:
+                existing_rt_xmls.append(xp)
+                log.append(f"hyperos4 rustruntime perm XML: {xp.name} -> {' '.join(xtxt.split())[:180]}")
+                if '"hyperos.rustruntime.v5"' in xtxt or "'hyperos.rustruntime.v5'" in xtxt:
+                    has_v5_decl = True
+
+    if not has_v5_decl and rust_jars:
+        primary_jar = next((p for p in rust_jars if "v5" in p.name), rust_jars[0])
+        rt_perm_dir = out_sys_ext / "etc" / "permissions"
+        rt_perm_dir.mkdir(parents=True, exist_ok=True)
+        rt_v5_xml = rt_perm_dir / "hyperos.rustruntime.v5.xml"
+        rt_v5_xml.write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<permissions>\n"
+            '    <library name="hyperos.rustruntime.v5"\n'
+            f'        file="/system_ext/framework/{primary_jar.name}" />\n'
+            "</permissions>\n",
+            encoding="utf-8",
+        )
+        os.chmod(rt_v5_xml, 0o644)
+        log.append(f"hyperos4 rustruntime fix: registered shared library alias hyperos.rustruntime.v5 -> /system_ext/framework/{primary_jar.name}")
+
+    # Probe classes inside hyperos.rustruntime*.jar for diagnostic log
+    for rjar in rust_jars:
+        try:
+            with zipfile.ZipFile(rjar, "r") as rzf:
+                dex_cnt = sum(1 for n in rzf.namelist() if n.endswith(".dex"))
+                log.append(f"hyperos4 rustruntime jar {rjar.name}: size={rjar.stat().st_size // 1024} KiB, dex={dex_cnt}, entries={rzf.namelist()[:6]}")
+        except Exception as exc:
+            log.append(f"hyperos4 rustruntime jar probe note ({rjar.name}): {exc}")
 
     # Probe DT_NEEDED shared libs of libapp_launcher.so & libresources_frb.so inside the APK
     avail_libs: set[str] = set()

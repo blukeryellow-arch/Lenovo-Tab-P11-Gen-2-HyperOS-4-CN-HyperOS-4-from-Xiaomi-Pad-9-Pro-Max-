@@ -556,7 +556,7 @@ jobs:
           SEXT_FC="$WORK/out-tree/system_ext/etc/selinux/system_ext_file_contexts"
           if [ -f "$SEXT_FC" ]; then
             sudo python3 "$REPO_DIR/tools/fc_fixup.py" --contexts "$SEXT_FC" --root "$WORK/out-tree" \
-              --only system_ext/etc/vintf system_ext/etc/properties system_ext/apex system_ext/etc/build.prop system_ext/framework system_ext/priv-app system_ext/bin system_ext/etc/init system_ext/etc/selinux || true
+              --only system_ext/etc/vintf system_ext/etc/properties system_ext/apex system_ext/etc/build.prop system_ext/etc/permissions system_ext/framework system_ext/priv-app system_ext/bin system_ext/etc/init system_ext/etc/selinux || true
           fi
           PROD_FC="$WORK/out-tree/product/etc/selinux/product_file_contexts"
           if [ -f "$PROD_FC" ]; then
@@ -825,6 +825,12 @@ jobs:
           mnt, p = sys.argv[1], sys.argv[2]
           ctx = os.getxattr(mnt, "security.selinux", follow_symlinks=False)
           print(f"verify {p} root xattr={ctx.decode()}")
+          if p == "system_ext":
+              import glob
+              perm_xmls = glob.glob(os.path.join(mnt, "etc/permissions/*.xml"))
+              rt_hits = [xp for xp in perm_xmls if "hyperos.rustruntime.v5" in open(xp, "r", encoding="utf-8", errors="replace").read()]
+              assert rt_hits, f"Missing hyperos.rustruntime.v5 declaration in system_ext/etc/permissions/*.xml!"
+              print(f"verify system_ext OK: hyperos.rustruntime.v5 declared in {[os.path.basename(x) for x in rt_hits]}")
           if p == "product":
               import glob
               miui_home = os.path.join(mnt, "priv-app/MiuiHome/MiuiHome.apk")
