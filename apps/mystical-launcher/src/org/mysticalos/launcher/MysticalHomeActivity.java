@@ -50,13 +50,19 @@ public class MysticalHomeActivity extends Activity {
     private GridLayout appGrid;
     private LinearLayout dockRow;
     private LinearLayout dynamicIslandPill;
+    private LinearLayout searchBarContainer;
+    private LinearLayout searchPillBtn;
+    private LinearLayout editModeBar;
     private TextView islandTitle;
     private TextView islandSub;
-    private TextView ramBadge;
+    private TextView islandActionLink;
     private TextView dateBadge;
+    private TextView weatherBadge;
     private EditText searchBox;
     private String queryText = "";
     private boolean islandExpanded = false;
+    private boolean searchOpen = false;
+    private boolean editBarOpen = false;
 
     private final BroadcastReceiver pkgReceiver = new BroadcastReceiver() {
         @Override
@@ -71,7 +77,7 @@ public class MysticalHomeActivity extends Activity {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
-        getWindow().setNavigationBarColor(Color.argb(120, 10, 12, 22));
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
 
         buildUi();
 
@@ -111,34 +117,43 @@ public class MysticalHomeActivity extends Activity {
             updateSystemHeader();
             return;
         }
-        if (searchBox != null && !TextUtils.isEmpty(searchBox.getText())) {
-            searchBox.setText("");
+        if (editBarOpen) {
+            editBarOpen = false;
+            updateEditModeBar();
+            return;
+        }
+        if (searchOpen || !TextUtils.isEmpty(queryText)) {
+            searchOpen = false;
+            queryText = "";
+            if (searchBox != null) searchBox.setText("");
+            updateSearchBarVisibility();
+            renderGridAndDock();
         }
     }
 
     private void buildUi() {
         LinearLayout outer = new LinearLayout(this);
         outer.setOrientation(LinearLayout.VERTICAL);
-        outer.setBackgroundColor(Color.argb(105, 8, 10, 20));
+        outer.setBackgroundColor(Color.TRANSPARENT);
         outer.setOnLongClickListener(v -> {
-            openQuickWallpaperOrIconMenu();
+            toggleEditModeBar();
             return true;
         });
 
-        // Always-on HyperOS 4 Dynamic Island Pill preview & status pill
+        // 1. Always-On HyperOS 4 Super Island (Dynamic Island) pill at top center
         dynamicIslandPill = new LinearLayout(this);
         dynamicIslandPill.setOrientation(LinearLayout.VERTICAL);
         dynamicIslandPill.setGravity(Gravity.CENTER_HORIZONTAL);
         GradientDrawable ibg = new GradientDrawable();
-        ibg.setColor(Color.argb(238, 8, 10, 16));
+        ibg.setColor(Color.argb(245, 9, 10, 14));
         ibg.setCornerRadius(dp(22));
-        ibg.setStroke(dp(1), Color.argb(110, 0, 212, 255));
+        ibg.setStroke(dp(1), Color.argb(65, 255, 255, 255));
         dynamicIslandPill.setBackground(ibg);
-        dynamicIslandPill.setPadding(dp(16), dp(7), dp(16), dp(7));
+        dynamicIslandPill.setPadding(dp(16), dp(6), dp(16), dp(6));
         LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         ilp.gravity = Gravity.CENTER_HORIZONTAL;
-        ilp.setMargins(dp(16), dp(14), dp(16), dp(8));
+        ilp.setMargins(dp(16), dp(10), dp(16), dp(6));
         dynamicIslandPill.setLayoutParams(ilp);
         dynamicIslandPill.setOnClickListener(v -> {
             islandExpanded = !islandExpanded;
@@ -152,33 +167,37 @@ public class MysticalHomeActivity extends Activity {
         dynamicIslandPill.addView(islandTitle);
 
         islandSub = new TextView(this);
-        islandSub.setTextColor(Color.rgb(122, 236, 200));
+        islandSub.setTextColor(Color.rgb(164, 232, 255));
         islandSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         islandSub.setPadding(0, dp(4), 0, 0);
         islandSub.setVisibility(View.GONE);
         dynamicIslandPill.addView(islandSub);
+
+        islandActionLink = new TextView(this);
+        islandActionLink.setText("Styl ikon ColorOS 17 >");
+        islandActionLink.setTextColor(Color.rgb(98, 224, 255));
+        islandActionLink.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        islandActionLink.setTypeface(Typeface.DEFAULT_BOLD);
+        islandActionLink.setPadding(0, dp(4), 0, dp(2));
+        islandActionLink.setVisibility(View.GONE);
+        islandActionLink.setOnClickListener(v -> startActivity(new Intent(this, IconStyleActivity.class)));
+        dynamicIslandPill.addView(islandActionLink);
+
         outer.addView(dynamicIslandPill);
 
-        // Header Flux Card
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
-        GradientDrawable hbg = new GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.argb(185, 22, 24, 48), Color.argb(175, 16, 20, 38)});
-        hbg.setCornerRadius(dp(22));
-        hbg.setStroke(dp(1), Color.argb(80, 110, 145, 255));
-        header.setBackground(hbg);
-        int hp = dp(14);
-        header.setPadding(hp, hp, hp, hp);
-        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(
+        // 2. Clean, borderless HyperOS 4 Clock & Weather Widget (no heavy dark RAM card!)
+        LinearLayout clockWeatherRow = new LinearLayout(this);
+        clockWeatherRow.setOrientation(LinearLayout.HORIZONTAL);
+        clockWeatherRow.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams cwlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        hlp.setMargins(dp(14), dp(2), dp(14), dp(10));
-        header.setLayoutParams(hlp);
-
-        LinearLayout topRow = new LinearLayout(this);
-        topRow.setOrientation(LinearLayout.HORIZONTAL);
-        topRow.setGravity(Gravity.CENTER_VERTICAL);
+        cwlp.setMargins(dp(20), dp(6), dp(20), dp(10));
+        clockWeatherRow.setLayoutParams(cwlp);
+        clockWeatherRow.setOnLongClickListener(v -> {
+            toggleEditModeBar();
+            return true;
+        });
 
         LinearLayout clockCol = new LinearLayout(this);
         clockCol.setOrientation(LinearLayout.VERTICAL);
@@ -188,49 +207,51 @@ public class MysticalHomeActivity extends Activity {
         tc.setFormat24Hour("HH:mm");
         tc.setFormat12Hour("HH:mm");
         tc.setTextColor(Color.WHITE);
-        tc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
-        tc.setTypeface(Typeface.DEFAULT_BOLD);
+        tc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 44);
+        tc.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        tc.setShadowLayer(dp(4), 0, dp(2), Color.argb(120, 0, 0, 0));
         clockCol.addView(tc);
 
         dateBadge = new TextView(this);
-        dateBadge.setTextColor(Color.rgb(185, 198, 228));
-        dateBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        dateBadge.setTextColor(Color.argb(235, 255, 255, 255));
+        dateBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        dateBadge.setShadowLayer(dp(3), 0, dp(1), Color.argb(120, 0, 0, 0));
         clockCol.addView(dateBadge);
-        topRow.addView(clockCol);
+        clockWeatherRow.addView(clockCol);
 
-        Button styleBtn = new Button(this);
-        styleBtn.setText("Ikony ColorOS 17");
-        styleBtn.setAllCaps(false);
-        styleBtn.setTextColor(Color.WHITE);
-        styleBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        GradientDrawable sbg = new GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{Color.rgb(91, 60, 245), Color.rgb(0, 175, 225)});
-        sbg.setCornerRadius(dp(14));
-        styleBtn.setBackground(sbg);
-        styleBtn.setPadding(dp(12), dp(6), dp(12), dp(6));
-        styleBtn.setOnClickListener(v -> startActivity(new Intent(this, IconStyleActivity.class)));
-        topRow.addView(styleBtn);
-        header.addView(topRow);
+        weatherBadge = new TextView(this);
+        weatherBadge.setText("18°C\nSlonecznie");
+        weatherBadge.setGravity(Gravity.END);
+        weatherBadge.setTextColor(Color.WHITE);
+        weatherBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        weatherBadge.setTypeface(Typeface.DEFAULT_BOLD);
+        weatherBadge.setShadowLayer(dp(3), 0, dp(1), Color.argb(120, 0, 0, 0));
+        clockWeatherRow.addView(weatherBadge);
 
-        ramBadge = new TextView(this);
-        ramBadge.setTextColor(Color.rgb(122, 236, 200));
-        ramBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-        ramBadge.setPadding(0, dp(6), 0, dp(8));
-        header.addView(ramBadge);
+        outer.addView(clockWeatherRow);
+
+        // Expandable live search box (hidden until user taps HyperOS 4 Search Pill above dock)
+        searchBarContainer = new LinearLayout(this);
+        searchBarContainer.setOrientation(LinearLayout.HORIZONTAL);
+        searchBarContainer.setVisibility(View.GONE);
+        LinearLayout.LayoutParams sblp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        sblp.setMargins(dp(18), dp(2), dp(18), dp(6));
+        searchBarContainer.setLayoutParams(sblp);
 
         searchBox = new EditText(this);
-        searchBox.setHint("Szukaj aplikacji w MysticalOS...");
-        searchBox.setHintTextColor(Color.rgb(150, 162, 190));
+        searchBox.setHint("Szukaj aplikacji...");
+        searchBox.setHintTextColor(Color.argb(200, 235, 242, 255));
         searchBox.setTextColor(Color.WHITE);
-        searchBox.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        searchBox.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         searchBox.setSingleLine(true);
         GradientDrawable eb = new GradientDrawable();
-        eb.setColor(Color.argb(135, 12, 16, 30));
-        eb.setCornerRadius(dp(12));
-        eb.setStroke(dp(1), Color.argb(70, 255, 255, 255));
+        eb.setColor(Color.argb(150, 18, 28, 52));
+        eb.setCornerRadius(dp(18));
+        eb.setStroke(dp(1), Color.argb(110, 255, 255, 255));
         searchBox.setBackground(eb);
-        searchBox.setPadding(dp(12), dp(8), dp(12), dp(8));
+        searchBox.setPadding(dp(14), dp(9), dp(14), dp(9));
+        searchBox.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         searchBox.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
@@ -239,47 +260,135 @@ public class MysticalHomeActivity extends Activity {
             }
             @Override public void afterTextChanged(Editable s) {}
         });
-        header.addView(searchBox);
-        outer.addView(header);
+        searchBarContainer.addView(searchBox);
+        outer.addView(searchBarContainer);
 
-        // Scrollable grid for icons and 1x2 / 2x1 / 2x2 ColorOS 17 Flux tiles
+        // 3. Scrollable HyperOS 4 grid + ColorOS 17 resizeable tiles
         ScrollView scroll = new ScrollView(this);
         scroll.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
         scroll.setFillViewport(true);
         scroll.setOnLongClickListener(v -> {
-            openQuickWallpaperOrIconMenu();
+            toggleEditModeBar();
             return true;
         });
 
         appGrid = new GridLayout(this);
-        appGrid.setPadding(dp(10), dp(4), dp(10), dp(12));
+        appGrid.setPadding(dp(12), dp(2), dp(12), dp(8));
         appGrid.setOnLongClickListener(v -> {
-            openQuickWallpaperOrIconMenu();
+            toggleEditModeBar();
             return true;
         });
         scroll.addView(appGrid);
         outer.addView(scroll);
 
-        // Bottom Dock
+        // 4. HyperOS 4 bottom page dots + frosted Search Pill above Dock
+        searchPillBtn = new LinearLayout(this);
+        searchPillBtn.setOrientation(LinearLayout.HORIZONTAL);
+        searchPillBtn.setGravity(Gravity.CENTER);
+        GradientDrawable spBg = new GradientDrawable();
+        spBg.setColor(Color.argb(95, 255, 255, 255));
+        spBg.setCornerRadius(dp(16));
+        spBg.setStroke(dp(1), Color.argb(110, 255, 255, 255));
+        searchPillBtn.setBackground(spBg);
+        searchPillBtn.setPadding(dp(18), dp(6), dp(18), dp(6));
+        LinearLayout.LayoutParams splp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        splp.gravity = Gravity.CENTER_HORIZONTAL;
+        splp.setMargins(0, dp(4), 0, dp(6));
+        searchPillBtn.setLayoutParams(splp);
+
+        TextView spTxt = new TextView(this);
+        spTxt.setText("Szukaj");
+        spTxt.setTextColor(Color.WHITE);
+        spTxt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        spTxt.setShadowLayer(dp(2), 0, dp(1), Color.argb(90, 0, 0, 0));
+        searchPillBtn.addView(spTxt);
+        searchPillBtn.setOnClickListener(v -> {
+            searchOpen = !searchOpen;
+            if (!searchOpen && searchBox != null) searchBox.setText("");
+            updateSearchBarVisibility();
+        });
+        outer.addView(searchPillBtn);
+
+        // 5. HyperOS 4 Home Edit Mode toolbar (shown on long press)
+        editModeBar = new LinearLayout(this);
+        editModeBar.setOrientation(LinearLayout.HORIZONTAL);
+        editModeBar.setGravity(Gravity.CENTER);
+        editModeBar.setVisibility(View.GONE);
+        GradientDrawable emBg = new GradientDrawable();
+        emBg.setColor(Color.argb(215, 245, 248, 255));
+        emBg.setCornerRadius(dp(22));
+        editModeBar.setBackground(emBg);
+        editModeBar.setPadding(dp(8), dp(8), dp(8), dp(8));
+        LinearLayout.LayoutParams emlp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        emlp.setMargins(dp(14), dp(2), dp(14), dp(6));
+        editModeBar.setLayoutParams(emlp);
+
+        editModeBar.addView(makeEditAction("Tapety", v -> cycleHyperOsWallpaper()));
+        editModeBar.addView(makeEditAction("Widzety", v -> startActivity(new Intent(this, ColorOsTileConfigActivity.class))));
+        editModeBar.addView(makeEditAction("Ikony", v -> startActivity(new Intent(this, IconStyleActivity.class))));
+        editModeBar.addView(makeEditAction("Ustaw.", v -> openQuickWallpaperOrIconMenu()));
+        outer.addView(editModeBar);
+
+        // 6. HyperOS 4 Frosted Glass Pill Dock (no text labels, clean glass frame)
         dockRow = new LinearLayout(this);
         dockRow.setOrientation(LinearLayout.HORIZONTAL);
         dockRow.setGravity(Gravity.CENTER);
         GradientDrawable dbg = new GradientDrawable();
-        dbg.setColor(Color.argb(190, 18, 22, 42));
-        dbg.setCornerRadius(dp(24));
-        dbg.setStroke(dp(1), Color.argb(75, 130, 160, 255));
+        dbg.setColor(Color.argb(85, 255, 255, 255));
+        dbg.setCornerRadius(dp(26));
+        dbg.setStroke(dp(1), Color.argb(125, 255, 255, 255));
         dockRow.setBackground(dbg);
         dockRow.setPadding(dp(10), dp(10), dp(10), dp(10));
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
-        dlp.setMargins(dp(14), dp(6), dp(14), dp(18));
+        dlp.setMargins(dp(14), dp(2), dp(14), dp(16));
         dockRow.setLayoutParams(dlp);
         outer.addView(dockRow);
 
         setContentView(outer);
         updateSystemHeader();
+    }
+
+    private Button makeEditAction(String label, View.OnClickListener click) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setTextColor(Color.rgb(24, 34, 60));
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setBackgroundColor(Color.TRANSPARENT);
+        b.setLayoutParams(new LinearLayout.LayoutParams(0, dp(36), 1f));
+        b.setOnClickListener(click);
+        return b;
+    }
+
+    private void toggleEditModeBar() {
+        editBarOpen = !editBarOpen;
+        updateEditModeBar();
+    }
+
+    private void updateEditModeBar() {
+        if (editModeBar != null) {
+            editModeBar.setVisibility(editBarOpen ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    private void updateSearchBarVisibility() {
+        if (searchBarContainer != null) {
+            searchBarContainer.setVisibility(searchOpen ? View.VISIBLE : View.GONE);
+            if (searchOpen && searchBox != null) searchBox.requestFocus();
+        }
+    }
+
+    private void cycleHyperOsWallpaper() {
+        int next = (LauncherPrefs.getWallpaperIndex(this) + 1) % 6;
+        LauncherPrefs.setWallpaperIndex(this, next);
+        boolean ok = LauncherPrefs.applyWallpaperBitmap(this, next);
+        Toast.makeText(this, "Tapeta: " + LauncherPrefs.wallpaperName(next) + (ok ? "" : " (podglad)"), Toast.LENGTH_SHORT).show();
     }
 
     private int readBatteryPct() {
@@ -296,22 +405,22 @@ public class MysticalHomeActivity extends Activity {
     private void updateSystemHeader() {
         String dateStr = new SimpleDateFormat("EEEE, d MMM", new Locale("pl", "PL")).format(new Date());
         if (dateBadge != null) {
-            dateBadge.setText("MysticalOS 1.0 · " + dateStr);
+            dateBadge.setText(dateStr);
         }
         String mem = readMemSummary();
-        if (ramBadge != null) {
-            ramBadge.setText(mem);
-        }
         if (dynamicIslandPill != null) {
             boolean showIsland = LauncherPrefs.isDynamicIslandAlwaysOn(this);
             dynamicIslandPill.setVisibility(showIsland ? View.VISIBLE : View.GONE);
             int bat = readBatteryPct();
             if (islandTitle != null) {
-                islandTitle.setText("● Dynamic Island · " + bat + "% · ColorOS 17 (" + LauncherPrefs.getIconScale(this) + "%)");
+                islandTitle.setText("●  HyperIsland · " + bat + "%");
             }
             if (islandSub != null) {
                 islandSub.setVisibility(islandExpanded ? View.VISIBLE : View.GONE);
-                islandSub.setText(mem + " · Dotknij aby zwinac");
+                islandSub.setText(mem + " · Ikony " + LauncherPrefs.getIconScale(this) + "%");
+            }
+            if (islandActionLink != null) {
+                islandActionLink.setVisibility(islandExpanded ? View.VISIBLE : View.GONE);
             }
         }
     }
@@ -331,7 +440,7 @@ public class MysticalHomeActivity extends Activity {
             }
         } catch (Throwable ignored) {}
         if (totKb <= 0) {
-            return "MysticalOS Flux17 · r9c-memd aktywny";
+            return "Dynamic Island Always-On · r9c-memd";
         }
         return String.format(Locale.US, "RAM %d/%d MiB · r9c-memd", availKb / 1024, totKb / 1024);
     }
@@ -365,7 +474,7 @@ public class MysticalHomeActivity extends Activity {
 
         int screenW = getResources().getDisplayMetrics().widthPixels - dp(24);
         int cellW = Math.max(dp(64), screenW / cols);
-        int baseIconDp = (cols == 5) ? 46 : 52;
+        int baseIconDp = (cols == 5) ? 48 : 54;
         int baseGlobalIconPx = dp(Math.round(baseIconDp * globalIconScale / 100f));
         int unitH = Math.max(dp(92), baseGlobalIconPx + dp(38));
 
@@ -491,6 +600,7 @@ public class MysticalHomeActivity extends Activity {
             tv.setText(e.label);
             tv.setTextColor(Color.WHITE);
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f * labelScale / 100f);
+            tv.setShadowLayer(dp(3), 0, dp(1), Color.argb(135, 0, 0, 0));
             tv.setMaxLines(1);
             tv.setEllipsize(TextUtils.TruncateAt.END);
             tv.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -599,7 +709,7 @@ public class MysticalHomeActivity extends Activity {
                 "Odinstaluj"
         };
         new AlertDialog.Builder(this)
-                .setTitle(e.label + " · ColorOS 17")
+                .setTitle(e.label + " · HyperOS 4 / ColorOS 17")
                 .setView(customBox)
                 .setItems(items, (dlg, which) -> {
                     if (which == 0) {
@@ -637,20 +747,23 @@ public class MysticalHomeActivity extends Activity {
     private void openQuickWallpaperOrIconMenu() {
         String[] opts = {
                 "Ikony i rozmiar (ColorOS 17 Style)...",
+                "Zmien tapete HyperOS 4 (" + LauncherPrefs.wallpaperName(LauncherPrefs.getWallpaperIndex(this)) + ")",
                 "Dodaj kafelek widgetowy ColorOS 17...",
                 "Ustaw domyslny Launcher (Home)...",
                 "Odswiez liste aplikacji"
         };
         new AlertDialog.Builder(this)
-                .setTitle("MysticalOS Launcher")
+                .setTitle("HyperOS 4 Launcher · MysticalOS")
                 .setItems(opts, (d, w) -> {
                     if (w == 0) {
                         startActivity(new Intent(this, IconStyleActivity.class));
                     } else if (w == 1) {
-                        startActivity(new Intent(this, ColorOsTileConfigActivity.class));
+                        cycleHyperOsWallpaper();
                     } else if (w == 2) {
-                        startActivity(new Intent(Settings.ACTION_HOME_SETTINGS));
+                        startActivity(new Intent(this, ColorOsTileConfigActivity.class));
                     } else if (w == 3) {
+                        startActivity(new Intent(Settings.ACTION_HOME_SETTINGS));
+                    } else if (w == 4) {
                         reloadAppsAndRender();
                     }
                 })

@@ -228,23 +228,24 @@ public final class FluxIconRenderer {
         Canvas c = new Canvas(bmp);
 
         int dom = extractDominantColor(src, accentColor);
-        int topCol = blendColors(dom, Color.rgb(20, 24, 46), 0.56f);
-        int botCol = blendColors(accentColor, Color.rgb(12, 16, 34), 0.62f);
+        int topCol = blendColors(Color.argb(215, 245, 249, 255), dom, 0.24f);
+        int botCol = blendColors(Color.argb(195, 224, 236, 252), accentColor, 0.22f);
 
         float rad = Math.min(w, h) * (shape == LauncherPrefs.SHAPE_CIRCLE ? 0.36f
                 : shape == LauncherPrefs.SHAPE_ROUNDED ? 0.16f
                 : shape == LauncherPrefs.SHAPE_CUSTOM ? Math.max(0.04f, 0.34f * (cornerPct / 100f))
-                : 0.24f);
+                : 0.26f);
         RectF card = new RectF(4f, 4f, w - 4f, h - 4f);
 
         Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
         bg.setShader(new LinearGradient(0f, 0f, w, h, topCol, botCol, Shader.TileMode.CLAMP));
+        bg.setAlpha(212);
         c.drawRoundRect(card, rad, rad, bg);
 
         Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
         border.setStyle(Paint.Style.STROKE);
         border.setStrokeWidth(Math.max(2f, Math.min(w, h) * 0.015f));
-        border.setColor(Color.argb(90, 255, 255, 255));
+        border.setColor(Color.argb(150, 255, 255, 255));
         c.drawRoundRect(card, rad, rad, border);
 
         float scaleF = Math.max(0.6f, Math.min(1.5f, iconScalePct / 100f));
@@ -254,7 +255,7 @@ public final class FluxIconRenderer {
 
         boolean wide = (spanCols >= 2 && spanRows == 1) || w > h * 1.35f;
         TextPaint tp = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        tp.setColor(Color.WHITE);
+        tp.setColor(Color.rgb(22, 30, 48));
         tp.setTypeface(Typeface.DEFAULT_BOLD);
 
         if (wide) {
@@ -271,8 +272,8 @@ public final class FluxIconRenderer {
 
                 tp.setTextSize(Math.max(15f, h * 0.12f));
                 tp.setTypeface(Typeface.DEFAULT);
-                tp.setColor(Color.argb(200, 145, 232, 255));
-                c.drawText("ColorOS 17 · " + spanCols + "x" + spanRows + " (" + iconScalePct + "%)", textLeft, h * 0.68f, tp);
+                tp.setColor(Color.argb(200, 44, 72, 128));
+                c.drawText(spanCols + "x" + spanRows + " · " + iconScalePct + "%", textLeft, h * 0.68f, tp);
             }
         } else {
             float iconX = (w - iconBmp.getWidth()) * 0.5f;
@@ -289,7 +290,7 @@ public final class FluxIconRenderer {
                 if (spanCols >= 2 || spanRows >= 2) {
                     tp.setTextSize(Math.max(14f, Math.min(w, h) * 0.075f));
                     tp.setTypeface(Typeface.DEFAULT);
-                    tp.setColor(Color.argb(190, 145, 232, 255));
+                    tp.setColor(Color.argb(190, 44, 72, 128));
                     c.drawText(spanCols + "x" + spanRows + " · " + iconScalePct + "%", w * 0.5f, h * 0.92f, tp);
                 }
             }

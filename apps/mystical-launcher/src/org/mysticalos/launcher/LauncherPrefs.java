@@ -108,7 +108,7 @@ public final class LauncherPrefs {
     }
 
     public static int getIconShape(Context ctx) {
-        return clamp(prefs(ctx).getInt(KEY_ICON_SHAPE, SHAPE_FLUX_SQUIRCLE), 0, 5);
+        return clamp(prefs(ctx).getInt(KEY_ICON_SHAPE, SHAPE_HYPEROS), 0, 5);
     }
 
     public static void setIconShape(Context ctx, int shape) {
@@ -274,7 +274,7 @@ public final class LauncherPrefs {
         ed.putInt(KEY_ICON_SCALE, 100);
         ed.putInt(KEY_CORNER_PCT, 36);
         ed.putInt(KEY_LABEL_SCALE, 100);
-        ed.putInt(KEY_ICON_SHAPE, SHAPE_FLUX_SQUIRCLE);
+        ed.putInt(KEY_ICON_SHAPE, SHAPE_HYPEROS);
         ed.putBoolean(KEY_SHOW_LABELS, true);
         ed.putBoolean(KEY_MONET_TINT, false);
         ed.putBoolean(KEY_ICON_SHADOW, true);
@@ -464,24 +464,24 @@ public final class LauncherPrefs {
     public static int[] wallpaperColors(int idx) {
         switch (idx) {
             case 1:
-                // Szmaragdowa Fala (ColorOS 17 Jade)
-                return new int[]{Color.rgb(5, 24, 34), Color.rgb(12, 92, 108), Color.rgb(34, 224, 188)};
+                // HyperOS 4 Szmaragd / Jadeit
+                return new int[]{Color.rgb(208, 248, 236), Color.rgb(34, 152, 146), Color.rgb(16, 114, 128)};
             case 2:
-                // Rubinowy Zachod (ColorOS 17 Sunset)
-                return new int[]{Color.rgb(36, 12, 34), Color.rgb(138, 34, 88), Color.rgb(255, 126, 86)};
+                // HyperOS 4 Jedwabny Zachod
+                return new int[]{Color.rgb(255, 224, 212), Color.rgb(224, 112, 154), Color.rgb(88, 54, 142)};
             case 3:
-                // Gleboki Blekit HyperOS 4
-                return new int[]{Color.rgb(7, 16, 40), Color.rgb(24, 68, 152), Color.rgb(74, 192, 255)};
+                // HyperOS 4 Obsydian (Noc)
+                return new int[]{Color.rgb(18, 24, 42), Color.rgb(38, 62, 118), Color.rgb(92, 168, 255)};
             case 4:
-                // Zloty Bursztyn Flux
-                return new int[]{Color.rgb(26, 18, 12), Color.rgb(112, 64, 24), Color.rgb(255, 194, 72)};
+                // Zloty Bursztyn
+                return new int[]{Color.rgb(255, 238, 206), Color.rgb(218, 138, 56), Color.rgb(142, 74, 28)};
             case 5:
-                // Ksiezycowa Noc OLED
-                return new int[]{Color.rgb(8, 10, 18), Color.rgb(28, 36, 62), Color.rgb(134, 164, 255)};
+                // Indygo Flux
+                return new int[]{Color.rgb(12, 10, 36), Color.rgb(66, 38, 168), Color.rgb(0, 214, 255)};
             case 0:
             default:
-                // Indygo Flux (MysticalOS Signature)
-                return new int[]{Color.rgb(12, 10, 36), Color.rgb(66, 38, 168), Color.rgb(0, 214, 255)};
+                // HyperOS 4 Horizon (Liquid Glass)
+                return new int[]{Color.rgb(214, 236, 255), Color.rgb(106, 168, 248), Color.rgb(38, 92, 204)};
         }
     }
 
@@ -489,10 +489,10 @@ public final class LauncherPrefs {
         switch (idx) {
             case 1: return "Jadeit";
             case 2: return "Zachod";
-            case 3: return "HyperBlekit";
+            case 3: return "Obsydian";
             case 4: return "Bursztyn";
-            case 5: return "Noc OLED";
-            default: return "Flux Indygo";
+            case 5: return "Flux Indygo";
+            default: return "HyperOS 4 Szklo";
         }
     }
 

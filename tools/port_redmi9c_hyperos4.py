@@ -1096,11 +1096,12 @@ def adapt_blossom_hardware(
                         log.append(f"selinux mapping copied to {dst_m}: {', '.join(added)}")
 
     # 6. Blossom hardware RRO overlays (display cutout, wifi, carrier, telephony, framework-res)
+    # Exclude SystemUI & Launcher3 overlays so HyperOS 4 SystemUI and MiuiHome keep authentic UI.
     for ov_dir in (base_prod / "overlay", base_dir / "vendor" / "overlay"):
         if ov_dir.is_dir():
             for item in sorted(ov_dir.iterdir()):
                 low = item.name.lower()
-                if "blossom" in low and "systemui" not in low:
+                if "blossom" in low and "systemui" not in low and "launcher" not in low:
                     cp_preserve(item, out_prod / "overlay" / item.name)
                     log.append(f"RRO overlay copied: {item.name}")
 
@@ -1143,6 +1144,11 @@ def adapt_blossom_hardware(
                 "support_big_icon": "true",
                 "support_folder_largeicon": "true",
                 "support_round_corner": "true",
+                "support_new_home_new_dynamic_effect": "true",
+                "support_overlay_window_handle_gesture": "true",
+                "support_home_launcher_classic": "true",
+                "is_miui_lite_version": "false",
+                "is_low_ram": "false",
                 "is_pad": "false",
             }
             for fname, fval in forced_bools.items():
@@ -1681,6 +1687,25 @@ def integrate_hyperos4_launcher(
         log.append(f"hyperos4 ABI probe note: {exc}")
 
     # 2. Install original CN=MIUI signed System_launcher as /product/priv-app/MiuiHome/MiuiHome.apk
+    # Remove conflicting POCO / Elderly / AOSP-Launcher3 overlays so MiuiHome keeps authentic HyperOS 4 Home UI.
+    overlay_dir = out_prod / "overlay"
+    if overlay_dir.is_dir():
+        for ov_bad in (
+            "MiuiPocoLauncherResOverlay.apk",
+            "MiuiPocoLauncherResOverlay",
+            "ElderlyNavigationBarOverlay.apk",
+            "ElderlyNavigationBarOverlay",
+            "LauncherOverlayBlossom.apk",
+            "LauncherOverlayBlossom",
+        ):
+            ov_p = overlay_dir / ov_bad
+            if ov_p.is_dir():
+                shutil.rmtree(ov_p)
+                log.append(f"hyperos4 launcher overlay cleanup: removed dir {ov_bad}")
+            elif ov_p.is_file():
+                ov_p.unlink()
+                log.append(f"hyperos4 launcher overlay cleanup: removed {ov_bad}")
+
     dst_dir = out_prod / "priv-app" / "MiuiHome"
     install_apk_dir(src_apk, dst_dir, log)
 
@@ -1873,6 +1898,10 @@ def configure_props_and_zygote(
         "ro.mysticalos.launcher": "HyperOS4-Original-Base",
         "ro.mysticalos.dynamic_island": "always_on",
         "ro.mysticalos.icon_engine": "ColorOS17-FluxResize+HyperOS4",
+        "ro.miui.product.home": "miuihome",
+        "persist.sys.elderly_mode": "0",
+        "ro.miui.home.classic": "1",
+        "ro.miui.home.dynamic_effect": "1",
         "ro.modversion": f"{os_label}-1.0-{dev}",
         "ro.mi.os.version.name": f"{os_label} 1.0",
         "ro.build.flavor": f"mysticalos_{dev}-userdebug",

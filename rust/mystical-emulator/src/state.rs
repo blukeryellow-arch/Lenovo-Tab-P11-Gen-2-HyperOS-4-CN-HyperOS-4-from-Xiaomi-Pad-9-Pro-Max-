@@ -113,6 +113,8 @@ pub enum Screen {
     BootAnim,
     LockScreen,
     Home,
+    FolderView,
+    HomeEdit,
     IconEditor,
     ControlCenter,
     TileMenu(usize),
@@ -182,6 +184,7 @@ pub enum HitAction {
     SetIconScale(i32),
     DragIconSlider(Rect),
     DragBrightnessSlider(Rect),
+    DragVolumeSlider(Rect),
     SetShape(IconShape),
     SetGridCols(usize),
     ToggleLabels,
@@ -193,6 +196,9 @@ pub enum HitAction {
     ToggleFlashlight,
     ToggleNavGestures,
     ToggleRamVariant,
+    ToggleIsland,
+    ToggleIslandPlay,
+    ToggleIslandAlwaysOn,
     CalcKey(char),
     CameraShutter,
     ScrollAudit(i32),
@@ -235,8 +241,12 @@ pub struct EmulatorState {
     pub bt_on: bool,
     pub flashlight_on: bool,
     pub brightness: i32, // 30..100
+    pub volume: i32,     // 0..100
     pub gesture_nav: bool,
     pub ram_3gb: bool,
+    pub island_always_on: bool,
+    pub island_expanded: bool,
+    pub island_playing: bool,
     pub boot_ticks: u32,
     pub anim_tick: u32,
     pub clock_hh: u16,
@@ -344,83 +354,38 @@ pub fn parse_manifest(src: &str) -> ManifestSummary {
 pub fn default_app_icons() -> Vec<AppIcon> {
     vec![
         AppIcon {
-            title: "Ikony ColorOS 17".into(),
-            package: "org.mysticalos.launcher".into(),
+            title: "Narzedzia".into(),
+            package: "com.miui.home.folder".into(),
             kind: AppKind::IconStyle,
-            color1: 0x5B3CF5,
-            color2: 0x00D6FF,
-            glyph: "ICO",
-            span: TileSpan::S2x1,
+            color1: 0xEEF4FF,
+            color2: 0xDCE7FB,
+            glyph: "FLD",
+            span: TileSpan::S2x2,
         },
         AppIcon {
             title: "Ustawienia".into(),
             package: "com.android.settings".into(),
             kind: AppKind::Settings,
-            color1: 0x3A4A6B,
-            color2: 0x627AA8,
+            color1: 0x62738D,
+            color2: 0x3D4C66,
             glyph: "SET",
-            span: TileSpan::S1x1,
-        },
-        AppIcon {
-            title: "Rust Monitor".into(),
-            package: "org.redmi9c.rustmonitor".into(),
-            kind: AppKind::RustMonitor,
-            color1: 0xC8461E,
-            color2: 0x26C472,
-            glyph: "RAM",
-            span: TileSpan::S1x1,
-        },
-        AppIcon {
-            title: "Telefon".into(),
-            package: "org.fossify.phone".into(),
-            kind: AppKind::Phone,
-            color1: 0x1B9E4B,
-            color2: 0x3ED976,
-            glyph: "TEL",
-            span: TileSpan::S1x1,
-        },
-        AppIcon {
-            title: "Wiadomosci".into(),
-            package: "org.fossify.messages".into(),
-            kind: AppKind::Messages,
-            color1: 0x167EE6,
-            color2: 0x45B3FF,
-            glyph: "SMS",
-            span: TileSpan::S1x1,
-        },
-        AppIcon {
-            title: "Aparat".into(),
-            package: "org.fossify.camera".into(),
-            kind: AppKind::Camera,
-            color1: 0x252B3B,
-            color2: 0x5C6BC0,
-            glyph: "CAM",
             span: TileSpan::S1x1,
         },
         AppIcon {
             title: "Galeria".into(),
             package: "org.fossify.gallery".into(),
             kind: AppKind::Gallery,
-            color1: 0xE86A17,
-            color2: 0xFFB02E,
+            color1: 0xFFFFFF,
+            color2: 0xF1F5FA,
             glyph: "IMG",
-            span: TileSpan::S1x1,
-        },
-        AppIcon {
-            title: "Pliki".into(),
-            package: "org.fossify.filemanager".into(),
-            kind: AppKind::Files,
-            color1: 0xD9821E,
-            color2: 0xF5B942,
-            glyph: "DIR",
             span: TileSpan::S1x1,
         },
         AppIcon {
             title: "Zegar".into(),
             package: "org.fossify.clock".into(),
             kind: AppKind::Clock,
-            color1: 0x2F3B5E,
-            color2: 0x7A8EC2,
+            color1: 0x262D3D,
+            color2: 0x161B26,
             glyph: "CLK",
             span: TileSpan::S1x1,
         },
@@ -428,54 +393,108 @@ pub fn default_app_icons() -> Vec<AppIcon> {
             title: "Kalkulator".into(),
             package: "org.fossify.calculator".into(),
             kind: AppKind::Calculator,
-            color1: 0x00897B,
-            color2: 0x26D0BE,
+            color1: 0xF8FAFC,
+            color2: 0xE5EBF3,
             glyph: "123",
             span: TileSpan::S1x1,
         },
         AppIcon {
-            title: "Kontakty".into(),
-            package: "org.fossify.contacts".into(),
-            kind: AppKind::Contacts,
-            color1: 0x1E6AE6,
-            color2: 0x62A4FF,
-            glyph: "USR",
+            title: "Ikony ColorOS".into(),
+            package: "org.mysticalos.launcher".into(),
+            kind: AppKind::IconStyle,
+            color1: 0x4A6CF7,
+            color2: 0x16BFFD,
+            glyph: "ICO",
             span: TileSpan::S1x1,
         },
         AppIcon {
-            title: "Droid-ify".into(),
-            package: "com.looker.droidify".into(),
-            kind: AppKind::DroidIfy,
-            color1: 0x4A38D9,
-            color2: 0x8F75FF,
-            glyph: "APK",
+            title: "Pliki".into(),
+            package: "org.fossify.filemanager".into(),
+            kind: AppKind::Files,
+            color1: 0xFFA726,
+            color2: 0xFB8C00,
+            glyph: "DIR",
             span: TileSpan::S1x1,
         },
         AppIcon {
-            title: "microG".into(),
-            package: "com.google.android.gms".into(),
-            kind: AppKind::MicroG,
-            color1: 0x1E7E72,
-            color2: 0x3FD6A4,
-            glyph: "mG",
-            span: TileSpan::S1x1,
-        },
-        AppIcon {
-            title: "Audyt ROM".into(),
-            package: "org.mysticalos.audit".into(),
-            kind: AppKind::RomAudit,
-            color1: 0x6B2FD9,
-            color2: 0xFF5FA2,
-            glyph: "ROM",
+            title: "Rust Monitor".into(),
+            package: "org.redmi9c.rustmonitor".into(),
+            kind: AppKind::RustMonitor,
+            color1: 0xE65100,
+            color2: 0x2E7D32,
+            glyph: "RAM",
             span: TileSpan::S1x1,
         },
         AppIcon {
             title: "Obraz .img".into(),
             package: "org.mysticalos.imgexplorer".into(),
             kind: AppKind::ImageExplorer,
-            color1: 0x0E7490,
-            color2: 0x06B6D4,
+            color1: 0x0EA5E9,
+            color2: 0x0369A1,
             glyph: "IMG+",
+            span: TileSpan::S1x1,
+        },
+        AppIcon {
+            title: "Audyt ROM".into(),
+            package: "org.mysticalos.audit".into(),
+            kind: AppKind::RomAudit,
+            color1: 0x7C3AED,
+            color2: 0xEC4899,
+            glyph: "ROM",
+            span: TileSpan::S1x1,
+        },
+        AppIcon {
+            title: "Kontakty".into(),
+            package: "org.fossify.contacts".into(),
+            kind: AppKind::Contacts,
+            color1: 0x38BDF8,
+            color2: 0x2563EB,
+            glyph: "USR",
+            span: TileSpan::S1x1,
+        },
+        AppIcon {
+            title: "microG".into(),
+            package: "com.google.android.gms".into(),
+            kind: AppKind::MicroG,
+            color1: 0x10B981,
+            color2: 0x047857,
+            glyph: "mG",
+            span: TileSpan::S1x1,
+        },
+        AppIcon {
+            title: "Telefon".into(),
+            package: "org.fossify.phone".into(),
+            kind: AppKind::Phone,
+            color1: 0x22C55E,
+            color2: 0x16A34A,
+            glyph: "TEL",
+            span: TileSpan::S1x1,
+        },
+        AppIcon {
+            title: "Wiadomosci".into(),
+            package: "org.fossify.messages".into(),
+            kind: AppKind::Messages,
+            color1: 0x38BDF8,
+            color2: 0x0284C7,
+            glyph: "SMS",
+            span: TileSpan::S1x1,
+        },
+        AppIcon {
+            title: "Droid-ify".into(),
+            package: "com.looker.droidify".into(),
+            kind: AppKind::DroidIfy,
+            color1: 0x4F46E5,
+            color2: 0x7C3AED,
+            glyph: "APK",
+            span: TileSpan::S1x1,
+        },
+        AppIcon {
+            title: "Aparat".into(),
+            package: "org.fossify.camera".into(),
+            kind: AppKind::Camera,
+            color1: 0x333B4D,
+            color2: 0x1A1F2B,
+            glyph: "CAM",
             span: TileSpan::S1x1,
         },
     ]
@@ -489,17 +508,21 @@ impl EmulatorState {
             prev_screen: Screen::Home,
             apps: default_app_icons(),
             icon_scale: 100,
-            icon_shape: IconShape::Squircle,
+            icon_shape: IconShape::Rounded,
             grid_cols: 4,
             show_labels: true,
             wallpaper_idx: 0,
-            dark_mode: true,
+            dark_mode: false,
             wifi_on: true,
             bt_on: false,
             flashlight_on: false,
-            brightness: 88,
+            brightness: 92,
+            volume: 68,
             gesture_nav: true,
             ram_3gb: false,
+            island_always_on: true,
+            island_expanded: false,
+            island_playing: true,
             boot_ticks: 0,
             anim_tick: 0,
             clock_hh: 14,
@@ -628,15 +651,15 @@ impl EmulatorState {
 
     pub fn compute_grid(&self) -> Vec<PlacedTile> {
         let cols = self.grid_cols.max(4).min(5);
-        let grid_x = SCR_X + 12;
+        let grid_x = SCR_X + 14;
         let grid_y = SCR_Y + STATUS_H + 106;
-        let grid_w = SCR_W - 24;
+        let grid_w = SCR_W - 28;
         let cell_w = grid_w / cols as i32;
-        let base_icon = if cols == 5 { 36 } else { 42 };
+        let base_icon = if cols == 5 { 38 } else { 44 };
         let icon_sz = ((base_icon * self.icon_scale) / 100).max(24).min(68);
-        let unit_h = (icon_sz + 28).max(66);
+        let unit_h = (icon_sz + 26).max(66);
 
-        let mut occ = vec![vec![false; cols]; 40];
+        let mut occ = vec![vec![false; cols]; 48];
         let mut out = Vec::new();
 
         for (idx, app) in self.apps.iter().enumerate() {
@@ -718,12 +741,17 @@ impl EmulatorState {
         match action {
             HitAction::OpenApp(kind) => {
                 self.prev_screen = Screen::Home;
+                self.island_expanded = false;
                 if kind == AppKind::IconStyle {
                     self.screen = Screen::IconEditor;
                 } else {
                     self.audit_scroll = 0;
                     self.screen = Screen::App(kind);
                 }
+            }
+            HitAction::OpenFolder => {
+                self.island_expanded = false;
+                self.screen = Screen::FolderView;
             }
             HitAction::OpenIconMenu(idx) => {
                 if idx < self.apps.len() {
@@ -739,17 +767,28 @@ impl EmulatorState {
                 }
             }
             HitAction::GoScreen(s) => {
+                self.island_expanded = false;
                 self.screen = s;
             }
             HitAction::Back => {
+                if self.island_expanded {
+                    self.island_expanded = false;
+                    return;
+                }
                 self.screen = match self.screen {
                     Screen::BootAnim => Screen::LockScreen,
                     Screen::LockScreen => Screen::LockScreen,
                     Screen::Home => Screen::Home,
-                    Screen::TileMenu(_) | Screen::IconEditor | Screen::ControlCenter | Screen::App(_) => Screen::Home,
+                    Screen::FolderView
+                    | Screen::HomeEdit
+                    | Screen::TileMenu(_)
+                    | Screen::IconEditor
+                    | Screen::ControlCenter
+                    | Screen::App(_) => Screen::Home,
                 };
             }
             HitAction::Home => {
+                self.island_expanded = false;
                 if self.screen != Screen::BootAnim && self.screen != Screen::LockScreen {
                     self.screen = Screen::Home;
                 } else if self.screen == Screen::LockScreen {
@@ -789,12 +828,12 @@ impl EmulatorState {
                     a.span = TileSpan::S1x1;
                 }
                 if let Some(first) = self.apps.get_mut(0) {
-                    first.span = TileSpan::S2x1;
+                    first.span = TileSpan::S2x2;
                 }
                 self.icon_scale = 100;
-                self.icon_shape = IconShape::Squircle;
+                self.icon_shape = IconShape::Rounded;
                 self.show_labels = true;
-                self.show_toast("Przywrocono domyslny uklad MysticalOS");
+                self.show_toast("Przywrocono domyslny uklad HyperOS 4");
             }
             HitAction::ToggleDark => self.dark_mode = !self.dark_mode,
             HitAction::ToggleWifi => self.wifi_on = !self.wifi_on,
@@ -802,6 +841,23 @@ impl EmulatorState {
             HitAction::ToggleFlashlight => self.flashlight_on = !self.flashlight_on,
             HitAction::ToggleNavGestures => self.gesture_nav = !self.gesture_nav,
             HitAction::ToggleRamVariant => self.ram_3gb = !self.ram_3gb,
+            HitAction::ToggleIsland => {
+                self.island_expanded = !self.island_expanded;
+            }
+            HitAction::ToggleIslandPlay => {
+                self.island_playing = !self.island_playing;
+            }
+            HitAction::ToggleIslandAlwaysOn => {
+                self.island_always_on = !self.island_always_on;
+                if !self.island_always_on {
+                    self.island_expanded = false;
+                }
+                self.show_toast(if self.island_always_on {
+                    "HyperIsland: ZAWSZE WLACZONY"
+                } else {
+                    "HyperIsland: ukryty"
+                });
+            }
             HitAction::ScrollAudit(delta) => {
                 self.audit_scroll = (self.audit_scroll + delta).clamp(0, 600);
             }
@@ -878,6 +934,7 @@ impl EmulatorState {
             }
             HitAction::DragIconSlider(_)
             | HitAction::DragBrightnessSlider(_)
+            | HitAction::DragVolumeSlider(_)
             | HitAction::SaveScreenshot
             | HitAction::OpenImageDialog
             | HitAction::ExtractSystemImg => {}
@@ -963,13 +1020,8 @@ impl EmulatorState {
             long_press_app: None,
         });
 
-        // 3. Render phone screen contents
+        // 3. Render phone screen contents (camera lens lives cleanly inside HyperIsland pill)
         self.render_phone_screen(fb, width, height, &mut texts);
-
-        // Waterdrop notch on top of screen
-        let notch_cx = SCR_X + SCR_W / 2;
-        fill_circle(fb, width, height, notch_cx, SCR_Y + 11, 8, 0x090B12);
-        fill_circle(fb, width, height, notch_cx, SCR_Y + 11, 3, 0x1B2742);
 
         // 4. Right-hand PC Control & Inspector Panel
         self.render_pc_panel(fb, width, height, &mut texts);
@@ -978,21 +1030,18 @@ impl EmulatorState {
     }
 
     fn render_phone_screen(&mut self, fb: &mut [u32], w: i32, h: i32, texts: &mut Vec<TextDraw>) {
-        // Wallpaper / background
-        let (wc1, wc2) = match self.wallpaper_idx {
-            1 => (0x081C24, 0x105666),
-            2 => (0x240E22, 0x7A1E58),
-            3 => (0x0E121C, 0x24345C),
-            _ => (0x0E0A26, 0x3B238C),
-        };
-        fill_gradient_v(fb, w, h, SCR_X, SCR_Y, SCR_W, SCR_H, wc1, wc2);
-        add_radial_glow(fb, w, h, SCR_X + 90, SCR_Y + 220, 180, if self.wallpaper_idx == 1 { 0x00D2B4 } else { 0x00D6FF }, 45);
-        add_radial_glow(fb, w, h, SCR_X + 290, SCR_Y + 560, 170, 0x7251FF, 40);
+        // HyperOS 4 Liquid Glass / Horizon wallpaper
+        draw_hyperos_wallpaper(fb, w, h, self.wallpaper_idx);
 
         match self.screen {
             Screen::BootAnim => self.render_boot(fb, w, h, texts),
             Screen::LockScreen => self.render_lockscreen(fb, w, h, texts),
             Screen::Home => self.render_home(fb, w, h, texts),
+            Screen::FolderView => {
+                self.render_home_bg_only(fb, w, h, texts);
+                self.render_folder_view(fb, w, h, texts);
+            }
+            Screen::HomeEdit => self.render_home_edit(fb, w, h, texts),
             Screen::IconEditor => {
                 self.render_home_bg_only(fb, w, h, texts);
                 self.render_icon_editor(fb, w, h, texts);
@@ -1019,7 +1068,7 @@ impl EmulatorState {
             blend_rect(fb, w, h, SCR_X, SCR_Y, SCR_W, SCR_H, 0x000000, dim);
         }
 
-        // Status bar & navigation bar (except during bootanim)
+        // Status bar, HyperIsland & navigation bar (except during bootanim)
         if self.screen != Screen::BootAnim {
             self.render_status_and_nav(fb, w, h, texts);
         }
@@ -1028,7 +1077,7 @@ impl EmulatorState {
         if let Some((msg, _)) = &self.toast {
             let tr = Rect { x: SCR_X + 36, y: SCR_Y + SCR_H - 96, w: SCR_W - 72, h: 32 };
             fill_round_rect_alpha(fb, w, h, tr.x, tr.y, tr.w, tr.h, 16, 0x101526, 225);
-            draw_round_border(fb, w, h, tr.x, tr.y, tr.w, tr.h, 16, 0x00D6FF);
+            draw_round_border(fb, w, h, tr.x, tr.y, tr.w, tr.h, 16, 0x99C8FF);
             texts.push(TextDraw {
                 rect: tr,
                 text: msg.clone(),
@@ -1132,60 +1181,77 @@ impl EmulatorState {
 
     fn render_lockscreen(&mut self, fb: &mut [u32], w: i32, h: i32, texts: &mut Vec<TextDraw>) {
         let time_s = format!("{:02}:{:02}", self.clock_hh, self.clock_mm);
-        texts.push(TextDraw {
-            rect: Rect { x: SCR_X + 20, y: SCR_Y + 95, w: SCR_W - 40, h: 74 },
-            text: time_s,
-            color: 0xFFFFFF,
-            size: 64,
-            bold: true,
-            align: TextAlign::Center,
-            clip_to_screen: true,
-        });
-        texts.push(TextDraw {
-            rect: Rect { x: SCR_X + 20, y: SCR_Y + 172, w: SCR_W - 40, h: 26 },
-            text: format!("{} · MysticalOS 1.0", self.date_str),
-            color: 0xCBD8FF,
-            size: 15,
-            bold: false,
-            align: TextAlign::Center,
-            clip_to_screen: true,
-        });
+        let main_col = if self.wallpaper_idx == 3 { 0xFFFFFF } else { 0xFFFFFF };
+        let sub_col = if self.wallpaper_idx == 3 { 0xD2DDF8 } else { 0xF0F6FF };
 
-        // Lock screen Flux card
-        let notif = Rect { x: SCR_X + 24, y: SCR_Y + 248, w: SCR_W - 48, h: 74 };
-        fill_round_rect_alpha(fb, w, h, notif.x, notif.y, notif.w, notif.h, 18, 0x161B32, 190);
-        draw_round_border(fb, w, h, notif.x, notif.y, notif.w, notif.h, 18, 0x4A63B8);
+        push_shadow_text(
+            texts,
+            Rect { x: SCR_X + 20, y: SCR_Y + 62, w: SCR_W - 40, h: 24 },
+            &format!("{}  ·  18°C Slonecznie", self.date_str),
+            sub_col,
+            14,
+            false,
+            TextAlign::Center,
+        );
+        push_shadow_text(
+            texts,
+            Rect { x: SCR_X + 20, y: SCR_Y + 86, w: SCR_W - 40, h: 86 },
+            &time_s,
+            main_col,
+            72,
+            false,
+            TextAlign::Center,
+        );
+
+        // HyperOS 4 Magazine frosted notification card
+        let notif = Rect { x: SCR_X + 20, y: SCR_Y + 468, w: SCR_W - 40, h: 74 };
+        fill_round_rect_alpha(fb, w, h, notif.x, notif.y, notif.w, notif.h, 22, 0xF5F8FF, 195);
+        draw_round_border(fb, w, h, notif.x, notif.y, notif.w, notif.h, 22, 0xFFFFFF);
+        fill_round_rect(fb, w, h, notif.x + 14, notif.y + 18, 36, 36, 11, 0x2563EB);
+        draw_hyperos_app_artwork(fb, w, h, Rect { x: notif.x + 14, y: notif.y + 18, w: 36, h: 36 }, AppKind::RomAudit);
         texts.push(TextDraw {
-            rect: Rect { x: notif.x + 14, y: notif.y + 12, w: notif.w - 28, h: 22 },
-            text: "MysticalOS · Zero apek Xiaomi".into(),
-            color: 0x00E0FF,
+            rect: Rect { x: notif.x + 60, y: notif.y + 13, w: notif.w - 74, h: 20 },
+            text: "HyperOS 4 · System_launcher 8.01".into(),
+            color: 0x111827,
             size: 13,
             bold: true,
             align: TextAlign::Left,
             clip_to_screen: true,
         });
         texts.push(TextDraw {
-            rect: Rect { x: notif.x + 14, y: notif.y + 36, w: notif.w - 28, h: 24 },
-            text: format!("Usunieto {} pakietow bloat · r9c-memd OK", self.manifest.removed_count),
-            color: 0xDDE5F8,
-            size: 12,
+            rect: Rect { x: notif.x + 60, y: notif.y + 35, w: notif.w - 74, h: 24 },
+            text: format!("MysticalOS 1.0 · {} usunietych apek · r9c-memd", self.manifest.removed_count),
+            color: 0x374151,
+            size: 11,
             bold: false,
             align: TextAlign::Left,
             clip_to_screen: true,
         });
 
-        let unlock_btn = Rect { x: SCR_X + 66, y: SCR_Y + SCR_H - 115, w: SCR_W - 132, h: 46 };
-        fill_round_rect_alpha(fb, w, h, unlock_btn.x, unlock_btn.y, unlock_btn.w, unlock_btn.h, 23, 0x5B3CF5, 225);
-        draw_round_border(fb, w, h, unlock_btn.x, unlock_btn.y, unlock_btn.w, unlock_btn.h, 23, 0x00D6FF);
-        texts.push(TextDraw {
-            rect: unlock_btn,
-            text: "Odblokuj pulpit".into(),
-            color: 0xFFFFFF,
-            size: 15,
-            bold: true,
-            align: TextAlign::Center,
-            clip_to_screen: true,
-        });
+        // Bottom quick lockscreen buttons (Flashlight & Camera) + swipe pill
+        let torch_btn = Rect { x: SCR_X + 28, y: SCR_Y + SCR_H - 94, w: 42, h: 42 };
+        fill_round_rect_alpha(fb, w, h, torch_btn.x, torch_btn.y, torch_btn.w, torch_btn.h, 21, 0xFFFFFF, if self.flashlight_on { 220 } else { 95 });
+        fill_round_rect(fb, w, h, torch_btn.x + 17, torch_btn.y + 12, 8, 18, 3, if self.flashlight_on { 0xF59E0B } else { 0xFFFFFF });
+        self.hits.push(HitRegion { rect: torch_btn, action: HitAction::ToggleFlashlight, long_press_app: None });
+
+        let cam_btn = Rect { x: SCR_X + SCR_W - 70, y: SCR_Y + SCR_H - 94, w: 42, h: 42 };
+        fill_round_rect_alpha(fb, w, h, cam_btn.x, cam_btn.y, cam_btn.w, cam_btn.h, 21, 0xFFFFFF, 95);
+        fill_circle(fb, w, h, cam_btn.x + 21, cam_btn.y + 21, 9, 0xFFFFFF);
+        fill_circle(fb, w, h, cam_btn.x + 21, cam_btn.y + 21, 5, 0x1F2937);
+        self.hits.push(HitRegion { rect: cam_btn, action: HitAction::OpenApp(AppKind::Camera), long_press_app: None });
+
+        let unlock_btn = Rect { x: SCR_X + 84, y: SCR_Y + SCR_H - 94, w: SCR_W - 168, h: 42 };
+        fill_round_rect_alpha(fb, w, h, unlock_btn.x, unlock_btn.y, unlock_btn.w, unlock_btn.h, 21, 0xFFFFFF, 105);
+        draw_round_border(fb, w, h, unlock_btn.x, unlock_btn.y, unlock_btn.w, unlock_btn.h, 21, 0xFFFFFF);
+        push_shadow_text(
+            texts,
+            unlock_btn,
+            "Odblokuj >",
+            0xFFFFFF,
+            14,
+            true,
+            TextAlign::Center,
+        );
         self.hits.push(HitRegion {
             rect: unlock_btn,
             action: HitAction::GoScreen(Screen::Home),
@@ -1194,89 +1260,129 @@ impl EmulatorState {
     }
 
     fn render_home_bg_only(&self, fb: &mut [u32], w: i32, h: i32, texts: &mut Vec<TextDraw>) {
-        // Header card
-        let hdr = Rect { x: SCR_X + 12, y: SCR_Y + STATUS_H + 8, w: SCR_W - 24, h: 88 };
-        fill_round_rect_alpha(fb, w, h, hdr.x, hdr.y, hdr.w, hdr.h, 20, 0x151A32, 205);
-        draw_round_border(fb, w, h, hdr.x, hdr.y, hdr.w, hdr.h, 20, 0x45589E);
-
+        // Authentic borderless HyperOS 4 Weather & Clock widget (no heavy dark box / RAM header)
+        let wx = SCR_X + 20;
+        let wy = SCR_Y + STATUS_H + 14;
         let time_s = format!("{:02}:{:02}", self.clock_hh, self.clock_mm);
-        texts.push(TextDraw {
-            rect: Rect { x: hdr.x + 14, y: hdr.y + 10, w: 120, h: 34 },
-            text: time_s,
-            color: 0xFFFFFF,
-            size: 28,
-            bold: true,
-            align: TextAlign::Left,
-            clip_to_screen: true,
-        });
-        texts.push(TextDraw {
-            rect: Rect { x: hdr.x + 14, y: hdr.y + 44, w: 185, h: 18 },
-            text: format!("MysticalOS 1.0 · {}", self.date_str),
-            color: 0xB8C7F0,
-            size: 11,
-            bold: false,
-            align: TextAlign::Left,
-            clip_to_screen: true,
-        });
-        let total_ram = if self.ram_3gb { 3072 } else { 2048 };
-        let free_ram = if self.ram_3gb { 1640 } else { 980 };
-        texts.push(TextDraw {
-            rect: Rect { x: hdr.x + 14, y: hdr.y + 62, w: hdr.w - 28, h: 18 },
-            text: format!("RAM {}/{} MiB wolne · Ikony {}% ({})", free_ram, total_ram, self.icon_scale, self.icon_shape.name()),
-            color: 0x62F0B8,
-            size: 11,
-            bold: false,
-            align: TextAlign::Left,
-            clip_to_screen: true,
-        });
+
+        push_shadow_text(
+            texts,
+            Rect { x: wx, y: wy, w: 150, h: 48 },
+            &time_s,
+            0xFFFFFF,
+            42,
+            false,
+            TextAlign::Left,
+        );
+        push_shadow_text(
+            texts,
+            Rect { x: wx + 2, y: wy + 50, w: 180, h: 18 },
+            &format!("{}  ·  Poznan", self.date_str),
+            0xF4F8FF,
+            12,
+            false,
+            TextAlign::Left,
+        );
+
+        // Right-side weather icon + temp
+        draw_weather_sun_cloud(fb, w, h, SCR_X + SCR_W - 76, wy + 8);
+        push_shadow_text(
+            texts,
+            Rect { x: SCR_X + SCR_W - 126, y: wy + 44, w: 106, h: 24 },
+            "18°C Slonecznie",
+            0xFFFFFF,
+            12,
+            true,
+            TextAlign::Right,
+        );
     }
 
     fn render_home(&mut self, fb: &mut [u32], w: i32, h: i32, texts: &mut Vec<TextDraw>) {
         self.render_home_bg_only(fb, w, h, texts);
 
-        // Quick pill button on header to open ColorOS 17 Icon Resizer
-        let style_pill = Rect { x: SCR_X + SCR_W - 156, y: SCR_Y + STATUS_H + 22, w: 132, h: 30 };
-        fill_gradient_h(fb, w, h, style_pill.x, style_pill.y, style_pill.w, style_pill.h, 0x5B3CF5, 0x00AEE0);
-        round_mask_in_place(fb, w, h, style_pill, 15);
-        texts.push(TextDraw {
-            rect: style_pill,
-            text: "Ikony ColorOS 17".into(),
-            color: 0xFFFFFF,
-            size: 12,
-            bold: true,
-            align: TextAlign::Center,
-            clip_to_screen: true,
-        });
-        self.hits.push(HitRegion {
-            rect: style_pill,
-            action: HitAction::GoScreen(Screen::IconEditor),
-            long_press_app: None,
-        });
-
         let tiles = self.compute_grid();
-        let max_y = SCR_Y + SCR_H - NAV_H - 76;
+        let max_y = SCR_Y + SCR_H - NAV_H - 108;
+        let dock_kinds = [AppKind::Phone, AppKind::Messages, AppKind::DroidIfy, AppKind::Camera];
 
         for pt in tiles {
+            let app = self.apps[pt.app_idx].clone();
+            // Keep dock apps in dock only unless user resized them as big tile
+            if dock_kinds.contains(&app.kind) && pt.c_span == 1 && pt.r_span == 1 {
+                continue;
+            }
             if pt.rect.y + pt.rect.h > max_y {
                 continue;
             }
-            let app = self.apps[pt.app_idx].clone();
+
+            if pt.app_idx == 0 && pt.c_span == 2 && pt.r_span == 2 {
+                // Authentic HyperOS 4 2x2 Enlarged Super Folder (3x3 mini-icons inside frosted glass)
+                fill_round_rect_alpha(fb, w, h, pt.rect.x, pt.rect.y, pt.rect.w, pt.rect.h, 24, 0xF2F7FF, 165);
+                draw_round_border(fb, w, h, pt.rect.x, pt.rect.y, pt.rect.w, pt.rect.h, 24, 0xFFFFFF);
+
+                let pad = 10;
+                let inner_w = pt.rect.w - pad * 2;
+                let inner_h = pt.rect.h - 28;
+                let cw = inner_w / 3;
+                let ch = inner_h / 3;
+                let mini_sz = ((cw.min(ch) - 6) * self.icon_scale / 100).clamp(16, 36);
+                let folder_indices = [5usize, 6, 7, 8, 9, 10, 11, 1];
+                for slot in 0..9 {
+                    let sc = (slot as i32) % 3;
+                    let sr = (slot as i32) / 3;
+                    let mx = pt.rect.x + pad + sc * cw + (cw - mini_sz) / 2;
+                    let my = pt.rect.y + 8 + sr * ch + (ch - mini_sz) / 2;
+                    let mr = Rect { x: mx, y: my, w: mini_sz, h: mini_sz };
+                    if slot < folder_indices.len() {
+                        if let Some(sub) = self.apps.get(folder_indices[slot]) {
+                            draw_shaped_app_icon(fb, w, h, mr, sub.color1, sub.color2, self.icon_shape);
+                            draw_hyperos_app_artwork(fb, w, h, mr, sub.kind);
+                        }
+                    } else {
+                        // 9th mini slot shows 2x2 sub-dots like HyperOS 4 folder expand badge
+                        fill_round_rect_alpha(fb, w, h, mr.x, mr.y, mr.w, mr.h, 8, 0xCBD5E1, 190);
+                        let d_sz = (mini_sz / 4).max(3);
+                        for dr in 0..2 {
+                            for dc in 0..2 {
+                                fill_circle(
+                                    fb,
+                                    w,
+                                    h,
+                                    mr.x + mr.w / 3 + dc * (mr.w / 3),
+                                    mr.y + mr.h / 3 + dr * (mr.h / 3),
+                                    d_sz / 2 + 1,
+                                    0x475569,
+                                );
+                            }
+                        }
+                    }
+                }
+                if self.show_labels {
+                    push_shadow_text(
+                        texts,
+                        Rect { x: pt.rect.x + 4, y: pt.rect.y + pt.rect.h - 19, w: pt.rect.w - 8, h: 16 },
+                        &app.title,
+                        0xFFFFFF,
+                        11,
+                        false,
+                        TextAlign::Center,
+                    );
+                }
+                self.hits.push(HitRegion {
+                    rect: pt.rect,
+                    action: HitAction::OpenFolder,
+                    long_press_app: Some(pt.app_idx),
+                });
+                continue;
+            }
+
             let is_large = pt.c_span > 1 || pt.r_span > 1;
             if is_large {
-                fill_round_rect_alpha(fb, w, h, pt.rect.x, pt.rect.y, pt.rect.w, pt.rect.h, 16, 0x1D2442, 200);
-                draw_round_border(fb, w, h, pt.rect.x, pt.rect.y, pt.rect.w, pt.rect.h, 16, 0x00C8FF);
+                fill_round_rect_alpha(fb, w, h, pt.rect.x, pt.rect.y, pt.rect.w, pt.rect.h, 20, 0xF2F7FF, 165);
+                draw_round_border(fb, w, h, pt.rect.x, pt.rect.y, pt.rect.w, pt.rect.h, 20, 0xFFFFFF);
             }
 
             draw_shaped_app_icon(fb, w, h, pt.icon_rect, app.color1, app.color2, self.icon_shape);
-            texts.push(TextDraw {
-                rect: pt.icon_rect,
-                text: app.glyph.into(),
-                color: 0xFFFFFF,
-                size: (pt.icon_rect.h / 3).clamp(10, 22),
-                bold: true,
-                align: TextAlign::Center,
-                clip_to_screen: true,
-            });
+            draw_hyperos_app_artwork(fb, w, h, pt.icon_rect, app.kind);
 
             if self.show_labels || is_large {
                 let lbl_rect = if pt.c_span == 2 && pt.r_span == 1 {
@@ -1288,21 +1394,21 @@ impl EmulatorState {
                     }
                 } else {
                     Rect {
-                        x: pt.rect.x + 2,
+                        x: pt.rect.x - 2,
                         y: pt.icon_rect.y + pt.icon_rect.h + 2,
-                        w: pt.rect.w - 4,
+                        w: pt.rect.w + 4,
                         h: 18,
                     }
                 };
-                texts.push(TextDraw {
-                    rect: lbl_rect,
-                    text: app.title.clone(),
-                    color: 0xFFFFFF,
-                    size: if is_large { 12 } else { 11 },
-                    bold: is_large,
-                    align: if pt.c_span == 2 && pt.r_span == 1 { TextAlign::Left } else { TextAlign::Center },
-                    clip_to_screen: true,
-                });
+                push_shadow_text(
+                    texts,
+                    lbl_rect,
+                    &app.title,
+                    if is_large { 0x111827 } else { 0xFFFFFF },
+                    if is_large { 12 } else { 11 },
+                    is_large,
+                    if pt.c_span == 2 && pt.r_span == 1 { TextAlign::Left } else { TextAlign::Center },
+                );
             }
 
             self.hits.push(HitRegion {
@@ -1312,14 +1418,32 @@ impl EmulatorState {
             });
         }
 
-        // Bottom Dock
-        let dock = Rect { x: SCR_X + 14, y: SCR_Y + SCR_H - NAV_H - 68, w: SCR_W - 28, h: 60 };
-        fill_round_rect_alpha(fb, w, h, dock.x, dock.y, dock.w, dock.h, 22, 0x13182E, 215);
-        draw_round_border(fb, w, h, dock.x, dock.y, dock.w, dock.h, 22, 0x4A60A8);
+        // Page indicator dots + frosted HyperOS 4 Search / Edit pills above dock
+        let pill_y = SCR_Y + SCR_H - NAV_H - 102;
+        fill_circle(fb, w, h, SCR_X + SCR_W / 2 - 12, pill_y - 7, 3, 0xFFFFFF);
+        fill_circle(fb, w, h, SCR_X + SCR_W / 2, pill_y - 7, 2, 0xBFD7FF);
+        fill_circle(fb, w, h, SCR_X + SCR_W / 2 + 12, pill_y - 7, 2, 0xBFD7FF);
 
-        let dock_indices = [3usize, 4, 5, 11]; // Telefon, Wiadomosci, Aparat, Droid-ify
+        let search_pill = Rect { x: SCR_X + SCR_W / 2 - 86, y: pill_y, w: 84, h: 22 };
+        fill_round_rect_alpha(fb, w, h, search_pill.x, search_pill.y, search_pill.w, search_pill.h, 11, 0xFFFFFF, 115);
+        draw_round_border(fb, w, h, search_pill.x, search_pill.y, search_pill.w, search_pill.h, 11, 0xFFFFFF);
+        push_shadow_text(texts, search_pill, "Szukaj", 0xFFFFFF, 11, false, TextAlign::Center);
+        self.hits.push(HitRegion { rect: search_pill, action: HitAction::OpenApp(AppKind::RomAudit), long_press_app: None });
+
+        let edit_pill = Rect { x: SCR_X + SCR_W / 2 + 4, y: pill_y, w: 84, h: 22 };
+        fill_round_rect_alpha(fb, w, h, edit_pill.x, edit_pill.y, edit_pill.w, edit_pill.h, 11, 0xFFFFFF, 115);
+        draw_round_border(fb, w, h, edit_pill.x, edit_pill.y, edit_pill.w, edit_pill.h, 11, 0xFFFFFF);
+        push_shadow_text(texts, edit_pill, "Edytuj", 0xFFFFFF, 11, false, TextAlign::Center);
+        self.hits.push(HitRegion { rect: edit_pill, action: HitAction::GoScreen(Screen::HomeEdit), long_press_app: None });
+
+        // Authentic HyperOS 4 Frosted Glass Pill Dock (4 icons, no text labels)
+        let dock = Rect { x: SCR_X + 14, y: SCR_Y + SCR_H - NAV_H - 72, w: SCR_W - 28, h: 64 };
+        fill_round_rect_alpha(fb, w, h, dock.x, dock.y, dock.w, dock.h, 24, 0xF5FAFF, 115);
+        draw_round_border(fb, w, h, dock.x, dock.y, dock.w, dock.h, 24, 0xFFFFFF);
+
+        let dock_indices = [12usize, 13, 14, 15]; // Telefon, Wiadomosci, Droid-ify, Aparat
         let slot_w = dock.w / 4;
-        let dock_icon_sz = ((38 * self.icon_scale) / 100).clamp(24, 48);
+        let dock_icon_sz = ((42 * self.icon_scale) / 100).clamp(24, 50);
         for (i, &app_idx) in dock_indices.iter().enumerate() {
             if let Some(app) = self.apps.get(app_idx) {
                 let sx = dock.x + (i as i32) * slot_w;
@@ -1330,21 +1454,137 @@ impl EmulatorState {
                     h: dock_icon_sz,
                 };
                 draw_shaped_app_icon(fb, w, h, ir, app.color1, app.color2, self.icon_shape);
-                texts.push(TextDraw {
-                    rect: ir,
-                    text: app.glyph.into(),
-                    color: 0xFFFFFF,
-                    size: (dock_icon_sz / 3).clamp(10, 16),
-                    bold: true,
-                    align: TextAlign::Center,
-                    clip_to_screen: true,
-                });
+                draw_hyperos_app_artwork(fb, w, h, ir, app.kind);
                 self.hits.push(HitRegion {
                     rect: Rect { x: sx, y: dock.y, w: slot_w, h: dock.h },
                     action: HitAction::OpenApp(app.kind),
                     long_press_app: Some(app_idx),
                 });
             }
+        }
+    }
+
+    fn render_folder_view(&mut self, fb: &mut [u32], w: i32, h: i32, texts: &mut Vec<TextDraw>) {
+        blend_rect(fb, w, h, SCR_X, SCR_Y, SCR_W, SCR_H, 0x0B1528, 125);
+        push_shadow_text(
+            texts,
+            Rect { x: SCR_X + 20, y: SCR_Y + 150, w: SCR_W - 40, h: 34 },
+            "Narzedzia HyperOS",
+            0xFFFFFF,
+            22,
+            false,
+            TextAlign::Center,
+        );
+
+        let card = Rect { x: SCR_X + 26, y: SCR_Y + 196, w: SCR_W - 52, h: 310 };
+        fill_round_rect_alpha(fb, w, h, card.x, card.y, card.w, card.h, 28, 0xF4F8FF, 205);
+        draw_round_border(fb, w, h, card.x, card.y, card.w, card.h, 28, 0xFFFFFF);
+
+        let folder_indices = [5usize, 6, 7, 8, 9, 10, 11, 1, 2];
+        let cw = (card.w - 24) / 3;
+        let ch = (card.h - 24) / 3;
+        let isz = ((44 * self.icon_scale) / 100).clamp(28, 56);
+        for (slot, &app_idx) in folder_indices.iter().enumerate() {
+            if let Some(app) = self.apps.get(app_idx).cloned() {
+                let c = (slot as i32) % 3;
+                let r = (slot as i32) / 3;
+                let rx = card.x + 12 + c * cw;
+                let ry = card.y + 12 + r * ch;
+                let ir = Rect { x: rx + (cw - isz) / 2, y: ry + 8, w: isz, h: isz };
+                draw_shaped_app_icon(fb, w, h, ir, app.color1, app.color2, self.icon_shape);
+                draw_hyperos_app_artwork(fb, w, h, ir, app.kind);
+                texts.push(TextDraw {
+                    rect: Rect { x: rx + 2, y: ry + isz + 12, w: cw - 4, h: 18 },
+                    text: app.title,
+                    color: 0x1E293B,
+                    size: 11,
+                    bold: false,
+                    align: TextAlign::Center,
+                    clip_to_screen: true,
+                });
+                self.hits.push(HitRegion {
+                    rect: Rect { x: rx, y: ry, w: cw, h: ch },
+                    action: HitAction::OpenApp(app.kind),
+                    long_press_app: Some(app_idx),
+                });
+            }
+        }
+
+        let close_b = Rect { x: SCR_X + 100, y: SCR_Y + 528, w: SCR_W - 200, h: 36 };
+        fill_round_rect_alpha(fb, w, h, close_b.x, close_b.y, close_b.w, close_b.h, 18, 0xFFFFFF, 170);
+        texts.push(TextDraw { rect: close_b, text: "Zamknij folder".into(), color: 0x1E293B, size: 12, bold: true, align: TextAlign::Center, clip_to_screen: true });
+        self.hits.push(HitRegion { rect: close_b, action: HitAction::GoScreen(Screen::Home), long_press_app: None });
+    }
+
+    fn render_home_edit(&mut self, fb: &mut [u32], w: i32, h: i32, texts: &mut Vec<TextDraw>) {
+        // Authentic HyperOS 4 Home Pinch/Edit Mode: scaled preview card + 4 bottom tools
+        blend_rect(fb, w, h, SCR_X, SCR_Y, SCR_W, SCR_H, 0x091124, 95);
+        push_shadow_text(
+            texts,
+            Rect { x: SCR_X + 20, y: SCR_Y + STATUS_H + 14, w: SCR_W - 40, h: 24 },
+            "Edycja ekranu glownego · HyperOS 4",
+            0xFFFFFF,
+            14,
+            true,
+            TextAlign::Center,
+        );
+
+        let card = Rect { x: SCR_X + 54, y: SCR_Y + 86, w: SCR_W - 108, h: 492 };
+        draw_hyperos_wallpaper_rect(fb, w, h, card, self.wallpaper_idx);
+        draw_round_border(fb, w, h, card.x, card.y, card.w, card.h, 26, 0xFFFFFF);
+        push_shadow_text(
+            texts,
+            Rect { x: card.x + 16, y: card.y + 20, w: 120, h: 34 },
+            &format!("{:02}:{:02}", self.clock_hh, self.clock_mm),
+            0xFFFFFF,
+            28,
+            false,
+            TextAlign::Left,
+        );
+        // Mini 2x2 folder + 4x4 grid preview inside edit card
+        fill_round_rect_alpha(fb, w, h, card.x + 16, card.y + 82, 102, 102, 18, 0xF2F7FF, 175);
+        for s in 0..4 {
+            let ix = card.x + 128 + (s % 2) * 52;
+            let iy = card.y + 86 + (s / 2) * 50;
+            let ir = Rect { x: ix, y: iy, w: 38, h: 38 };
+            if let Some(app) = self.apps.get(1 + s as usize) {
+                draw_shaped_app_icon(fb, w, h, ir, app.color1, app.color2, self.icon_shape);
+                draw_hyperos_app_artwork(fb, w, h, ir, app.kind);
+            }
+        }
+        let mini_dock = Rect { x: card.x + 14, y: card.y + card.h - 54, w: card.w - 28, h: 40 };
+        fill_round_rect_alpha(fb, w, h, mini_dock.x, mini_dock.y, mini_dock.w, mini_dock.h, 16, 0xFFFFFF, 115);
+
+        self.hits.push(HitRegion { rect: card, action: HitAction::GoScreen(Screen::Home), long_press_app: None });
+
+        // Bottom 4-item HyperOS 4 Edit Toolbar
+        let bar = Rect { x: SCR_X + 12, y: SCR_Y + SCR_H - NAV_H - 92, w: SCR_W - 24, h: 76 };
+        fill_round_rect_alpha(fb, w, h, bar.x, bar.y, bar.w, bar.h, 22, 0xF4F7FF, 225);
+        let bw = bar.w / 4;
+        let items = [
+            ("Tapety", HitAction::SetWallpaper((self.wallpaper_idx + 1) % 4), 0x3B82F6),
+            ("Widzety", HitAction::OpenIconMenu(0), 0x10B981),
+            ("Ikony", HitAction::GoScreen(Screen::IconEditor), 0x6366F1),
+            ("Gotowe", HitAction::GoScreen(Screen::Home), 0x0EA5E9),
+        ];
+        for (i, (lbl, act, col)) in items.iter().enumerate() {
+            let bx = bar.x + (i as i32) * bw;
+            let ic = Rect { x: bx + (bw - 34) / 2, y: bar.y + 10, w: 34, h: 34 };
+            fill_round_rect(fb, w, h, ic.x, ic.y, ic.w, ic.h, 12, *col);
+            texts.push(TextDraw {
+                rect: Rect { x: bx + 2, y: bar.y + 48, w: bw - 4, h: 20 },
+                text: (*lbl).into(),
+                color: 0x1E293B,
+                size: 11,
+                bold: true,
+                align: TextAlign::Center,
+                clip_to_screen: true,
+            });
+            self.hits.push(HitRegion {
+                rect: Rect { x: bx, y: bar.y, w: bw, h: bar.h },
+                action: *act,
+                long_press_app: None,
+            });
         }
     }
 
@@ -1454,41 +1694,34 @@ impl EmulatorState {
     }
 
     fn render_icon_editor(&mut self, fb: &mut [u32], w: i32, h: i32, texts: &mut Vec<TextDraw>) {
-        // Live icon preview strip above bottom sheet
-        let prev_box = Rect { x: SCR_X + 16, y: SCR_Y + 132, w: SCR_W - 32, h: 112 };
-        fill_round_rect_alpha(fb, w, h, prev_box.x, prev_box.y, prev_box.w, prev_box.h, 18, 0x101528, 225);
-        draw_round_border(fb, w, h, prev_box.x, prev_box.y, prev_box.w, prev_box.h, 18, 0x00C8FF);
+        // Live icon preview strip above bottom sheet (shows authentic HyperOS artwork icons)
+        let prev_box = Rect { x: SCR_X + 16, y: SCR_Y + 124, w: SCR_W - 32, h: 112 };
+        fill_round_rect_alpha(fb, w, h, prev_box.x, prev_box.y, prev_box.w, prev_box.h, 22, 0xF3F7FF, 185);
+        draw_round_border(fb, w, h, prev_box.x, prev_box.y, prev_box.w, prev_box.h, 22, 0xFFFFFF);
         texts.push(TextDraw {
             rect: Rect { x: prev_box.x + 10, y: prev_box.y + 6, w: prev_box.w - 20, h: 16 },
-            text: format!("PODGLAD NA ZYWO ({}% · {})", self.icon_scale, self.icon_shape.name()),
-            color: 0x00E0FF,
+            text: format!("PODGLAD IKON ({}% · {})", self.icon_scale, self.icon_shape.name()),
+            color: 0x1D4ED8,
             size: 11,
             bold: true,
             align: TextAlign::Center,
             clip_to_screen: true,
         });
         let p_sz = ((42 * self.icon_scale) / 100).clamp(24, 64);
-        for i in 0..4 {
-            let app = &self.apps[i];
+        let preview_indices = [1usize, 2, 12, 15]; // Ustawienia, Galeria, Telefon, Aparat
+        for (i, &app_idx) in preview_indices.iter().enumerate() {
+            let app = &self.apps[app_idx];
             let slot_w = prev_box.w / 4;
             let ix = prev_box.x + (i as i32) * slot_w + (slot_w - p_sz) / 2;
             let iy = prev_box.y + 24 + (62 - p_sz) / 2;
             let ir = Rect { x: ix, y: iy, w: p_sz, h: p_sz };
             draw_shaped_app_icon(fb, w, h, ir, app.color1, app.color2, self.icon_shape);
-            texts.push(TextDraw {
-                rect: ir,
-                text: app.glyph.into(),
-                color: 0xFFFFFF,
-                size: (p_sz / 3).clamp(9, 18),
-                bold: true,
-                align: TextAlign::Center,
-                clip_to_screen: true,
-            });
+            draw_hyperos_app_artwork(fb, w, h, ir, app.kind);
             if self.show_labels {
                 texts.push(TextDraw {
                     rect: Rect { x: prev_box.x + (i as i32) * slot_w + 2, y: prev_box.y + 88, w: slot_w - 4, h: 16 },
                     text: app.title.clone(),
-                    color: 0xFFFFFF,
+                    color: 0x1E293B,
                     size: 10,
                     bold: false,
                     align: TextAlign::Center,
@@ -1497,15 +1730,19 @@ impl EmulatorState {
             }
         }
 
-        // Bottom Sheet ColorOS 17 Customizer
-        let sheet = Rect { x: SCR_X, y: SCR_Y + 256, w: SCR_W, h: SCR_H - 256 - NAV_H };
-        fill_round_rect(fb, w, h, sheet.x, sheet.y, sheet.w, sheet.h + 24, 24, 0x14192D);
-        draw_round_border(fb, w, h, sheet.x, sheet.y, sheet.w, sheet.h + 24, 24, 0x3F4F8A);
+        // Bottom Sheet HyperOS 4 + ColorOS 17 Customizer
+        let sheet = Rect { x: SCR_X, y: SCR_Y + 248, w: SCR_W, h: SCR_H - 248 - NAV_H };
+        let sh_bg = if self.dark_mode { 0x161D30 } else { 0xF5F7FC };
+        let sh_fg = if self.dark_mode { 0xFFFFFF } else { 0x111827 };
+        let sh_sub = if self.dark_mode { 0xA8B8DE } else { 0x475569 };
+        let sh_pill = if self.dark_mode { 0x26314D } else { 0xE2E8F5 };
+        fill_round_rect(fb, w, h, sheet.x, sheet.y, sheet.w, sheet.h + 24, 26, sh_bg);
+        draw_round_border(fb, w, h, sheet.x, sheet.y, sheet.w, sheet.h + 24, 26, 0xFFFFFF);
 
         texts.push(TextDraw {
             rect: Rect { x: sheet.x + 16, y: sheet.y + 12, w: sheet.w - 32, h: 24 },
-            text: "Ikony ColorOS 17 · Personalizacja".into(),
-            color: 0xFFFFFF,
+            text: "Ikony HyperOS 4 & ColorOS 17".into(),
+            color: sh_fg,
             size: 16,
             bold: true,
             align: TextAlign::Left,
@@ -1516,7 +1753,7 @@ impl EmulatorState {
         texts.push(TextDraw {
             rect: Rect { x: sheet.x + 16, y: sheet.y + 46, w: 200, h: 20 },
             text: "Rozmiar ikon aplikacji:".into(),
-            color: 0xDCE5FF,
+            color: sh_sub,
             size: 13,
             bold: false,
             align: TextAlign::Left,
@@ -1525,7 +1762,7 @@ impl EmulatorState {
         texts.push(TextDraw {
             rect: Rect { x: sheet.x + sheet.w - 90, y: sheet.y + 46, w: 74, h: 20 },
             text: format!("{}%", self.icon_scale),
-            color: 0x00E0FF,
+            color: 0x2563EB,
             size: 14,
             bold: true,
             align: TextAlign::Right,
@@ -1533,7 +1770,7 @@ impl EmulatorState {
         });
 
         let track = Rect { x: sheet.x + 20, y: sheet.y + 74, w: sheet.w - 40, h: 28 };
-        draw_slider(fb, w, h, track, (self.icon_scale - 60) as f32 / 90.0, 0x00D6FF);
+        draw_slider(fb, w, h, track, (self.icon_scale - 60) as f32 / 90.0, 0x2563EB);
         self.hits.push(HitRegion {
             rect: track,
             action: HitAction::DragIconSlider(track),
@@ -1544,25 +1781,22 @@ impl EmulatorState {
         texts.push(TextDraw {
             rect: Rect { x: sheet.x + 16, y: sheet.y + 114, w: sheet.w - 32, h: 18 },
             text: "Ksztalt ikon:".into(),
-            color: 0xDCE5FF,
+            color: sh_sub,
             size: 12,
             bold: false,
             align: TextAlign::Left,
             clip_to_screen: true,
         });
-        let shapes = [IconShape::Squircle, IconShape::Circle, IconShape::Rounded, IconShape::Teardrop];
+        let shapes = [IconShape::Rounded, IconShape::Squircle, IconShape::Circle, IconShape::Teardrop];
         let sw = (sheet.w - 44) / 4;
         for (i, sh) in shapes.iter().enumerate() {
             let br = Rect { x: sheet.x + 16 + (i as i32) * (sw + 4), y: sheet.y + 136, w: sw, h: 34 };
             let act = self.icon_shape == *sh;
-            fill_round_rect(fb, w, h, br.x, br.y, br.w, br.h, 10, if act { 0x5B3CF5 } else { 0x242C4A });
-            if act {
-                draw_round_border(fb, w, h, br.x, br.y, br.w, br.h, 10, 0x00E0FF);
-            }
+            fill_round_rect(fb, w, h, br.x, br.y, br.w, br.h, 12, if act { 0x2563EB } else { sh_pill });
             texts.push(TextDraw {
                 rect: br,
                 text: sh.name().into(),
-                color: 0xFFFFFF,
+                color: if act { 0xFFFFFF } else { sh_fg },
                 size: 11,
                 bold: act,
                 align: TextAlign::Center,
@@ -1584,11 +1818,11 @@ impl EmulatorState {
             (g5, "Siatka 5x", self.grid_cols == 5, HitAction::SetGridCols(5)),
             (lbl_btn, if self.show_labels { "Podpisy: WL" } else { "Podpisy: WYL" }, self.show_labels, HitAction::ToggleLabels),
         ] {
-            fill_round_rect(fb, w, h, r.x, r.y, r.w, r.h, 10, if act { 0x1E658C } else { 0x242C4A });
+            fill_round_rect(fb, w, h, r.x, r.y, r.w, r.h, 12, if act { 0x2563EB } else { sh_pill });
             texts.push(TextDraw {
                 rect: r,
                 text: txt.into(),
-                color: 0xFFFFFF,
+                color: if act { 0xFFFFFF } else { sh_fg },
                 size: 11,
                 bold: act,
                 align: TextAlign::Center,
@@ -1600,20 +1834,20 @@ impl EmulatorState {
         // Wallpapers
         texts.push(TextDraw {
             rect: Rect { x: sheet.x + 16, y: sheet.y + 234, w: sheet.w - 32, h: 18 },
-            text: "Tapeta MysticalOS Flux:".into(),
-            color: 0xDCE5FF,
+            text: "Tapeta HyperOS 4 Liquid Glass:".into(),
+            color: sh_sub,
             size: 12,
             bold: false,
             align: TextAlign::Left,
             clip_to_screen: true,
         });
-        let wnames = ["Indygo", "Szmaragd", "Rubin", "Noc"];
-        let wc = [0x4A2AB2, 0x105666, 0x7A1E58, 0x24345C];
+        let wnames = ["Szklo", "Szmaragd", "Zachod", "Obsydian"];
+        let wc = [0x4A88E8, 0x20888A, 0xC85A82, 0x1E2944];
         for i in 0..4 {
             let br = Rect { x: sheet.x + 16 + (i as i32) * (sw + 4), y: sheet.y + 256, w: sw, h: 36 };
-            fill_round_rect(fb, w, h, br.x, br.y, br.w, br.h, 10, wc[i]);
+            fill_round_rect(fb, w, h, br.x, br.y, br.w, br.h, 12, wc[i]);
             if self.wallpaper_idx == i {
-                draw_round_border(fb, w, h, br.x, br.y, br.w, br.h, 10, 0x00E0FF);
+                draw_round_border(fb, w, h, br.x, br.y, br.w, br.h, 12, 0xFFFFFF);
             }
             texts.push(TextDraw {
                 rect: br,
@@ -1634,8 +1868,8 @@ impl EmulatorState {
         // Hint + Done button
         texts.push(TextDraw {
             rect: Rect { x: sheet.x + 16, y: sheet.y + 306, w: sheet.w - 32, h: 34 },
-            text: "Wskazowka: przytrzymaj (lub PPM) dowolna ikone na pulpicie, aby zmienic ja na kafelek 2x1, 1x2 lub 2x2!".into(),
-            color: 0x99A9D8,
+            text: "Przytrzymaj (lub kliknij PPM) ikone lub folder na pulpicie, aby zmienic kafelek na 1x1, 2x1, 1x2 lub 2x2.".into(),
+            color: sh_sub,
             size: 11,
             bold: false,
             align: TextAlign::Left,
@@ -1644,77 +1878,154 @@ impl EmulatorState {
 
         let rst = Rect { x: sheet.x + 16, y: sheet.y + sheet.h - 52, w: 140, h: 40 };
         let ok = Rect { x: sheet.x + 166, y: sheet.y + sheet.h - 52, w: sheet.w - 182, h: 40 };
-        fill_round_rect(fb, w, h, rst.x, rst.y, rst.w, rst.h, 12, 0x283254);
-        fill_round_rect(fb, w, h, ok.x, ok.y, ok.w, ok.h, 12, 0x5B3CF5);
-        texts.push(TextDraw { rect: rst, text: "Resetuj".into(), color: 0xFFFFFF, size: 13, bold: false, align: TextAlign::Center, clip_to_screen: true });
+        fill_round_rect(fb, w, h, rst.x, rst.y, rst.w, rst.h, 14, sh_pill);
+        fill_round_rect(fb, w, h, ok.x, ok.y, ok.w, ok.h, 14, 0x2563EB);
+        texts.push(TextDraw { rect: rst, text: "Resetuj".into(), color: sh_fg, size: 13, bold: false, align: TextAlign::Center, clip_to_screen: true });
         texts.push(TextDraw { rect: ok, text: "Zastosuj na pulpicie".into(), color: 0xFFFFFF, size: 13, bold: true, align: TextAlign::Center, clip_to_screen: true });
         self.hits.push(HitRegion { rect: rst, action: HitAction::ResetTiles, long_press_app: None });
         self.hits.push(HitRegion { rect: ok, action: HitAction::GoScreen(Screen::Home), long_press_app: None });
     }
 
     fn render_control_center(&mut self, fb: &mut [u32], w: i32, h: i32, texts: &mut Vec<TextDraw>) {
-        blend_rect(fb, w, h, SCR_X, SCR_Y, SCR_W, SCR_H, 0x050812, 185);
-        let box_r = Rect { x: SCR_X + 14, y: SCR_Y + STATUS_H + 14, w: SCR_W - 28, h: 280 };
-        fill_round_rect(fb, w, h, box_r.x, box_r.y, box_r.w, box_r.h, 22, 0x161D36);
-        draw_round_border(fb, w, h, box_r.x, box_r.y, box_r.w, box_r.h, 22, 0x4C62AC);
+        // Authentic HyperOS 4 Asymmetric Frosted Glass Control Center
+        blend_rect(fb, w, h, SCR_X, SCR_Y, SCR_W, SCR_H, 0x0B152B, 175);
 
+        push_shadow_text(
+            texts,
+            Rect { x: SCR_X + 20, y: SCR_Y + STATUS_H + 14, w: 220, h: 28 },
+            &format!("{:02}:{:02} · {}", self.clock_hh, self.clock_mm, self.date_str),
+            0xFFFFFF,
+            18,
+            true,
+            TextAlign::Left,
+        );
+        let edit_ic = Rect { x: SCR_X + SCR_W - 88, y: SCR_Y + STATUS_H + 12, w: 70, h: 28 };
+        fill_round_rect_alpha(fb, w, h, edit_ic.x, edit_ic.y, edit_ic.w, edit_ic.h, 14, 0xFFFFFF, 75);
+        texts.push(TextDraw { rect: edit_ic, text: "Zamknij".into(), color: 0xFFFFFF, size: 11, bold: true, align: TextAlign::Center, clip_to_screen: true });
+        self.hits.push(HitRegion { rect: edit_ic, action: HitAction::GoScreen(Screen::Home), long_press_app: None });
+
+        let top_y = SCR_Y + STATUS_H + 54;
+        let left_w = 176;
+        // Left Column: Wi-Fi & Bluetooth big pills + Media player card
+        let wifi_r = Rect { x: SCR_X + 16, y: top_y, w: left_w, h: 58 };
+        fill_round_rect_alpha(fb, w, h, wifi_r.x, wifi_r.y, wifi_r.w, wifi_r.h, 20, if self.wifi_on { 0x3B82F6 } else { 0xFFFFFF }, if self.wifi_on { 235 } else { 65 });
         texts.push(TextDraw {
-            rect: Rect { x: box_r.x + 16, y: box_r.y + 12, w: box_r.w - 32, h: 22 },
-            text: "Centrum Kontroli · MysticalOS".into(),
+            rect: Rect { x: wifi_r.x + 14, y: wifi_r.y + 10, w: wifi_r.w - 28, h: 20 },
+            text: "WLAN".into(),
             color: 0xFFFFFF,
-            size: 15,
+            size: 13,
             bold: true,
             align: TextAlign::Left,
             clip_to_screen: true,
         });
-
-        let tiles = [
-            ("Wi-Fi", self.wifi_on, HitAction::ToggleWifi),
-            ("Bluetooth", self.bt_on, HitAction::ToggleBt),
-            ("Tryb ciemny", self.dark_mode, HitAction::ToggleDark),
-            ("Latarka", self.flashlight_on, HitAction::ToggleFlashlight),
-        ];
-        let bw = (box_r.w - 44) / 2;
-        for (i, (lbl, on, ac)) in tiles.iter().enumerate() {
-            let br = Rect {
-                x: box_r.x + 16 + (i as i32 % 2) * (bw + 12),
-                y: box_r.y + 46 + (i as i32 / 2) * 56,
-                w: bw,
-                h: 46,
-            };
-            fill_round_rect(fb, w, h, br.x, br.y, br.w, br.h, 14, if *on { 0x5B3CF5 } else { 0x263052 });
-            texts.push(TextDraw {
-                rect: br,
-                text: format!("{}: {}", lbl, if *on { "WL" } else { "WYL" }),
-                color: 0xFFFFFF,
-                size: 13,
-                bold: *on,
-                align: TextAlign::Center,
-                clip_to_screen: true,
-            });
-            self.hits.push(HitRegion { rect: br, action: *ac, long_press_app: None });
-        }
-
         texts.push(TextDraw {
-            rect: Rect { x: box_r.x + 16, y: box_r.y + 168, w: box_r.w - 32, h: 18 },
-            text: format!("Jasnosc ekranu: {}%", self.brightness),
-            color: 0xDCE5FF,
-            size: 12,
+            rect: Rect { x: wifi_r.x + 14, y: wifi_r.y + 30, w: wifi_r.w - 28, h: 18 },
+            text: if self.wifi_on { "Dom 5 GHz · Polaczono" } else { "Wylaczone" }.into(),
+            color: 0xE5F0FF,
+            size: 11,
             bold: false,
             align: TextAlign::Left,
             clip_to_screen: true,
         });
-        let btrack = Rect { x: box_r.x + 18, y: box_r.y + 190, w: box_r.w - 36, h: 28 };
-        draw_slider(fb, w, h, btrack, (self.brightness - 30) as f32 / 70.0, 0xFFD24C);
-        self.hits.push(HitRegion {
-            rect: btrack,
-            action: HitAction::DragBrightnessSlider(btrack),
-            long_press_app: None,
-        });
+        self.hits.push(HitRegion { rect: wifi_r, action: HitAction::ToggleWifi, long_press_app: None });
 
-        let close_b = Rect { x: box_r.x + 16, y: box_r.y + 230, w: box_r.w - 32, h: 36 };
-        fill_round_rect(fb, w, h, close_b.x, close_b.y, close_b.w, close_b.h, 12, 0x232C4A);
-        texts.push(TextDraw { rect: close_b, text: "Zamknij panel".into(), color: 0xFFFFFF, size: 13, bold: false, align: TextAlign::Center, clip_to_screen: true });
+        let bt_r = Rect { x: SCR_X + 16, y: top_y + 68, w: left_w, h: 58 };
+        fill_round_rect_alpha(fb, w, h, bt_r.x, bt_r.y, bt_r.w, bt_r.h, 20, if self.bt_on { 0x2563EB } else { 0xFFFFFF }, if self.bt_on { 235 } else { 65 });
+        texts.push(TextDraw {
+            rect: Rect { x: bt_r.x + 14, y: bt_r.y + 10, w: bt_r.w - 28, h: 20 },
+            text: "Bluetooth".into(),
+            color: 0xFFFFFF,
+            size: 13,
+            bold: true,
+            align: TextAlign::Left,
+            clip_to_screen: true,
+        });
+        texts.push(TextDraw {
+            rect: Rect { x: bt_r.x + 14, y: bt_r.y + 30, w: bt_r.w - 28, h: 18 },
+            text: if self.bt_on { "Wlaczony · Gotowy" } else { "Wylaczony" }.into(),
+            color: 0xE5F0FF,
+            size: 11,
+            bold: false,
+            align: TextAlign::Left,
+            clip_to_screen: true,
+        });
+        self.hits.push(HitRegion { rect: bt_r, action: HitAction::ToggleBt, long_press_app: None });
+
+        // Music player card below Wi-Fi/BT
+        let media_r = Rect { x: SCR_X + 16, y: top_y + 136, w: left_w, h: 72 };
+        fill_round_rect_alpha(fb, w, h, media_r.x, media_r.y, media_r.w, media_r.h, 20, 0x1E293B, 210);
+        texts.push(TextDraw {
+            rect: Rect { x: media_r.x + 12, y: media_r.y + 10, w: media_r.w - 24, h: 18 },
+            text: "MysticalOS Audio".into(),
+            color: 0xFFFFFF,
+            size: 12,
+            bold: true,
+            align: TextAlign::Left,
+            clip_to_screen: true,
+        });
+        texts.push(TextDraw {
+            rect: Rect { x: media_r.x + 12, y: media_r.y + 28, w: media_r.w - 24, h: 16 },
+            text: if self.island_playing { "Odtwarzanie · HyperIsland" } else { "Wstrzymano" }.into(),
+            color: 0x93C5FD,
+            size: 10,
+            bold: false,
+            align: TextAlign::Left,
+            clip_to_screen: true,
+        });
+        let play_b = Rect { x: media_r.x + 12, y: media_r.y + 46, w: 68, h: 20 };
+        fill_round_rect_alpha(fb, w, h, play_b.x, play_b.y, play_b.w, play_b.h, 10, 0x3B82F6, 220);
+        texts.push(TextDraw { rect: play_b, text: if self.island_playing { "|| Pauza" } else { "> Graj" }.into(), color: 0xFFFFFF, size: 10, bold: true, align: TextAlign::Center, clip_to_screen: true });
+        self.hits.push(HitRegion { rect: media_r, action: HitAction::ToggleIslandPlay, long_press_app: None });
+
+        // Right Column: Two Vertical HyperOS 4 Glass Pill Sliders (Brightness & Volume)
+        let pill_w = 64;
+        let pill_h = 208;
+        let btrack = Rect { x: SCR_X + 204, y: top_y, w: pill_w, h: pill_h };
+        let vtrack = Rect { x: SCR_X + 278, y: top_y, w: pill_w, h: pill_h };
+
+        draw_vertical_glass_pill(fb, w, h, btrack, (self.brightness - 30) as f32 / 70.0, 0xFFFFFF);
+        fill_circle(fb, w, h, btrack.x + pill_w / 2, btrack.y + pill_h - 24, 8, 0xF59E0B);
+        texts.push(TextDraw { rect: Rect { x: btrack.x, y: btrack.y + 10, w: pill_w, h: 18 }, text: format!("{}%", self.brightness), color: 0x1E293B, size: 11, bold: true, align: TextAlign::Center, clip_to_screen: true });
+        self.hits.push(HitRegion { rect: btrack, action: HitAction::DragBrightnessSlider(btrack), long_press_app: None });
+
+        draw_vertical_glass_pill(fb, w, h, vtrack, self.volume as f32 / 100.0, 0xFFFFFF);
+        fill_round_rect(fb, w, h, vtrack.x + pill_w / 2 - 6, vtrack.y + pill_h - 30, 12, 12, 3, 0x2563EB);
+        texts.push(TextDraw { rect: Rect { x: vtrack.x, y: vtrack.y + 10, w: pill_w, h: 18 }, text: format!("{}%", self.volume), color: 0x1E293B, size: 11, bold: true, align: TextAlign::Center, clip_to_screen: true });
+        self.hits.push(HitRegion { rect: vtrack, action: HitAction::DragVolumeSlider(vtrack), long_press_app: None });
+
+        // Round quick toggle row below (4 circles like HyperOS 4)
+        let quick_y = top_y + 226;
+        let quick_items = [
+            ("Ciemny", self.dark_mode, HitAction::ToggleDark),
+            ("Latarka", self.flashlight_on, HitAction::ToggleFlashlight),
+            ("Island", self.island_always_on, HitAction::ToggleIslandAlwaysOn),
+            ("Ikony", false, HitAction::GoScreen(Screen::IconEditor)),
+        ];
+        let qslot = (SCR_W - 32) / 4;
+        for (i, (lbl, on, act)) in quick_items.iter().enumerate() {
+            let cx = SCR_X + 16 + (i as i32) * qslot + qslot / 2;
+            let cy = quick_y + 26;
+            fill_circle(fb, w, h, cx, cy, 24, if *on { 0x3B82F6 } else { 0x334155 });
+            texts.push(TextDraw {
+                rect: Rect { x: cx - 34, y: cy + 30, w: 68, h: 16 },
+                text: (*lbl).into(),
+                color: 0xFFFFFF,
+                size: 11,
+                bold: *on,
+                align: TextAlign::Center,
+                clip_to_screen: true,
+            });
+            self.hits.push(HitRegion {
+                rect: Rect { x: cx - 28, y: cy - 26, w: 56, h: 68 },
+                action: *act,
+                long_press_app: None,
+            });
+        }
+
+        // Bottom tap anywhere outside to close
+        let close_b = Rect { x: SCR_X + 64, y: SCR_Y + SCR_H - 96, w: SCR_W - 128, h: 36 };
+        fill_round_rect_alpha(fb, w, h, close_b.x, close_b.y, close_b.w, close_b.h, 18, 0xFFFFFF, 85);
+        texts.push(TextDraw { rect: close_b, text: "Zamknij Centrum Kontroli".into(), color: 0xFFFFFF, size: 12, bold: true, align: TextAlign::Center, clip_to_screen: true });
         self.hits.push(HitRegion { rect: close_b, action: HitAction::GoScreen(Screen::Home), long_press_app: None });
     }
 
@@ -2038,49 +2349,152 @@ impl EmulatorState {
     fn render_status_and_nav(&mut self, fb: &mut [u32], w: i32, h: i32, texts: &mut Vec<TextDraw>) {
         // Status bar top hit zone -> Control Center
         let sb = Rect { x: SCR_X, y: SCR_Y, w: SCR_W, h: STATUS_H };
+        push_shadow_text(
+            texts,
+            Rect { x: SCR_X + 16, y: SCR_Y + 5, w: 60, h: 18 },
+            &format!("{:02}:{:02}", self.clock_hh, self.clock_mm),
+            0xFFFFFF,
+            12,
+            true,
+            TextAlign::Left,
+        );
+
+        // Right status icons (signal, WiFi, HyperOS 4 battery pill [94])
+        let bat_r = Rect { x: SCR_X + SCR_W - 42, y: SCR_Y + 7, w: 26, h: 14 };
+        fill_round_rect_alpha(fb, w, h, bat_r.x, bat_r.y, bat_r.w, bat_r.h, 5, 0xFFFFFF, 210);
         texts.push(TextDraw {
-            rect: Rect { x: SCR_X + 14, y: SCR_Y + 5, w: 68, h: 18 },
-            text: format!("{:02}:{:02}", self.clock_hh, self.clock_mm),
-            color: 0xFFFFFF,
-            size: 12,
-            bold: true,
-            align: TextAlign::Left,
-            clip_to_screen: true,
-        });
-        // Always-On Dynamic Island pill
-        let di = Rect { x: SCR_X + (SCR_W / 2) - 54, y: SCR_Y + 4, w: 108, h: 19 };
-        fill_round_rect(fb, w, h, di.x, di.y, di.w, di.h, 9, 0x05070D);
-        draw_round_border(fb, w, h, di.x, di.y, di.w, di.h, 9, 0x00D6FF);
-        texts.push(TextDraw {
-            rect: di,
-            text: "● Island ON".into(),
-            color: 0x9FF5FF,
+            rect: bat_r,
+            text: "94".into(),
+            color: 0x111827,
             size: 10,
             bold: true,
             align: TextAlign::Center,
             clip_to_screen: true,
         });
-        texts.push(TextDraw {
-            rect: Rect { x: SCR_X + SCR_W - 118, y: SCR_Y + 5, w: 106, h: 18 },
-            text: format!("{} 4G 94%", if self.wifi_on { "WiFi" } else { "--" }),
-            color: 0xFFFFFF,
-            size: 11,
-            bold: false,
-            align: TextAlign::Right,
-            clip_to_screen: true,
-        });
+        push_shadow_text(
+            texts,
+            Rect { x: SCR_X + SCR_W - 114, y: SCR_Y + 5, w: 68, h: 18 },
+            if self.wifi_on { "5G WiFi" } else { "5G" },
+            0xFFFFFF,
+            10,
+            true,
+            TextAlign::Right,
+        );
+
         self.hits.push(HitRegion {
             rect: sb,
             action: HitAction::GoScreen(if self.screen == Screen::ControlCenter { Screen::Home } else { Screen::ControlCenter }),
             long_press_app: None,
         });
 
-        // Navigation bar bottom
+        // HyperOS 4 Super Island (Dynamic Island) pill with embedded camera lens on left
+        if self.island_always_on {
+            if self.island_expanded {
+                let card = Rect { x: SCR_X + 14, y: SCR_Y + 4, w: SCR_W - 28, h: 98 };
+                fill_round_rect(fb, w, h, card.x, card.y, card.w, card.h, 24, 0x0A0D14);
+                draw_round_border(fb, w, h, card.x, card.y, card.w, card.h, 24, 0x334155);
+
+                // Camera lens tucked cleanly in top center-left + album art badge
+                fill_round_rect(fb, w, h, card.x + 14, card.y + 16, 46, 46, 12, 0x2563EB);
+                fill_circle(fb, w, h, card.x + 37, card.y + 39, 12, 0x60A5FA);
+                fill_circle(fb, w, h, card.x + 37, card.y + 39, 5, 0xFFFFFF);
+
+                texts.push(TextDraw {
+                    rect: Rect { x: card.x + 70, y: card.y + 14, w: 170, h: 20 },
+                    text: "MysticalOS Audio".into(),
+                    color: 0xFFFFFF,
+                    size: 13,
+                    bold: true,
+                    align: TextAlign::Left,
+                    clip_to_screen: true,
+                });
+                texts.push(TextDraw {
+                    rect: Rect { x: card.x + 70, y: card.y + 34, w: 180, h: 16 },
+                    text: "HyperIsland Always-On · 94%".into(),
+                    color: 0x93C5FD,
+                    size: 10,
+                    bold: false,
+                    align: TextAlign::Left,
+                    clip_to_screen: true,
+                });
+
+                let play_r = Rect { x: card.x + 70, y: card.y + 58, w: 86, h: 26 };
+                fill_round_rect(fb, w, h, play_r.x, play_r.y, play_r.w, play_r.h, 13, 0x1E293B);
+                texts.push(TextDraw {
+                    rect: play_r,
+                    text: if self.island_playing { "|| Pauza" } else { "> Odtworz" }.into(),
+                    color: 0xFFFFFF,
+                    size: 11,
+                    bold: true,
+                    align: TextAlign::Center,
+                    clip_to_screen: true,
+                });
+
+                let ico_r = Rect { x: card.x + 164, y: card.y + 58, w: 88, h: 26 };
+                fill_round_rect(fb, w, h, ico_r.x, ico_r.y, ico_r.w, ico_r.h, 13, 0x2563EB);
+                texts.push(TextDraw {
+                    rect: ico_r,
+                    text: "Ikony >".into(),
+                    color: 0xFFFFFF,
+                    size: 11,
+                    bold: true,
+                    align: TextAlign::Center,
+                    clip_to_screen: true,
+                });
+
+                let close_r = Rect { x: card.x + card.w - 64, y: card.y + 14, w: 48, h: 22 };
+                fill_round_rect(fb, w, h, close_r.x, close_r.y, close_r.w, close_r.h, 11, 0x1E293B);
+                texts.push(TextDraw { rect: close_r, text: "Zwin".into(), color: 0xCBD5E1, size: 10, bold: true, align: TextAlign::Center, clip_to_screen: true });
+
+                self.hits.push(HitRegion { rect: card, action: HitAction::ToggleIsland, long_press_app: None });
+                self.hits.push(HitRegion { rect: play_r, action: HitAction::ToggleIslandPlay, long_press_app: None });
+                self.hits.push(HitRegion { rect: ico_r, action: HitAction::GoScreen(Screen::IconEditor), long_press_app: None });
+                self.hits.push(HitRegion { rect: close_r, action: HitAction::ToggleIsland, long_press_app: None });
+            } else {
+                let di = Rect { x: SCR_X + (SCR_W / 2) - 62, y: SCR_Y + 4, w: 124, h: 20 };
+                fill_round_rect(fb, w, h, di.x, di.y, di.w, di.h, 10, 0x080B10);
+                // Camera lens on left side inside capsule + active music ring + animated equalizer bars
+                fill_circle(fb, w, h, di.x + 13, di.y + 10, 5, 0x161E2E);
+                fill_circle(fb, w, h, di.x + 13, di.y + 10, 2, 0x38BDF8);
+                fill_circle(fb, w, h, di.x + 26, di.y + 10, 4, 0x22C55E);
+                for b in 0..3 {
+                    let bh = if self.island_playing {
+                        4 + (((self.anim_tick / 3 + b as u32 * 2) % 4) as i32) * 2
+                    } else {
+                        3
+                    };
+                    fill_rect(fb, w, h, di.x + di.w - 22 + b * 4, di.y + 15 - bh, 2, bh, 0x38BDF8);
+                }
+                texts.push(TextDraw {
+                    rect: Rect { x: di.x + 32, y: di.y, w: di.w - 58, h: di.h },
+                    text: "HyperIsland".into(),
+                    color: 0xE2E8F0,
+                    size: 10,
+                    bold: true,
+                    align: TextAlign::Center,
+                    clip_to_screen: true,
+                });
+                self.hits.push(HitRegion { rect: di, action: HitAction::ToggleIsland, long_press_app: None });
+            }
+        } else {
+            // Subtle waterdrop lens when island hidden
+            fill_circle(fb, w, h, SCR_X + SCR_W / 2, SCR_Y + 11, 7, 0x090B12);
+            fill_circle(fb, w, h, SCR_X + SCR_W / 2, SCR_Y + 11, 3, 0x1D2942);
+        }
+
+        // Navigation bar bottom (transparent pill over wallpaper on Home, solid in apps)
         let ny = SCR_Y + SCR_H - NAV_H;
-        fill_rect(fb, w, h, SCR_X, ny, SCR_W, NAV_H, 0x0A0D18);
+        let transparent_nav = self.gesture_nav
+            && matches!(
+                self.screen,
+                Screen::Home | Screen::LockScreen | Screen::FolderView | Screen::HomeEdit | Screen::ControlCenter
+            );
+        if !transparent_nav {
+            fill_rect(fb, w, h, SCR_X, ny, SCR_W, NAV_H, if self.dark_mode { 0x0A0D18 } else { 0x1E293B });
+        }
         if self.gesture_nav {
-            let pill = Rect { x: SCR_X + 110, y: ny + 13, w: SCR_W - 220, h: 5 };
-            fill_round_rect(fb, w, h, pill.x, pill.y, pill.w, pill.h, 2, 0xD0DCFF);
+            let pill = Rect { x: SCR_X + 116, y: ny + 15, w: SCR_W - 232, h: 4 };
+            fill_round_rect_alpha(fb, w, h, pill.x, pill.y, pill.w, pill.h, 2, 0xFFFFFF, 220);
             self.hits.push(HitRegion {
                 rect: Rect { x: SCR_X, y: ny, w: SCR_W, h: NAV_H },
                 action: HitAction::Home,
@@ -2116,7 +2530,7 @@ impl EmulatorState {
         });
         texts.push(TextDraw {
             rect: Rect { x: px + 24, y: 68, w: pw - 48, h: 22 },
-            text: format!("{} · {} · Zero apek Xiaomi · Styl ikon ColorOS 17", self.manifest.market_name, self.manifest.base_rom),
+            text: format!("{} · {} · HyperOS 4 Launcher 8.01 + Dynamic Island + ColorOS 17", self.manifest.market_name, self.manifest.base_rom),
             color: 0x00D6FF,
             size: 13,
             bold: false,
@@ -2124,12 +2538,12 @@ impl EmulatorState {
             clip_to_screen: false,
         });
 
-        // Hardware control row
+        // Hardware & HyperOS Launcher control row
         let hw_btns = [
             ("Pulpit (Home)", HitAction::Home),
-            ("Wstecz (Back)", HitAction::Back),
+            ("Edytuj Pulpit", HitAction::GoScreen(Screen::HomeEdit)),
+            ("HyperIsland", HitAction::ToggleIsland),
             ("Blokada", HitAction::LockToggle),
-            ("Restart Boot", HitAction::RestartBoot),
             ("Zrzut BMP", HitAction::SaveScreenshot),
         ];
         let bw = (pw - 48 - 32) / 5;
@@ -2351,8 +2765,24 @@ impl EmulatorState {
                 }
                 HitAction::DragBrightnessSlider(r) => {
                     self.active_slider = Some(HitAction::DragBrightnessSlider(r));
-                    let t = ((x - r.x) as f32 / r.w.max(1) as f32).clamp(0.0, 1.0);
+                    let t = (if r.h > r.w {
+                        1.0 - ((y - r.y) as f32 / r.h.max(1) as f32)
+                    } else {
+                        (x - r.x) as f32 / r.w.max(1) as f32
+                    })
+                    .clamp(0.0, 1.0);
                     self.brightness = (30.0 + t * 70.0).round() as i32;
+                    return UiCommand::None;
+                }
+                HitAction::DragVolumeSlider(r) => {
+                    self.active_slider = Some(HitAction::DragVolumeSlider(r));
+                    let t = (if r.h > r.w {
+                        1.0 - ((y - r.y) as f32 / r.h.max(1) as f32)
+                    } else {
+                        (x - r.x) as f32 / r.w.max(1) as f32
+                    })
+                    .clamp(0.0, 1.0);
+                    self.volume = (t * 100.0).round() as i32;
                     return UiCommand::None;
                 }
                 HitAction::SaveScreenshot => return UiCommand::SaveScreenshot,
@@ -2372,15 +2802,29 @@ impl EmulatorState {
         UiCommand::None
     }
 
-    pub fn handle_mouse_move(&mut self, x: i32, _y: i32) {
+    pub fn handle_mouse_move(&mut self, x: i32, y: i32) {
         match self.active_slider {
             Some(HitAction::DragIconSlider(r)) => {
                 let t = ((x - r.x) as f32 / r.w.max(1) as f32).clamp(0.0, 1.0);
                 self.icon_scale = (60.0 + t * 90.0).round() as i32;
             }
             Some(HitAction::DragBrightnessSlider(r)) => {
-                let t = ((x - r.x) as f32 / r.w.max(1) as f32).clamp(0.0, 1.0);
+                let t = (if r.h > r.w {
+                    1.0 - ((y - r.y) as f32 / r.h.max(1) as f32)
+                } else {
+                    (x - r.x) as f32 / r.w.max(1) as f32
+                })
+                .clamp(0.0, 1.0);
                 self.brightness = (30.0 + t * 70.0).round() as i32;
+            }
+            Some(HitAction::DragVolumeSlider(r)) => {
+                let t = (if r.h > r.w {
+                    1.0 - ((y - r.y) as f32 / r.h.max(1) as f32)
+                } else {
+                    (x - r.x) as f32 / r.w.max(1) as f32
+                })
+                .clamp(0.0, 1.0);
+                self.volume = (t * 100.0).round() as i32;
             }
             _ => {}
         }
@@ -2703,7 +3147,7 @@ fn draw_shaped_app_icon(fb: &mut [u32], w: i32, h: i32, r: Rect, c1: u32, c2: u3
                     // Superellipse p = 3.2 (authentic ColorOS 17 squircle contour)
                     (dx.abs().powf(3.2) + dy.abs().powf(3.2)).powf(1.0 / 3.2) - 1.0
                 }
-                IconShape::Rounded => round_sdf(dx * hw, dy * hh, hw, hh, hw * 0.24) / hw,
+                IconShape::Rounded => round_sdf(dx * hw, dy * hh, hw, hh, hw * 0.28) / hw,
                 IconShape::Teardrop => {
                     if dx > 0.0 && dy > 0.0 {
                         round_sdf(dx * hw, dy * hh, hw, hh, hw * 0.16) / hw
@@ -2716,8 +3160,8 @@ fn draw_shaped_app_icon(fb: &mut [u32], w: i32, h: i32, r: Rect, c1: u32, c2: u3
             if dist < 0.04 {
                 let cov = ((0.04 - dist) * hw).clamp(0.0, 1.0);
                 let mut col = lerp_color(c1, c2, (tx + ty) * 0.5);
-                if dist > -0.06 {
-                    col = blend_px(col, 0xFFFFFF, 65);
+                if dist > -0.05 {
+                    col = blend_px(col, 0xFFFFFF, 55);
                 }
                 let p = row + xx as usize;
                 fb[p] = blend_px(fb[p], col, (cov * 255.0) as u32);
@@ -2726,10 +3170,319 @@ fn draw_shaped_app_icon(fb: &mut [u32], w: i32, h: i32, r: Rect, c1: u32, c2: u3
     }
 }
 
+fn push_shadow_text(
+    texts: &mut Vec<TextDraw>,
+    rect: Rect,
+    text: &str,
+    color: u32,
+    size: i32,
+    bold: bool,
+    align: TextAlign,
+) {
+    texts.push(TextDraw {
+        rect: Rect { x: rect.x, y: rect.y + 1, w: rect.w, h: rect.h },
+        text: text.to_string(),
+        color: 0x1E2F4F,
+        size,
+        bold,
+        align,
+        clip_to_screen: true,
+    });
+    texts.push(TextDraw {
+        rect,
+        text: text.to_string(),
+        color,
+        size,
+        bold,
+        align,
+        clip_to_screen: true,
+    });
+}
+
+fn draw_hyperos_wallpaper(fb: &mut [u32], w: i32, h: i32, idx: usize) {
+    draw_hyperos_wallpaper_rect(
+        fb,
+        w,
+        h,
+        Rect { x: SCR_X, y: SCR_Y, w: SCR_W, h: SCR_H },
+        idx,
+    );
+}
+
+fn draw_hyperos_wallpaper_rect(fb: &mut [u32], w: i32, h: i32, r: Rect, idx: usize) {
+    let (top_c, mid_c, bot_c, glow_c) = match idx {
+        1 => (0xC9F4E8, 0x4BC0B8, 0x16566C, 0xFFFFFF),
+        2 => (0xFFE2D4, 0xE882A8, 0x4A2E7C, 0xFFF3EC),
+        3 => (0x141C30, 0x263B6B, 0x0C1120, 0x5B8CFF),
+        _ => (0xCEE7FF, 0x6AA8F8, 0x224EB3, 0xFFFFFF),
+    };
+
+    let x0 = r.x.max(0);
+    let y0 = r.y.max(0);
+    let x1 = (r.x + r.w).min(w);
+    let y1 = (r.y + r.h).min(h);
+    let is_card = r.w < SCR_W - 20;
+
+    for yy in y0..y1 {
+        let ty = (yy - r.y) as f32 / r.h.max(1) as f32;
+        let row = (yy * w) as usize;
+        for xx in x0..x1 {
+            if is_card {
+                let dx = xx as f32 - (r.x as f32 + r.w as f32 * 0.5);
+                let dy = yy as f32 - (r.y as f32 + r.h as f32 * 0.5);
+                if round_sdf(dx, dy, r.w as f32 * 0.5, r.h as f32 * 0.5, 26.0) > 0.5 {
+                    continue;
+                }
+            }
+            let tx = (xx - r.x) as f32 / r.w.max(1) as f32;
+            let base = if ty < 0.54 {
+                lerp_color(top_c, mid_c, ty / 0.54)
+            } else {
+                lerp_color(mid_c, bot_c, (ty - 0.54) / 0.46)
+            };
+
+            // Organic HyperOS 4 Liquid Glass horizon wave ribbons
+            let wave1 = 0.42 + 0.08 * (tx * 3.8 + 0.5).sin();
+            let d1 = (ty - wave1).abs();
+            let mut col = base;
+            if d1 < 0.22 {
+                let k = ((1.0 - d1 / 0.22).powi(2) * 140.0) as u32;
+                col = blend_px(col, glow_c, k);
+            }
+            let wave2 = 0.66 + 0.09 * (tx * 3.2 + 2.4).cos();
+            let d2 = (ty - wave2).abs();
+            if d2 < 0.18 {
+                let k = ((1.0 - d2 / 0.18).powi(2) * 90.0) as u32;
+                col = blend_px(col, top_c, k);
+            }
+            fb[row + xx as usize] = col;
+        }
+    }
+}
+
+fn draw_weather_sun_cloud(fb: &mut [u32], w: i32, h: i32, x: i32, y: i32) {
+    // Warm HyperOS Weather Sun + fluffy cloud
+    fill_circle(fb, w, h, x + 32, y + 14, 11, 0xFBBF24);
+    fill_circle(fb, w, h, x + 32, y + 14, 7, 0xFDE68A);
+    fill_circle(fb, w, h, x + 16, y + 20, 9, 0xFFFFFF);
+    fill_circle(fb, w, h, x + 26, y + 17, 10, 0xFFFFFF);
+    fill_circle(fb, w, h, x + 36, y + 21, 8, 0xFFFFFF);
+    fill_round_rect(fb, w, h, x + 9, y + 19, 34, 11, 5, 0xFFFFFF);
+}
+
+fn draw_vertical_glass_pill(fb: &mut [u32], w: i32, h: i32, r: Rect, norm: f32, fill_col: u32) {
+    let t = norm.clamp(0.0, 1.0);
+    fill_round_rect_alpha(fb, w, h, r.x, r.y, r.w, r.h, 24, 0xE2E8F0, 95);
+    let fh = ((r.h as f32) * t).round() as i32;
+    if fh > 16 {
+        let fy = r.y + r.h - fh;
+        fill_round_rect_alpha(fb, w, h, r.x, fy, r.w, fh, 24, fill_col, 235);
+    }
+    draw_round_border(fb, w, h, r.x, r.y, r.w, r.h, 24, 0xFFFFFF);
+}
+
+fn draw_line_thick(fb: &mut [u32], w: i32, h: i32, x0: f32, y0: f32, x1: f32, y1: f32, rad: f32, col: u32) {
+    let min_x = (x0.min(x1) - rad - 1.0).floor().max(0.0) as i32;
+    let max_x = (x0.max(x1) + rad + 2.0).ceil().min(w as f32) as i32;
+    let min_y = (y0.min(y1) - rad - 1.0).floor().max(0.0) as i32;
+    let max_y = (y0.max(y1) + rad + 2.0).ceil().min(h as f32) as i32;
+    let vx = x1 - x0;
+    let vy = y1 - y0;
+    let len2 = (vx * vx + vy * vy).max(0.0001);
+    for yy in min_y..max_y {
+        let py = yy as f32 + 0.5;
+        let row = (yy * w) as usize;
+        for xx in min_x..max_x {
+            let px = xx as f32 + 0.5;
+            let t = (((px - x0) * vx + (py - y0) * vy) / len2).clamp(0.0, 1.0);
+            let dx = px - (x0 + vx * t);
+            let dy = py - (y0 + vy * t);
+            let d = (dx * dx + dy * dy).sqrt();
+            if d < rad + 0.7 {
+                let cov = (rad + 0.7 - d).clamp(0.0, 1.0);
+                let p = row + xx as usize;
+                fb[p] = blend_px(fb[p], col, (cov * 255.0) as u32);
+            }
+        }
+    }
+}
+
+fn draw_ring(fb: &mut [u32], w: i32, h: i32, cx: f32, cy: f32, r: f32, thick: f32, col: u32) {
+    let min_x = (cx - r - thick - 1.0).floor().max(0.0) as i32;
+    let max_x = (cx + r + thick + 2.0).ceil().min(w as f32) as i32;
+    let min_y = (cy - r - thick - 1.0).floor().max(0.0) as i32;
+    let max_y = (cy + r + thick + 2.0).ceil().min(h as f32) as i32;
+    let half_t = thick * 0.5;
+    for yy in min_y..max_y {
+        let dy = yy as f32 + 0.5 - cy;
+        let row = (yy * w) as usize;
+        for xx in min_x..max_x {
+            let dx = xx as f32 + 0.5 - cx;
+            let d = ((dx * dx + dy * dy).sqrt() - r).abs();
+            if d < half_t + 0.7 {
+                let cov = (half_t + 0.7 - d).clamp(0.0, 1.0);
+                let p = row + xx as usize;
+                fb[p] = blend_px(fb[p], col, (cov * 255.0) as u32);
+            }
+        }
+    }
+}
+
+fn draw_hyperos_app_artwork(fb: &mut [u32], w: i32, h: i32, r: Rect, kind: AppKind) {
+    if r.w < 12 || r.h < 12 {
+        return;
+    }
+    let s = r.w.min(r.h) as f32;
+    let cx = r.x as f32 + r.w as f32 * 0.5;
+    let cy = r.y as f32 + r.h as f32 * 0.5;
+    let lw = (s * 0.085).max(1.4);
+
+    match kind {
+        AppKind::Phone => {
+            // White HyperOS handset curve
+            draw_line_thick(fb, w, h, cx - s * 0.22, cy - s * 0.14, cx - s * 0.05, cy + s * 0.12, lw * 1.1, 0xFFFFFF);
+            draw_line_thick(fb, w, h, cx - s * 0.05, cy + s * 0.12, cx + s * 0.22, cy + s * 0.24, lw * 1.1, 0xFFFFFF);
+            fill_circle(fb, w, h, (cx - s * 0.18) as i32, (cy - s * 0.20) as i32, (s * 0.11).max(2.0) as i32, 0xFFFFFF);
+            fill_circle(fb, w, h, (cx + s * 0.21) as i32, (cy + s * 0.19) as i32, (s * 0.11).max(2.0) as i32, 0xFFFFFF);
+        }
+        AppKind::Messages => {
+            // White speech bubble with 3 cyan dots
+            let bw = (s * 0.62) as i32;
+            let bh = (s * 0.46) as i32;
+            fill_round_rect(fb, w, h, (cx - bw as f32 * 0.5) as i32, (cy - bh as f32 * 0.55) as i32, bw, bh, (bh / 2).max(3), 0xFFFFFF);
+            draw_line_thick(fb, w, h, cx - s * 0.18, cy + s * 0.14, cx - s * 0.24, cy + s * 0.28, lw * 0.9, 0xFFFFFF);
+            let dot_r = (s * 0.045).max(1.2) as i32;
+            for dx in [-1, 0, 1] {
+                fill_circle(fb, w, h, (cx + (dx as f32) * s * 0.13) as i32, (cy - s * 0.02) as i32, dot_r, 0x0284C7);
+            }
+        }
+        AppKind::Camera => {
+            // Dark lens + metallic rings + Leica-inspired red/gold dot
+            draw_ring(fb, w, h, cx, cy, s * 0.27, lw * 0.9, 0xE2E8F0);
+            fill_circle(fb, w, h, cx as i32, cy as i32, (s * 0.19).max(2.0) as i32, 0x0F172A);
+            draw_ring(fb, w, h, cx, cy, s * 0.12, lw * 0.6, 0x38BDF8);
+            fill_circle(fb, w, h, (cx - s * 0.04) as i32, (cy - s * 0.04) as i32, (s * 0.05).max(1.2) as i32, 0xBAE6FD);
+            fill_circle(fb, w, h, (cx + s * 0.27) as i32, (cy - s * 0.25) as i32, (s * 0.055).max(1.3) as i32, 0xF97316);
+        }
+        AppKind::Gallery => {
+            // HyperOS 6-petal colorful rosette on white background
+            let colors = [0xEF4444, 0xF97316, 0xEAB308, 0x22C55E, 0x3B82F6, 0xA855F7];
+            let pr = (s * 0.12).max(2.0) as i32;
+            for (i, &col) in colors.iter().enumerate() {
+                let ang = (i as f32) * (PI / 3.0) - PI * 0.5;
+                let px = cx + ang.cos() * (s * 0.20);
+                let py = cy + ang.sin() * (s * 0.20);
+                fill_circle(fb, w, h, px as i32, py as i32, pr, col);
+            }
+            fill_circle(fb, w, h, cx as i32, cy as i32, (s * 0.08).max(1.5) as i32, 0xFFFFFF);
+        }
+        AppKind::Settings => {
+            // Crisp 8-tooth white gear
+            for i in 0..8 {
+                let ang = (i as f32) * (PI / 4.0);
+                draw_line_thick(
+                    fb,
+                    w,
+                    h,
+                    cx + ang.cos() * (s * 0.16),
+                    cy + ang.sin() * (s * 0.16),
+                    cx + ang.cos() * (s * 0.31),
+                    cy + ang.sin() * (s * 0.31),
+                    lw * 1.15,
+                    0xFFFFFF,
+                );
+            }
+            draw_ring(fb, w, h, cx, cy, s * 0.20, lw * 1.35, 0xFFFFFF);
+            fill_circle(fb, w, h, cx as i32, cy as i32, (s * 0.09).max(1.5) as i32, 0x475569);
+        }
+        AppKind::Clock => {
+            // Analog clock dial + hour/minute hands + orange second hand
+            fill_circle(fb, w, h, cx as i32, cy as i32, (s * 0.34).max(3.0) as i32, 0xFFFFFF);
+            draw_line_thick(fb, w, h, cx, cy, cx - s * 0.12, cy - s * 0.11, lw * 0.85, 0x1E293B);
+            draw_line_thick(fb, w, h, cx, cy, cx + s * 0.18, cy - s * 0.16, lw * 0.70, 0x1E293B);
+            draw_line_thick(fb, w, h, cx, cy, cx + s * 0.06, cy + s * 0.21, (lw * 0.45).max(1.0), 0xEF4444);
+            fill_circle(fb, w, h, cx as i32, cy as i32, (s * 0.045).max(1.2) as i32, 0xEF4444);
+        }
+        AppKind::Calculator => {
+            // Clean math pads + HyperOS orange '=' pill
+            let bs = (s * 0.26).max(3.0) as i32;
+            let off = (s * 0.18) as i32;
+            fill_round_rect(fb, w, h, cx as i32 - off - bs / 2, cy as i32 - off - bs / 2, bs, bs, 3, 0xCBD5E1);
+            fill_round_rect(fb, w, h, cx as i32 + off - bs / 2, cy as i32 - off - bs / 2, bs, bs, 3, 0xCBD5E1);
+            fill_round_rect(fb, w, h, cx as i32 - off - bs / 2, cy as i32 + off - bs / 2, bs, bs, 3, 0xCBD5E1);
+            fill_round_rect(fb, w, h, cx as i32 + off - bs / 2, cy as i32 + off - bs / 2, bs, bs, 3, 0xF97316);
+            draw_line_thick(fb, w, h, cx - s * 0.24, cy - s * 0.18, cx - s * 0.12, cy - s * 0.18, 1.2, 0x334155);
+            draw_line_thick(fb, w, h, cx - s * 0.18, cy - s * 0.24, cx - s * 0.18, cy - s * 0.12, 1.2, 0x334155);
+            draw_line_thick(fb, w, h, cx + s * 0.12, cy - s * 0.18, cx + s * 0.24, cy - s * 0.18, 1.2, 0x334155);
+            draw_line_thick(fb, w, h, cx + s * 0.12, cy + s * 0.14, cx + s * 0.24, cy + s * 0.14, 1.2, 0xFFFFFF);
+            draw_line_thick(fb, w, h, cx + s * 0.12, cy + s * 0.22, cx + s * 0.24, cy + s * 0.22, 1.2, 0xFFFFFF);
+        }
+        AppKind::Files => {
+            // Clean white folder silhouette
+            let fw = (s * 0.58) as i32;
+            let fh = (s * 0.42) as i32;
+            fill_round_rect(fb, w, h, (cx - fw as f32 * 0.5) as i32, (cy - fh as f32 * 0.58) as i32, fw / 2, fh / 3 + 3, 3, 0xFFF7ED);
+            fill_round_rect(fb, w, h, (cx - fw as f32 * 0.5) as i32, (cy - fh as f32 * 0.35) as i32, fw, fh, 5, 0xFFFFFF);
+        }
+        AppKind::Contacts => {
+            // Person avatar glyph
+            fill_circle(fb, w, h, cx as i32, (cy - s * 0.14) as i32, (s * 0.14).max(2.0) as i32, 0xFFFFFF);
+            fill_round_rect(fb, w, h, (cx - s * 0.26) as i32, (cy + s * 0.05) as i32, (s * 0.52) as i32, (s * 0.24) as i32, (s * 0.12) as i32, 0xFFFFFF);
+        }
+        AppKind::DroidIfy => {
+            // App store bag + down arrow
+            let bw = (s * 0.50) as i32;
+            let bh = (s * 0.46) as i32;
+            fill_round_rect(fb, w, h, (cx - bw as f32 * 0.5) as i32, (cy - bh as f32 * 0.30) as i32, bw, bh, 5, 0xFFFFFF);
+            draw_ring(fb, w, h, cx, cy - s * 0.18, s * 0.13, lw * 0.75, 0xFFFFFF);
+            draw_line_thick(fb, w, h, cx, cy - s * 0.06, cx, cy + s * 0.20, lw * 0.85, 0x4F46E5);
+        }
+        AppKind::IconStyle => {
+            // 2x2 Flux/ColorOS resizeable tiles icon
+            let ts = (s * 0.24).max(3.0) as i32;
+            let d = (s * 0.16) as i32;
+            fill_round_rect(fb, w, h, cx as i32 - d - ts / 2, cy as i32 - d - ts / 2, ts * 2, ts, 4, 0xFFFFFF);
+            fill_round_rect(fb, w, h, cx as i32 - d - ts / 2, cy as i32 + d - ts / 2, ts, ts, 4, 0xE0F2FE);
+            fill_round_rect(fb, w, h, cx as i32 + d - ts / 2, cy as i32 + d - ts / 2, ts, ts, 4, 0xFDE047);
+        }
+        AppKind::RustMonitor => {
+            // CPU chip square + memory bar
+            let cs = (s * 0.48) as i32;
+            fill_round_rect(fb, w, h, (cx - cs as f32 * 0.5) as i32, (cy - cs as f32 * 0.5) as i32, cs, cs, 4, 0xFFFFFF);
+            fill_round_rect(fb, w, h, (cx - s * 0.15) as i32, (cy - s * 0.06) as i32, (s * 0.30) as i32, (s * 0.12) as i32, 3, 0x22C55E);
+        }
+        AppKind::MicroG => {
+            draw_ring(fb, w, h, cx, cy, s * 0.26, lw * 1.15, 0xFFFFFF);
+            draw_line_thick(fb, w, h, cx, cy, cx + s * 0.25, cy, lw * 1.1, 0xFFFFFF);
+        }
+        AppKind::RomAudit => {
+            // Magnifier + check badge
+            draw_ring(fb, w, h, cx - s * 0.05, cy - s * 0.05, s * 0.21, lw * 1.0, 0xFFFFFF);
+            draw_line_thick(fb, w, h, cx + s * 0.10, cy + s * 0.10, cx + s * 0.28, cy + s * 0.28, lw * 1.15, 0xFFFFFF);
+        }
+        AppKind::ImageExplorer => {
+            // Layered disk/partition stack
+            for dy in [-0.17_f32, 0.0, 0.17] {
+                fill_round_rect(
+                    fb,
+                    w,
+                    h,
+                    (cx - s * 0.26) as i32,
+                    (cy + s * dy - s * 0.06) as i32,
+                    (s * 0.52) as i32,
+                    (s * 0.12).max(2.0) as i32,
+                    3,
+                    0xFFFFFF,
+                );
+            }
+        }
+    }
+}
+
 fn draw_slider(fb: &mut [u32], w: i32, h: i32, r: Rect, norm: f32, accent: u32) {
     let t = norm.clamp(0.0, 1.0);
     let cy = r.y + r.h / 2;
-    fill_round_rect(fb, w, h, r.x, cy - 4, r.w, 8, 4, 0x2B365A);
+    fill_round_rect(fb, w, h, r.x, cy - 4, r.w, 8, 4, 0x94A3B8);
     let fill_w = ((r.w as f32) * t).round() as i32;
     if fill_w > 4 {
         fill_round_rect(fb, w, h, r.x, cy - 4, fill_w, 8, 4, accent);
@@ -2797,5 +3550,31 @@ mod tests {
         st.apply_action(HitAction::OpenApp(AppKind::RomAudit));
         let aud_texts = st.render(&mut fb, WIN_W, WIN_H);
         assert!(!aud_texts.is_empty());
+    }
+
+    #[test]
+    fn test_hyperos4_screens_and_island() {
+        let mut st = EmulatorState::new(include_str!("../default_manifest.json"));
+        let mut fb = vec![0u32; (WIN_W * WIN_H) as usize];
+
+        for scr in [
+            Screen::LockScreen,
+            Screen::Home,
+            Screen::FolderView,
+            Screen::HomeEdit,
+            Screen::IconEditor,
+            Screen::ControlCenter,
+        ] {
+            st.apply_action(HitAction::GoScreen(scr));
+            let t = st.render(&mut fb, WIN_W, WIN_H);
+            assert!(!t.is_empty());
+        }
+
+        st.apply_action(HitAction::GoScreen(Screen::Home));
+        assert!(!st.island_expanded);
+        st.apply_action(HitAction::ToggleIsland);
+        assert!(st.island_expanded);
+        let t_isl = st.render(&mut fb, WIN_W, WIN_H);
+        assert!(t_isl.iter().any(|x| x.text.contains("HyperIsland Always-On")));
     }
 }

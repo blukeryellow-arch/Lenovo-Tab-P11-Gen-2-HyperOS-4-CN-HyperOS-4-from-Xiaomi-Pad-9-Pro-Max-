@@ -864,6 +864,8 @@ jobs:
                   ).stdout.decode("utf-8", "replace")
                   assert "MIUI" in sig_info, f"Expected CN=MIUI signature, got: {sig_info}"
               ov_list = [os.path.basename(x) for x in sorted(glob.glob(os.path.join(mnt, "overlay/*.apk")))]
+              for bad_ov in ("MiuiPocoLauncherResOverlay.apk", "ElderlyNavigationBarOverlay.apk", "LauncherOverlayBlossom.apk"):
+                  assert not os.path.exists(os.path.join(mnt, "overlay", bad_ov)), f"Conflicting launcher overlay present: {bad_ov}"
               print(f"verify product OK: MiuiHome CN=MIUI + libapp.so + FluxStudio + runtime_largeicon.config + device_features({len(df_files)}) + overlays={ov_list}")
           PYEOF
             sudo umount "$WORK/mnt-verify"
