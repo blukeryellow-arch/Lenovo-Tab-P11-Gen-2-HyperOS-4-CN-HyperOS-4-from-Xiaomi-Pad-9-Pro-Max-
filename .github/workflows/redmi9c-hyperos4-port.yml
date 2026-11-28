@@ -929,18 +929,30 @@ jobs:
             "MysticalOS-Redmi9C"
 
           cp "$WORK/package/BUILD-REPORT.txt" \
-             "$WORK/package/SHA256SUMS.txt" \
-             "$WORK/package/INSTRUKCJA-FLASH.txt" \
-             "$WORK/mysticalos-manifest.json" \
-             "$WORK/release/"
+              "$WORK/package/SHA256SUMS.txt" \
+              "$WORK/package/INSTRUKCJA-FLASH.txt" \
+              "$WORK/mysticalos-manifest.json" \
+              "$WORK/release/"
           [ -f "$WORK/rust-out/Redmi9CRustApp.apk" ] && cp "$WORK/rust-out/Redmi9CRustApp.apk" "$WORK/release/Redmi9CRustApp.apk"
-          [ -f "$WORK/rust-out/MysticalLauncher.apk" ] && cp "$WORK/rust-out/MysticalLauncher.apk" "$WORK/release/MysticalLauncher.apk"
           [ -f "$WORK/rust-out/MysticalFluxStudio.apk" ] && cp "$WORK/rust-out/MysticalFluxStudio.apk" "$WORK/release/MysticalFluxStudio.apk"
+          # Deliver the REAL ~56 MiB HyperOS 4 System_launcher (com.miui.home, CN=MIUI signed) as a
+          # standalone asset — identical to the MiuiHome.apk installed inside super.img. This is the
+          # actual launcher with all new HyperOS 4 features, NOT the 62 KiB lightweight MysticalLauncher.
+          H4_XZ="$REPO_DIR/apps/hyperos4-launcher/System_launcher_RELEASE-8.01.02.9248-261013-11112305-R.apk.xz"
+          if [ -f "$H4_XZ" ]; then
+            xz -d -k -c "$H4_XZ" > "$WORK/release/MiuiHome-System_launcher-HyperOS4.apk"
+            EXPECTED_H4_SHA=$(awk '/\.apk$/ {print $1}' "$REPO_DIR/apps/hyperos4-launcher/SHA256SUMS")
+            echo "${EXPECTED_H4_SHA}  $WORK/release/MiuiHome-System_launcher-HyperOS4.apk" | sha256sum -c -
+            ls -lh "$WORK/release/MiuiHome-System_launcher-HyperOS4.apk"
+          else
+            echo "::warning::Brak oryginalnego System_launcher .xz — atrybut MiuiHome-System_launcher-HyperOS4.apk pominiony"
+          fi
           (
             cd "$WORK/release"
             [ -f MysticalOS-Emulator.exe ] && sha256sum MysticalOS-Emulator.exe >> SHA256SUMS.txt
-            [ -f MysticalLauncher.apk ] && sha256sum MysticalLauncher.apk >> SHA256SUMS.txt
+            [ -f MiuiHome-System_launcher-HyperOS4.apk ] && sha256sum MiuiHome-System_launcher-HyperOS4.apk >> SHA256SUMS.txt
             [ -f MysticalFluxStudio.apk ] && sha256sum MysticalFluxStudio.apk >> SHA256SUMS.txt
+            [ -f Redmi9CRustApp.apk ] && sha256sum Redmi9CRustApp.apk >> SHA256SUMS.txt
           )
           ls -lh "$WORK/release"
 
@@ -963,7 +975,8 @@ jobs:
             echo
             echo "- **Baza sprzetowa (OSS A17 + kernel 4.19):** \`EvolutionX 17.0 blossom\` (\`xc112lg/blossom_releases\`)"
             echo "- **Dawca bazy systemowej (Android 17):** Redmi 15C / POCO C85 Global (\`dew\`, \`OS4.0.8.0.XBNMIXM\`)"
-            echo "- **Baza Launchera:** Oryginalny HyperOS 4 \`System_launcher 8.01.02.9248\` (\`com.miui.home\`, podpis \`CN=MIUI\` zachowany, odblokowane bramki \`Dynamic Island\` + \`LargeIcon\`)"
+            echo "- **Baza Launchera:** Oryginalny HyperOS 4 \`System_launcher 8.01.02.9248\` (\`com.miui.home\`, podpis \`CN=MIUI\` zachowany, ~56 MiB, odblokowane wszystkie nowe bramki HyperOS 4: \`Dynamic Island\` + \`LargeIcon\` + \`blur/glass/material\` + \`stack widget\` + \`AI HD icon\` + \`dock search bar\`)"
+            echo "- **Standalone launcher:** \`MiuiHome-System_launcher-HyperOS4.apk\` — oryginalny HyperOS 4 launcher (~56 MiB) wydany jako osobny atrybut, z włączonymi wszystkimi nowymi funkcjami launchera (identyczny jak \`MiuiHome.apk\` w \`super.img\`)"
             echo "- **Wariant:** \`${VARIANT}\` | **Debloat / GMS:** \`${DEBLOAT_LEVEL}\` / \`${GMS_MODE}\`"
             echo "- **Autorskie aplikacje / uslugi:** \`MysticalFluxStudio.apk\` (ColorOS 17 Icon & Tile Resizer), \`MysticalOSIsland*Overlay.apk\`, \`MysticalOSFrameworkOverlay.apk\`, \`bootanimation.zip\` MysticalOS, \`/system_ext/bin/r9c-memd\`, \`Redmi9CRustApp.apk\`"
             echo "- **Aplikacje FOSS w miejscu apek Xiaomi:** \`Fossify Phone\`, \`Messages\`, \`Contacts\`, \`Gallery\`, \`File Manager\`, \`Camera\`, \`Clock\`, \`Calculator\`, \`HeliBoard\`, \`Droid-ify\`, \`Cromite WebView\`, \`microG\`"

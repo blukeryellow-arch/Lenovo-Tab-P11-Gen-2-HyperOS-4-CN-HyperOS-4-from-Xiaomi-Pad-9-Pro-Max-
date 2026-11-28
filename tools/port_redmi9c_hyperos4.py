@@ -1147,6 +1147,13 @@ def adapt_blossom_hardware(
                 "support_new_home_new_dynamic_effect": "true",
                 "support_overlay_window_handle_gesture": "true",
                 "support_home_launcher_classic": "true",
+                "support_stack_widget": "true",
+                "support_glass": "true",
+                "support_material": "true",
+                "support_ai_hd_icon": "true",
+                "support_dock_search_bar": "true",
+                "support_dock_search_bar_new_animation": "true",
+                "support_minus_one_screen_view_tag_blur": "true",
                 "is_miui_lite_version": "false",
                 "is_low_ram": "false",
                 "is_pad": "false",
@@ -1762,27 +1769,37 @@ def integrate_hyperos4_launcher(
     )
     os.chmod(sys_xml, 0o644)
 
-    # 4. Ensure default runtime_largeicon.config exists so LargeIconModeRuntimeManager can unlock per-app big icons
+    # 4. Write default runtime_largeicon.config so LargeIconModeRuntimeManager + HyperOS 4 feature
+    #    gates unlock per-app big icons, Dynamic Island, blur/glass and stacked widgets on angelica.
     theme_def = out_prod / "media" / "theme" / "default"
     theme_def.mkdir(parents=True, exist_ok=True)
     os.chmod(theme_def, 0o755)
     lic_cfg = theme_def / "runtime_largeicon.config"
-    if not lic_cfg.exists():
-        lic_cfg.write_text(
-            json.dumps(
-                {
-                    "version": 1,
-                    "largeIconEnable": True,
-                    "supportDynamicIsland": True,
-                    "fallbackSnapshotFill": True,
-                },
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+    lic_cfg.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "largeIconEnable": True,
+                "supportDynamicIsland": True,
+                "supportLargeIcon": True,
+                "supportFolderLargeIcon": True,
+                "supportBigIcon": True,
+                "supportStackWidget": True,
+                "supportGlass": True,
+                "supportMaterial": True,
+                "supportBlur": True,
+                "supportAiHdIcon": True,
+                "supportNewDynamicEffect": True,
+                "supportDockSearchBar": True,
+                "fallbackSnapshotFill": True,
+            },
+            indent=2,
         )
-        os.chmod(lic_cfg, 0o644)
-    log.append(f"HyperOS 4 original System_launcher installed as MiuiHome (CN=MIUI signature preserved, privapp perms={len(home_perms)})")
+        + "\n",
+        encoding="utf-8",
+    )
+    os.chmod(lic_cfg, 0o644)
+    log.append(f"HyperOS 4 original System_launcher installed as MiuiHome (CN=MIUI signature preserved, privapp perms={len(home_perms)}, runtime_largeicon.config feature flags enabled)")
 
 
 def integrate_mysticalos(
@@ -1916,11 +1933,23 @@ def configure_props_and_zygote(
         "persist.sys.computilityV2.devicelevel": "3",
         "ro.config.low_ram.go": "false",
         "ro.config.low_ram.threshold_gb": "0",
+        "ro.config.low_ram.version": "0",
+        "ro.config.low_ram.region": "0",
         "ro.config.low_ram.middle.threshold_gb": "0",
+        "ro.config.low_ram.middle.region": "0",
         "ro.config.low_ram.support_miuilite_plus": "false",
-        "persist.sys.background_blur_supported": "false",
-        "ro.surface_flinger.supports_background_blur": "0",
-        "persist.sys.miui.blur.level": "0",
+        # --- HyperOS 4 launcher feature unlocking (native libapp_launcher.so / libapp.so gates) ---
+        # Blur / glass / bionic material: force-enable so HyperOS 4 frosted-glass & blur wallpaper work.
+        "persist.sys.background_blur_supported": "true",
+        "ro.surface_flinger.supports_background_blur": "1",
+        "persist.sys.miui.blur.level": "3",
+        "persist.sys.bionic_material_supported": "true",
+        # High device level so animations / dynamic effects / stacked widgets are not throttled.
+        "persist.sys.theme.ai_hd_icon.status": "1",
+        "persist.miui.home_sf_anim": "1",
+        "ro.boot.product.theme_customize": "1",
+        # Force stacked-widget (stack card) support even on low-RAM devices.
+        "debug_force_stack_widget": "1",
         "persist.arm64.memtag.system_server": "off",
         "dalvik.vm.heapstartsize": "8m",
         "dalvik.vm.heapgrowthlimit": "192m",

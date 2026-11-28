@@ -5,8 +5,10 @@ Zautomatyzowany builder GitHub Actions tworzący system **MysticalOS 1.0** (opar
 ## Co zostało zrobione względem zwykłego HyperOS 4
 
 1. **Oryginalny HyperOS 4 `System_launcher` jako baza pulpitu (`apps/hyperos4-launcher/`):**
-   - wkompilowany oryginalny **HyperOS 4 `System_launcher_RELEASE-8.01.02.9248-261013-11112305-R.apk`** (`com.miui.home`, architektura ARM64 Flutter + Rust FRB, oryginalny podpis Xiaomi `CN=MIUI` zachowany w 100% — bez łamania certyfikatu systemowego),
+   - wkompilowany oryginalny **HyperOS 4 `System_launcher_RELEASE-8.01.02.9248-261013-11112305-R.apk`** (`com.miui.home`, architektura ARM64 Flutter + Rust FRB, oryginalny podpis Xiaomi `CN=MIUI` zachowany w 100% — bez łamania certyfikatu systemowego), ~56 MiB,
+   - **wydawany jako osobny atrybut wydania `MiuiHome-System_launcher-HyperOS4.apk`** (identyczny jak `MiuiHome.apk` w `super.img`) — to prawdziwy HyperOS 4 launcher z nowymi funkcjami, a nie zastępca 62 KiB,
    - weryfikowana w CI zgodność z `hyperos.rustruntime.v*.jar` oraz zależnościami natywnymi `DT_NEEDED` w drzewie dawcy `dew` (Android 17),
+   - **włączone wszystkie nowe bramki HyperOS 4 launchera** (analiza `libapp_launcher.so` / `libapp.so`): `Dynamic Island` + `LargeIcon` + `blur / glass / bionic material` + `stack widget` + `AI HD icon` + `dock search bar` + wysokie poziomy urządzenia/animacji — przez `device_features/*.xml`, `runtime_largeicon.config` i `build.prop` (`persist.sys.background_blur_supported=true`, `persist.sys.bionic_material_supported=true`, `persist.sys.theme.ai_hd_icon.status=1`, `persist.miui.home_sf_anim=1`, `debug_force_stack_widget=1`, `ro.config.low_ram.*` wyłączone, `persist.sys.computility*.level=3`),
    - wygenerowany `/product/media/theme/default/runtime_largeicon.config` i zachowane `media/theme/miui_mod_icons` dla natywnego silnika dużych ikon `LargeIconModeRuntimeManager`,
    - przyznane pełne uprawnienia `privapp-permissions-miuihome.xml` i wykluczenie z oszczędzania energii `sysconfig/miuihome.xml`.
 2. **Always-On Dynamic Island (`tools/patch_hyperos4_island.py` + `tools/mysticalos_brand.py`):**
@@ -20,7 +22,7 @@ Zautomatyzowany builder GitHub Actions tworzący system **MysticalOS 1.0** (opar
      - **kształty ikon ColorOS 17** (`Zaokrąglony kwadrat` / `Pebble` / `Koło` / `Kwiat`),
      - **zmiennorozmiarowe kafelki pulpitu `1x1`, `2x1`, `1x2`, `2x2`** możliwe do umieszczenia bezpośrednio na ekranie głównym HyperOS 4 z własną ikoną i tytułem wybranej aplikacji,
      - przełącznik **Dynamic Island (Zawsze włączony)** i obsługa natywnego `IconSizeProvider` / podgląd na żywo,
-   - opcjonalny pełny launcher standalone **`MysticalLauncher.apk`** nadal budowany jest jako osobny pakiet w GitHub Release.
+   - pakiet **`MysticalLauncher.apk`** jest budowany do testów/audytu, ale w wydaniu głównym zamiast niego dostarczany jest prawdziwy HyperOS 4 launcher **`MiuiHome-System_launcher-HyperOS4.apk`** (~56 MiB) — `MysticalFluxStudio.apk` towarzyszy mu jako aplikacja companion bez konfliktu `CATEGORY_HOME`.
 4. **Rebranding MysticalOS + usunięcie bloatware'u Xiaomi + otwarte zamienniki FOSS:**
    - rebranding (`ro.mysticalos.version=1.0`, `ro.mysticalos.codename=Flux17`, `bootanimation.zip` `720x1600`, `MysticalOSFrameworkOverlay.apk`),
    - usunięte zbędne apki Xiaomi (`HyperPhone`, `MiuiMmsGlobal`, `MIUIGalleryGlobal`, `MIUIFileExplorerGlobal`, `MiuiCamera`, `MIUISecurityCenterGlobal`, `MISettings`, `MIUIThemeManagerGlobal`, `MIUIXiaomiAccountGlobal`, `MIUICloudServiceGlobal`, `Backup`, `Notes`, `MiMusic`, `MiVideo`, `Weather`, `MiBrowser`, `AnalyticsCore`, `MSA`, `Joyose` itd.) oraz bloat GMS,
