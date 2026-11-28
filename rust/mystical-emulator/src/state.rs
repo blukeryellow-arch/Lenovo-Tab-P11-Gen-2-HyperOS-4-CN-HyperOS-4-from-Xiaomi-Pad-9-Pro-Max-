@@ -173,6 +173,7 @@ pub struct TextDraw {
 #[derive(Clone, Copy, Debug)]
 pub enum HitAction {
     OpenApp(AppKind),
+    OpenFolder,
     OpenIconMenu(usize),
     SetTileSpan(usize, TileSpan),
     GoScreen(Screen),
